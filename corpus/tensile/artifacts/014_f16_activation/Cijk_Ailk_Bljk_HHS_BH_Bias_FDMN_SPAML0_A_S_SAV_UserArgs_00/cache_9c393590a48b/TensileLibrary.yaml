@@ -1,0 +1,874 @@
+---
+library:
+  rows:
+  - library: {index: 0, type: Single}
+    predicate:
+      type: And
+      value:
+      - {index: -1, type: BoundSizeMultiple, value: 8}
+      - {type: OperationIdentifierEqual, value: Contraction_l_Ailk_Bljk_Cijk_Dijk}
+      - type: BiasDataTypeWhiteList
+        value: [Float, Half]
+      - type: BiasSrcWhiteList
+        value: [3]
+      - {type: AmaxDCheck, value: false}
+      - type: ActivationEnumWhiteList
+        value: [None, Abs, Clippedrelu, Gelu, Leakyrelu, Relu, Sigmoid, Tanh, Geluscaling,
+          Silu, Swish, Clamp]
+      - type: TypesEqual
+        value: [Half, Half, Half, Half, Half, Half]
+      - {type: HighPrecisionAccumulate, value: true}
+      - {type: Activation, value: All}
+      - {type: ActivationComputeType, value: Float}
+      - {type: ActivationNoGuard, value: false}
+      - {type: UseGradient, value: false}
+      - {type: UseBias, value: 3}
+      - {type: UseE, value: false}
+      - {type: DataTypeE, value: Half}
+      - {type: StridedBatched, value: true}
+      - {type: GroupedGemm, value: false}
+      - {type: UseScaleAB, value: ''}
+      - {type: UseScaleCD, value: false}
+      - {type: UseScaleAlphaVec, value: 3}
+      - {type: Sparse, value: 1}
+      - {type: F32XdlMathOp, value: Float}
+      - {type: SupportDeviceUserArguments, value: true}
+      - {type: SwizzleTensorA, value: false}
+      - {type: SwizzleTensorB, value: false}
+      - {type: MXBlockA, value: 0}
+      - {type: MXBlockB, value: 0}
+      - index: 0
+        type: WorkgroupNumberCheck
+        value: [128, 128, 1]
+      - {type: LeadingFree0SizesGreaterOrEqual, value: 8}
+      - {type: LeadingFree1SizesGreaterOrEqual, value: 1}
+      - {type: KernelLanguageCompatible, value: Assembly}
+      - type: BufferLoadOffsetLimitCheck
+        value: {DUorMT0: 64, DUorMT1: 128, ShiftPtrElemA: 8, ShiftPtrElemB: 0}
+      - {type: BufferLoadOffsetLimitCheck_Beta, value: 128}
+      - {type: BufferStoreOffsetLimitCheck, value: 128}
+      - type: GlobalSplitUCheckMinK
+        value: [32, 1]
+      - type: WorkgroupMappingXCCCheck
+        value: [1, -1]
+      - type: ClusterDimCheck
+        value: [128, 128, 1, 1, 1]
+  - library: {index: 1, type: Single}
+    predicate:
+      type: And
+      value:
+      - {index: -1, type: BoundSizeMultiple, value: 8}
+      - {type: OperationIdentifierEqual, value: Contraction_l_Ailk_Bljk_Cijk_Dijk}
+      - type: BiasDataTypeWhiteList
+        value: [Float, Half]
+      - type: BiasSrcWhiteList
+        value: [3]
+      - {type: AmaxDCheck, value: false}
+      - type: ActivationEnumWhiteList
+        value: [None, Abs, Clippedrelu, Gelu, Leakyrelu, Relu, Sigmoid, Tanh, Geluscaling,
+          Silu, Swish, Clamp]
+      - type: TypesEqual
+        value: [Half, Half, Half, Half, Half, Half]
+      - {type: HighPrecisionAccumulate, value: true}
+      - {type: Activation, value: All}
+      - {type: ActivationComputeType, value: Float}
+      - {type: ActivationNoGuard, value: false}
+      - {type: UseGradient, value: false}
+      - {type: UseBias, value: 3}
+      - {type: UseE, value: false}
+      - {type: DataTypeE, value: Half}
+      - {type: StridedBatched, value: true}
+      - {type: GroupedGemm, value: false}
+      - {type: UseScaleAB, value: ''}
+      - {type: UseScaleCD, value: false}
+      - {type: UseScaleAlphaVec, value: 3}
+      - {type: Sparse, value: 1}
+      - {type: F32XdlMathOp, value: Float}
+      - {type: SupportDeviceUserArguments, value: true}
+      - {type: SwizzleTensorA, value: false}
+      - {type: SwizzleTensorB, value: false}
+      - {type: MXBlockA, value: 0}
+      - {type: MXBlockB, value: 0}
+      - index: 0
+        type: WorkgroupNumberCheck
+        value: [128, 128, 2]
+      - {type: LeadingFree0SizesGreaterOrEqual, value: 8}
+      - {type: LeadingFree1SizesGreaterOrEqual, value: 1}
+      - {type: KernelLanguageCompatible, value: Assembly}
+      - type: BufferLoadOffsetLimitCheck
+        value: {DUorMT0: 64, DUorMT1: 128, ShiftPtrElemA: 8, ShiftPtrElemB: 0}
+      - {type: BufferLoadOffsetLimitCheck_Beta, value: 128}
+      - {type: BufferStoreOffsetLimitCheck, value: 128}
+      - type: GlobalSplitUCheckMinK
+        value: [32, 2]
+      - type: WorkgroupMappingXCCCheck
+        value: [1, -1]
+      - type: ClusterDimCheck
+        value: [128, 128, 2, 1, 1]
+  - library: {index: 2, type: Single}
+    predicate:
+      type: And
+      value:
+      - {index: -1, type: BoundSizeMultiple, value: 8}
+      - {type: OperationIdentifierEqual, value: Contraction_l_Ailk_Bljk_Cijk_Dijk}
+      - type: BiasDataTypeWhiteList
+        value: [Float, Half]
+      - type: BiasSrcWhiteList
+        value: [3]
+      - {type: AmaxDCheck, value: false}
+      - type: ActivationEnumWhiteList
+        value: [None, Abs, Clippedrelu, Gelu, Leakyrelu, Relu, Sigmoid, Tanh, Geluscaling,
+          Silu, Swish, Clamp]
+      - type: TypesEqual
+        value: [Half, Half, Half, Half, Half, Half]
+      - {type: HighPrecisionAccumulate, value: true}
+      - {type: Activation, value: All}
+      - {type: ActivationComputeType, value: Float}
+      - {type: ActivationNoGuard, value: false}
+      - {type: UseGradient, value: false}
+      - {type: UseBias, value: 3}
+      - {type: UseE, value: false}
+      - {type: DataTypeE, value: Half}
+      - {type: StridedBatched, value: true}
+      - {type: GroupedGemm, value: false}
+      - {type: UseScaleAB, value: ''}
+      - {type: UseScaleCD, value: false}
+      - {type: UseScaleAlphaVec, value: 3}
+      - {type: Sparse, value: 1}
+      - {type: F32XdlMathOp, value: Float}
+      - {type: SupportDeviceUserArguments, value: true}
+      - {type: SwizzleTensorA, value: false}
+      - {type: SwizzleTensorB, value: false}
+      - {type: MXBlockA, value: 0}
+      - {type: MXBlockB, value: 0}
+      - index: 0
+        type: WorkgroupNumberCheck
+        value: [128, 128, 1]
+      - {type: LeadingFree0SizesGreaterOrEqual, value: 8}
+      - {type: LeadingFree1SizesGreaterOrEqual, value: 1}
+      - {type: KernelLanguageCompatible, value: Assembly}
+      - type: BufferLoadOffsetLimitCheck
+        value: {DUorMT0: 128, DUorMT1: 128, ShiftPtrElemA: 8, ShiftPtrElemB: 0}
+      - {type: BufferLoadOffsetLimitCheck_Beta, value: 128}
+      - {type: BufferStoreOffsetLimitCheck, value: 128}
+      - type: GlobalSplitUCheckMinK
+        value: [32, 1]
+      - type: WorkgroupMappingXCCCheck
+        value: [1, -1]
+      - type: ClusterDimCheck
+        value: [128, 128, 1, 1, 1]
+  - library: {index: 3, type: Single}
+    predicate:
+      type: And
+      value:
+      - {index: -1, type: BoundSizeMultiple, value: 8}
+      - {type: OperationIdentifierEqual, value: Contraction_l_Ailk_Bljk_Cijk_Dijk}
+      - type: BiasDataTypeWhiteList
+        value: [Float, Half]
+      - type: BiasSrcWhiteList
+        value: [3]
+      - {type: AmaxDCheck, value: false}
+      - type: ActivationEnumWhiteList
+        value: [None, Abs, Clippedrelu, Gelu, Leakyrelu, Relu, Sigmoid, Tanh, Geluscaling,
+          Silu, Swish, Clamp]
+      - type: TypesEqual
+        value: [Half, Half, Half, Half, Half, Half]
+      - {type: HighPrecisionAccumulate, value: true}
+      - {type: Activation, value: All}
+      - {type: ActivationComputeType, value: Float}
+      - {type: ActivationNoGuard, value: false}
+      - {type: UseGradient, value: false}
+      - {type: UseBias, value: 3}
+      - {type: UseE, value: false}
+      - {type: DataTypeE, value: Half}
+      - {type: StridedBatched, value: true}
+      - {type: GroupedGemm, value: false}
+      - {type: UseScaleAB, value: ''}
+      - {type: UseScaleCD, value: false}
+      - {type: UseScaleAlphaVec, value: 3}
+      - {type: Sparse, value: 1}
+      - {type: F32XdlMathOp, value: Float}
+      - {type: SupportDeviceUserArguments, value: true}
+      - {type: SwizzleTensorA, value: false}
+      - {type: SwizzleTensorB, value: false}
+      - {type: MXBlockA, value: 0}
+      - {type: MXBlockB, value: 0}
+      - index: 0
+        type: WorkgroupNumberCheck
+        value: [128, 128, 2]
+      - {type: LeadingFree0SizesGreaterOrEqual, value: 8}
+      - {type: LeadingFree1SizesGreaterOrEqual, value: 1}
+      - {type: KernelLanguageCompatible, value: Assembly}
+      - type: BufferLoadOffsetLimitCheck
+        value: {DUorMT0: 128, DUorMT1: 128, ShiftPtrElemA: 8, ShiftPtrElemB: 0}
+      - {type: BufferLoadOffsetLimitCheck_Beta, value: 128}
+      - {type: BufferStoreOffsetLimitCheck, value: 128}
+      - type: GlobalSplitUCheckMinK
+        value: [32, 2]
+      - type: WorkgroupMappingXCCCheck
+        value: [1, -1]
+      - type: ClusterDimCheck
+        value: [128, 128, 2, 1, 1]
+  type: Problem
+solutions:
+- debugKernel: false
+  hardwarePredicate:
+    type: AMDGPU
+    value: {type: Processor, value: gfx1250}
+  ideals: {}
+  index: 0
+  internalArgsSupport: {gsu: true, staggerU: true, useSFC: false, useUniversalArgs: true,
+    version: 2, wgm: true}
+  kernelName: Cijk_Ailk_Bljk_HHS_BH_Bias_FDMN_SPAML0_A_S_SAV_UserArgs_MT128x128x64_MI16x16x1_SN_LDSB1_AFC1_AG0_AFEM1_AFEM1_ASEM8_CB0_CD1_1_CLR0_CADS0_DTLA0_DTLB0_DTLM0_DTVA0_DTVB0_DTVMXSA0_DTVMXSB0_DTVSM0_DPLB0_EPS1_ELFLR0_EMLLn1_FDSI0_GRPM1_GRVWA8_GRVWB8_GSUAMB_GLS0_HPLR0_ISA1250_ICIW0_IU1_K1_LDSTI0_LBSPPA2048_LBSPPB256_LBSPPMXSA0_LBSPPMXSB0_LBSPPM0_LPA16_LPB8_LPMXSA0_LPMXSB0_LPM2_LRVWn1_LWPMn1_MIAV1_MIWT4_4_MXLIBL_MXSFNS_MO40_MGRIPM1_NTn1_NTA0_NTB0_NTC0_NTD0_NTM0_NEPBS0_NLCA1_NLCB1_ONLL1_PGR2_PLR0_PKA1_SGROB0_SIA3_SS0_SPO0_SRVW0_SSO0_SVW8_SK0_SKFTR0_SKXCCM0_SIP1_SGRO0_TDMI0_TDMS0_TIN0_TLDS1_TLDSM1_ULSGRO0_USL1_USLMX0_UIOFGRO0_UPLRP0_USFGROn1_USI0_VSn1_VWA1_VWB1_WSGRA0_WSGRB0_WS32_WG32_4_1
+  libraryLogicIndex: -1
+  linearModel: {}
+  name: Cijk_Ailk_Bljk_HHS_BH_Bias_FDMN_SPAML0_A_S_SAV_UserArgs_MT128x128x64_MI16x16x1_SN_LDSB1_AFC1_AG0_AFEM1_AFEM1_ASEM8_CB0_CD1_1_CLR0_CADS0_DTLA0_DTLB0_DTLM0_DTVA0_DTVB0_DTVMXSA0_DTVMXSB0_DTVSM0_DPLB0_EPS1_ELFLR0_EMLLn1_FDSI0_GRPM1_GRVWA8_GRVWB8_GSU1_GSUAMB_GSUC0_GSUWGMRR0_GLS0_HPLR0_ISA1250_ICIW0_IU1_K1_LDSTI0_LBSPPA2048_LBSPPB256_LBSPPMXSA0_LBSPPMXSB0_LBSPPM0_LPA16_LPB8_LPMXSA0_LPMXSB0_LPM2_LRVWn1_LWPMn1_MIAV1_MIWT4_4_MXLIBL_MXSFNS_MO40_MGRIPM1_NTn1_NTA0_NTB0_NTC0_NTD0_NTM0_NEPBS0_NLCA1_NLCB1_ONLL1_PGR2_PLR0_PKA1_SGROB0_SIA3_SS0_SU32_SUM0_SUS256_SPO0_SRVW0_SSO0_SVW8_SK0_SKFTR0_SKXCCM0_SIP1_SGRO0_TDMI0_TDMS0_TIN0_TLDS1_TLDSM1_ULSGRO0_USL1_USLMX0_UIOFGRO0_UPLRP0_USFGROn1_USI0_VSn1_VWA1_VWB1_WSGRA0_WSGRB0_WS32_WG32_4_1_WGM8_WGMXCC1_WGMXCCGn1
+  problemPredicate:
+    type: And
+    value:
+    - {index: -1, type: BoundSizeMultiple, value: 8}
+    - {type: OperationIdentifierEqual, value: Contraction_l_Ailk_Bljk_Cijk_Dijk}
+    - type: BiasDataTypeWhiteList
+      value: [Float, Half]
+    - type: BiasSrcWhiteList
+      value: [3]
+    - {type: AmaxDCheck, value: false}
+    - type: ActivationEnumWhiteList
+      value: [None, Abs, Clippedrelu, Gelu, Leakyrelu, Relu, Sigmoid, Tanh, Geluscaling,
+        Silu, Swish, Clamp]
+    - type: TypesEqual
+      value: [Half, Half, Half, Half, Half, Half]
+    - {type: HighPrecisionAccumulate, value: true}
+    - {type: Activation, value: All}
+    - {type: ActivationComputeType, value: Float}
+    - {type: ActivationNoGuard, value: false}
+    - {type: UseGradient, value: false}
+    - {type: UseBias, value: 3}
+    - {type: UseE, value: false}
+    - {type: DataTypeE, value: Half}
+    - {type: StridedBatched, value: true}
+    - {type: GroupedGemm, value: false}
+    - {type: UseScaleAB, value: ''}
+    - {type: UseScaleCD, value: false}
+    - {type: UseScaleAlphaVec, value: 3}
+    - {type: Sparse, value: 1}
+    - {type: F32XdlMathOp, value: Float}
+    - {type: SupportDeviceUserArguments, value: true}
+    - {type: SwizzleTensorA, value: false}
+    - {type: SwizzleTensorB, value: false}
+    - {type: MXBlockA, value: 0}
+    - {type: MXBlockB, value: 0}
+    - index: 0
+      type: WorkgroupNumberCheck
+      value: [128, 128, 1]
+    - {type: LeadingFree0SizesGreaterOrEqual, value: 8}
+    - {type: LeadingFree1SizesGreaterOrEqual, value: 1}
+    - {type: KernelLanguageCompatible, value: Assembly}
+    - type: BufferLoadOffsetLimitCheck
+      value: {DUorMT0: 64, DUorMT1: 128, ShiftPtrElemA: 8, ShiftPtrElemB: 0}
+    - {type: BufferLoadOffsetLimitCheck_Beta, value: 128}
+    - {type: BufferStoreOffsetLimitCheck, value: 128}
+    - type: GlobalSplitUCheckMinK
+      value: [32, 1]
+    - type: WorkgroupMappingXCCCheck
+      value: [1, -1]
+    - type: ClusterDimCheck
+      value: [128, 128, 1, 1, 1]
+  problemType:
+    aType: Half
+    activationArgLength: 2
+    activationComputeDataType: Float
+    activationNoGuard: false
+    activationType: All
+    bType: Half
+    biasDataTypeWhiteList: [Float, Half]
+    biasSrcWhiteList: [3]
+    cType: Half
+    computeInputTypeA: Half
+    computeInputTypeB: Half
+    computeType: Float
+    dType: Half
+    eType: Half
+    f32XdlMathOp: Float
+    groupedGemm: false
+    highPrecisionAccumulate: true
+    metadataLayout: 0
+    mxBlockA: 0
+    mxBlockB: 0
+    mxScaleFormat: 0
+    mxTypeA: E8
+    mxTypeB: E8
+    operationIdentifier: Contraction_l_Ailk_Bljk_Cijk_Dijk
+    outputAmaxD: false
+    sparse: 1
+    stridedBatched: true
+    supportDeviceUserArguments: true
+    swizzleTensorA: false
+    swizzleTensorB: false
+    transA: false
+    transB: false
+    useBeta: true
+    useBias: 3
+    useE: false
+    useGradient: false
+    useInitialStridesAB: false
+    useInitialStridesCD: false
+    useScaleAB: ''
+    useScaleAlphaVec: 3
+    useScaleCD: false
+  sizeMapping:
+    CUOccupancy: 6
+    CustomKernelName: ''
+    DirectToLdsA: false
+    DirectToLdsB: false
+    DirectToVgprA: false
+    DirectToVgprB: false
+    ExpertSchedulingMode: 0
+    LocalSplitU: 1
+    MathClocksUnrolledLoop: 0
+    NonTemporalD: 0
+    NumLoadsCoalescedA: 1
+    NumLoadsCoalescedB: 1
+    PrefetchGlobalRead: 2
+    UnrollLoopSwapGlobalReadOrder: 0
+    VectorWidthA: 1
+    VectorWidthB: 1
+    WaveGroup: [2, 2]
+    WaveSeparateGlobalReadA: 0
+    WaveSeparateGlobalReadB: 0
+    activationFused: true
+    adaptiveGemmGSUA: 0
+    clusterDim: [1, 1]
+    customMainLoopScheduling: 0
+    depthU: 64
+    globalAccumulation: 2
+    globalSplitU: 1
+    globalSplitUCoalesced: false
+    globalSplitUPGR: 16
+    globalSplitUWorkGroupMappingRoundRobin: false
+    grvwA: 8
+    grvwB: 8
+    gwvwC: 8
+    gwvwD: 8
+    macroTile: [128, 128, 1]
+    magicDivAlg: 2
+    matrixInstruction: [16, 16, 64, 1]
+    nonTemporalA: 0
+    nonTemporalB: 0
+    packBatchDims: 0
+    sourceKernel: false
+    staggerStrideShift: 1
+    staggerU: 32
+    staggerUMapping: 0
+    streamK: 0
+    streamKAtomic: 0
+    synchronizerSizePerWG: 8192
+    threadTile: [1, 1]
+    waveNum: 4
+    workGroup: [32, 4, 1]
+    workGroupMapping: 8
+    workGroupMappingXCC: 1
+    workGroupMappingXCCGroup: -1
+    workspaceSizePerElemBias: 0
+    workspaceSizePerElemC: 4
+  taskPredicate:
+    type: And
+    value:
+    - {type: WorkspaceCheck}
+    - {type: LaunchLimits}
+- debugKernel: false
+  hardwarePredicate:
+    type: AMDGPU
+    value: {type: Processor, value: gfx1250}
+  ideals: {}
+  index: 1
+  internalArgsSupport: {gsu: true, staggerU: true, useSFC: false, useUniversalArgs: true,
+    version: 2, wgm: true}
+  kernelName: Cijk_Ailk_Bljk_HHS_BH_Bias_FDMN_SPAML0_A_S_SAV_UserArgs_MT128x128x64_MI16x16x1_SN_LDSB1_AFC1_AG0_AFEM1_AFEM1_ASEM8_CB0_CD1_1_CLR0_CADS0_DTLA0_DTLB0_DTLM0_DTVA0_DTVB0_DTVMXSA0_DTVMXSB0_DTVSM0_DPLB0_EPS1_ELFLR0_EMLLn1_FDSI0_GRPM1_GRVWA8_GRVWB8_GSUAMB_GLS0_HPLR0_ISA1250_ICIW0_IU1_K1_LDSTI0_LBSPPA2048_LBSPPB256_LBSPPMXSA0_LBSPPMXSB0_LBSPPM0_LPA16_LPB8_LPMXSA0_LPMXSB0_LPM2_LRVWn1_LWPMn1_MIAV1_MIWT4_4_MXLIBL_MXSFNS_MO40_MGRIPM1_NTn1_NTA0_NTB0_NTC0_NTD0_NTM0_NEPBS0_NLCA1_NLCB1_ONLL1_PGR2_PLR0_PKA1_SGROB0_SIA3_SS0_SPO0_SRVW0_SSO0_SVW8_SK0_SKFTR0_SKXCCM0_SIP1_SGRO0_TDMI0_TDMS0_TIN0_TLDS1_TLDSM1_ULSGRO0_USL1_USLMX0_UIOFGRO0_UPLRP0_USFGROn1_USI0_VSn1_VWA1_VWB1_WSGRA0_WSGRB0_WS32_WG32_4_1
+  libraryLogicIndex: -1
+  linearModel: {}
+  name: Cijk_Ailk_Bljk_HHS_BH_Bias_FDMN_SPAML0_A_S_SAV_UserArgs_MT128x128x64_MI16x16x1_SN_LDSB1_AFC1_AG0_AFEM1_AFEM1_ASEM8_CB0_CD1_1_CLR0_CADS0_DTLA0_DTLB0_DTLM0_DTVA0_DTVB0_DTVMXSA0_DTVMXSB0_DTVSM0_DPLB0_EPS1_ELFLR0_EMLLn1_FDSI0_GRPM1_GRVWA8_GRVWB8_GSU2_GSUAMB_GSUC0_GSUWGMRR0_GLS0_HPLR0_ISA1250_ICIW0_IU1_K1_LDSTI0_LBSPPA2048_LBSPPB256_LBSPPMXSA0_LBSPPMXSB0_LBSPPM0_LPA16_LPB8_LPMXSA0_LPMXSB0_LPM2_LRVWn1_LWPMn1_MIAV1_MIWT4_4_MXLIBL_MXSFNS_MO40_MGRIPM1_NTn1_NTA0_NTB0_NTC0_NTD0_NTM0_NEPBS0_NLCA1_NLCB1_ONLL1_PGR2_PLR0_PKA1_SGROB0_SIA3_SS0_SU32_SUM0_SUS256_SPO0_SRVW0_SSO0_SVW8_SK0_SKFTR0_SKXCCM0_SIP1_SGRO0_TDMI0_TDMS0_TIN0_TLDS1_TLDSM1_ULSGRO0_USL1_USLMX0_UIOFGRO0_UPLRP0_USFGROn1_USI0_VSn1_VWA1_VWB1_WSGRA0_WSGRB0_WS32_WG32_4_1_WGM8_WGMXCC1_WGMXCCGn1
+  problemPredicate:
+    type: And
+    value:
+    - {index: -1, type: BoundSizeMultiple, value: 8}
+    - {type: OperationIdentifierEqual, value: Contraction_l_Ailk_Bljk_Cijk_Dijk}
+    - type: BiasDataTypeWhiteList
+      value: [Float, Half]
+    - type: BiasSrcWhiteList
+      value: [3]
+    - {type: AmaxDCheck, value: false}
+    - type: ActivationEnumWhiteList
+      value: [None, Abs, Clippedrelu, Gelu, Leakyrelu, Relu, Sigmoid, Tanh, Geluscaling,
+        Silu, Swish, Clamp]
+    - type: TypesEqual
+      value: [Half, Half, Half, Half, Half, Half]
+    - {type: HighPrecisionAccumulate, value: true}
+    - {type: Activation, value: All}
+    - {type: ActivationComputeType, value: Float}
+    - {type: ActivationNoGuard, value: false}
+    - {type: UseGradient, value: false}
+    - {type: UseBias, value: 3}
+    - {type: UseE, value: false}
+    - {type: DataTypeE, value: Half}
+    - {type: StridedBatched, value: true}
+    - {type: GroupedGemm, value: false}
+    - {type: UseScaleAB, value: ''}
+    - {type: UseScaleCD, value: false}
+    - {type: UseScaleAlphaVec, value: 3}
+    - {type: Sparse, value: 1}
+    - {type: F32XdlMathOp, value: Float}
+    - {type: SupportDeviceUserArguments, value: true}
+    - {type: SwizzleTensorA, value: false}
+    - {type: SwizzleTensorB, value: false}
+    - {type: MXBlockA, value: 0}
+    - {type: MXBlockB, value: 0}
+    - index: 0
+      type: WorkgroupNumberCheck
+      value: [128, 128, 2]
+    - {type: LeadingFree0SizesGreaterOrEqual, value: 8}
+    - {type: LeadingFree1SizesGreaterOrEqual, value: 1}
+    - {type: KernelLanguageCompatible, value: Assembly}
+    - type: BufferLoadOffsetLimitCheck
+      value: {DUorMT0: 64, DUorMT1: 128, ShiftPtrElemA: 8, ShiftPtrElemB: 0}
+    - {type: BufferLoadOffsetLimitCheck_Beta, value: 128}
+    - {type: BufferStoreOffsetLimitCheck, value: 128}
+    - type: GlobalSplitUCheckMinK
+      value: [32, 2]
+    - type: WorkgroupMappingXCCCheck
+      value: [1, -1]
+    - type: ClusterDimCheck
+      value: [128, 128, 2, 1, 1]
+  problemType:
+    aType: Half
+    activationArgLength: 2
+    activationComputeDataType: Float
+    activationNoGuard: false
+    activationType: All
+    bType: Half
+    biasDataTypeWhiteList: [Float, Half]
+    biasSrcWhiteList: [3]
+    cType: Half
+    computeInputTypeA: Half
+    computeInputTypeB: Half
+    computeType: Float
+    dType: Half
+    eType: Half
+    f32XdlMathOp: Float
+    groupedGemm: false
+    highPrecisionAccumulate: true
+    metadataLayout: 0
+    mxBlockA: 0
+    mxBlockB: 0
+    mxScaleFormat: 0
+    mxTypeA: E8
+    mxTypeB: E8
+    operationIdentifier: Contraction_l_Ailk_Bljk_Cijk_Dijk
+    outputAmaxD: false
+    sparse: 1
+    stridedBatched: true
+    supportDeviceUserArguments: true
+    swizzleTensorA: false
+    swizzleTensorB: false
+    transA: false
+    transB: false
+    useBeta: true
+    useBias: 3
+    useE: false
+    useGradient: false
+    useInitialStridesAB: false
+    useInitialStridesCD: false
+    useScaleAB: ''
+    useScaleAlphaVec: 3
+    useScaleCD: false
+  sizeMapping:
+    CUOccupancy: 6
+    CustomKernelName: ''
+    DirectToLdsA: false
+    DirectToLdsB: false
+    DirectToVgprA: false
+    DirectToVgprB: false
+    ExpertSchedulingMode: 0
+    LocalSplitU: 1
+    MathClocksUnrolledLoop: 0
+    NonTemporalD: 0
+    NumLoadsCoalescedA: 1
+    NumLoadsCoalescedB: 1
+    PrefetchGlobalRead: 2
+    UnrollLoopSwapGlobalReadOrder: 0
+    VectorWidthA: 1
+    VectorWidthB: 1
+    WaveGroup: [2, 2]
+    WaveSeparateGlobalReadA: 0
+    WaveSeparateGlobalReadB: 0
+    activationFused: true
+    adaptiveGemmGSUA: 0
+    clusterDim: [1, 1]
+    customMainLoopScheduling: 0
+    depthU: 64
+    globalAccumulation: 2
+    globalSplitU: 2
+    globalSplitUCoalesced: false
+    globalSplitUPGR: 16
+    globalSplitUWorkGroupMappingRoundRobin: false
+    grvwA: 8
+    grvwB: 8
+    gwvwC: 8
+    gwvwD: 8
+    macroTile: [128, 128, 1]
+    magicDivAlg: 2
+    matrixInstruction: [16, 16, 64, 1]
+    nonTemporalA: 0
+    nonTemporalB: 0
+    packBatchDims: 0
+    sourceKernel: false
+    staggerStrideShift: 1
+    staggerU: 32
+    staggerUMapping: 0
+    streamK: 0
+    streamKAtomic: 0
+    synchronizerSizePerWG: 8192
+    threadTile: [1, 1]
+    waveNum: 4
+    workGroup: [32, 4, 1]
+    workGroupMapping: 8
+    workGroupMappingXCC: 1
+    workGroupMappingXCCGroup: -1
+    workspaceSizePerElemBias: 0
+    workspaceSizePerElemC: 4
+  taskPredicate:
+    type: And
+    value:
+    - {type: WorkspaceCheck}
+    - {type: LaunchLimits}
+- debugKernel: false
+  hardwarePredicate:
+    type: AMDGPU
+    value: {type: Processor, value: gfx1250}
+  ideals: {}
+  index: 2
+  internalArgsSupport: {gsu: true, staggerU: true, useSFC: false, useUniversalArgs: true,
+    version: 2, wgm: true}
+  kernelName: Cijk_Ailk_Bljk_HHS_BH_Bias_FDMN_SPAML0_A_S_SAV_UserArgs_MT128x128x128_MI16x16x1_SN_LDSB1_AFC1_AG0_AFEM1_AFEM1_ASEM8_CB0_CD1_1_CLR1_CADS0_DTLA0_DTLB0_DTLM0_DTVA0_DTVB0_DTVMXSA0_DTVMXSB0_DTVSM0_DPLB0_EPS1_ELFLR0_EMLLn1_FDSI0_GRPM1_GRVWA8_GRVWB8_GSUAMB_GLS0_HPLR0_ISA1250_ICIW0_IU1_K1_LDSTI0_LBSPPA2048_LBSPPB256_LBSPPMXSA0_LBSPPMXSB0_LBSPPM0_LPA16_LPB8_LPMXSA0_LPMXSB0_LPM2_LRVWn1_LWPMn1_MIAV1_MIWT4_4_MXLIBL_MXSFNS_MO40_MGRIPM1_NTn1_NTA0_NTB0_NTC0_NTD0_NTM0_NEPBS0_NLCA1_NLCB1_ONLL1_PGR2_PLR1_PKA1_SGROB0_SIA3_SS0_SPO0_SRVW0_SSO0_SVW8_SK0_SKFTR0_SKXCCM0_SIP1_SGRO0_TDMI0_TDMS0_TIN0_TLDS1_TLDSM1_ULSGRO0_USL1_USLMX0_UIOFGRO0_UPLRP0_USFGROn1_USI0_VSn1_VWA1_VWB1_WSGRA0_WSGRB0_WS32_WG32_4_1
+  libraryLogicIndex: -1
+  linearModel: {}
+  name: Cijk_Ailk_Bljk_HHS_BH_Bias_FDMN_SPAML0_A_S_SAV_UserArgs_MT128x128x128_MI16x16x1_SN_LDSB1_AFC1_AG0_AFEM1_AFEM1_ASEM8_CB0_CD1_1_CLR1_CADS0_DTLA0_DTLB0_DTLM0_DTVA0_DTVB0_DTVMXSA0_DTVMXSB0_DTVSM0_DPLB0_EPS1_ELFLR0_EMLLn1_FDSI0_GRPM1_GRVWA8_GRVWB8_GSU1_GSUAMB_GSUC0_GSUWGMRR0_GLS0_HPLR0_ISA1250_ICIW0_IU1_K1_LDSTI0_LBSPPA2048_LBSPPB256_LBSPPMXSA0_LBSPPMXSB0_LBSPPM0_LPA16_LPB8_LPMXSA0_LPMXSB0_LPM2_LRVWn1_LWPMn1_MIAV1_MIWT4_4_MXLIBL_MXSFNS_MO40_MGRIPM1_NTn1_NTA0_NTB0_NTC0_NTD0_NTM0_NEPBS0_NLCA1_NLCB1_ONLL1_PGR2_PLR1_PKA1_SGROB0_SIA3_SS0_SU32_SUM0_SUS256_SPO0_SRVW0_SSO0_SVW8_SK0_SKFTR0_SKXCCM0_SIP1_SGRO0_TDMI0_TDMS0_TIN0_TLDS1_TLDSM1_ULSGRO0_USL1_USLMX0_UIOFGRO0_UPLRP0_USFGROn1_USI0_VSn1_VWA1_VWB1_WSGRA0_WSGRB0_WS32_WG32_4_1_WGM8_WGMXCC1_WGMXCCGn1
+  problemPredicate:
+    type: And
+    value:
+    - {index: -1, type: BoundSizeMultiple, value: 8}
+    - {type: OperationIdentifierEqual, value: Contraction_l_Ailk_Bljk_Cijk_Dijk}
+    - type: BiasDataTypeWhiteList
+      value: [Float, Half]
+    - type: BiasSrcWhiteList
+      value: [3]
+    - {type: AmaxDCheck, value: false}
+    - type: ActivationEnumWhiteList
+      value: [None, Abs, Clippedrelu, Gelu, Leakyrelu, Relu, Sigmoid, Tanh, Geluscaling,
+        Silu, Swish, Clamp]
+    - type: TypesEqual
+      value: [Half, Half, Half, Half, Half, Half]
+    - {type: HighPrecisionAccumulate, value: true}
+    - {type: Activation, value: All}
+    - {type: ActivationComputeType, value: Float}
+    - {type: ActivationNoGuard, value: false}
+    - {type: UseGradient, value: false}
+    - {type: UseBias, value: 3}
+    - {type: UseE, value: false}
+    - {type: DataTypeE, value: Half}
+    - {type: StridedBatched, value: true}
+    - {type: GroupedGemm, value: false}
+    - {type: UseScaleAB, value: ''}
+    - {type: UseScaleCD, value: false}
+    - {type: UseScaleAlphaVec, value: 3}
+    - {type: Sparse, value: 1}
+    - {type: F32XdlMathOp, value: Float}
+    - {type: SupportDeviceUserArguments, value: true}
+    - {type: SwizzleTensorA, value: false}
+    - {type: SwizzleTensorB, value: false}
+    - {type: MXBlockA, value: 0}
+    - {type: MXBlockB, value: 0}
+    - index: 0
+      type: WorkgroupNumberCheck
+      value: [128, 128, 1]
+    - {type: LeadingFree0SizesGreaterOrEqual, value: 8}
+    - {type: LeadingFree1SizesGreaterOrEqual, value: 1}
+    - {type: KernelLanguageCompatible, value: Assembly}
+    - type: BufferLoadOffsetLimitCheck
+      value: {DUorMT0: 128, DUorMT1: 128, ShiftPtrElemA: 8, ShiftPtrElemB: 0}
+    - {type: BufferLoadOffsetLimitCheck_Beta, value: 128}
+    - {type: BufferStoreOffsetLimitCheck, value: 128}
+    - type: GlobalSplitUCheckMinK
+      value: [32, 1]
+    - type: WorkgroupMappingXCCCheck
+      value: [1, -1]
+    - type: ClusterDimCheck
+      value: [128, 128, 1, 1, 1]
+  problemType:
+    aType: Half
+    activationArgLength: 2
+    activationComputeDataType: Float
+    activationNoGuard: false
+    activationType: All
+    bType: Half
+    biasDataTypeWhiteList: [Float, Half]
+    biasSrcWhiteList: [3]
+    cType: Half
+    computeInputTypeA: Half
+    computeInputTypeB: Half
+    computeType: Float
+    dType: Half
+    eType: Half
+    f32XdlMathOp: Float
+    groupedGemm: false
+    highPrecisionAccumulate: true
+    metadataLayout: 0
+    mxBlockA: 0
+    mxBlockB: 0
+    mxScaleFormat: 0
+    mxTypeA: E8
+    mxTypeB: E8
+    operationIdentifier: Contraction_l_Ailk_Bljk_Cijk_Dijk
+    outputAmaxD: false
+    sparse: 1
+    stridedBatched: true
+    supportDeviceUserArguments: true
+    swizzleTensorA: false
+    swizzleTensorB: false
+    transA: false
+    transB: false
+    useBeta: true
+    useBias: 3
+    useE: false
+    useGradient: false
+    useInitialStridesAB: false
+    useInitialStridesCD: false
+    useScaleAB: ''
+    useScaleAlphaVec: 3
+    useScaleCD: false
+  sizeMapping:
+    CUOccupancy: 3
+    CustomKernelName: ''
+    DirectToLdsA: false
+    DirectToLdsB: false
+    DirectToVgprA: false
+    DirectToVgprB: false
+    ExpertSchedulingMode: 0
+    LocalSplitU: 1
+    MathClocksUnrolledLoop: 0
+    NonTemporalD: 0
+    NumLoadsCoalescedA: 1
+    NumLoadsCoalescedB: 1
+    PrefetchGlobalRead: 2
+    UnrollLoopSwapGlobalReadOrder: 0
+    VectorWidthA: 1
+    VectorWidthB: 1
+    WaveGroup: [2, 2]
+    WaveSeparateGlobalReadA: 0
+    WaveSeparateGlobalReadB: 0
+    activationFused: true
+    adaptiveGemmGSUA: 0
+    clusterDim: [1, 1]
+    customMainLoopScheduling: 0
+    depthU: 128
+    globalAccumulation: 2
+    globalSplitU: 1
+    globalSplitUCoalesced: false
+    globalSplitUPGR: 16
+    globalSplitUWorkGroupMappingRoundRobin: false
+    grvwA: 8
+    grvwB: 8
+    gwvwC: 8
+    gwvwD: 8
+    macroTile: [128, 128, 1]
+    magicDivAlg: 2
+    matrixInstruction: [16, 16, 64, 1]
+    nonTemporalA: 0
+    nonTemporalB: 0
+    packBatchDims: 0
+    sourceKernel: false
+    staggerStrideShift: 0
+    staggerU: 32
+    staggerUMapping: 0
+    streamK: 0
+    streamKAtomic: 0
+    synchronizerSizePerWG: 8192
+    threadTile: [1, 1]
+    waveNum: 4
+    workGroup: [32, 4, 1]
+    workGroupMapping: 8
+    workGroupMappingXCC: 1
+    workGroupMappingXCCGroup: -1
+    workspaceSizePerElemBias: 0
+    workspaceSizePerElemC: 4
+  taskPredicate:
+    type: And
+    value:
+    - {type: WorkspaceCheck}
+    - {type: LaunchLimits}
+- debugKernel: false
+  hardwarePredicate:
+    type: AMDGPU
+    value: {type: Processor, value: gfx1250}
+  ideals: {}
+  index: 3
+  internalArgsSupport: {gsu: true, staggerU: true, useSFC: false, useUniversalArgs: true,
+    version: 2, wgm: true}
+  kernelName: Cijk_Ailk_Bljk_HHS_BH_Bias_FDMN_SPAML0_A_S_SAV_UserArgs_MT128x128x128_MI16x16x1_SN_LDSB1_AFC1_AG0_AFEM1_AFEM1_ASEM8_CB0_CD1_1_CLR1_CADS0_DTLA0_DTLB0_DTLM0_DTVA0_DTVB0_DTVMXSA0_DTVMXSB0_DTVSM0_DPLB0_EPS1_ELFLR0_EMLLn1_FDSI0_GRPM1_GRVWA8_GRVWB8_GSUAMB_GLS0_HPLR0_ISA1250_ICIW0_IU1_K1_LDSTI0_LBSPPA2048_LBSPPB256_LBSPPMXSA0_LBSPPMXSB0_LBSPPM0_LPA16_LPB8_LPMXSA0_LPMXSB0_LPM2_LRVWn1_LWPMn1_MIAV1_MIWT4_4_MXLIBL_MXSFNS_MO40_MGRIPM1_NTn1_NTA0_NTB0_NTC0_NTD0_NTM0_NEPBS0_NLCA1_NLCB1_ONLL1_PGR2_PLR1_PKA1_SGROB0_SIA3_SS0_SPO0_SRVW0_SSO0_SVW8_SK0_SKFTR0_SKXCCM0_SIP1_SGRO0_TDMI0_TDMS0_TIN0_TLDS1_TLDSM1_ULSGRO0_USL1_USLMX0_UIOFGRO0_UPLRP0_USFGROn1_USI0_VSn1_VWA1_VWB1_WSGRA0_WSGRB0_WS32_WG32_4_1
+  libraryLogicIndex: -1
+  linearModel: {}
+  name: Cijk_Ailk_Bljk_HHS_BH_Bias_FDMN_SPAML0_A_S_SAV_UserArgs_MT128x128x128_MI16x16x1_SN_LDSB1_AFC1_AG0_AFEM1_AFEM1_ASEM8_CB0_CD1_1_CLR1_CADS0_DTLA0_DTLB0_DTLM0_DTVA0_DTVB0_DTVMXSA0_DTVMXSB0_DTVSM0_DPLB0_EPS1_ELFLR0_EMLLn1_FDSI0_GRPM1_GRVWA8_GRVWB8_GSU2_GSUAMB_GSUC0_GSUWGMRR0_GLS0_HPLR0_ISA1250_ICIW0_IU1_K1_LDSTI0_LBSPPA2048_LBSPPB256_LBSPPMXSA0_LBSPPMXSB0_LBSPPM0_LPA16_LPB8_LPMXSA0_LPMXSB0_LPM2_LRVWn1_LWPMn1_MIAV1_MIWT4_4_MXLIBL_MXSFNS_MO40_MGRIPM1_NTn1_NTA0_NTB0_NTC0_NTD0_NTM0_NEPBS0_NLCA1_NLCB1_ONLL1_PGR2_PLR1_PKA1_SGROB0_SIA3_SS0_SU32_SUM0_SUS256_SPO0_SRVW0_SSO0_SVW8_SK0_SKFTR0_SKXCCM0_SIP1_SGRO0_TDMI0_TDMS0_TIN0_TLDS1_TLDSM1_ULSGRO0_USL1_USLMX0_UIOFGRO0_UPLRP0_USFGROn1_USI0_VSn1_VWA1_VWB1_WSGRA0_WSGRB0_WS32_WG32_4_1_WGM8_WGMXCC1_WGMXCCGn1
+  problemPredicate:
+    type: And
+    value:
+    - {index: -1, type: BoundSizeMultiple, value: 8}
+    - {type: OperationIdentifierEqual, value: Contraction_l_Ailk_Bljk_Cijk_Dijk}
+    - type: BiasDataTypeWhiteList
+      value: [Float, Half]
+    - type: BiasSrcWhiteList
+      value: [3]
+    - {type: AmaxDCheck, value: false}
+    - type: ActivationEnumWhiteList
+      value: [None, Abs, Clippedrelu, Gelu, Leakyrelu, Relu, Sigmoid, Tanh, Geluscaling,
+        Silu, Swish, Clamp]
+    - type: TypesEqual
+      value: [Half, Half, Half, Half, Half, Half]
+    - {type: HighPrecisionAccumulate, value: true}
+    - {type: Activation, value: All}
+    - {type: ActivationComputeType, value: Float}
+    - {type: ActivationNoGuard, value: false}
+    - {type: UseGradient, value: false}
+    - {type: UseBias, value: 3}
+    - {type: UseE, value: false}
+    - {type: DataTypeE, value: Half}
+    - {type: StridedBatched, value: true}
+    - {type: GroupedGemm, value: false}
+    - {type: UseScaleAB, value: ''}
+    - {type: UseScaleCD, value: false}
+    - {type: UseScaleAlphaVec, value: 3}
+    - {type: Sparse, value: 1}
+    - {type: F32XdlMathOp, value: Float}
+    - {type: SupportDeviceUserArguments, value: true}
+    - {type: SwizzleTensorA, value: false}
+    - {type: SwizzleTensorB, value: false}
+    - {type: MXBlockA, value: 0}
+    - {type: MXBlockB, value: 0}
+    - index: 0
+      type: WorkgroupNumberCheck
+      value: [128, 128, 2]
+    - {type: LeadingFree0SizesGreaterOrEqual, value: 8}
+    - {type: LeadingFree1SizesGreaterOrEqual, value: 1}
+    - {type: KernelLanguageCompatible, value: Assembly}
+    - type: BufferLoadOffsetLimitCheck
+      value: {DUorMT0: 128, DUorMT1: 128, ShiftPtrElemA: 8, ShiftPtrElemB: 0}
+    - {type: BufferLoadOffsetLimitCheck_Beta, value: 128}
+    - {type: BufferStoreOffsetLimitCheck, value: 128}
+    - type: GlobalSplitUCheckMinK
+      value: [32, 2]
+    - type: WorkgroupMappingXCCCheck
+      value: [1, -1]
+    - type: ClusterDimCheck
+      value: [128, 128, 2, 1, 1]
+  problemType:
+    aType: Half
+    activationArgLength: 2
+    activationComputeDataType: Float
+    activationNoGuard: false
+    activationType: All
+    bType: Half
+    biasDataTypeWhiteList: [Float, Half]
+    biasSrcWhiteList: [3]
+    cType: Half
+    computeInputTypeA: Half
+    computeInputTypeB: Half
+    computeType: Float
+    dType: Half
+    eType: Half
+    f32XdlMathOp: Float
+    groupedGemm: false
+    highPrecisionAccumulate: true
+    metadataLayout: 0
+    mxBlockA: 0
+    mxBlockB: 0
+    mxScaleFormat: 0
+    mxTypeA: E8
+    mxTypeB: E8
+    operationIdentifier: Contraction_l_Ailk_Bljk_Cijk_Dijk
+    outputAmaxD: false
+    sparse: 1
+    stridedBatched: true
+    supportDeviceUserArguments: true
+    swizzleTensorA: false
+    swizzleTensorB: false
+    transA: false
+    transB: false
+    useBeta: true
+    useBias: 3
+    useE: false
+    useGradient: false
+    useInitialStridesAB: false
+    useInitialStridesCD: false
+    useScaleAB: ''
+    useScaleAlphaVec: 3
+    useScaleCD: false
+  sizeMapping:
+    CUOccupancy: 3
+    CustomKernelName: ''
+    DirectToLdsA: false
+    DirectToLdsB: false
+    DirectToVgprA: false
+    DirectToVgprB: false
+    ExpertSchedulingMode: 0
+    LocalSplitU: 1
+    MathClocksUnrolledLoop: 0
+    NonTemporalD: 0
+    NumLoadsCoalescedA: 1
+    NumLoadsCoalescedB: 1
+    PrefetchGlobalRead: 2
+    UnrollLoopSwapGlobalReadOrder: 0
+    VectorWidthA: 1
+    VectorWidthB: 1
+    WaveGroup: [2, 2]
+    WaveSeparateGlobalReadA: 0
+    WaveSeparateGlobalReadB: 0
+    activationFused: true
+    adaptiveGemmGSUA: 0
+    clusterDim: [1, 1]
+    customMainLoopScheduling: 0
+    depthU: 128
+    globalAccumulation: 2
+    globalSplitU: 2
+    globalSplitUCoalesced: false
+    globalSplitUPGR: 16
+    globalSplitUWorkGroupMappingRoundRobin: false
+    grvwA: 8
+    grvwB: 8
+    gwvwC: 8
+    gwvwD: 8
+    macroTile: [128, 128, 1]
+    magicDivAlg: 2
+    matrixInstruction: [16, 16, 64, 1]
+    nonTemporalA: 0
+    nonTemporalB: 0
+    packBatchDims: 0
+    sourceKernel: false
+    staggerStrideShift: 0
+    staggerU: 32
+    staggerUMapping: 0
+    streamK: 0
+    streamKAtomic: 0
+    synchronizerSizePerWG: 8192
+    threadTile: [1, 1]
+    waveNum: 4
+    workGroup: [32, 4, 1]
+    workGroupMapping: 8
+    workGroupMappingXCC: 1
+    workGroupMappingXCCGroup: -1
+    workspaceSizePerElemBias: 0
+    workspaceSizePerElemC: 4
+  taskPredicate:
+    type: And
+    value:
+    - {type: WorkspaceCheck}
+    - {type: LaunchLimits}
+...

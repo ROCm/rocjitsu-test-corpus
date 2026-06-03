@@ -1,0 +1,3 @@
+Tensile/Tests/common/streamk/gfx1250/sk_sgemm_quick.yaml
+Tensile/Tests/common/sparse/gfx1250/spmm_b8f8.yaml
+Tensile/Tests/common/gradient/gfx1250/hhs_dgelu_gfx1250.yaml

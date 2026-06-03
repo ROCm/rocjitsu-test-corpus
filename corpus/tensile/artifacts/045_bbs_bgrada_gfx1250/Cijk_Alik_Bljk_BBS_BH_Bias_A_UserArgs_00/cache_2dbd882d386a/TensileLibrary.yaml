@@ -1,0 +1,424 @@
+---
+library:
+  rows:
+  - library: {index: 0, type: Single}
+    predicate:
+      type: And
+      value:
+      - {type: OperationIdentifierEqual, value: Contraction_l_Alik_Bljk_Cijk_Dijk}
+      - type: BiasDataTypeWhiteList
+        value: [Float, BFloat16]
+      - type: BiasSrcWhiteList
+        value: [0]
+      - {type: AmaxDCheck, value: false}
+      - type: TypesEqual
+        value: [BFloat16, BFloat16, BFloat16, BFloat16, BFloat16, BFloat16]
+      - {type: HighPrecisionAccumulate, value: true}
+      - {type: Activation, value: None}
+      - {type: ActivationComputeType, value: Float}
+      - {type: ActivationNoGuard, value: false}
+      - {type: UseGradient, value: true}
+      - {type: UseBias, value: 1}
+      - {type: UseE, value: false}
+      - {type: DataTypeE, value: BFloat16}
+      - {type: StridedBatched, value: true}
+      - {type: GroupedGemm, value: false}
+      - {type: UseScaleAB, value: ''}
+      - {type: UseScaleCD, value: false}
+      - {type: UseScaleAlphaVec, value: 0}
+      - {type: Sparse, value: 0}
+      - {type: F32XdlMathOp, value: Float}
+      - {type: SupportDeviceUserArguments, value: true}
+      - {type: SwizzleTensorA, value: false}
+      - {type: SwizzleTensorB, value: false}
+      - {type: MXBlockA, value: 0}
+      - {type: MXBlockB, value: 0}
+      - index: 0
+        type: WorkgroupNumberCheck
+        value: [16, 16, 1]
+      - {type: LeadingFree0SizesGreaterOrEqual, value: 1}
+      - {type: LeadingFree1SizesGreaterOrEqual, value: 1}
+      - {type: KernelLanguageCompatible, value: Assembly}
+      - type: BufferLoadOffsetLimitCheck
+        value: {DUorMT0: 16, DUorMT1: 16, ShiftPtrElemA: 0, ShiftPtrElemB: 0}
+      - {type: BufferLoadOffsetLimitCheck_Beta, value: 16}
+      - {type: BufferStoreOffsetLimitCheck, value: 16}
+      - type: GlobalSplitUCheckMinK
+        value: [32, 1]
+      - type: WorkgroupMappingXCCCheck
+        value: [1, -1]
+      - type: ClusterDimCheck
+        value: [16, 16, 1, 1, 1]
+  - library: {index: 1, type: Single}
+    predicate:
+      type: And
+      value:
+      - {type: OperationIdentifierEqual, value: Contraction_l_Alik_Bljk_Cijk_Dijk}
+      - type: BiasDataTypeWhiteList
+        value: [Float, BFloat16]
+      - type: BiasSrcWhiteList
+        value: [0]
+      - {type: AmaxDCheck, value: false}
+      - type: TypesEqual
+        value: [BFloat16, BFloat16, BFloat16, BFloat16, BFloat16, BFloat16]
+      - {type: HighPrecisionAccumulate, value: true}
+      - {type: Activation, value: None}
+      - {type: ActivationComputeType, value: Float}
+      - {type: ActivationNoGuard, value: false}
+      - {type: UseGradient, value: true}
+      - {type: UseBias, value: 1}
+      - {type: UseE, value: false}
+      - {type: DataTypeE, value: BFloat16}
+      - {type: StridedBatched, value: true}
+      - {type: GroupedGemm, value: false}
+      - {type: UseScaleAB, value: ''}
+      - {type: UseScaleCD, value: false}
+      - {type: UseScaleAlphaVec, value: 0}
+      - {type: Sparse, value: 0}
+      - {type: F32XdlMathOp, value: Float}
+      - {type: SupportDeviceUserArguments, value: true}
+      - {type: SwizzleTensorA, value: false}
+      - {type: SwizzleTensorB, value: false}
+      - {type: MXBlockA, value: 0}
+      - {type: MXBlockB, value: 0}
+      - index: 0
+        type: WorkgroupNumberCheck
+        value: [16, 16, 1]
+      - {type: LeadingFree0SizesGreaterOrEqual, value: 1}
+      - {type: LeadingFree1SizesGreaterOrEqual, value: 1}
+      - {type: KernelLanguageCompatible, value: Assembly}
+      - type: BufferLoadOffsetLimitCheck
+        value: {DUorMT0: 16, DUorMT1: 16, ShiftPtrElemA: 0, ShiftPtrElemB: 0}
+      - {type: BufferLoadOffsetLimitCheck_Beta, value: 16}
+      - {type: BufferStoreOffsetLimitCheck, value: 16}
+      - type: GlobalSplitUCheckMinK
+        value: [32, 1]
+      - type: WorkgroupMappingXCCCheck
+        value: [1, -1]
+      - type: ClusterDimCheck
+        value: [16, 16, 1, 1, 1]
+  type: Problem
+solutions:
+- debugKernel: false
+  hardwarePredicate:
+    type: AMDGPU
+    value: {type: Processor, value: gfx1250}
+  ideals: {}
+  index: 0
+  internalArgsSupport: {gsu: true, staggerU: true, useSFC: false, useUniversalArgs: true,
+    version: 2, wgm: true}
+  kernelName: Cijk_Alik_Bljk_BBS_BH_Bias_A_UserArgs_MT16x16x32_MI16x16x1_SN_LDSB0_AFC0_AG0_AFEM1_AFEM1_ASEM1_CB0_CD1_1_CLR0_CADS0_DTLA0_DTLB0_DTLM0_DTVA0_DTVB0_DTVMXSA0_DTVMXSB0_DTVSM0_DPLB0_EPS0_ELFLR0_EMLLn1_FDSI0_GRPM1_GRVWA8_GRVWB8_GSUAMB_GLS0_HPLR0_ISA1250_ICIW1_IU1_K1_LDSTI0_LBSPPA256_LBSPPB256_LBSPPMXSA0_LBSPPMXSB0_LBSPPM0_LPA8_LPB8_LPMXSA0_LPMXSB0_LPM0_LRVWn1_LWPMn1_MIAV1_MIWT1_1_MXLIBL_MXSFNS_MO40_MGRIPM1_NTn1_NTA0_NTB0_NTC0_NTD0_NTM0_NEPBS0_NLCA1_NLCB1_ONLL1_PGR2_PLR0_PKA1_SGROB0_SIA3_SS0_SPO0_SRVW0_SSO0_SVW8_SK0_SKFTR0_SKXCCM0_SIP1_SGRO0_TDMI0_TDMS0_TIN0_TLDS1_TLDSMn1_ULSGRO0_USL1_USLMX0_UIOFGRO0_UPLRP0_USFGROn1_USI0_VSn1_VWA1_VWB1_WSGRA0_WSGRB0_WS32_WG16_2_1
+  libraryLogicIndex: -1
+  linearModel: {}
+  name: Cijk_Alik_Bljk_BBS_BH_Bias_A_UserArgs_MT16x16x32_MI16x16x1_SN_LDSB0_AFC0_AG0_AFEM1_AFEM1_ASEM1_CB0_CD1_1_CLR0_CADS0_DTLA0_DTLB0_DTLM0_DTVA0_DTVB0_DTVMXSA0_DTVMXSB0_DTVSM0_DPLB0_EPS0_ELFLR0_EMLLn1_FDSI0_GRPM1_GRVWA8_GRVWB8_GSU1_GSUAMB_GSUC0_GSUWGMRR0_GLS0_HPLR0_ISA1250_ICIW1_IU1_K1_LDSTI0_LBSPPA256_LBSPPB256_LBSPPMXSA0_LBSPPMXSB0_LBSPPM0_LPA8_LPB8_LPMXSA0_LPMXSB0_LPM0_LRVWn1_LWPMn1_MIAV1_MIWT1_1_MXLIBL_MXSFNS_MO40_MGRIPM1_NTn1_NTA0_NTB0_NTC0_NTD0_NTM0_NEPBS0_NLCA1_NLCB1_ONLL1_PGR2_PLR0_PKA1_SGROB0_SIA3_SS0_SU32_SUM0_SUS256_SPO0_SRVW0_SSO0_SVW8_SK0_SKFTR0_SKXCCM0_SIP1_SGRO0_TDMI0_TDMS0_TIN0_TLDS1_TLDSMn1_ULSGRO0_USL1_USLMX0_UIOFGRO0_UPLRP0_USFGROn1_USI0_VSn1_VWA1_VWB1_WSGRA0_WSGRB0_WS32_WG16_2_1_WGM8_WGMXCC1_WGMXCCGn1
+  problemPredicate:
+    type: And
+    value:
+    - {type: OperationIdentifierEqual, value: Contraction_l_Alik_Bljk_Cijk_Dijk}
+    - type: BiasDataTypeWhiteList
+      value: [Float, BFloat16]
+    - type: BiasSrcWhiteList
+      value: [0]
+    - {type: AmaxDCheck, value: false}
+    - type: TypesEqual
+      value: [BFloat16, BFloat16, BFloat16, BFloat16, BFloat16, BFloat16]
+    - {type: HighPrecisionAccumulate, value: true}
+    - {type: Activation, value: None}
+    - {type: ActivationComputeType, value: Float}
+    - {type: ActivationNoGuard, value: false}
+    - {type: UseGradient, value: true}
+    - {type: UseBias, value: 1}
+    - {type: UseE, value: false}
+    - {type: DataTypeE, value: BFloat16}
+    - {type: StridedBatched, value: true}
+    - {type: GroupedGemm, value: false}
+    - {type: UseScaleAB, value: ''}
+    - {type: UseScaleCD, value: false}
+    - {type: UseScaleAlphaVec, value: 0}
+    - {type: Sparse, value: 0}
+    - {type: F32XdlMathOp, value: Float}
+    - {type: SupportDeviceUserArguments, value: true}
+    - {type: SwizzleTensorA, value: false}
+    - {type: SwizzleTensorB, value: false}
+    - {type: MXBlockA, value: 0}
+    - {type: MXBlockB, value: 0}
+    - index: 0
+      type: WorkgroupNumberCheck
+      value: [16, 16, 1]
+    - {type: LeadingFree0SizesGreaterOrEqual, value: 1}
+    - {type: LeadingFree1SizesGreaterOrEqual, value: 1}
+    - {type: KernelLanguageCompatible, value: Assembly}
+    - type: BufferLoadOffsetLimitCheck
+      value: {DUorMT0: 16, DUorMT1: 16, ShiftPtrElemA: 0, ShiftPtrElemB: 0}
+    - {type: BufferLoadOffsetLimitCheck_Beta, value: 16}
+    - {type: BufferStoreOffsetLimitCheck, value: 16}
+    - type: GlobalSplitUCheckMinK
+      value: [32, 1]
+    - type: WorkgroupMappingXCCCheck
+      value: [1, -1]
+    - type: ClusterDimCheck
+      value: [16, 16, 1, 1, 1]
+  problemType:
+    aType: BFloat16
+    activationArgLength: 0
+    activationComputeDataType: Float
+    activationNoGuard: false
+    activationType: None
+    bType: BFloat16
+    biasDataTypeWhiteList: [Float, BFloat16]
+    biasSrcWhiteList: [0]
+    cType: BFloat16
+    computeInputTypeA: BFloat16
+    computeInputTypeB: BFloat16
+    computeType: Float
+    dType: BFloat16
+    eType: BFloat16
+    f32XdlMathOp: Float
+    groupedGemm: false
+    highPrecisionAccumulate: true
+    metadataLayout: 0
+    mxBlockA: 0
+    mxBlockB: 0
+    mxScaleFormat: 0
+    mxTypeA: E8
+    mxTypeB: E8
+    operationIdentifier: Contraction_l_Alik_Bljk_Cijk_Dijk
+    outputAmaxD: false
+    sparse: 0
+    stridedBatched: true
+    supportDeviceUserArguments: true
+    swizzleTensorA: false
+    swizzleTensorB: false
+    transA: true
+    transB: false
+    useBeta: true
+    useBias: 1
+    useE: false
+    useGradient: true
+    useInitialStridesAB: false
+    useInitialStridesCD: false
+    useScaleAB: ''
+    useScaleAlphaVec: 0
+    useScaleCD: false
+  sizeMapping:
+    CUOccupancy: 10
+    CustomKernelName: ''
+    DirectToLdsA: false
+    DirectToLdsB: false
+    DirectToVgprA: false
+    DirectToVgprB: false
+    ExpertSchedulingMode: 2
+    LocalSplitU: 1
+    MathClocksUnrolledLoop: 0
+    NonTemporalD: 0
+    NumLoadsCoalescedA: 1
+    NumLoadsCoalescedB: 1
+    PrefetchGlobalRead: 2
+    UnrollLoopSwapGlobalReadOrder: 0
+    VectorWidthA: 1
+    VectorWidthB: 1
+    WaveGroup: [1, 1]
+    WaveSeparateGlobalReadA: 0
+    WaveSeparateGlobalReadB: 0
+    activationFused: true
+    adaptiveGemmGSUA: 0
+    clusterDim: [1, 1]
+    customMainLoopScheduling: 0
+    depthU: 32
+    globalAccumulation: 2
+    globalSplitU: 1
+    globalSplitUCoalesced: false
+    globalSplitUPGR: 16
+    globalSplitUWorkGroupMappingRoundRobin: false
+    grvwA: 8
+    grvwB: 8
+    gwvwC: 8
+    gwvwD: 8
+    macroTile: [16, 16, 1]
+    magicDivAlg: 2
+    matrixInstruction: [16, 16, 32, 1]
+    nonTemporalA: 0
+    nonTemporalB: 0
+    packBatchDims: 0
+    sourceKernel: false
+    staggerStrideShift: 2
+    staggerU: 32
+    staggerUMapping: 0
+    streamK: 0
+    streamKAtomic: 0
+    synchronizerSizePerWG: 8
+    threadTile: [1, 1]
+    waveNum: 1
+    workGroup: [16, 2, 1]
+    workGroupMapping: 8
+    workGroupMappingXCC: 1
+    workGroupMappingXCCGroup: -1
+    workspaceSizePerElemBias: 4
+    workspaceSizePerElemC: 4
+  taskPredicate:
+    type: And
+    value:
+    - {type: WorkspaceCheck}
+    - {type: LaunchLimits}
+- debugKernel: false
+  hardwarePredicate:
+    type: AMDGPU
+    value: {type: Processor, value: gfx1250}
+  ideals: {}
+  index: 1
+  internalArgsSupport: {gsu: true, staggerU: true, useSFC: false, useUniversalArgs: true,
+    version: 2, wgm: true}
+  kernelName: Cijk_Alik_Bljk_BBS_BH_Bias_A_UserArgs_MT16x16x32_MI16x16x1_SN_LDSB0_AFC0_AG0_AFEM1_AFEM1_ASEM1_CB0_CD1_1_CLR0_CADS0_DTLA0_DTLB0_DTLM0_DTVA0_DTVB0_DTVMXSA0_DTVMXSB0_DTVSM0_DPLB0_EPS0_ELFLR0_EMLLn1_FDSI0_GRPM1_GRVWA8_GRVWB8_GSUAMB_GLS0_HPLR0_ISA1250_ICIW1_IU1_K1_LDSTI0_LBSPPA256_LBSPPB256_LBSPPMXSA0_LBSPPMXSB0_LBSPPM0_LPA8_LPB8_LPMXSA0_LPMXSB0_LPM0_LRVWn1_LWPMn1_MIAV1_MIWT1_1_MXLIBL_MXSFNS_MO40_MGRIPM1_NTn1_NTA0_NTB0_NTC0_NTD0_NTM0_NEPBS0_NLCA1_NLCB1_ONLL1_PGR2_PLR0_PKA1_SGROB0_SIA3_SS0_SPO0_SRVW0_SSO0_SVW1_SK0_SKFTR0_SKXCCM0_SIP1_SGRO0_TDMI0_TDMS0_TIN0_TLDS1_TLDSMn1_ULSGRO0_USL1_USLMX0_UIOFGRO0_UPLRP0_USFGROn1_USI0_VSn1_VWA1_VWB1_WSGRA0_WSGRB0_WS32_WG16_2_1
+  libraryLogicIndex: -1
+  linearModel: {}
+  name: Cijk_Alik_Bljk_BBS_BH_Bias_A_UserArgs_MT16x16x32_MI16x16x1_SN_LDSB0_AFC0_AG0_AFEM1_AFEM1_ASEM1_CB0_CD1_1_CLR0_CADS0_DTLA0_DTLB0_DTLM0_DTVA0_DTVB0_DTVMXSA0_DTVMXSB0_DTVSM0_DPLB0_EPS0_ELFLR0_EMLLn1_FDSI0_GRPM1_GRVWA8_GRVWB8_GSU1_GSUAMB_GSUC0_GSUWGMRR0_GLS0_HPLR0_ISA1250_ICIW1_IU1_K1_LDSTI0_LBSPPA256_LBSPPB256_LBSPPMXSA0_LBSPPMXSB0_LBSPPM0_LPA8_LPB8_LPMXSA0_LPMXSB0_LPM0_LRVWn1_LWPMn1_MIAV1_MIWT1_1_MXLIBL_MXSFNS_MO40_MGRIPM1_NTn1_NTA0_NTB0_NTC0_NTD0_NTM0_NEPBS0_NLCA1_NLCB1_ONLL1_PGR2_PLR0_PKA1_SGROB0_SIA3_SS0_SU32_SUM0_SUS256_SPO0_SRVW0_SSO0_SVW1_SK0_SKFTR0_SKXCCM0_SIP1_SGRO0_TDMI0_TDMS0_TIN0_TLDS1_TLDSMn1_ULSGRO0_USL1_USLMX0_UIOFGRO0_UPLRP0_USFGROn1_USI0_VSn1_VWA1_VWB1_WSGRA0_WSGRB0_WS32_WG16_2_1_WGM8_WGMXCC1_WGMXCCGn1
+  problemPredicate:
+    type: And
+    value:
+    - {type: OperationIdentifierEqual, value: Contraction_l_Alik_Bljk_Cijk_Dijk}
+    - type: BiasDataTypeWhiteList
+      value: [Float, BFloat16]
+    - type: BiasSrcWhiteList
+      value: [0]
+    - {type: AmaxDCheck, value: false}
+    - type: TypesEqual
+      value: [BFloat16, BFloat16, BFloat16, BFloat16, BFloat16, BFloat16]
+    - {type: HighPrecisionAccumulate, value: true}
+    - {type: Activation, value: None}
+    - {type: ActivationComputeType, value: Float}
+    - {type: ActivationNoGuard, value: false}
+    - {type: UseGradient, value: true}
+    - {type: UseBias, value: 1}
+    - {type: UseE, value: false}
+    - {type: DataTypeE, value: BFloat16}
+    - {type: StridedBatched, value: true}
+    - {type: GroupedGemm, value: false}
+    - {type: UseScaleAB, value: ''}
+    - {type: UseScaleCD, value: false}
+    - {type: UseScaleAlphaVec, value: 0}
+    - {type: Sparse, value: 0}
+    - {type: F32XdlMathOp, value: Float}
+    - {type: SupportDeviceUserArguments, value: true}
+    - {type: SwizzleTensorA, value: false}
+    - {type: SwizzleTensorB, value: false}
+    - {type: MXBlockA, value: 0}
+    - {type: MXBlockB, value: 0}
+    - index: 0
+      type: WorkgroupNumberCheck
+      value: [16, 16, 1]
+    - {type: LeadingFree0SizesGreaterOrEqual, value: 1}
+    - {type: LeadingFree1SizesGreaterOrEqual, value: 1}
+    - {type: KernelLanguageCompatible, value: Assembly}
+    - type: BufferLoadOffsetLimitCheck
+      value: {DUorMT0: 16, DUorMT1: 16, ShiftPtrElemA: 0, ShiftPtrElemB: 0}
+    - {type: BufferLoadOffsetLimitCheck_Beta, value: 16}
+    - {type: BufferStoreOffsetLimitCheck, value: 16}
+    - type: GlobalSplitUCheckMinK
+      value: [32, 1]
+    - type: WorkgroupMappingXCCCheck
+      value: [1, -1]
+    - type: ClusterDimCheck
+      value: [16, 16, 1, 1, 1]
+  problemType:
+    aType: BFloat16
+    activationArgLength: 0
+    activationComputeDataType: Float
+    activationNoGuard: false
+    activationType: None
+    bType: BFloat16
+    biasDataTypeWhiteList: [Float, BFloat16]
+    biasSrcWhiteList: [0]
+    cType: BFloat16
+    computeInputTypeA: BFloat16
+    computeInputTypeB: BFloat16
+    computeType: Float
+    dType: BFloat16
+    eType: BFloat16
+    f32XdlMathOp: Float
+    groupedGemm: false
+    highPrecisionAccumulate: true
+    metadataLayout: 0
+    mxBlockA: 0
+    mxBlockB: 0
+    mxScaleFormat: 0
+    mxTypeA: E8
+    mxTypeB: E8
+    operationIdentifier: Contraction_l_Alik_Bljk_Cijk_Dijk
+    outputAmaxD: false
+    sparse: 0
+    stridedBatched: true
+    supportDeviceUserArguments: true
+    swizzleTensorA: false
+    swizzleTensorB: false
+    transA: true
+    transB: false
+    useBeta: true
+    useBias: 1
+    useE: false
+    useGradient: true
+    useInitialStridesAB: false
+    useInitialStridesCD: false
+    useScaleAB: ''
+    useScaleAlphaVec: 0
+    useScaleCD: false
+  sizeMapping:
+    CUOccupancy: 10
+    CustomKernelName: ''
+    DirectToLdsA: false
+    DirectToLdsB: false
+    DirectToVgprA: false
+    DirectToVgprB: false
+    ExpertSchedulingMode: 2
+    LocalSplitU: 1
+    MathClocksUnrolledLoop: 0
+    NonTemporalD: 0
+    NumLoadsCoalescedA: 1
+    NumLoadsCoalescedB: 1
+    PrefetchGlobalRead: 2
+    UnrollLoopSwapGlobalReadOrder: 0
+    VectorWidthA: 1
+    VectorWidthB: 1
+    WaveGroup: [1, 1]
+    WaveSeparateGlobalReadA: 0
+    WaveSeparateGlobalReadB: 0
+    activationFused: true
+    adaptiveGemmGSUA: 0
+    clusterDim: [1, 1]
+    customMainLoopScheduling: 0
+    depthU: 32
+    globalAccumulation: 2
+    globalSplitU: 1
+    globalSplitUCoalesced: false
+    globalSplitUPGR: 16
+    globalSplitUWorkGroupMappingRoundRobin: false
+    grvwA: 8
+    grvwB: 8
+    gwvwC: 1
+    gwvwD: 1
+    macroTile: [16, 16, 1]
+    magicDivAlg: 2
+    matrixInstruction: [16, 16, 32, 1]
+    nonTemporalA: 0
+    nonTemporalB: 0
+    packBatchDims: 0
+    sourceKernel: false
+    staggerStrideShift: 2
+    staggerU: 32
+    staggerUMapping: 0
+    streamK: 0
+    streamKAtomic: 0
+    synchronizerSizePerWG: 8
+    threadTile: [1, 1]
+    waveNum: 1
+    workGroup: [16, 2, 1]
+    workGroupMapping: 8
+    workGroupMappingXCC: 1
+    workGroupMappingXCCGroup: -1
+    workspaceSizePerElemBias: 4
+    workspaceSizePerElemC: 4
+  taskPredicate:
+    type: And
+    value:
+    - {type: WorkspaceCheck}
+    - {type: LaunchLimits}
+...

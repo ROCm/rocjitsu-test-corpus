@@ -1,0 +1,23 @@
+# Python dependencies for reproducing the packaged gfx1250 TensileLite corpus.
+# Install these into a ROCm/TheRock-capable Python environment, then run
+# scripts/build_tensilelite_repro.sh to build rocisa and tensilelite-client.
+packaging
+pyyaml
+msgpack
+joblib>=1.4.0
+simplejson
+ujson
+orjson
+yappi
+tox
+invoke
+numpy
+hip-python
+pytest>=5.4.1
+pytest-xdist>=1.32.0
+filelock
+setuptools
+wheel
+scikit-build-core
+nanobind
+cmake

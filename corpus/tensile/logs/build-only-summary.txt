@@ -1,0 +1,6 @@
+===== 48 passed, 5 skipped, 249 deselected, 1 warning in 238.18s (0:03:58) =====
+262:Tensile/Tests/common/test_config.py::test_config[Tensile/Tests/common/streamk/gfx1250/sk_mxf6b8gemm_quick.yaml] SKIPPED
+467:Tensile/Tests/common/test_config.py::test_config[Tensile/Tests/common/streamk/gfx1250/sk_mxf8f4gemm_quick.yaml] SKIPPED
+1281:Tensile/Tests/common/test_config.py::test_config[Tensile/Tests/common/streamk/gfx1250/sk_mxf4gemm_quick.yaml] SKIPPED
+1538:Tensile/Tests/common/test_config.py::test_config[Tensile/Tests/common/streamk/gfx1250/sk_mxf8gemm_quick.yaml] SKIPPED
+1539:Tensile/Tests/common/test_config.py::test_config[Tensile/Tests/common/streamk/gfx1250/sk_mxf8b6gemm_quick.yaml] SKIPPED
