@@ -47,3 +47,4 @@ case_id,config,elapsed_s,artifact_count
 045_bbs_bgrada_gfx1250,Tensile/Tests/common/gradient/gfx1250/bbs_bgrada_gfx1250.yaml,6.262881,4
 046_hhs_bgradb_gfx1250,Tensile/Tests/common/gradient/gfx1250/hhs_bgradb_gfx1250.yaml,6.24748,4
 047_bbs_bgradb_gfx1250,Tensile/Tests/common/gradient/gfx1250/bbs_bgradb_gfx1250.yaml,6.284486,4
+048_sk_sgemm_runtime_smoke,Tensile/Tests/common/streamk/gfx1250/sk_sgemm_runtime_smoke.yaml,0,0

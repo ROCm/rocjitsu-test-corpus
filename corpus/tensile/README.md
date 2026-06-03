@@ -14,8 +14,12 @@ The configs come from ROCm rocm-libraries commit
 
 - `selected-configs.txt`: all 53 pytest-selected gfx1250 configs.
 - `manifest.csv`: the 48 configs that actually ran after pytest skip markers,
-  with generated artifact counts.
-- `numeric-smoke-configs.txt`: a small default numeric validation subset.
+  with generated artifact counts, plus the reduced SGEMM runtime smoke entry.
+- `numeric-smoke-configs.txt`: a small default numeric validation subset. It
+  uses `sk_sgemm_runtime_smoke.yaml`, a reduced runtime-only copy of the first
+  `sk_sgemm_quick.yaml` benchmark group, because the upstream quick config also
+  contains a 648-solution tuning sweep that is too large for the default
+  simulator smoke.
 - `configs/`: copied source YAML configs.
 - `artifacts/`: generated `gfx1250` library artifacts for each runnable config.
   Each leaf contains:
@@ -68,7 +72,9 @@ omit `--build-only` by using `--numeric`:
 
 Numeric mode runs Tensile's benchmark/validation path and defaults to the three
 configs in `numeric-smoke-configs.txt`. Use `--numeric --all` for every runnable
-config, or `--numeric --case sk_sgemm_quick` for one config.
+config. The full upstream `sk_sgemm_quick.yaml` config remains packaged, but it
+includes a 648-solution tuning sweep and should be treated as a long-form run
+rather than the default kmd.so smoke.
 
 The runner needs a ROCm rocm-libraries checkout with TensileLite available. Set
 `TENSILELITE_ROOT` or pass `--tensilelite-root` if it cannot find a sibling
@@ -76,14 +82,6 @@ checkout automatically. Numeric mode also needs `tensilelite-client`; by default
 the runner looks for `build_tmp/tensilelite/client/tensilelite-client` under the
 TensileLite checkout, or accepts `--prebuilt-client`.
 
-Current kmd.so numeric status: the numeric runner reaches
-`tensilelite-client` and loads the generated gfx1250 code object, but the
-current simulator aborts before validation with:
-
-```text
-AMDHSA kernarg preload exceeds kernarg segment size
-```
-
-This was reproduced on `sk_sgemm_quick.yaml` and `spmm_b8f8.yaml`. The numeric
-runner is kept in the corpus so the same configs become validation checks once
-that simulator issue is fixed or when running against real gfx1250 hardware.
+Current kmd.so numeric status on RocJITsu gfx1250 DBT commit
+`15e78baad4`: the default numeric smoke passes `spmm_b8f8.yaml`,
+`hhs_dgelu_gfx1250.yaml`, and the reduced SGEMM runtime smoke under kmd.so.

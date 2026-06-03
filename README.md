@@ -49,6 +49,11 @@ Tensile rebuild and numeric smoke checks:
 ./scripts/run_tensile_gfx1250_repro.sh --numeric env/kmd-so.example.sh
 ```
 
+The default Tensile numeric smoke uses a reduced SGEMM runtime config,
+`sk_sgemm_runtime_smoke.yaml`, plus sparse and DGELU checks. The original
+upstream `sk_sgemm_quick.yaml` is still packaged, but it expands to a large
+tuning sweep and is not used by the default kmd.so smoke.
+
 Useful subsets:
 
 ```bash
