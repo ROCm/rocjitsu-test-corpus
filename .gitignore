@@ -1,3 +1,4 @@
 results-*/
 gfx1250-regression-*/
+.pytest-artifacts/
 *.log

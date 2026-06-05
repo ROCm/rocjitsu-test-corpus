@@ -1,0 +1,17 @@
+{
+  "$schema": "../../schemas/run_module_case.schema.json",
+  "name": "gather_like_op",
+  "kind": "run_module",
+  "sources": [
+    "module.mlir"
+  ],
+  "vmfb_names": [
+    "module.vmfb"
+  ],
+  "function": "gather_like_op",
+  "inputs": [],
+  "outputs": [],
+  "expected_output": [],
+  "checks": [],
+  "run_flags": []
+}

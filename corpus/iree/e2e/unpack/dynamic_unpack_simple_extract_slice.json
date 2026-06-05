@@ -1,0 +1,17 @@
+{
+  "$schema": "../../schemas/run_module_case.schema.json",
+  "name": "dynamic_unpack_simple_extract_slice",
+  "kind": "run_module",
+  "sources": [
+    "module.mlir"
+  ],
+  "vmfb_names": [
+    "module.vmfb"
+  ],
+  "function": "dynamic_unpack_simple_extract_slice",
+  "inputs": [],
+  "outputs": [],
+  "expected_output": [],
+  "checks": [],
+  "run_flags": []
+}

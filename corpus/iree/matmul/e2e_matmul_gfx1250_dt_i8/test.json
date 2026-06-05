@@ -1,0 +1,24 @@
+{
+  "$schema": "../../schemas/run_module_case.schema.json",
+  "name": "e2e_matmul_gfx1250_dt_i8",
+  "kind": "run_module",
+  "sources": [
+    "matmul.mlir",
+    "calls.mlir"
+  ],
+  "vmfb_names": [
+    "matmul.vmfb",
+    "calls.vmfb"
+  ],
+  "function": "matmul_accumulate_DYNxDYNxi8_times_DYNxDYNxi8_into_DYNxDYNxi32_1_1_1_acc_0",
+  "inputs": [],
+  "outputs": [],
+  "expected_output": [],
+  "checks": [],
+  "run_flags": [],
+  "compile_flags": [
+    "--iree-dispatch-creation-data-tiling"
+  ],
+  "compile_only": true,
+  "skip_reason": "Generated matmul calls depend on IREE's e2e matmul test support; normalize to a run-module wrapper before enabling execution."
+}

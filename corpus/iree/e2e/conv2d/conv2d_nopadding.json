@@ -1,0 +1,17 @@
+{
+  "$schema": "../../schemas/run_module_case.schema.json",
+  "name": "conv2d_nopadding",
+  "kind": "run_module",
+  "sources": [
+    "module.mlir"
+  ],
+  "vmfb_names": [
+    "module.vmfb"
+  ],
+  "function": "conv2d_nopadding",
+  "inputs": [],
+  "outputs": [],
+  "expected_output": [],
+  "checks": [],
+  "run_flags": []
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "../../schemas/run_module_case.schema.json",
+  "name": "dynamic_unpack_extract_slice_transpose_outer_dims_large",
+  "kind": "run_module",
+  "sources": [
+    "module.mlir"
+  ],
+  "vmfb_names": [
+    "module.vmfb"
+  ],
+  "function": "dynamic_unpack_extract_slice_transpose_outer_dims_large",
+  "inputs": [],
+  "outputs": [],
+  "expected_output": [],
+  "checks": [],
+  "run_flags": []
+}

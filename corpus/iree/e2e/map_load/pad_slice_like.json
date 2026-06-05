@@ -1,0 +1,17 @@
+{
+  "$schema": "../../schemas/run_module_case.schema.json",
+  "name": "pad_slice_like",
+  "kind": "run_module",
+  "sources": [
+    "module.mlir"
+  ],
+  "vmfb_names": [
+    "module.vmfb"
+  ],
+  "function": "pad_slice_like",
+  "inputs": [],
+  "outputs": [],
+  "expected_output": [],
+  "checks": [],
+  "run_flags": []
+}

@@ -1,0 +1,362 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rocjitsu-corpus.local/schemas/iree-run-module-case.schema.json",
+  "title": "IREE run-module corpus case",
+  "description": "One iree-run-module invocation over one or more compiled MLIR sources.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "kind",
+    "sources",
+    "function"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+$",
+      "description": "Stable case identifier used in pytest ids, artifacts, and target skip lists."
+    },
+    "kind": {
+      "const": "run_module"
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/relativePath"
+      },
+      "description": "MLIR source files, in the same order their compiled modules are passed to iree-run-module."
+    },
+    "vmfb_names": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/relativePath"
+      },
+      "description": "Optional artifact names matching sources by position. The harness may derive names when omitted."
+    },
+    "compile_flags": {
+      "$ref": "#/$defs/stringList",
+      "description": "Case-specific flags appended after the selected target config's iree_compile_flags."
+    },
+    "function": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Function name passed as --function for this case invocation."
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Seed used by deterministic generated inputs."
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/input"
+      },
+      "default": []
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relativePath"
+      },
+      "default": [],
+      "description": "Observed output file names materialized via repeated --output=@path flags."
+    },
+    "expected_output": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/expectedOutput"
+      },
+      "default": [],
+      "description": "Python-side reference metadata; not forwarded to iree-run-module."
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/check"
+      },
+      "default": []
+    },
+    "rtol": {
+      "$ref": "#/$defs/nonNegativeNumber",
+      "default": 1e-05
+    },
+    "atol": {
+      "$ref": "#/$defs/nonNegativeNumber",
+      "default": 1e-08
+    },
+    "run_flags": {
+      "$ref": "#/$defs/stringList",
+      "description": "Case-specific flags appended after the selected target config's iree_run_module_flags."
+    },
+    "compile_only": {
+      "type": "boolean",
+      "default": false,
+      "description": "Temporary escape hatch for cases that cannot yet be normalized to iree-run-module."
+    },
+    "skip_reason": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable reason required by convention when a harness skips this case."
+    }
+  },
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "pattern": "^/"
+      }
+    },
+    "stringList": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "dtype": {
+      "enum": [
+        "bool",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "float16",
+        "float32",
+        "float64",
+        "bfloat16"
+      ]
+    },
+    "shape": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "input": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "Formula"
+          ],
+          "properties": {
+            "Formula": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "shape",
+                "dtype"
+              ],
+              "properties": {
+                "shape": {
+                  "$ref": "#/$defs/shape"
+                },
+                "dtype": {
+                  "$ref": "#/$defs/dtype"
+                },
+                "coeff": {
+                  "type": "number",
+                  "default": 1
+                },
+                "offset": {
+                  "type": "number",
+                  "default": 0
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "File"
+          ],
+          "properties": {
+            "File": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path"
+              ],
+              "properties": {
+                "path": {
+                  "$ref": "#/$defs/relativePath"
+                },
+                "shape": {
+                  "$ref": "#/$defs/shape"
+                },
+                "dtype": {
+                  "$ref": "#/$defs/dtype"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "expectedOutput": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "op",
+            "inputs"
+          ],
+          "properties": {
+            "kind": {
+              "const": "formula"
+            },
+            "op": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "path"
+          ],
+          "properties": {
+            "kind": {
+              "const": "file"
+            },
+            "path": {
+              "$ref": "#/$defs/relativePath"
+            }
+          }
+        }
+      ]
+    },
+    "check": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "output"
+          ],
+          "properties": {
+            "kind": {
+              "const": "allclose"
+            },
+            "output": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rtol": {
+              "$ref": "#/$defs/nonNegativeNumber"
+            },
+            "atol": {
+              "$ref": "#/$defs/nonNegativeNumber"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "output",
+            "indices"
+          ],
+          "properties": {
+            "kind": {
+              "const": "sparse_allclose"
+            },
+            "output": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "indices": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "integer"
+                }
+              }
+            },
+            "rtol": {
+              "$ref": "#/$defs/nonNegativeNumber"
+            },
+            "atol": {
+              "$ref": "#/$defs/nonNegativeNumber"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "output",
+            "corner",
+            "shape"
+          ],
+          "properties": {
+            "kind": {
+              "const": "corner_allclose"
+            },
+            "output": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "corner": {
+              "enum": [
+                "top_left",
+                "top_right",
+                "bottom_left",
+                "bottom_right"
+              ]
+            },
+            "shape": {
+              "$ref": "#/$defs/shape"
+            },
+            "rtol": {
+              "$ref": "#/$defs/nonNegativeNumber"
+            },
+            "atol": {
+              "$ref": "#/$defs/nonNegativeNumber"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

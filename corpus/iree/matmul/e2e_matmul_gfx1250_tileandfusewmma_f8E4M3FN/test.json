@@ -1,0 +1,21 @@
+{
+  "$schema": "../../schemas/run_module_case.schema.json",
+  "name": "e2e_matmul_gfx1250_tileandfusewmma_f8E4M3FN",
+  "kind": "run_module",
+  "sources": [
+    "matmul.mlir",
+    "calls.mlir"
+  ],
+  "vmfb_names": [
+    "matmul.vmfb",
+    "calls.vmfb"
+  ],
+  "function": "matmul_accumulate_512x128xf8E4M3FN_times_128x512xf8E4M3FN_into_512x512xf32_for_TileAndFuse_512_128_512_acc_0",
+  "inputs": [],
+  "outputs": [],
+  "expected_output": [],
+  "checks": [],
+  "run_flags": [],
+  "compile_only": true,
+  "skip_reason": "Generated matmul calls depend on IREE's e2e matmul test support; normalize to a run-module wrapper before enabling execution."
+}

@@ -21,3 +21,11 @@ wheel
 scikit-build-core
 nanobind
 cmake
+numpy
+pytest
+
+--pre
+--find-links https://iree.dev/pip-release-links.html
+
+iree-base-runtime==3.12.0rc20260601
+iree-base-compiler==3.12.0rc20260601

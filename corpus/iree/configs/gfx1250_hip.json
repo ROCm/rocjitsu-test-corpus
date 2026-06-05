@@ -1,0 +1,15 @@
+{
+  "$schema": "../schemas/target_config.schema.json",
+  "config_name": "gfx1250_hip",
+  "iree_compile_flags": [
+    "--iree-hal-target-backends=rocm",
+    "--iree-rocm-target=gfx1250"
+  ],
+  "iree_run_module_flags": [
+    "--device=hip"
+  ],
+  "skip_compile_tests": [],
+  "skip_run_tests": [],
+  "expected_compile_failures": [],
+  "expected_run_failures": []
+}

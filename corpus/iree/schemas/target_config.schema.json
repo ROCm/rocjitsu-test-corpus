@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rocjitsu-corpus.local/schemas/iree-target-config.schema.json",
+  "title": "IREE target configuration",
+  "description": "Shared compile and run flags for one iree-run-module target configuration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "config_name",
+    "iree_compile_flags",
+    "iree_run_module_flags"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "config_name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+$",
+      "description": "Stable identifier used in pytest ids and artifact paths."
+    },
+    "iree_compile_flags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Flags passed to iree-compile for every case using this target."
+    },
+    "iree_run_module_flags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Flags passed to iree-run-module for every case using this target."
+    },
+    "iree_run_module_wrapper": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Optional command prefix inserted before iree-run-module, such as a RocJITsu launcher and its flags."
+    },
+    "skip_compile_tests": {
+      "$ref": "#/$defs/caseNameList",
+      "description": "Case names skipped before compilation."
+    },
+    "skip_run_tests": {
+      "$ref": "#/$defs/caseNameList",
+      "description": "Case names skipped after successful compilation."
+    },
+    "expected_compile_failures": {
+      "$ref": "#/$defs/caseNameList",
+      "description": "Case names allowed to fail compilation."
+    },
+    "expected_run_failures": {
+      "$ref": "#/$defs/caseNameList",
+      "description": "Case names allowed to fail execution or output validation."
+    }
+  },
+  "$defs": {
+    "caseNameList": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "default": []
+    }
+  }
+}
