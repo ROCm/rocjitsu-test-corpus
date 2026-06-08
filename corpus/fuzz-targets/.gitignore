@@ -1,0 +1,8 @@
+build/
+CMakeUserPresets.json
+.deps/
+.venv/
+.cache/
+.cursor/
+__pycache__/
+*.py[cod]

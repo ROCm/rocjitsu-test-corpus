@@ -1,0 +1,13 @@
+name = "hip_matmul_matvec"
+project = "hip-matmul"
+runner = "runner.hip"
+upstream_repo = "https://github.com/nod-ai/hip-matmul"
+source = "../../../third_party/hip-matmul"
+default_variant = "upstream"
+
+[input]
+description = "Upstream HIP matvec executable; accepts M, N, K, FILTER, SKIP_CHECK, BENCHMARK_MIN_MS, and FIXED_ITERATIONS through environment variables."
+
+[validation]
+expect = "pass"
+tolerance = "exact checks against host reference for sampled output elements"

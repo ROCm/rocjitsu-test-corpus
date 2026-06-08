@@ -1,0 +1,4 @@
+name = "upstream"
+description = "Extracted nod-ai hip-matmul source with the upstream matmul executable runner."
+patches = []
+expect = "pass"

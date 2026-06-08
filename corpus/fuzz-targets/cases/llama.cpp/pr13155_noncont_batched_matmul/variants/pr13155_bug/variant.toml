@@ -1,0 +1,7 @@
+name = "pr13155_bug"
+description = "Current vendored GGML with PR #13155 bug restored in ggml-cuda.cu; non-contiguous F32 src1 is converted as if it were contiguous, then batched matmul uses the original view strides."
+llama_commit = "7d3af70b089bb349b5d17eb01839224c99ec1952"
+source_overlay = "vendored GGML symlink overlay with src/ggml-cuda/ggml-cuda.cu copied and patched"
+patches = ["patches/reintroduce_pr13155_bug.patch"]
+expect = "fail"
+trigger = "reproduced with src1_view_cols=17, which avoids the latest gfx1201 ggml_cuda_mul_mat_f dispatch and reaches the patched batched cuBLAS path"

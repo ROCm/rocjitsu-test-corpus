@@ -1,0 +1,29 @@
+--- src/ggml-cuda/ggml-cuda.cu
++++ src/ggml-cuda/ggml-cuda.cu
+@@ -2236,10 +2236,18 @@
+-        const auto convert_func = traits::get_nc_converter(src1->type);
+-        GGML_ASSERT(convert_func != nullptr);
+-        convert_func(src1->data, src1_alloc.get(), ne10, ne11, ne12, ne13, s11, s12, s13, main_stream);
++        if constexpr (src0_type == GGML_TYPE_F16) {
++            // PR #13155 pre-fix behavior: convert the src1 view as one contiguous
++            // span and keep the original non-contiguous strides for batched GEMM.
++            const to_fp16_cuda_t convert_func = ggml_get_to_fp16_cuda(src1->type);
++            GGML_ASSERT(convert_func != nullptr);
++            convert_func(src1->data, src1_alloc.get(), ne_src1, main_stream);
++        } else {
++            const auto convert_func = traits::get_nc_converter(src1->type);
++            GGML_ASSERT(convert_func != nullptr);
++            convert_func(src1->data, src1_alloc.get(), ne10, ne11, ne12, ne13, s11, s12, s13, main_stream);
++
++            s11 = ne10;
++            s12 = ne11*s11;
++            s13 = ne12*s12;
++            is_src1_cont_2 = true;
++        }
+         src1_ptr = src1_alloc.get();
+-        s11 = ne10;
+-        s12 = ne11*s11;
+-        s13 = ne12*s12;
+-
+-        is_src1_cont_2 = true;
+     }

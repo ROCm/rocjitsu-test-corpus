@@ -1,0 +1,4 @@
+name = "upstream"
+description = "Extracted HipKittens MXFP8 4-wave GEMM source with a corpus-sized executable runner wrapper."
+patches = []
+expect = "pass"
