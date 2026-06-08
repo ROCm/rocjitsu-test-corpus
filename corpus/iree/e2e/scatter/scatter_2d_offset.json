@@ -10,8 +10,20 @@
   ],
   "function": "scatter_2d_offset",
   "inputs": [],
-  "outputs": [],
-  "expected_output": [],
-  "checks": [],
+  "outputs": [
+    "output_0.npy"
+  ],
+  "expected_output": [
+    {
+      "kind": "file",
+      "path": "scatter_2d_offset_expected_output_0.npy"
+    }
+  ],
+  "checks": [
+    {
+      "kind": "allclose",
+      "output": 0
+    }
+  ],
   "run_flags": []
 }

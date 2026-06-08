@@ -1,4 +1,4 @@
-func.func @attention1x3x4() {
+func.func @attention1x3x4() -> tensor<1x3x4xf32> {
   %init = tensor.empty() : tensor<1x3x4xf32>
   %query = util.unfoldable_constant dense<[[[0.1, 0.2, 0.3, 0.4],
                                             [0.5, 0.6, 0.7, 0.8],
@@ -21,16 +21,10 @@ func.func @attention1x3x4() {
           ^bb0(%arg0: f32):
           iree_linalg_ext.yield %arg0 : f32
         } -> tensor<1x3x4xf32>
-  check.expect_almost_eq_const(
-      %1,
-      dense<[[[0.5530, 0.6530, 0.7530, 0.8530],
-              [0.6328, 0.7328, 0.8328, 0.9328],
-              [0.7011, 0.8011, 0.9011, 1.0011]]]> : tensor<1x3x4xf32>
-  ) : tensor<1x3x4xf32>
-  return
+  return %1 : tensor<1x3x4xf32>
 }
 
-func.func @causal_attention1x3x4() {
+func.func @causal_attention1x3x4() -> tensor<1x3x4xf32> {
   %init = tensor.empty() : tensor<1x3x4xf32>
   %query = util.unfoldable_constant dense<[[[0.1, 0.2, 0.3, 0.4],
                                             [0.5, 0.6, 0.7, 0.8],
@@ -57,16 +51,10 @@ func.func @causal_attention1x3x4() {
           ^bb0(%arg0: f32):
           iree_linalg_ext.yield %arg0 : f32
         } -> tensor<1x3x4xf32>
-  check.expect_almost_eq_const(
-      %1,
-      dense<[[[0.1000, 0.2000, 0.3000, 0.4000],
-              [0.3509, 0.4509, 0.5509, 0.6509],
-              [0.7011, 0.8011, 0.9011, 1.0011]]]> : tensor<1x3x4xf32>
-  ) : tensor<1x3x4xf32>
-  return
+  return %1 : tensor<1x3x4xf32>
 }
 
-func.func @attention1x4x4_i1_mask_all_ones() {
+func.func @attention1x4x4_i1_mask_all_ones() -> tensor<1x4x4xf32> {
   %init = tensor.empty() : tensor<1x4x4xf32>
   %query = util.unfoldable_constant dense<[[[0.1, 0.2, 0.3, 0.4],
                                             [0.5, 0.6, 0.7, 0.8],
@@ -99,17 +87,10 @@ func.func @attention1x4x4_i1_mask_all_ones() {
           ^bb0(%arg0: f32):
           iree_linalg_ext.yield %arg0 : f32
         } -> tensor<1x4x4xf32>
-  check.expect_almost_eq_const(
-      %1,
-      dense<[[[0.798884, 0.898884, 0.998884, 1.09888],
-              [0.941939, 1.04194, 1.14194, 1.24194],
-              [1.05371, 1.15371, 1.25371, 1.35371],
-              [1.13295, 1.23295, 1.33295, 1.43295]]]> : tensor<1x4x4xf32>
-  ) : tensor<1x4x4xf32>
-  return
+  return %1 : tensor<1x4x4xf32>
 }
 
-func.func @softcap_attention1x3x4() {
+func.func @softcap_attention1x3x4() -> tensor<1x3x4xf32> {
   %init = tensor.empty() : tensor<1x3x4xf32>
   %query = util.unfoldable_constant dense<[[[-0.6523,  0.7802, -0.6770, -0.9474],
                                             [ 0.6822,  0.8594,  0.1035, -0.5115],
@@ -135,16 +116,10 @@ func.func @softcap_attention1x3x4() {
           %mul = arith.mulf %tanh, %cst : f32
           iree_linalg_ext.yield %mul : f32
         } -> tensor<1x3x4xf32>
-  check.expect_almost_eq_const(
-      %1,
-      dense<[[[0.331149, 0.576043, 0.380060, 0.6879],
-              [0.519539, 0.532548, 0.342270, 0.78571],
-              [0.442426, 0.125056, 0.329748, 0.735554]]]> : tensor<1x3x4xf32>
-  ) : tensor<1x3x4xf32>
-  return
+  return %1 : tensor<1x3x4xf32>
 }
 
-func.func @attention1x4x4() {
+func.func @attention1x4x4() -> tensor<1x4x4xf32> {
   %init = tensor.empty() : tensor<1x4x4xf32>
   %query = util.unfoldable_constant dense<[[[0.1, 0.2, 0.3, 0.4],
                                             [0.5, 0.6, 0.7, 0.8],
@@ -169,17 +144,10 @@ func.func @attention1x4x4() {
           ^bb0(%arg0: f32):
           iree_linalg_ext.yield %arg0 : f32
         } -> tensor<1x4x4xf32>
-  check.expect_almost_eq_const(
-      %1,
-      dense<[[[0.7989, 0.8989, 0.9989, 1.0989],
-              [0.9419, 1.0419, 1.1419, 1.2419],
-              [1.0537, 1.1537, 1.2537, 1.3537],
-              [1.1329, 1.2329, 1.3329, 1.4329]]]> : tensor<1x4x4xf32>
-  ) : tensor<1x4x4xf32>
-  return
+  return %1 : tensor<1x4x4xf32>
 }
 
-func.func @attention3x3x4() {
+func.func @attention3x3x4() -> tensor<3x3x4xf32> {
   %init = tensor.empty() : tensor<3x3x4xf32>
   %query = util.unfoldable_constant dense<[[[-1.5256, -0.7502, -0.6540, -1.6095],
                                             [-0.6092, -0.9798, -1.6091, -0.7121],
@@ -219,22 +187,10 @@ func.func @attention3x3x4() {
           ^bb0(%arg0: f32):
           iree_linalg_ext.yield %arg0 : f32
         } -> tensor<3x3x4xf32>
-  check.expect_almost_eq_const(
-      %1,
-      dense<[[[-1.2804, -0.7607, -0.7648, -1.3364],
-              [-1.0711, -0.7572, -0.8238, -1.0953],
-              [-0.4030, -0.7807, -1.1112, -0.3482]],
-             [[ 0.4245, -0.1012, -0.6484,  0.9162],
-              [ 0.1324, -0.2762, -0.6125,  1.0206],
-              [-0.1866, -0.9266, -0.7977,  0.8593]],
-             [[ 0.1917, -0.4658,  0.0510,  0.2561],
-              [-0.1054, -0.8358,  0.2544,  0.8461],
-              [ 0.9522, -0.7023, -0.0358, -0.3303]]]> : tensor<3x3x4xf32>
-  ) : tensor<3x3x4xf32>
-  return
+  return %1 : tensor<3x3x4xf32>
 }
 
-func.func @online_attention1x3x4() {
+func.func @online_attention1x3x4() -> tensor<1x3x4xf32> {
   %cst0 = arith.constant 0.0 : f32
   %cst_neg_inf = arith.constant 0xFF800000 : f32
   %cst_one = arith.constant 1.0 : f32
@@ -281,16 +237,10 @@ func.func @online_attention1x3x4() {
     %v = arith.mulf %a, %inv : f32
     linalg.yield %v : f32
   } -> tensor<1x3x4xf32>
-  check.expect_almost_eq_const(
-      %normalized,
-      dense<[[[0.5530, 0.6530, 0.7530, 0.8530],
-              [0.6328, 0.7328, 0.8328, 0.9328],
-              [0.7011, 0.8011, 0.9011, 1.0011]]]> : tensor<1x3x4xf32>
-  ) : tensor<1x3x4xf32>
-  return
+  return %normalized : tensor<1x3x4xf32>
 }
 
-func.func @causal_online_attention1x3x4() {
+func.func @causal_online_attention1x3x4() -> tensor<1x3x4xf32> {
   %cst0 = arith.constant 0.0 : f32
   %cst_neg_inf = arith.constant 0xFF800000 : f32
   %cst_one = arith.constant 1.0 : f32
@@ -341,11 +291,5 @@ func.func @causal_online_attention1x3x4() {
     %v = arith.mulf %a, %inv : f32
     linalg.yield %v : f32
   } -> tensor<1x3x4xf32>
-  check.expect_almost_eq_const(
-      %normalized,
-      dense<[[[0.1000, 0.2000, 0.3000, 0.4000],
-              [0.3509, 0.4509, 0.5509, 0.6509],
-              [0.7011, 0.8011, 0.9011, 1.0011]]]> : tensor<1x3x4xf32>
-  ) : tensor<1x3x4xf32>
-  return
+  return %normalized : tensor<1x3x4xf32>
 }

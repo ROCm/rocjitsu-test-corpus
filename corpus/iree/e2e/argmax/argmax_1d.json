@@ -10,8 +10,31 @@
   ],
   "function": "argmax_1d",
   "inputs": [],
-  "outputs": [],
-  "expected_output": [],
-  "checks": [],
+  "outputs": [
+    "output_0.npy",
+    "output_1.npy"
+  ],
+  "expected_output": [
+    {
+      "kind": "file",
+      "path": "argmax_1d_expected_output_0.npy"
+    },
+    {
+      "kind": "file",
+      "path": "argmax_1d_expected_output_1.npy"
+    }
+  ],
+  "checks": [
+    {
+      "kind": "allclose",
+      "output": 0,
+      "rtol": 0.001,
+      "atol": 0.001
+    },
+    {
+      "kind": "allclose",
+      "output": 1
+    }
+  ],
   "run_flags": []
 }

@@ -10,8 +10,20 @@
   ],
   "function": "scatter_operand_mask_preserves_original",
   "inputs": [],
-  "outputs": [],
-  "expected_output": [],
-  "checks": [],
+  "outputs": [
+    "output_0.npy"
+  ],
+  "expected_output": [
+    {
+      "kind": "file",
+      "path": "scatter_operand_mask_preserves_original_expected_output_0.npy"
+    }
+  ],
+  "checks": [
+    {
+      "kind": "allclose",
+      "output": 0
+    }
+  ],
   "run_flags": []
 }

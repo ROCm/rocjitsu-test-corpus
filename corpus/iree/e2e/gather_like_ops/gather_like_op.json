@@ -10,8 +10,20 @@
   ],
   "function": "gather_like_op",
   "inputs": [],
-  "outputs": [],
-  "expected_output": [],
-  "checks": [],
+  "outputs": [
+    "output_0.npy"
+  ],
+  "expected_output": [
+    {
+      "kind": "file",
+      "path": "gather_like_op_expected_output_0.npy"
+    }
+  ],
+  "checks": [
+    {
+      "kind": "allclose",
+      "output": 0
+    }
+  ],
   "run_flags": []
 }

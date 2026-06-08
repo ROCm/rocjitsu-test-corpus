@@ -1,4 +1,4 @@
-func.func @argmax_1d() {
+func.func @argmax_1d() -> (tensor<f32>, tensor<i32>) {
   %seven = arith.constant 7.0 : f32
   %input_init = tensor.empty() : tensor<131072xf32>
   %input_filled = linalg.fill ins(%seven : f32) outs(%input_init : tensor<131072xf32>) -> tensor<131072xf32>
@@ -31,9 +31,5 @@ func.func @argmax_1d() {
       %sel_idx = arith.select %cmp, %i_cast, %idx : i32
       linalg.yield %maxval, %sel_idx : f32, i32
   } -> (tensor<f32>, tensor<i32>)
-
-  check.expect_almost_eq_const(%result#0, dense<53.0> : tensor<f32>) : tensor<f32>
-  check.expect_eq_const(%result#1, dense<131071> : tensor<i32>) : tensor<i32>
-
-  return
+  return %result#0, %result#1 : tensor<f32>, tensor<i32>
 }

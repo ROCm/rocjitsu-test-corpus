@@ -1,6 +1,6 @@
 #map = affine_map<(d0, d1) -> (d1)>
 #map1 = affine_map<(d0, d1) -> (d0, d1)>
-func.func @gather_like_op() {
+func.func @gather_like_op() -> tensor<4x4xi64> {
   // Input :-
   //    1 0 3 0
   //    0 2 0 4
@@ -24,11 +24,5 @@ func.func @gather_like_op() {
     %extracted = tensor.extract %input_init[%dim0, %dim1] : tensor<2x4xi64>
     linalg.yield %extracted : i64
   } -> tensor<4x4xi64>
-
-  check.expect_eq_const(%res, dense<[[1, 2, 3, 4],
-                                     [1, 2, 3, 4],
-                                     [1, 2, 3, 4],
-                                     [1, 2, 3, 4]]> : tensor<4x4xi64>) : tensor<4x4xi64>
-
-  return
+  return %res : tensor<4x4xi64>
 }
