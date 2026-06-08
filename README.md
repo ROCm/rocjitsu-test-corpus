@@ -11,8 +11,11 @@ wall-clock time.
 
 The IREE tools must be available in `PATH`:
 
-- `iree-check-module`
-- `iree-e2e-matmul-test`
+- `iree-compile`
+- `iree-run-module`
+
+Rocjitsu must be available in `PATH`:
+- `rocjitsu`
 
 The Tensile runner additionally needs a ROCm rocm-libraries checkout with
 `projects/hipblaslt/tensilelite`; pass `--tensilelite-root` or set
@@ -38,8 +41,7 @@ that setup.
 ## Run
 
 ```bash
-./scripts/run_gfx1250_regression.sh --out-dir results-ffm path/to/ffm-env.sh
-./scripts/run_gfx1250_regression.sh --out-dir results-kmd env/kmd-so.example.sh
+pytest  --run-wrapper 'rocjitsu --config /home/eochoalo/code/rocm-systems/emulation/rocjitsu/configs/amdgpu_gfx1250.json --'
 ```
 
 Tensile rebuild and numeric smoke checks:
