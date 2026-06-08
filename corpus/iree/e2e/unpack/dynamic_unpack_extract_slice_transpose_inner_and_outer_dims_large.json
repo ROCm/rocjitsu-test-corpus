@@ -10,8 +10,20 @@
   ],
   "function": "dynamic_unpack_extract_slice_transpose_inner_and_outer_dims_large",
   "inputs": [],
-  "outputs": [],
-  "expected_output": [],
-  "checks": [],
+  "outputs": [
+    "output_0.npy"
+  ],
+  "expected_output": [
+    {
+      "kind": "file",
+      "path": "dynamic_unpack_extract_slice_transpose_inner_and_outer_dims_large_expected_output_0.npy"
+    }
+  ],
+  "checks": [
+    {
+      "kind": "allclose",
+      "output": 0
+    }
+  ],
   "run_flags": []
 }

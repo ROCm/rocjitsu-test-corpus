@@ -23,7 +23,7 @@ func.func private @generate_2D_source(%height : index, %width : index) -> tensor
   return %1 : tensor<?x?xi8>
 }
 
-func.func @static_pack_vnni_lhs_large() {
+func.func @static_pack_vnni_lhs_large() -> tensor<8x128x16x2xi8> {
   %height = arith.constant 128 : index
   %width = arith.constant 256 : index
   %0 = call @generate_2D_source(%height, %width) : (index, index) -> tensor<?x?xi8>
@@ -41,11 +41,10 @@ func.func @static_pack_vnni_lhs_large() {
     ins(%reshape : tensor<8x16x128x2xi8>)
     outs(%init_transpose : tensor<8x128x16x2xi8>)
     permutation = [0, 2, 1, 3]
-  check.expect_eq(%pack, %transpose) : tensor<8x128x16x2xi8>
-  return
+  return %pack : tensor<8x128x16x2xi8>
 }
 
-func.func @static_pack_vnni_rhs_large() {
+func.func @static_pack_vnni_rhs_large() -> tensor<32x128x16x2xi8> {
   %height = arith.constant 256 : index
   %width = arith.constant 512 : index
   %0 = call @generate_2D_source(%height, %width) : (index, index) -> tensor<?x?xi8>
@@ -63,11 +62,10 @@ func.func @static_pack_vnni_rhs_large() {
     ins(%reshape : tensor<128x2x32x16xi8>)
     outs(%init_transpose : tensor<32x128x16x2xi8>)
     permutation = [2, 0, 3, 1]
-  check.expect_eq(%pack, %transpose) : tensor<32x128x16x2xi8>
-  return
+  return %pack : tensor<32x128x16x2xi8>
 }
 
-func.func @static_pack_vnni_lhs_large_with_pad() {
+func.func @static_pack_vnni_lhs_large_with_pad() -> tensor<8x128x16x2xi8> {
   %height = arith.constant 127 : index
   %width = arith.constant 255 : index
   %0 = call @generate_2D_source(%height, %width) : (index, index) -> tensor<?x?xi8>
@@ -89,11 +87,10 @@ func.func @static_pack_vnni_lhs_large_with_pad() {
     ins(%reshape : tensor<8x16x128x2xi8>)
     outs(%init_transpose : tensor<8x128x16x2xi8>)
     permutation = [0, 2, 1, 3]
-  check.expect_eq(%pack, %transpose) : tensor<8x128x16x2xi8>
-  return
+  return %pack : tensor<8x128x16x2xi8>
 }
 
-func.func @static_pack_vnni_rhs_large_with_pad() {
+func.func @static_pack_vnni_rhs_large_with_pad() -> tensor<32x128x16x2xi8> {
   %height = arith.constant 255 : index
   %width = arith.constant 511 : index
   %0 = call @generate_2D_source(%height, %width) : (index, index) -> tensor<?x?xi8>
@@ -115,6 +112,5 @@ func.func @static_pack_vnni_rhs_large_with_pad() {
     ins(%reshape : tensor<128x2x32x16xi8>)
     outs(%init_transpose : tensor<32x128x16x2xi8>)
     permutation = [2, 0, 3, 1]
-  check.expect_eq(%pack, %transpose) : tensor<32x128x16x2xi8>
-  return
+  return %pack : tensor<32x128x16x2xi8>
 }

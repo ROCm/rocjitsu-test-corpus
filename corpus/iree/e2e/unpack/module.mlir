@@ -78,7 +78,7 @@ func.func @dynamic_unpack_simple_extract_slice() -> tensor<4x4xi32> {
   return %cast : tensor<4x4xi32>
 }
 
-func.func @static_unpack_large() {
+func.func @static_unpack_large() -> tensor<128x256xi32> {
   %d0 = arith.constant 4 : index
   %d1 = arith.constant 16 : index
   %d2 = arith.constant 32 : index
@@ -97,11 +97,10 @@ func.func @static_unpack_large() {
     permutation = [0, 2, 1, 3]
   %collapse = tensor.collapse_shape %transpose [[0, 1], [2, 3]] : tensor<4x32x16x16xi32> into tensor<128x256xi32>
 
-  check.expect_eq(%unpack, %collapse) : tensor<128x256xi32>
-  return
+  return %unpack : tensor<128x256xi32>
 }
 
-func.func @dynamic_unpack_large() {
+func.func @dynamic_unpack_large() -> tensor<128x256xi32> {
   %d0 = util.unfoldable_constant 4 : index
   %d1 = util.unfoldable_constant 16 : index
   %d2 = util.unfoldable_constant 32 : index
@@ -125,11 +124,10 @@ func.func @dynamic_unpack_large() {
     permutation = [0, 2, 1, 3]
   %collapse = tensor.collapse_shape %transpose [[0, 1], [2, 3]] : tensor<4x32x16x16xi32> into tensor<128x256xi32>
 
-  check.expect_eq(%cast_unpack, %collapse) : tensor<128x256xi32>
-  return
+  return %cast_unpack : tensor<128x256xi32>
 }
 
-func.func @dynamic_unpack_transpose_inner_dims_large() {
+func.func @dynamic_unpack_transpose_inner_dims_large() -> tensor<128x256xi32> {
   %d0 = util.unfoldable_constant 4 : index
   %d1 = util.unfoldable_constant 16 : index
   %d2 = util.unfoldable_constant 16 : index
@@ -154,11 +152,10 @@ func.func @dynamic_unpack_transpose_inner_dims_large() {
     permutation = [0, 3, 1, 2]
   %collapse = tensor.collapse_shape %transpose [[0, 1], [2, 3]] : tensor<4x32x16x16xi32> into tensor<128x256xi32>
 
-  check.expect_eq(%cast_unpack, %collapse) : tensor<128x256xi32>
-  return
+  return %cast_unpack : tensor<128x256xi32>
 }
 
-func.func @dynamic_unpack_transpose_outer_dims_large() {
+func.func @dynamic_unpack_transpose_outer_dims_large() -> tensor<128x256xi32> {
   %d0 = util.unfoldable_constant 16 : index
   %d1 = util.unfoldable_constant 4 : index
   %d2 = util.unfoldable_constant 32 : index
@@ -183,11 +180,10 @@ func.func @dynamic_unpack_transpose_outer_dims_large() {
     permutation = [1, 2, 0, 3]
   %collapse = tensor.collapse_shape %transpose [[0, 1], [2, 3]] : tensor<4x32x16x16xi32> into tensor<128x256xi32>
 
-  check.expect_eq(%cast_unpack, %collapse) : tensor<128x256xi32>
-  return
+  return %cast_unpack : tensor<128x256xi32>
 }
 
-func.func @dynamic_unpack_transpose_inner_and_outer_dims_large() {
+func.func @dynamic_unpack_transpose_inner_and_outer_dims_large() -> tensor<128x256xi32> {
   %d0 = util.unfoldable_constant 16 : index
   %d1 = util.unfoldable_constant 4 : index
   %d2 = util.unfoldable_constant 16 : index
@@ -212,11 +208,10 @@ func.func @dynamic_unpack_transpose_inner_and_outer_dims_large() {
     permutation = [1, 3, 0, 2]
   %collapse = tensor.collapse_shape %transpose [[0, 1], [2, 3]] : tensor<4x32x16x16xi32> into tensor<128x256xi32>
 
-  check.expect_eq(%cast_unpack, %collapse) : tensor<128x256xi32>
-  return
+  return %cast_unpack : tensor<128x256xi32>
 }
 
-func.func @static_unpack_extract_slice_large() {
+func.func @static_unpack_extract_slice_large() -> tensor<100x250xi32> {
   %d0 = arith.constant 4 : index
   %d1 = arith.constant 16 : index
   %d2 = arith.constant 32 : index
@@ -237,11 +232,10 @@ func.func @static_unpack_extract_slice_large() {
   %collapse = tensor.collapse_shape %transpose [[0, 1], [2, 3]] : tensor<4x32x16x16xi32> into tensor<128x256xi32>
   %slice = tensor.extract_slice %collapse [0, 0] [100, 250] [1, 1] : tensor<128x256xi32> to tensor<100x250xi32>
 
-  check.expect_eq(%unpack, %slice) : tensor<100x250xi32>
-  return
+  return %unpack : tensor<100x250xi32>
 }
 
-func.func @dynamic_unpack_extract_slice_large() {
+func.func @dynamic_unpack_extract_slice_large() -> tensor<100x250xi32> {
   %d0 = util.unfoldable_constant 4 : index
   %d1 = util.unfoldable_constant 16 : index
   %d2 = util.unfoldable_constant 32 : index
@@ -267,11 +261,10 @@ func.func @dynamic_unpack_extract_slice_large() {
   %collapse = tensor.collapse_shape %transpose [[0, 1], [2, 3]] : tensor<4x32x16x16xi32> into tensor<128x256xi32>
   %slice = tensor.extract_slice %collapse [0, 0] [100, 250] [1, 1] : tensor<128x256xi32> to tensor<100x250xi32>
 
-  check.expect_eq(%cast_unpack, %slice) : tensor<100x250xi32>
-  return
+  return %cast_unpack : tensor<100x250xi32>
 }
 
-func.func @static_unpack_extract_slice_transpose_inner_dims_large() {
+func.func @static_unpack_extract_slice_transpose_inner_dims_large() -> tensor<100x250xi32> {
   %d0 = arith.constant 4 : index
   %d1 = arith.constant 16 : index
   %d2 = arith.constant 16 : index
@@ -293,11 +286,10 @@ func.func @static_unpack_extract_slice_transpose_inner_dims_large() {
   %collapse = tensor.collapse_shape %transpose [[0, 1], [2, 3]] : tensor<4x32x16x16xi32> into tensor<128x256xi32>
   %slice = tensor.extract_slice %collapse [0, 0] [100, 250] [1, 1] : tensor<128x256xi32> to tensor<100x250xi32>
 
-  check.expect_eq(%unpack, %slice) : tensor<100x250xi32>
-  return
+  return %unpack : tensor<100x250xi32>
 }
 
-func.func @static_unpack_extract_slice_transpose_outer_dims_large() {
+func.func @static_unpack_extract_slice_transpose_outer_dims_large() -> tensor<100x250xi32> {
   %d0 = arith.constant 16 : index
   %d1 = arith.constant 4 : index
   %d2 = arith.constant 32 : index
@@ -318,11 +310,10 @@ func.func @static_unpack_extract_slice_transpose_outer_dims_large() {
   %collapse = tensor.collapse_shape %transpose [[0, 1], [2, 3]] : tensor<4x32x16x16xi32> into tensor<128x256xi32>
   %slice = tensor.extract_slice %collapse [0, 0] [100, 250] [1, 1] : tensor<128x256xi32> to tensor<100x250xi32>
 
-  check.expect_eq(%unpack, %slice) : tensor<100x250xi32>
-  return
+  return %unpack : tensor<100x250xi32>
 }
 
-func.func @static_unpack_extract_slice_transpose_inner_and_outer_dims_large() {
+func.func @static_unpack_extract_slice_transpose_inner_and_outer_dims_large() -> tensor<100x250xi32> {
   %d0 = arith.constant 16 : index
   %d1 = arith.constant 4 : index
   %d2 = arith.constant 16 : index
@@ -344,12 +335,10 @@ func.func @static_unpack_extract_slice_transpose_inner_and_outer_dims_large() {
   %collapse = tensor.collapse_shape %transpose [[0, 1], [2, 3]] : tensor<4x32x16x16xi32> into tensor<128x256xi32>
   %slice = tensor.extract_slice %collapse [0, 0] [100, 250] [1, 1] : tensor<128x256xi32> to tensor<100x250xi32>
 
-  check.expect_eq(%unpack, %slice) : tensor<100x250xi32>
-
-  return
+  return %unpack : tensor<100x250xi32>
 }
 
-func.func @dynamic_unpack_extract_slice_transpose_inner_dims_large() {
+func.func @dynamic_unpack_extract_slice_transpose_inner_dims_large() -> tensor<100x250xi32> {
   %d0 = util.unfoldable_constant 4 : index
   %d1 = util.unfoldable_constant 16 : index
   %d2 = util.unfoldable_constant 16 : index
@@ -376,11 +365,10 @@ func.func @dynamic_unpack_extract_slice_transpose_inner_dims_large() {
   %collapse = tensor.collapse_shape %transpose [[0, 1], [2, 3]] : tensor<4x32x16x16xi32> into tensor<128x256xi32>
   %slice = tensor.extract_slice %collapse [0, 0] [100, 250] [1, 1] : tensor<128x256xi32> to tensor<100x250xi32>
 
-  check.expect_eq(%cast_unpack, %slice) : tensor<100x250xi32>
-  return
+  return %cast_unpack : tensor<100x250xi32>
 }
 
-func.func @dynamic_unpack_extract_slice_transpose_outer_dims_large() {
+func.func @dynamic_unpack_extract_slice_transpose_outer_dims_large() -> tensor<100x250xi32> {
   %d0 = util.unfoldable_constant 16 : index
   %d1 = util.unfoldable_constant 4 : index
   %d2 = util.unfoldable_constant 32 : index
@@ -406,11 +394,10 @@ func.func @dynamic_unpack_extract_slice_transpose_outer_dims_large() {
   %collapse = tensor.collapse_shape %transpose [[0, 1], [2, 3]] : tensor<4x32x16x16xi32> into tensor<128x256xi32>
   %slice = tensor.extract_slice %collapse [0, 0] [100, 250] [1, 1] : tensor<128x256xi32> to tensor<100x250xi32>
 
-  check.expect_eq(%cast_unpack, %slice) : tensor<100x250xi32>
-  return
+  return %cast_unpack : tensor<100x250xi32>
 }
 
-func.func @dynamic_unpack_extract_slice_transpose_inner_and_outer_dims_large() {
+func.func @dynamic_unpack_extract_slice_transpose_inner_and_outer_dims_large() -> tensor<100x250xi32> {
   %d0 = util.unfoldable_constant 16 : index
   %d1 = util.unfoldable_constant 4 : index
   %d2 = util.unfoldable_constant 16 : index
@@ -437,6 +424,5 @@ func.func @dynamic_unpack_extract_slice_transpose_inner_and_outer_dims_large() {
   %collapse = tensor.collapse_shape %transpose [[0, 1], [2, 3]] : tensor<4x32x16x16xi32> into tensor<128x256xi32>
   %slice = tensor.extract_slice %collapse [0, 0] [100, 250] [1, 1] : tensor<128x256xi32> to tensor<100x250xi32>
 
-  check.expect_eq(%cast_unpack, %slice) : tensor<100x250xi32>
-  return
+  return %cast_unpack : tensor<100x250xi32>
 }

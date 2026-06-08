@@ -10,8 +10,22 @@
   ],
   "function": "copy_like",
   "inputs": [],
-  "outputs": [],
-  "expected_output": [],
-  "checks": [],
+  "outputs": [
+    "output_0.npy"
+  ],
+  "expected_output": [
+    {
+      "kind": "file",
+      "path": "copy_like_expected_output_0.npy"
+    }
+  ],
+  "checks": [
+    {
+      "kind": "allclose",
+      "output": 0,
+      "rtol": 0.001,
+      "atol": 0.001
+    }
+  ],
   "run_flags": []
 }

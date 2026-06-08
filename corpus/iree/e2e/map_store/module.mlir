@@ -1,4 +1,4 @@
-func.func @copy_like() {
+func.func @copy_like() -> tensor<4x16x64xf32> {
   %input = util.unfoldable_constant dense<123.0> : tensor<4x16x64xf32>
   %output = tensor.empty() : tensor<4x16x64xf32>
   %0 = iree_linalg_ext.map_store %input into %output {
@@ -6,11 +6,10 @@ func.func @copy_like() {
       %mask = arith.constant true
       iree_linalg_ext.yield %idx0, %idx1, %idx2, %mask : index, index, index, i1
   } : tensor<4x16x64xf32> into tensor<4x16x64xf32> -> tensor<4x16x64xf32>
-  check.expect_almost_eq(%0, %input) : tensor<4x16x64xf32>
-  return
+  return %0 : tensor<4x16x64xf32>
 }
 
-func.func @collapse_shape_like() {
+func.func @collapse_shape_like() -> tensor<16xi32> {
   %input = util.unfoldable_constant dense<[[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]]> : tensor<4x4xi32>
   %true = arith.constant true
   %0 = tensor.empty() : tensor<16xi32>
@@ -20,11 +19,10 @@ func.func @collapse_shape_like() {
     iree_linalg_ext.yield %2, %true : index, i1
   } : tensor<4x4xi32> into tensor<16xi32> -> tensor<16xi32>
   %expected = tensor.collapse_shape %input [[0, 1]] : tensor<4x4xi32> into tensor<16xi32>
-  check.expect_eq(%result, %expected) : tensor<16xi32>
-  return
+  return %result : tensor<16xi32>
 }
 
-func.func @expand_shape_shape_like() {
+func.func @expand_shape_shape_like() -> tensor<4x4xf32> {
   %input = util.unfoldable_constant dense<[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0]> : tensor<16xf32>
   %true = arith.constant true
   %0 = tensor.empty() : tensor<4x4xf32>
@@ -34,11 +32,10 @@ func.func @expand_shape_shape_like() {
     iree_linalg_ext.yield %2#0, %2#1, %true : index, index, i1
   } : tensor<16xf32> into tensor<4x4xf32> -> tensor<4x4xf32>
   %expected = tensor.expand_shape %input [[0, 1]] output_shape [4, 4] : tensor<16xf32> into tensor<4x4xf32>
-  check.expect_almost_eq(%result, %expected) : tensor<4x4xf32>
-  return
+  return %result : tensor<4x4xf32>
 }
 
-func.func @extract_slice_like() {
+func.func @extract_slice_like() -> tensor<4xf32> {
   %input = util.unfoldable_constant dense<[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0]> : tensor<16xf32>
   %c4 = arith.constant 4 : index
   %0 = tensor.empty() : tensor<4xf32>
@@ -48,6 +45,5 @@ func.func @extract_slice_like() {
     iree_linalg_ext.yield %arg2, %2 : index, i1
   } : tensor<16xf32> into tensor<4xf32> -> tensor<4xf32>
   %expected = tensor.extract_slice %input[0] [4] [1] : tensor<16xf32> to tensor<4xf32>
-  check.expect_almost_eq(%result, %expected) : tensor<4xf32>
-  return
+  return %result : tensor<4xf32>
 }
