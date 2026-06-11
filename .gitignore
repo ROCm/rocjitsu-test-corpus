@@ -1,4 +1,5 @@
 results-*/
 gfx1250-regression-*/
 .pytest-artifacts/
+.venv/
 *.log

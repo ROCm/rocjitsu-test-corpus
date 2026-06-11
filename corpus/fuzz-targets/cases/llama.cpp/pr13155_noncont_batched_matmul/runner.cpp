@@ -17,6 +17,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -36,16 +39,45 @@ constexpr size_t src1_view_offset = src1_nb1;
 constexpr float validation_abs_tolerance = 1.0e-3f;
 constexpr size_t bug_signal_index = output_rows * src1_view_cols;
 
-bool parse_validate_arg(int argc, char ** argv, bool & validate) {
+bool parse_input_assignment(const char * arg, std::string & name, std::string & path) {
+    const char * equals = std::strchr(arg, '=');
+    if (equals == nullptr || equals == arg || *(equals + 1) == '\0') {
+        return false;
+    }
+    name.assign(arg, static_cast<size_t>(equals - arg));
+    path.assign(equals + 1);
+    return true;
+}
+
+bool parse_args(
+        int argc,
+        char ** argv,
+        bool & validate,
+        std::unordered_map<std::string, std::string> & inputs) {
     validate = false;
-    for (int i = 1; i < argc; ++i) {
+    for (int i = 1; i < argc;) {
         if (std::strcmp(argv[i], "--validate") == 0 || std::strcmp(argv[i], "--validate=true") == 0) {
             validate = true;
+            ++i;
         } else if (std::strcmp(argv[i], "--validate=false") == 0) {
             validate = false;
+            ++i;
+        } else if (std::strcmp(argv[i], "--input") == 0) {
+            if (i + 1 >= argc) {
+                std::fprintf(stderr, "--input requires name=path\n");
+                return false;
+            }
+            std::string name;
+            std::string path;
+            if (!parse_input_assignment(argv[i + 1], name, path)) {
+                std::fprintf(stderr, "invalid --input value: %s\n", argv[i + 1]);
+                return false;
+            }
+            inputs[name] = path;
+            i += 2;
         } else {
             std::fprintf(stderr, "unknown argument: %s\n", argv[i]);
-            std::fprintf(stderr, "usage: %s [--validate|--validate=true|--validate=false]\n", argv[0]);
+            std::fprintf(stderr, "usage: %s [--input name=path ...] [--validate|--validate=true|--validate=false]\n", argv[0]);
             return false;
         }
     }
@@ -56,27 +88,47 @@ ggml_backend_t init_gpu_backend() {
     return ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_GPU, nullptr);
 }
 
-std::vector<ggml_fp16_t> make_src0_data() {
-    std::vector<ggml_fp16_t> data(k_dim * output_rows, ggml_fp32_to_fp16(0.0f));
-    for (int64_t row = 0; row < output_rows; ++row) {
-        data[static_cast<size_t>(row * k_dim + row)] = ggml_fp32_to_fp16(1.0f);
+bool read_f32_file(const std::string & path, size_t expected_elements, std::vector<float> & data) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        std::fprintf(stderr, "failed to open input file: %s\n", path.c_str());
+        return false;
     }
-    return data;
+    data.resize(expected_elements);
+    file.read(reinterpret_cast<char *>(data.data()), static_cast<std::streamsize>(expected_elements * sizeof(float)));
+    if (!file || file.gcount() != static_cast<std::streamsize>(expected_elements * sizeof(float))) {
+        std::fprintf(stderr, "input file has unexpected size: %s\n", path.c_str());
+        return false;
+    }
+    char trailing = '\0';
+    file.read(&trailing, 1);
+    if (file.gcount() != 0) {
+        std::fprintf(stderr, "input file has trailing bytes: %s\n", path.c_str());
+        return false;
+    }
+    return true;
 }
 
-std::vector<float> make_src1_parent_data() {
-    std::vector<float> data(k_dim * src1_parent_cols * src1_batches);
-    for (int64_t batch = 0; batch < src1_batches; ++batch) {
-        for (int64_t row = 0; row < src1_parent_cols; ++row) {
-            for (int64_t k = 0; k < k_dim; ++k) {
-                const size_t index = static_cast<size_t>(k + k_dim * (row + src1_parent_cols * batch));
-                data[index] = 100.0f * static_cast<float>(batch)
-                    + 10.0f * static_cast<float>(row)
-                    + 0.25f * static_cast<float>(k);
-            }
-        }
+bool read_f16_file(const std::string & path, size_t expected_elements, std::vector<ggml_fp16_t> & data) {
+    static_assert(sizeof(ggml_fp16_t) == 2, "ggml_fp16_t must be 16-bit");
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        std::fprintf(stderr, "failed to open input file: %s\n", path.c_str());
+        return false;
     }
-    return data;
+    data.resize(expected_elements);
+    file.read(reinterpret_cast<char *>(data.data()), static_cast<std::streamsize>(expected_elements * sizeof(ggml_fp16_t)));
+    if (!file || file.gcount() != static_cast<std::streamsize>(expected_elements * sizeof(ggml_fp16_t))) {
+        std::fprintf(stderr, "input file has unexpected size: %s\n", path.c_str());
+        return false;
+    }
+    char trailing = '\0';
+    file.read(&trailing, 1);
+    if (file.gcount() != 0) {
+        std::fprintf(stderr, "input file has trailing bytes: %s\n", path.c_str());
+        return false;
+    }
+    return true;
 }
 
 bool run_pr13155_case(
@@ -190,7 +242,12 @@ bool validate_against_cpu(
 
 int main(int argc, char ** argv) {
     bool validate = false;
-    if (!parse_validate_arg(argc, argv, validate)) {
+    std::unordered_map<std::string, std::string> inputs;
+    if (!parse_args(argc, argv, validate, inputs)) {
+        return 1;
+    }
+    if (inputs.find("src0") == inputs.end() || inputs.find("src1_parent") == inputs.end()) {
+        std::fprintf(stderr, "required inputs: src0, src1_parent\n");
         return 1;
     }
 
@@ -201,8 +258,16 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    const std::vector<ggml_fp16_t> src0_data = make_src0_data();
-    const std::vector<float> src1_parent_data = make_src1_parent_data();
+    std::vector<ggml_fp16_t> src0_data;
+    if (!read_f16_file(inputs.at("src0"), static_cast<size_t>(k_dim * output_rows), src0_data)) {
+        ggml_backend_free(backend);
+        return 1;
+    }
+    std::vector<float> src1_parent_data;
+    if (!read_f32_file(inputs.at("src1_parent"), static_cast<size_t>(k_dim * src1_parent_cols * src1_batches), src1_parent_data)) {
+        ggml_backend_free(backend);
+        return 1;
+    }
 
     std::vector<float> output_data;
     if (!run_pr13155_case(backend, src0_data, src1_parent_data, output_data)) {

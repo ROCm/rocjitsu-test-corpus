@@ -1,0 +1,36 @@
+{
+  "name": "llama_rms_norm",
+  "project": "llama.cpp",
+  "runner": "runner.cpp",
+  "kind": "cmake_executable",
+  "default_variant": "upstream",
+  "architectures": ["cdna3", "rdna4"],
+  "build": {
+    "system": "cmake",
+    "target": "llama_cpp_rms_norm"
+  },
+  "run": {
+    "executable": "cases/llama.cpp/llama_cpp_rms_norm",
+    "args": ["--validate"],
+    "timeout_seconds": 120
+  },
+  "validation": {
+    "kind": "exit_code",
+    "pass_exit_code": 0
+  },
+  "inputs": [
+    {
+      "name": "activations",
+      "format": "raw",
+      "dtype": "f32",
+      "shape": [128, 1],
+      "generator": {
+        "kind": "repeat_affine",
+        "period": 9,
+        "scale": 0.125,
+        "offset": -4
+      }
+    }
+  ],
+  "tags": ["llama.cpp", "ggml", "rms-norm", "regression"]
+}

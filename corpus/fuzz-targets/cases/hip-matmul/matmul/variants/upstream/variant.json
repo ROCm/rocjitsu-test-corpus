@@ -1,0 +1,11 @@
+{
+  "name": "upstream",
+  "description": "Extracted nod-ai hip-matmul source with the upstream matmul executable runner.",
+  "role": "upstream",
+  "source_overlay": {
+    "kind": "third_party",
+    "path": "../../../third_party/hip-matmul"
+  },
+  "patches": [],
+  "expect": "pass"
+}

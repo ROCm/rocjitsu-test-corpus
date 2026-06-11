@@ -12,6 +12,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -20,18 +23,68 @@ constexpr int64_t n_embd = 128;
 constexpr int64_t n_tokens = 1;
 constexpr float validation_abs_tolerance = 1.0e-2f;
 
-bool parse_validate_arg(int argc, char ** argv, bool & validate) {
+bool parse_input_assignment(const char * arg, std::string & name, std::string & path) {
+    const char * equals = std::strchr(arg, '=');
+    if (equals == nullptr || equals == arg || *(equals + 1) == '\0') {
+        return false;
+    }
+    name.assign(arg, static_cast<size_t>(equals - arg));
+    path.assign(equals + 1);
+    return true;
+}
+
+bool parse_args(
+        int argc,
+        char ** argv,
+        bool & validate,
+        std::unordered_map<std::string, std::string> & inputs) {
     validate = false;
-    for (int i = 1; i < argc; ++i) {
+    for (int i = 1; i < argc;) {
         if (std::strcmp(argv[i], "--validate") == 0 || std::strcmp(argv[i], "--validate=true") == 0) {
             validate = true;
+            ++i;
         } else if (std::strcmp(argv[i], "--validate=false") == 0) {
             validate = false;
+            ++i;
+        } else if (std::strcmp(argv[i], "--input") == 0) {
+            if (i + 1 >= argc) {
+                std::fprintf(stderr, "--input requires name=path\n");
+                return false;
+            }
+            std::string name;
+            std::string path;
+            if (!parse_input_assignment(argv[i + 1], name, path)) {
+                std::fprintf(stderr, "invalid --input value: %s\n", argv[i + 1]);
+                return false;
+            }
+            inputs[name] = path;
+            i += 2;
         } else {
             std::fprintf(stderr, "unknown argument: %s\n", argv[i]);
-            std::fprintf(stderr, "usage: %s [--validate|--validate=true|--validate=false]\n", argv[0]);
+            std::fprintf(stderr, "usage: %s [--input name=path ...] [--validate|--validate=true|--validate=false]\n", argv[0]);
             return false;
         }
+    }
+    return true;
+}
+
+bool read_f32_file(const std::string & path, size_t expected_elements, std::vector<float> & data) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        std::fprintf(stderr, "failed to open input file: %s\n", path.c_str());
+        return false;
+    }
+    data.resize(expected_elements);
+    file.read(reinterpret_cast<char *>(data.data()), static_cast<std::streamsize>(expected_elements * sizeof(float)));
+    if (!file || file.gcount() != static_cast<std::streamsize>(expected_elements * sizeof(float))) {
+        std::fprintf(stderr, "input file has unexpected size: %s\n", path.c_str());
+        return false;
+    }
+    char trailing = '\0';
+    file.read(&trailing, 1);
+    if (file.gcount() != 0) {
+        std::fprintf(stderr, "input file has trailing bytes: %s\n", path.c_str());
+        return false;
     }
     return true;
 }
@@ -143,7 +196,12 @@ bool validate_against_cpu(const std::vector<float> & gpu_output,
 
 int main(int argc, char ** argv) {
     bool validate = false;
-    if (!parse_validate_arg(argc, argv, validate)) {
+    std::unordered_map<std::string, std::string> inputs;
+    if (!parse_args(argc, argv, validate, inputs)) {
+        return 1;
+    }
+    if (inputs.find("matrix") == inputs.end() || inputs.find("vector") == inputs.end()) {
+        std::fprintf(stderr, "required inputs: matrix, vector\n");
         return 1;
     }
 
@@ -154,9 +212,10 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    std::vector<float> matrix_values(n_embd * n_embd);
-    for (size_t i = 0; i < matrix_values.size(); ++i) {
-        matrix_values[i] = 0.125f * static_cast<float>(static_cast<int>(i % 7) - 3);
+    std::vector<float> matrix_values;
+    if (!read_f32_file(inputs.at("matrix"), static_cast<size_t>(n_embd * n_embd), matrix_values)) {
+        ggml_backend_free(backend);
+        return 1;
     }
 
     const size_t q4_0_block_size = ggml_blck_size(GGML_TYPE_Q4_0);
@@ -171,9 +230,10 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    std::vector<float> vector_data(n_embd * n_tokens);
-    for (size_t i = 0; i < vector_data.size(); ++i) {
-        vector_data[i] = 0.25f * static_cast<float>((i % 5) + 1);
+    std::vector<float> vector_data;
+    if (!read_f32_file(inputs.at("vector"), static_cast<size_t>(n_embd * n_tokens), vector_data)) {
+        ggml_backend_free(backend);
+        return 1;
     }
 
     std::vector<float> output_data;

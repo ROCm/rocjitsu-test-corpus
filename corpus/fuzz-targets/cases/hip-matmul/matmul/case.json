@@ -1,0 +1,26 @@
+{
+  "name": "hip_matmul_matmul",
+  "project": "hip-matmul",
+  "runner": "runner.hip",
+  "kind": "cmake_executable",
+  "default_variant": "upstream",
+  "architectures": ["cdna3"],
+  "build": {
+    "system": "cmake",
+    "target": "hip_matmul_matmul"
+  },
+  "run": {
+    "executable": "cases/hip-matmul/hip_matmul_matmul",
+    "args": [],
+    "env": {
+      "BENCHMARK_MIN_MS": "1",
+      "FIXED_ITERATIONS": "1"
+    },
+    "timeout_seconds": 120
+  },
+  "validation": {
+    "kind": "exit_code",
+    "pass_exit_code": 0
+  },
+  "tags": ["hip-matmul", "matmul", "regression"]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "pr13155_fix",
+  "description": "Current vendored GGML; non-contiguous F32 src1 is converted with explicit view strides before batched matmul.",
+  "role": "fix",
+  "source_overlay": {
+    "kind": "vendored",
+    "path": "../../../third_party/llama.cpp/ggml"
+  },
+  "patches": [],
+  "upstream_commit": "cdf76586b23c67abd3ca064ee2c084c57ae240bd",
+  "build": {
+    "target": "llama_cpp_pr13155_noncont_batched_matmul_fix"
+  },
+  "run": {
+    "executable": "cases/llama.cpp/llama_cpp_pr13155_noncont_batched_matmul_fix",
+    "args": ["--validate"]
+  },
+  "expect": "pass"
+}

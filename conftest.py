@@ -16,6 +16,10 @@ from iree_corpus import (  # noqa: E402
     load_target_configs,
     run_case,
 )
+from fuzz_targets import (  # noqa: E402
+    default_config_files as default_fuzz_target_config_files,
+    load_target_configs as load_fuzz_target_configs,
+)
 
 collect_ignore = ["tests/test_iree_corpus.py"]
 
@@ -55,11 +59,21 @@ def pytest_addoption(parser):
             "Can also be set with IREE_RUN_MODULE_WRAPPER."
         ),
     )
+    parser.addoption(
+        "--fuzz-target-config-files",
+        action="store",
+        nargs="*",
+        default=default_fuzz_target_config_files(),
+        help="Target config JSON files used to build and run fuzz-target cases.",
+    )
 
 
 def pytest_sessionstart(session):
     session.config.iree_target_configs = load_target_configs(
         session.config.getoption("config_files")
+    )
+    session.config.fuzz_target_configs = load_fuzz_target_configs(
+        session.config.getoption("fuzz_target_config_files")
     )
 
 

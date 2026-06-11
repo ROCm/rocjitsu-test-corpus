@@ -1,0 +1,48 @@
+{
+  "name": "llama_mul_mat_vec_q",
+  "project": "llama.cpp",
+  "runner": "runner.cpp",
+  "kind": "cmake_executable",
+  "default_variant": "upstream",
+  "architectures": ["cdna3", "rdna4"],
+  "build": {
+    "system": "cmake",
+    "target": "llama_cpp_mul_mat_vec_q"
+  },
+  "run": {
+    "executable": "cases/llama.cpp/llama_cpp_mul_mat_vec_q",
+    "args": ["--validate"],
+    "timeout_seconds": 120
+  },
+  "validation": {
+    "kind": "exit_code",
+    "pass_exit_code": 0
+  },
+  "inputs": [
+    {
+      "name": "matrix",
+      "format": "raw",
+      "dtype": "f32",
+      "shape": [128, 128],
+      "generator": {
+        "kind": "repeat_affine",
+        "period": 7,
+        "scale": 0.125,
+        "offset": -3
+      }
+    },
+    {
+      "name": "vector",
+      "format": "raw",
+      "dtype": "f32",
+      "shape": [128, 1],
+      "generator": {
+        "kind": "repeat_affine",
+        "period": 5,
+        "scale": 0.25,
+        "offset": 1
+      }
+    }
+  ],
+  "tags": ["llama.cpp", "ggml", "matvec", "quantized", "regression"]
+}

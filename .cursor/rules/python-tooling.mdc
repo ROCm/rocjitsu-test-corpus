@@ -1,0 +1,11 @@
+---
+description: Local Python tooling for this worktree
+alwaysApply: true
+---
+
+# Python Tooling
+
+- Use the worktree-local virtual environment at `.venv`.
+- `pytest` is installed in that environment for corpus harness testing.
+- Invoke pytest through `.venv/bin/python -m pytest`.
+- To avoid creating bytecode during quick checks, use `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B ...`.

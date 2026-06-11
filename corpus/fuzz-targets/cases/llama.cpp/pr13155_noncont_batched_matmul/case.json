@@ -1,0 +1,46 @@
+{
+  "name": "llama_pr13155_noncont_batched_matmul",
+  "project": "llama.cpp",
+  "runner": "runner.cpp",
+  "kind": "cmake_executable",
+  "default_variant": "pr13155_fix",
+  "architectures": ["cdna3", "rdna4"],
+  "build": {
+    "system": "cmake",
+    "target": "llama_cpp_pr13155_noncont_batched_matmul_fix"
+  },
+  "run": {
+    "executable": "cases/llama.cpp/llama_cpp_pr13155_noncont_batched_matmul_fix",
+    "args": ["--validate"],
+    "timeout_seconds": 120
+  },
+  "validation": {
+    "kind": "exit_code",
+    "pass_exit_code": 0
+  },
+  "inputs": [
+    {
+      "name": "src0",
+      "format": "raw",
+      "dtype": "f16",
+      "shape": [64, 32],
+      "generator": {
+        "kind": "identity_diagonal",
+        "diagonal_value": 1.0,
+        "other_value": 0.0
+      }
+    },
+    {
+      "name": "src1_parent",
+      "format": "raw",
+      "dtype": "f32",
+      "shape": [64, 32, 2],
+      "generator": {
+        "kind": "affine_indices",
+        "coefficients": [0.25, 10.0, 100.0],
+        "bias": 0.0
+      }
+    }
+  ],
+  "tags": ["llama.cpp", "ggml", "matmul", "pr13155", "regression"]
+}
