@@ -1,4 +1,0 @@
-name = "upstream"
-description = "Extracted HipKittens cdna3-branch BF16/FP32 GEMM kernel with a corpus-owned standalone HIP runner."
-patches = []
-expect = "pass"

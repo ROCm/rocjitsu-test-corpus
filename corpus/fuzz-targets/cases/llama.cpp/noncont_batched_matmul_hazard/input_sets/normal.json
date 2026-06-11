@@ -1,0 +1,48 @@
+{
+  "name": "normal",
+  "description": "Contiguous F32 src1 tensor with ne=[64,17,2,1]; does not trigger PR #13155.",
+  "inputs": [
+    {
+      "name": "src0",
+      "format": "raw",
+      "dtype": "f16",
+      "shape": [
+        64,
+        32
+      ],
+      "generator": {
+        "kind": "identity_diagonal",
+        "diagonal_value": 1.0,
+        "other_value": 0.0
+      }
+    },
+    {
+      "name": "src1_parent",
+      "format": "raw",
+      "dtype": "f32",
+      "shape": [
+        64,
+        17,
+        2
+      ],
+      "generator": {
+        "kind": "affine_indices",
+        "coefficients": [
+          0.25,
+          10.0,
+          100.0
+        ],
+        "bias": 0.0
+      }
+    }
+  ],
+  "run": {
+    "args": [
+      "--src1-layout=contiguous",
+      "--validate"
+    ]
+  },
+  "validation": {
+    "pass_exit_code": 0
+  }
+}

@@ -1,4 +1,0 @@
-name = "upstream"
-description = "Extracted hip-stream-k source with the upstream two_tile_streamk example runner."
-patches = []
-expect = "pass"

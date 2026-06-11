@@ -15,8 +15,6 @@ SUPPORTED_PROJECTS = {"hip-matmul", "llama.cpp"}
 SUPPORTED_ARCHITECTURE_FAMILIES = {"cdna3", "rdna4"}
 SUPPORTED_CASE_KINDS = {"cmake_executable"}
 SUPPORTED_VALIDATION_KINDS = {"exit_code"}
-SUPPORTED_VARIANT_ROLES = {"upstream", "bug", "fix"}
-SUPPORTED_VARIANT_EXPECTATIONS = {"pass", "fail"}
 SUPPORTED_INPUT_FORMATS = {"raw"}
 SUPPORTED_INPUT_DTYPES = {"f32", "f16"}
 SUPPORTED_INPUT_GENERATORS = {"repeat_affine", "identity_diagonal", "affine_indices"}
@@ -62,9 +60,15 @@ class ToolError(FuzzTargetError):
 @dataclass(frozen=True)
 class FuzzCase:
     path: Path
-    variant_path: Path
     case: dict
-    variant: dict
+    input_set_path: Path | None = None
+    input_set: dict | None = None
+
+
+@dataclass(frozen=True)
+class BuildResult:
+    build_dir: Path
+    executable_path: Path
 
 
 def split_config_files(value):
@@ -133,19 +137,21 @@ def discover_cases():
     cases = []
     for case_path in sorted((FUZZ_TARGETS_ROOT / "cases").glob("*/*/case.json")):
         case = load_case(case_path)
-        variants_root = case_path.parent / "variants"
-        variant_paths = sorted(variants_root.glob("*/variant.json"))
-        if not variant_paths:
-            raise ValueError(f"{case_path} has no variant.json files under {variants_root}")
-        for variant_path in variant_paths:
-            cases.append(
-                FuzzCase(
-                    path=case_path,
-                    variant_path=variant_path,
-                    case=case,
-                    variant=load_variant(variant_path),
+        input_set_paths = sorted((case_path.parent / "input_sets").glob("*.json"))
+        if input_set_paths:
+            for input_set_path in input_set_paths:
+                cases.append(
+                    FuzzCase(
+                        path=case_path,
+                        case=case,
+                        input_set_path=input_set_path,
+                        input_set=load_input_set(input_set_path),
+                    )
                 )
-            )
+        else:
+            if case["project"] == "llama.cpp" and "inputs" not in case:
+                raise ValueError(f"{case_path} is missing required field 'inputs' for llama.cpp")
+            cases.append(FuzzCase(path=case_path, case=case))
     return cases
 
 
@@ -160,7 +166,6 @@ def load_case(case_path):
             "project",
             "runner",
             "kind",
-            "default_variant",
             "architectures",
             "build",
             "run",
@@ -175,7 +180,6 @@ def load_case(case_path):
             "project",
             "runner",
             "kind",
-            "default_variant",
             "architectures",
             "build",
             "run",
@@ -203,54 +207,40 @@ def load_case(case_path):
     reject_unknown_fields(case_path, case["run"], {"executable", "args", "env", "timeout_seconds"})
 
     require_fields(case_path, case["validation"], ("kind", "pass_exit_code"))
-    reject_unknown_fields(case_path, case["validation"], {"kind", "pass_exit_code"})
+    reject_unknown_fields(case_path, case["validation"], {"kind", "pass_exit_code", "abs_tolerance"})
     if case["validation"]["kind"] not in SUPPORTED_VALIDATION_KINDS:
         raise ValueError(
             f"{case_path} has unsupported validation kind "
             f"'{case['validation']['kind']}'"
         )
 
-    if case["project"] == "llama.cpp" and "inputs" not in case:
-        raise ValueError(f"{case_path} is missing required field 'inputs' for llama.cpp")
     if "inputs" in case:
         _validate_inputs(case_path, case["inputs"])
     return case
 
 
-def load_variant(variant_path):
-    variant_path = Path(variant_path)
-    variant = load_json(variant_path)
-    require_fields(
-        variant_path,
-        variant,
-        ("name", "description", "role", "source_overlay", "patches", "expect"),
-    )
+def load_input_set(input_set_path):
+    input_set_path = Path(input_set_path)
+    input_set = load_json(input_set_path)
+    require_fields(input_set_path, input_set, ("name", "inputs"))
     reject_unknown_fields(
-        variant_path,
-        variant,
-        {
-            "name",
-            "description",
-            "role",
-            "source_overlay",
-            "patches",
-            "expect",
-            "build",
-            "run",
-            "upstream_commit",
-            "trigger",
-        },
+        input_set_path,
+        input_set,
+        {"name", "description", "inputs", "run", "validation", "tags"},
     )
-    if variant["role"] not in SUPPORTED_VARIANT_ROLES:
-        raise ValueError(f"{variant_path} has unsupported role '{variant['role']}'")
-    if variant["expect"] not in SUPPORTED_VARIANT_EXPECTATIONS:
-        raise ValueError(f"{variant_path} has unsupported expect '{variant['expect']}'")
-    if "build" in variant:
-        require_fields(variant_path, variant["build"], ("target",))
-        reject_unknown_fields(variant_path, variant["build"], {"target"})
-    if "run" in variant:
-        reject_unknown_fields(variant_path, variant["run"], {"executable", "args", "env", "timeout_seconds"})
-    return variant
+    if not isinstance(input_set["name"], str) or not input_set["name"]:
+        raise ValueError(f"{input_set_path} field 'name' must be a non-empty string")
+    _validate_inputs(input_set_path, input_set["inputs"])
+    if "run" in input_set:
+        reject_unknown_fields(input_set_path, input_set["run"], {"executable", "args", "env", "timeout_seconds"})
+    if "validation" in input_set:
+        reject_unknown_fields(input_set_path, input_set["validation"], {"kind", "pass_exit_code", "abs_tolerance"})
+        if "kind" in input_set["validation"] and input_set["validation"]["kind"] not in SUPPORTED_VALIDATION_KINDS:
+            raise ValueError(
+                f"{input_set_path} has unsupported validation kind "
+                f"'{input_set['validation']['kind']}'"
+            )
+    return input_set
 
 
 def require_fields(path, data, fields):
@@ -267,7 +257,10 @@ def reject_unknown_fields(path, data, allowed_fields):
 
 def case_id(fuzz_case, target_config):
     case = fuzz_case.case
-    return f"{target_config['config_name']}::{case['project']}/{case['name']}::{fuzz_case.variant['name']}"
+    test_id = f"{target_config['config_name']}::{case['project']}/{case['name']}"
+    if fuzz_case.input_set is not None:
+        test_id += f"::{fuzz_case.input_set['name']}"
+    return test_id
 
 
 def supports_target_config(fuzz_case, target_config):
@@ -277,30 +270,39 @@ def supports_target_config(fuzz_case, target_config):
 def run_case(fuzz_case, target_config, artifact_directory, *, build_only=False):
     case = effective_case(fuzz_case)
     artifact_root = resolve_repo_path(artifact_directory)
-    build_dir = _build_dir(artifact_root, target_config)
     run_dir = _run_dir(artifact_root, target_config, fuzz_case)
-    build_dir.mkdir(parents=True, exist_ok=True)
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    configure_cmake(target_config, build_dir, run_dir)
-    build_target(case, target_config, build_dir, run_dir)
+    build_result = build_runner(case, target_config, artifact_root, run_dir)
     if build_only:
         return
     materialized_inputs = materialize_inputs(case, run_dir)
-    run_executable(case, target_config, build_dir, run_dir, materialized_inputs)
+    run_executable(
+        case,
+        target_config,
+        build_result.build_dir,
+        build_result.executable_path,
+        run_dir,
+        materialized_inputs,
+    )
 
 
-def effective_case(fuzz_case):
-    case = dict(fuzz_case.case)
-    variant = fuzz_case.variant
-    if "build" in variant:
-        case["build"] = {**case["build"], **variant["build"]}
-    if "run" in variant:
-        case["run"] = {**case["run"], **variant["run"]}
-    return case
+def build_runner(case, target_config, artifact_root, log_dir):
+    artifact_root = Path(artifact_root)
+    build_dir = _build_dir(artifact_root, target_config)
+    log_dir = Path(log_dir)
+    build_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    configure_cmake(target_config, build_dir, log_dir)
+    build_target(case, target_config, build_dir, log_dir)
+    return BuildResult(
+        build_dir=build_dir,
+        executable_path=resolve_executable_path(case, build_dir),
+    )
 
 
-def configure_cmake(target_config, build_dir, run_dir):
+def configure_cmake(target_config, build_dir, log_dir):
     cache_variables = _cmake_cache_variables(target_config)
     cache_variables["CMAKE_HIP_ARCHITECTURES"] = ";".join(target_config["hip_architectures"])
     command = ["cmake", "-S", str(FUZZ_TARGETS_ROOT), "-B", str(build_dir)]
@@ -313,13 +315,13 @@ def configure_cmake(target_config, build_dir, run_dir):
     _run_command(
         command,
         cwd=FUZZ_TARGETS_ROOT,
-        log_path=run_dir / "configure.log",
+        log_path=Path(log_dir) / "configure.log",
         phase="configure",
-        env=_command_environment(target_config),
+        env=command_environment(target_config),
     )
 
 
-def build_target(case, target_config, build_dir, run_dir):
+def build_target(case, target_config, build_dir, log_dir):
     command = [
         "cmake",
         "--build",
@@ -331,18 +333,38 @@ def build_target(case, target_config, build_dir, run_dir):
     _run_command(
         command,
         cwd=FUZZ_TARGETS_ROOT,
-        log_path=run_dir / "build.log",
+        log_path=Path(log_dir) / "build.log",
         phase="build",
-        env=_command_environment(target_config),
+        env=command_environment(target_config),
     )
 
 
-def run_executable(case, target_config, build_dir, run_dir, materialized_inputs):
+def resolve_executable_path(case, build_dir):
     executable = case["run"].get("executable")
     if executable is None:
-        executable_path = build_dir / case["build"]["target"]
-    else:
-        executable_path = build_dir / executable
+        return Path(build_dir) / case["build"]["target"]
+    return Path(build_dir) / executable
+
+
+def effective_case(fuzz_case):
+    case = dict(fuzz_case.case)
+    if fuzz_case.input_set is None:
+        return case
+
+    input_set = fuzz_case.input_set
+    case["inputs"] = input_set["inputs"]
+    if "run" in input_set:
+        case["run"] = {**case["run"], **input_set["run"]}
+    if "validation" in input_set:
+        case["validation"] = {**case["validation"], **input_set["validation"]}
+    return case
+
+
+def run_executable(case, target_config, build_dir, executable_path, run_dir, materialized_inputs):
+    if case["project"] == "llama.cpp":
+        run_llama_output_comparison(case, target_config, build_dir, executable_path, run_dir, materialized_inputs)
+        return
+
     command = [str(executable_path)]
     for input_name, input_path in materialized_inputs:
         command.extend(["--input", f"{input_name}={input_path}"])
@@ -353,10 +375,102 @@ def run_executable(case, target_config, build_dir, run_dir, materialized_inputs)
         cwd=build_dir,
         log_path=run_dir / "run.log",
         phase="run",
-        env=_command_environment(target_config, case["run"].get("env", {})),
+        env=command_environment(target_config, case["run"].get("env", {})),
         timeout=case["run"]["timeout_seconds"],
         expected_returncode=expected_exit_code,
     )
+
+
+def run_llama_output_comparison(case, target_config, build_dir, executable_path, run_dir, materialized_inputs):
+    gpu_output_path = run_dir / "gpu_output.f32.raw"
+    reference_output_path = run_dir / "reference_output.f32.raw"
+    run_args = list(case["run"].get("args", []))
+    base_args = _without_validate_args(run_args)
+    timeout = case["run"]["timeout_seconds"]
+    env = command_environment(target_config, case["run"].get("env", {}))
+
+    gpu_command = _runner_command(executable_path, materialized_inputs, base_args, gpu_output_path)
+    _run_command(
+        gpu_command,
+        cwd=build_dir,
+        log_path=run_dir / "run.log",
+        phase="run",
+        env=env,
+        timeout=timeout,
+        expected_returncode=0,
+    )
+
+    reference_command = _runner_command(
+        executable_path,
+        materialized_inputs,
+        [*base_args, "--validate"],
+        reference_output_path,
+    )
+    _run_command(
+        reference_command,
+        cwd=build_dir,
+        log_path=run_dir / "validate.log",
+        phase="validate",
+        env=env,
+        timeout=timeout,
+        expected_returncode=int(case["validation"]["pass_exit_code"]),
+    )
+
+    if int(case["validation"]["pass_exit_code"]) == 0:
+        compare_f32_outputs(
+            gpu_output_path,
+            reference_output_path,
+            abs_tolerance=float(case["validation"].get("abs_tolerance", 0.0)),
+        )
+
+
+def _runner_command(executable_path, materialized_inputs, args, output_path):
+    command = [str(executable_path)]
+    for input_name, input_path in materialized_inputs:
+        command.extend(["--input", f"{input_name}={input_path}"])
+    command.extend(args)
+    command.extend(["--output", str(output_path)])
+    return command
+
+
+def _without_validate_args(args):
+    filtered = []
+    for arg in args:
+        if arg in {"--validate", "--validate=true"} or arg.startswith("--validate="):
+            continue
+        filtered.append(arg)
+    return filtered
+
+
+def compare_f32_outputs(gpu_output_path, reference_output_path, *, abs_tolerance):
+    gpu_data = Path(gpu_output_path).read_bytes()
+    reference_data = Path(reference_output_path).read_bytes()
+    if len(gpu_data) != len(reference_data):
+        raise FuzzTargetError(
+            f"output size mismatch: gpu={gpu_output_path} has {len(gpu_data)} bytes, "
+            f"reference={reference_output_path} has {len(reference_data)} bytes"
+        )
+    if len(gpu_data) % 4 != 0:
+        raise FuzzTargetError(f"output is not f32-sized: {gpu_output_path}")
+
+    count = len(gpu_data) // 4
+    if count == 0:
+        raise FuzzTargetError(f"output is empty: {gpu_output_path}")
+    gpu_values = struct.unpack(f"<{count}f", gpu_data)
+    reference_values = struct.unpack(f"<{count}f", reference_data)
+    max_abs_diff = 0.0
+    max_abs_diff_index = 0
+    for index, (gpu_value, reference_value) in enumerate(zip(gpu_values, reference_values)):
+        abs_diff = abs(gpu_value - reference_value)
+        if abs_diff > max_abs_diff:
+            max_abs_diff = abs_diff
+            max_abs_diff_index = index
+    if max_abs_diff > abs_tolerance:
+        raise FuzzTargetError(
+            f"output mismatch: max_abs_diff={max_abs_diff} at index {max_abs_diff_index}, "
+            f"tolerance={abs_tolerance}, gpu={gpu_values[max_abs_diff_index]}, "
+            f"reference={reference_values[max_abs_diff_index]}"
+        )
 
 
 def _cmake_cache_variables(target_config):
@@ -493,7 +607,7 @@ def _num_elements(shape):
     return total
 
 
-def _command_environment(target_config, extra_environment=None):
+def command_environment(target_config, extra_environment=None):
     env = os.environ.copy()
     env.update({str(k): str(v) for k, v in target_config.get("run_environment", {}).items()})
     if extra_environment:
@@ -515,14 +629,16 @@ def _build_dir(artifact_root, target_config):
 
 def _run_dir(artifact_root, target_config, fuzz_case):
     relative_case = fuzz_case.path.resolve().relative_to(FUZZ_TARGETS_ROOT).parent
-    return (
+    run_dir = (
         Path(artifact_root)
         / "fuzz_targets"
         / target_config["config_name"]
         / "runs"
         / relative_case
-        / fuzz_case.variant["name"]
     )
+    if fuzz_case.input_set is not None:
+        run_dir = run_dir / fuzz_case.input_set["name"]
+    return run_dir
 
 
 def _run_command(

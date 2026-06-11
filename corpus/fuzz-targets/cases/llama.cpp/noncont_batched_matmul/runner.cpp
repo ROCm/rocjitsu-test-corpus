@@ -1,6 +1,5 @@
-// Reproduces llama.cpp PR #13155 with a non-contiguous F32 src1 view in a
-// batched F16 x F32 GGML mul_mat. The same input should fail on the pre-fix
-// HIP/CUDA backend and pass after the backend respects src1 view strides.
+// Exercises llama.cpp GGML batched F16 x F32 mul_mat with a non-contiguous
+// F32 src1 view. This passes when the backend respects src1 view strides.
 
 #if __has_include("ggml-alloc.h")
 #include "ggml-alloc.h"
@@ -27,17 +26,36 @@ namespace {
 constexpr int64_t k_dim = 64;
 constexpr int64_t output_rows = 32;
 constexpr int64_t src1_view_cols = 17;
-constexpr int64_t src1_parent_cols = 32;
+constexpr int64_t src1_noncont_parent_cols = 32;
 constexpr int64_t src1_batches = 2;
-
-constexpr size_t src1_nb0 = sizeof(float);
-constexpr size_t src1_nb1 = k_dim * src1_nb0;
-constexpr size_t src1_nb2 = src1_parent_cols * src1_nb1;
-constexpr size_t src1_nb3 = src1_batches * src1_nb2;
-constexpr size_t src1_view_offset = src1_nb1;
 
 constexpr float validation_abs_tolerance = 1.0e-3f;
 constexpr size_t bug_signal_index = output_rows * src1_view_cols;
+
+enum class Src1Layout {
+    Contiguous,
+    Noncontiguous,
+};
+
+const char * src1_layout_name(Src1Layout layout) {
+    return layout == Src1Layout::Contiguous ? "contiguous" : "noncontiguous";
+}
+
+bool parse_src1_layout(const char * value, Src1Layout & layout) {
+    if (std::strcmp(value, "contiguous") == 0) {
+        layout = Src1Layout::Contiguous;
+        return true;
+    }
+    if (std::strcmp(value, "noncontiguous") == 0) {
+        layout = Src1Layout::Noncontiguous;
+        return true;
+    }
+    return false;
+}
+
+int64_t src1_parent_cols_for_layout(Src1Layout layout) {
+    return layout == Src1Layout::Contiguous ? src1_view_cols : src1_noncont_parent_cols;
+}
 
 bool parse_input_assignment(const char * arg, std::string & name, std::string & path) {
     const char * equals = std::strchr(arg, '=');
@@ -53,8 +71,11 @@ bool parse_args(
         int argc,
         char ** argv,
         bool & validate,
-        std::unordered_map<std::string, std::string> & inputs) {
+        Src1Layout & src1_layout,
+        std::unordered_map<std::string, std::string> & inputs,
+        std::string & output_path) {
     validate = false;
+    src1_layout = Src1Layout::Noncontiguous;
     for (int i = 1; i < argc;) {
         if (std::strcmp(argv[i], "--validate") == 0 || std::strcmp(argv[i], "--validate=true") == 0) {
             validate = true;
@@ -75,9 +96,47 @@ bool parse_args(
             }
             inputs[name] = path;
             i += 2;
+        } else if (std::strcmp(argv[i], "--output") == 0 || std::strncmp(argv[i], "--output=", 9) == 0) {
+            if (std::strncmp(argv[i], "--output=", 9) == 0) {
+                output_path = argv[i] + 9;
+                if (output_path.empty()) {
+                    std::fprintf(stderr, "--output= requires a file path\n");
+                    return false;
+                }
+                ++i;
+                continue;
+            }
+            if (i + 1 >= argc) {
+                std::fprintf(stderr, "--output requires a file path\n");
+                return false;
+            }
+            output_path = argv[i + 1];
+            i += 2;
+        } else if (std::strcmp(argv[i], "--src1-layout") == 0 || std::strncmp(argv[i], "--src1-layout=", 14) == 0) {
+            const char * layout_value = nullptr;
+            if (std::strncmp(argv[i], "--src1-layout=", 14) == 0) {
+                layout_value = argv[i] + 14;
+                ++i;
+            } else {
+                if (i + 1 >= argc) {
+                    std::fprintf(stderr, "--src1-layout requires contiguous or noncontiguous\n");
+                    return false;
+                }
+                layout_value = argv[i + 1];
+                i += 2;
+            }
+            if (!parse_src1_layout(layout_value, src1_layout)) {
+                std::fprintf(stderr, "invalid --src1-layout value: %s\n", layout_value);
+                return false;
+            }
         } else {
             std::fprintf(stderr, "unknown argument: %s\n", argv[i]);
-            std::fprintf(stderr, "usage: %s [--input name=path ...] [--validate|--validate=true|--validate=false]\n", argv[0]);
+            std::fprintf(
+                stderr,
+                "usage: %s [--input name=path ...] [--output path|--output=path] "
+                "[--src1-layout contiguous|noncontiguous] "
+                "[--validate|--validate=true|--validate=false]\n",
+                argv[0]);
             return false;
         }
     }
@@ -131,10 +190,52 @@ bool read_f16_file(const std::string & path, size_t expected_elements, std::vect
     return true;
 }
 
-bool run_pr13155_case(
+bool write_f32_file(const std::string & path, const std::vector<float> & data) {
+    std::ofstream file(path, std::ios::binary);
+    if (!file) {
+        std::fprintf(stderr, "failed to open output file: %s\n", path.c_str());
+        return false;
+    }
+    file.write(reinterpret_cast<const char *>(data.data()), static_cast<std::streamsize>(data.size() * sizeof(float)));
+    if (!file) {
+        std::fprintf(stderr, "failed to write output file: %s\n", path.c_str());
+        return false;
+    }
+    return true;
+}
+
+std::vector<ggml_fp16_t> make_default_src0_data() {
+    std::vector<ggml_fp16_t> data(static_cast<size_t>(k_dim * output_rows));
+    for (int64_t row = 0; row < output_rows; ++row) {
+        for (int64_t col = 0; col < k_dim; ++col) {
+            const float value = col == row ? 1.0f : 0.0f;
+            data[static_cast<size_t>(col + k_dim * row)] = ggml_fp32_to_fp16(value);
+        }
+    }
+    return data;
+}
+
+std::vector<float> make_default_src1_parent_data(Src1Layout src1_layout) {
+    const int64_t src1_parent_cols = src1_parent_cols_for_layout(src1_layout);
+    std::vector<float> data(static_cast<size_t>(k_dim * src1_parent_cols * src1_batches));
+    for (int64_t batch = 0; batch < src1_batches; ++batch) {
+        for (int64_t row = 0; row < src1_parent_cols; ++row) {
+            for (int64_t col = 0; col < k_dim; ++col) {
+                const size_t index = static_cast<size_t>(col + k_dim * (row + src1_parent_cols * batch));
+                data[index] = 0.25f * static_cast<float>(col)
+                    + 10.0f * static_cast<float>(row)
+                    + 100.0f * static_cast<float>(batch);
+            }
+        }
+    }
+    return data;
+}
+
+bool run_noncont_batched_matmul_case(
         ggml_backend_t backend,
         const std::vector<ggml_fp16_t> & src0_data,
         const std::vector<float> & src1_parent_data,
+        Src1Layout src1_layout,
         std::vector<float> & output_data) {
     ggml_init_params params = {};
     params.mem_size = 32u * 1024u * 1024u;
@@ -148,19 +249,27 @@ bool run_pr13155_case(
     }
 
     ggml_tensor * src0 = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, k_dim, output_rows);
+    const int64_t src1_parent_cols = src1_parent_cols_for_layout(src1_layout);
     ggml_tensor * src1_parent =
         ggml_new_tensor_4d(ctx, GGML_TYPE_F32, k_dim, src1_parent_cols, src1_batches, 1);
-    ggml_tensor * src1_view = ggml_view_4d(
-        ctx,
-        src1_parent,
-        k_dim,
-        src1_view_cols,
-        src1_batches,
-        1,
-        src1_nb1,
-        src1_nb2,
-        src1_nb3,
-        src1_view_offset);
+    ggml_tensor * src1_view = src1_parent;
+    if (src1_layout == Src1Layout::Noncontiguous) {
+        const size_t src1_nb1 = k_dim * sizeof(float);
+        const size_t src1_nb2 = src1_parent_cols * src1_nb1;
+        const size_t src1_nb3 = src1_batches * src1_nb2;
+        const size_t src1_view_offset = src1_nb1;
+        src1_view = ggml_view_4d(
+            ctx,
+            src1_parent,
+            k_dim,
+            src1_view_cols,
+            src1_batches,
+            1,
+            src1_nb1,
+            src1_nb2,
+            src1_nb3,
+            src1_view_offset);
+    }
     ggml_tensor * output = ggml_mul_mat(ctx, src0, src1_view);
 
     ggml_cgraph * graph = ggml_new_graph(ctx);
@@ -195,7 +304,8 @@ bool run_pr13155_case(
 bool validate_against_cpu(
         const std::vector<float> & gpu_output,
         const std::vector<ggml_fp16_t> & src0_data,
-        const std::vector<float> & src1_parent_data) {
+        const std::vector<float> & src1_parent_data,
+        Src1Layout src1_layout) {
     ggml_backend_t cpu_backend = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, nullptr);
     if (cpu_backend == nullptr) {
         std::fprintf(stderr, "failed to initialize GGML CPU backend\n");
@@ -203,7 +313,8 @@ bool validate_against_cpu(
     }
 
     std::vector<float> cpu_output;
-    const bool cpu_ok = run_pr13155_case(cpu_backend, src0_data, src1_parent_data, cpu_output);
+    const bool cpu_ok = run_noncont_batched_matmul_case(
+        cpu_backend, src0_data, src1_parent_data, src1_layout, cpu_output);
     ggml_backend_free(cpu_backend);
     if (!cpu_ok) {
         return false;
@@ -242,12 +353,10 @@ bool validate_against_cpu(
 
 int main(int argc, char ** argv) {
     bool validate = false;
+    Src1Layout src1_layout = Src1Layout::Noncontiguous;
     std::unordered_map<std::string, std::string> inputs;
-    if (!parse_args(argc, argv, validate, inputs)) {
-        return 1;
-    }
-    if (inputs.find("src0") == inputs.end() || inputs.find("src1_parent") == inputs.end()) {
-        std::fprintf(stderr, "required inputs: src0, src1_parent\n");
+    std::string output_path;
+    if (!parse_args(argc, argv, validate, src1_layout, inputs, output_path)) {
         return 1;
     }
 
@@ -259,27 +368,59 @@ int main(int argc, char ** argv) {
     }
 
     std::vector<ggml_fp16_t> src0_data;
-    if (!read_f16_file(inputs.at("src0"), static_cast<size_t>(k_dim * output_rows), src0_data)) {
-        ggml_backend_free(backend);
-        return 1;
+    const auto src0_input = inputs.find("src0");
+    if (src0_input != inputs.end()) {
+        if (!read_f16_file(src0_input->second, static_cast<size_t>(k_dim * output_rows), src0_data)) {
+            ggml_backend_free(backend);
+            return 1;
+        }
+    } else {
+        src0_data = make_default_src0_data();
     }
+
     std::vector<float> src1_parent_data;
-    if (!read_f32_file(inputs.at("src1_parent"), static_cast<size_t>(k_dim * src1_parent_cols * src1_batches), src1_parent_data)) {
-        ggml_backend_free(backend);
-        return 1;
+    const int64_t src1_parent_cols = src1_parent_cols_for_layout(src1_layout);
+    const auto src1_parent_input = inputs.find("src1_parent");
+    if (src1_parent_input != inputs.end()) {
+        if (!read_f32_file(src1_parent_input->second, static_cast<size_t>(k_dim * src1_parent_cols * src1_batches), src1_parent_data)) {
+            ggml_backend_free(backend);
+            return 1;
+        }
+    } else {
+        src1_parent_data = make_default_src1_parent_data(src1_layout);
     }
 
     std::vector<float> output_data;
-    if (!run_pr13155_case(backend, src0_data, src1_parent_data, output_data)) {
+    if (!run_noncont_batched_matmul_case(backend, src0_data, src1_parent_data, src1_layout, output_data)) {
         ggml_backend_free(backend);
         return 1;
     }
-
     const float signal = bug_signal_index < output_data.size() ? output_data[bug_signal_index] : 0.0f;
-    std::printf("llama.cpp PR #13155 non-contiguous batched matmul ran, output[%zu]=%g\n",
-        bug_signal_index, signal);
+    std::printf("llama.cpp batched matmul ran with %s src1, output[%zu]=%g\n",
+        src1_layout_name(src1_layout), bug_signal_index, signal);
 
-    if (validate && !validate_against_cpu(output_data, src0_data, src1_parent_data)) {
+    if (validate) {
+        if (!validate_against_cpu(output_data, src0_data, src1_parent_data, src1_layout)) {
+            ggml_backend_free(backend);
+            return 1;
+        }
+        if (!output_path.empty()) {
+            ggml_backend_t cpu_backend = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, nullptr);
+            if (cpu_backend == nullptr) {
+                std::fprintf(stderr, "failed to initialize GGML CPU backend\n");
+                ggml_backend_free(backend);
+                return 1;
+            }
+            std::vector<float> cpu_output;
+            const bool cpu_ok = run_noncont_batched_matmul_case(
+                cpu_backend, src0_data, src1_parent_data, src1_layout, cpu_output);
+            ggml_backend_free(cpu_backend);
+            if (!cpu_ok || !write_f32_file(output_path, cpu_output)) {
+                ggml_backend_free(backend);
+                return 1;
+            }
+        }
+    } else if (!output_path.empty() && !write_f32_file(output_path, output_data)) {
         ggml_backend_free(backend);
         return 1;
     }

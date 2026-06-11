@@ -3,7 +3,6 @@ project = "hipkittens"
 runner = "runner.hip"
 upstream_repo = "https://github.com/HazyResearch/HipKittens"
 source = "../../../third_party/hipkittens"
-default_variant = "upstream"
 
 [input]
 description = "Corpus-owned standalone HIP runner for the upstream HipKittens BF16/FP32 256x256x64x32 with 16x32 GEMM kernel."

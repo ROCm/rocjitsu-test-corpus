@@ -3,7 +3,6 @@ project = "hip-stream-k"
 runner = "runner.cpp"
 upstream_repo = "https://github.com/ROCm/hip-stream-k"
 source = "../../../third_party/hip-stream-k"
-default_variant = "upstream"
 
 [input]
 description = "Upstream two_tile_streamk F16/F32 GEMM example; accepts -m, -n, -k, -g, --num_runs, --validate, and -v."

@@ -1,0 +1,35 @@
+{
+  "name": "llama_noncont_batched_matmul_hazard",
+  "project": "llama.cpp",
+  "runner": "runner.cpp",
+  "kind": "cmake_executable",
+  "architectures": [
+    "cdna3",
+    "rdna4"
+  ],
+  "build": {
+    "system": "cmake",
+    "target": "llama_cpp_noncont_batched_matmul_hazard"
+  },
+  "run": {
+    "executable": "cases/llama.cpp/llama_cpp_noncont_batched_matmul_hazard-build/rocfuzz_llama_noncont_batched_matmul_hazard_runner",
+    "args": [
+      "--validate"
+    ],
+    "timeout_seconds": 120
+  },
+  "validation": {
+    "kind": "exit_code",
+    "pass_exit_code": 0,
+    "abs_tolerance": 0.001
+  },
+  "tags": [
+    "llama.cpp",
+    "ggml",
+    "matmul",
+    "non-contiguous",
+    "hazard",
+    "pr13155",
+    "regression"
+  ]
+}

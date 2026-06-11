@@ -27,10 +27,9 @@ corpus/fuzz-targets/
       <case>/
         case.json
         runner.cpp|runner.hip
-        variants/
-          <variant>/
-            variant.json
-            patches/*.patch
+        input_sets/*.json
+        overrides/<relative/source/path>
+        cmake/*.cmake
   third_party/
     <project>/
 
@@ -45,15 +44,15 @@ JSON describes intent. Python executes test policy. CMake owns the build graph.
 HIP/ROCm compilers build the actual GPU code.
 
 ```text
-case.json / variant.json / target config
+case.json / input-set json / target config
   = declare what should be built and run
 
 pytest harness
-  = discover cases, pick configs, call CMake, run executables, validate results,
-    collect logs and artifacts
+  = discover cases and input sets, pick configs, call CMake, run executables,
+    validate results, collect logs and artifacts
 
 CMake
-  = define source files, include paths, libraries, overlays, patches, executable
+  = define source files, include paths, libraries, source overlays, executable
     targets, and run targets
 
 HIP/ROCm compiler
@@ -96,22 +95,22 @@ Stable test-case metadata. Planned contents:
 - `validation`: expected exit code, output checks, numeric tolerance, or
   case-specific validation mode.
 - `architectures`: supported architecture families or concrete GPU targets.
-- `default_variant`: default variant name when one is not explicitly selected.
+- `inputs`: input definitions for simple cases, or omit when using
+  `input_sets/*.json`.
 - `tags`: optional labels for filtering.
 
 Example shape:
 
 ```json
 {
-  "name": "llama_pr13155_noncont_batched_matmul",
+  "name": "llama_noncont_batched_matmul",
   "project": "llama.cpp",
   "runner": "runner.cpp",
   "kind": "cmake_executable",
-  "default_variant": "pr13155_fix",
   "architectures": ["cdna3", "rdna4"],
   "build": {
     "system": "cmake",
-    "target": "llama_cpp_pr13155_noncont_batched_matmul_fix"
+    "target": "llama_cpp_noncont_batched_matmul"
   },
   "run": {
     "args": ["--validate"],
@@ -125,17 +124,17 @@ Example shape:
 }
 ```
 
-`corpus/fuzz-targets/cases/<project>/<case>/variants/<variant>/variant.json`
+`corpus/fuzz-targets/cases/<project>/<case>/input_sets/<name>.json`
 
-Source variant metadata. Planned contents:
+Optional input-set metadata for cases that should run the same executable with
+multiple input definitions. Planned contents:
 
-- `name`: stable variant identifier.
+- `name`: stable input-set identifier used in pytest IDs and artifact paths.
 - `description`: human-readable purpose.
-- `role`: `upstream`, `bug`, `fix`, or another small enum.
-- `source_overlay`: how this variant changes or selects source.
-- `patches`: patch files applied by CMake or helper scripts.
-- `upstream_commit`: optional provenance.
-- `expect`: default expected behavior, such as `pass` or `fail`.
+- `inputs`: concrete input definitions materialized by pytest.
+- `run`: optional run metadata override, such as layout selector arguments.
+- `validation`: optional validation override, such as expected exit code.
+- `tags`: optional labels for filtering.
 
 `corpus/fuzz-targets/configs/cdna3.json`
 
@@ -159,10 +158,10 @@ expected failures.
 ## Planned Pytest Flow
 
 ```text
-case.json + variant.json + target config
+case.json + optional input-set json + target config
         |
         v
-pytest discovers case/variant/target combinations
+pytest discovers case/input-set/target combinations
         |
         v
 pytest asks CMake to configure/build the selected target
@@ -189,7 +188,7 @@ No JSON schema is required for the first version. The Python loader should be
 strict and explicit while the format settles:
 
 - fail on missing required fields.
-- reject unsupported `kind`, `role`, `expect`, and validation modes.
+- reject unsupported `kind` and validation modes.
 - reject unknown architecture families when target configs do not support them.
 - produce actionable error messages that point at the bad JSON file.
 

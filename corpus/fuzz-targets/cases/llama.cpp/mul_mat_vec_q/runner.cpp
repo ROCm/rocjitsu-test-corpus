@@ -37,7 +37,8 @@ bool parse_args(
         int argc,
         char ** argv,
         bool & validate,
-        std::unordered_map<std::string, std::string> & inputs) {
+        std::unordered_map<std::string, std::string> & inputs,
+        std::string & output_path) {
     validate = false;
     for (int i = 1; i < argc;) {
         if (std::strcmp(argv[i], "--validate") == 0 || std::strcmp(argv[i], "--validate=true") == 0) {
@@ -59,9 +60,29 @@ bool parse_args(
             }
             inputs[name] = path;
             i += 2;
+        } else if (std::strcmp(argv[i], "--output") == 0 || std::strncmp(argv[i], "--output=", 9) == 0) {
+            if (std::strncmp(argv[i], "--output=", 9) == 0) {
+                output_path = argv[i] + 9;
+                if (output_path.empty()) {
+                    std::fprintf(stderr, "--output= requires a file path\n");
+                    return false;
+                }
+                ++i;
+                continue;
+            }
+            if (i + 1 >= argc) {
+                std::fprintf(stderr, "--output requires a file path\n");
+                return false;
+            }
+            output_path = argv[i + 1];
+            i += 2;
         } else {
             std::fprintf(stderr, "unknown argument: %s\n", argv[i]);
-            std::fprintf(stderr, "usage: %s [--input name=path ...] [--validate|--validate=true|--validate=false]\n", argv[0]);
+            std::fprintf(
+                stderr,
+                "usage: %s [--input name=path ...] [--output path|--output=path] "
+                "[--validate|--validate=true|--validate=false]\n",
+                argv[0]);
             return false;
         }
     }
@@ -84,6 +105,20 @@ bool read_f32_file(const std::string & path, size_t expected_elements, std::vect
     file.read(&trailing, 1);
     if (file.gcount() != 0) {
         std::fprintf(stderr, "input file has trailing bytes: %s\n", path.c_str());
+        return false;
+    }
+    return true;
+}
+
+bool write_f32_file(const std::string & path, const std::vector<float> & data) {
+    std::ofstream file(path, std::ios::binary);
+    if (!file) {
+        std::fprintf(stderr, "failed to open output file: %s\n", path.c_str());
+        return false;
+    }
+    file.write(reinterpret_cast<const char *>(data.data()), static_cast<std::streamsize>(data.size() * sizeof(float)));
+    if (!file) {
+        std::fprintf(stderr, "failed to write output file: %s\n", path.c_str());
         return false;
     }
     return true;
@@ -197,7 +232,8 @@ bool validate_against_cpu(const std::vector<float> & gpu_output,
 int main(int argc, char ** argv) {
     bool validate = false;
     std::unordered_map<std::string, std::string> inputs;
-    if (!parse_args(argc, argv, validate, inputs)) {
+    std::string output_path;
+    if (!parse_args(argc, argv, validate, inputs, output_path)) {
         return 1;
     }
     if (inputs.find("matrix") == inputs.end() || inputs.find("vector") == inputs.end()) {
@@ -241,11 +277,30 @@ int main(int argc, char ** argv) {
         ggml_backend_free(backend);
         return 1;
     }
-
     std::printf("llama.cpp ggml_mul_mat quantized matvec ran, output[0]=%g\n",
         output_data.empty() ? 0.0f : output_data[0]);
 
-    if (validate && !validate_against_cpu(output_data, matrix_data, vector_data)) {
+    if (validate) {
+        if (!validate_against_cpu(output_data, matrix_data, vector_data)) {
+            ggml_backend_free(backend);
+            return 1;
+        }
+        if (!output_path.empty()) {
+            ggml_backend_t cpu_backend = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, nullptr);
+            if (cpu_backend == nullptr) {
+                std::fprintf(stderr, "failed to initialize GGML CPU backend\n");
+                ggml_backend_free(backend);
+                return 1;
+            }
+            std::vector<float> cpu_output;
+            const bool cpu_ok = run_mul_mat(cpu_backend, matrix_data, vector_data, cpu_output);
+            ggml_backend_free(cpu_backend);
+            if (!cpu_ok || !write_f32_file(output_path, cpu_output)) {
+                ggml_backend_free(backend);
+                return 1;
+            }
+        }
+    } else if (!output_path.empty() && !write_f32_file(output_path, output_data)) {
         ggml_backend_free(backend);
         return 1;
     }

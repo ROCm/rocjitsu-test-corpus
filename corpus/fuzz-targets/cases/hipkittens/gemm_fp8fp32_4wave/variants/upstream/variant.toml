@@ -1,4 +1,0 @@
-name = "upstream"
-description = "Extracted HipKittens FP8/FP32 4-wave GEMM source with a corpus-sized executable runner wrapper."
-patches = []
-expect = "pass"

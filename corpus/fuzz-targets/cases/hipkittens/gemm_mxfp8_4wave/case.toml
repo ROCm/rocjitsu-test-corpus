@@ -3,7 +3,6 @@ project = "hipkittens"
 runner = "runner.hip"
 upstream_repo = "https://github.com/HazyResearch/HipKittens"
 source = "../../../third_party/hipkittens"
-default_variant = "upstream"
 
 [input]
 description = "Upstream HipKittens MXFP8 4-wave TN GEMM executable, compiled with corpus overrides for a 256x256x256 one-iteration run."

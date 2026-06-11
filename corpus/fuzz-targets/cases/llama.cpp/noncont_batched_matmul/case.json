@@ -1,0 +1,69 @@
+{
+  "name": "llama_noncont_batched_matmul",
+  "project": "llama.cpp",
+  "runner": "runner.cpp",
+  "kind": "cmake_executable",
+  "architectures": [
+    "cdna3",
+    "rdna4"
+  ],
+  "build": {
+    "system": "cmake",
+    "target": "llama_cpp_noncont_batched_matmul"
+  },
+  "run": {
+    "executable": "cases/llama.cpp/llama_cpp_noncont_batched_matmul",
+    "args": [
+      "--src1-layout=contiguous",
+      "--validate"
+    ],
+    "timeout_seconds": 120
+  },
+  "inputs": [
+    {
+      "name": "src0",
+      "format": "raw",
+      "dtype": "f16",
+      "shape": [
+        64,
+        32
+      ],
+      "generator": {
+        "kind": "identity_diagonal",
+        "diagonal_value": 1.0,
+        "other_value": 0.0
+      }
+    },
+    {
+      "name": "src1_parent",
+      "format": "raw",
+      "dtype": "f32",
+      "shape": [
+        64,
+        17,
+        2
+      ],
+      "generator": {
+        "kind": "affine_indices",
+        "coefficients": [
+          0.25,
+          10.0,
+          100.0
+        ],
+        "bias": 0.0
+      }
+    }
+  ],
+  "validation": {
+    "kind": "exit_code",
+    "pass_exit_code": 0,
+    "abs_tolerance": 0.001
+  },
+  "tags": [
+    "llama.cpp",
+    "ggml",
+    "matmul",
+    "non-contiguous",
+    "regression"
+  ]
+}

@@ -3,8 +3,9 @@
   "project": "hip-matmul",
   "runner": "runner.hip",
   "kind": "cmake_executable",
-  "default_variant": "upstream",
-  "architectures": ["cdna3"],
+  "architectures": [
+    "cdna3"
+  ],
   "build": {
     "system": "cmake",
     "target": "hip_matmul_matmul"
@@ -22,5 +23,9 @@
     "kind": "exit_code",
     "pass_exit_code": 0
   },
-  "tags": ["hip-matmul", "matmul", "regression"]
+  "tags": [
+    "hip-matmul",
+    "matmul",
+    "regression"
+  ]
 }

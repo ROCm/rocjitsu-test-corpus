@@ -1,6 +1,0 @@
-name = "pr13155_fix"
-description = "Current vendored GGML; non-contiguous F32 src1 is converted with explicit view strides before batched matmul."
-llama_commit = "cdf76586b23c67abd3ca064ee2c084c57ae240bd"
-source_overlay = "vendored GGML"
-patches = []
-expect = "pass"

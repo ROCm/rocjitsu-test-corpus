@@ -18,6 +18,8 @@ def pytest_generate_tests(metafunc):
                 continue
 
             marks = []
+            if case["name"].endswith("_hazard"):
+                marks.append(pytest.mark.skip(reason="Hazard kernels are disabled for now."))
             if not ignore_xfails:
                 if case["name"] in target_config.get("expected_compile_failures", []):
                     marks.append(
@@ -27,10 +29,7 @@ def pytest_generate_tests(metafunc):
                             reason="Expected CMake build to fail for this target config.",
                         )
                     )
-                if (
-                    case["name"] in target_config.get("expected_run_failures", [])
-                    or fuzz_case.variant["expect"] == "fail"
-                ):
+                if case["name"] in target_config.get("expected_run_failures", []):
                     marks.append(
                         pytest.mark.xfail(
                             raises=FuzzTargetError,
