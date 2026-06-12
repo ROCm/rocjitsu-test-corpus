@@ -55,7 +55,7 @@ rocjitsu for regression checks.
 Fuzz target kernel pytest with rocjitsu:
 
 ```bash
-ROCFUZZ_THEROCK_ROCM_PATH=<therock artifact folder>/install python3 -B -m pytest tests/test_fuzz_targets.py -vv \
+ROCFUZZ_THEROCK_ROCM_PATH=<extracted TheRock artifact folder> python3 -B -m pytest tests/test_fuzz_targets.py -vv \
   --fuzz-target-config-files corpus/fuzz-targets/configs/cdna3.json \
   --run-wrapper "rocjitsu --config main/emulation/rocjitsu/configs/amdgpu_cdna3_kmd.json --"
 ```
@@ -66,7 +66,7 @@ contains HIP.
 Fuzz target kernel pytest without rocjitsu:
 
 ```bash
-ROCFUZZ_THEROCK_ROCM_PATH=<therock artifact folder>/install python3 -B -m pytest tests/test_fuzz_targets.py -vv \
+ROCFUZZ_THEROCK_ROCM_PATH=<extracted TheRock artifact folder> python3 -B -m pytest tests/test_fuzz_targets.py -vv \
   --fuzz-target-config-files corpus/fuzz-targets/configs/cdna3.json
 ```
 

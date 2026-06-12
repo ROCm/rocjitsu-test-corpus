@@ -4,11 +4,11 @@
 
 #include "../../../third_party/llama.cpp/ggml/include/ggml-alloc.h"
 #include "../../../third_party/llama.cpp/ggml/include/ggml-backend.h"
+#include "../../../third_party/llama.cpp/ggml/include/ggml-cpu.h"
 #include "../../../third_party/llama.cpp/ggml/include/ggml.h"
 
 #include <cstddef>
 #include <cstdint>
-#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -26,7 +26,6 @@ struct RunShape {
 };
 
 constexpr float rms_norm_epsilon = std::numeric_limits<float>::epsilon();
-constexpr float validation_abs_tolerance = 1.0e-5f;
 
 bool parse_positive_i64(const char * value, int64_t & result) {
     char * end = nullptr;
@@ -237,52 +236,6 @@ bool run_rms_norm(
     return true;
 }
 
-bool validate_against_cpu(
-        const std::vector<float> & gpu_output,
-        const RunShape & shape,
-        const std::vector<float> & activation_data) {
-    ggml_backend_t cpu_backend = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, nullptr);
-    if (cpu_backend == nullptr) {
-        std::fprintf(stderr, "failed to initialize GGML CPU backend\n");
-        return false;
-    }
-
-    std::vector<float> cpu_output;
-    const bool cpu_ok = run_rms_norm(cpu_backend, shape, activation_data, cpu_output);
-    ggml_backend_free(cpu_backend);
-    if (!cpu_ok) {
-        return false;
-    }
-
-    if (gpu_output.size() != cpu_output.size()) {
-        std::fprintf(stderr, "validation failed: output size mismatch, gpu=%zu cpu=%zu\n",
-            gpu_output.size(), cpu_output.size());
-        return false;
-    }
-
-    float max_abs_diff = 0.0f;
-    size_t max_abs_diff_index = 0;
-    for (size_t i = 0; i < gpu_output.size(); ++i) {
-        const float abs_diff = std::fabs(gpu_output[i] - cpu_output[i]);
-        if (abs_diff > max_abs_diff) {
-            max_abs_diff = abs_diff;
-            max_abs_diff_index = i;
-        }
-    }
-
-    if (max_abs_diff > validation_abs_tolerance) {
-        std::fprintf(stderr,
-            "validation failed: max_abs_diff=%g at index %zu, gpu=%g cpu=%g tolerance=%g\n",
-            max_abs_diff, max_abs_diff_index, gpu_output[max_abs_diff_index],
-            cpu_output[max_abs_diff_index], validation_abs_tolerance);
-        return false;
-    }
-
-    std::printf("validation passed: max_abs_diff=%g tolerance=%g\n",
-        max_abs_diff, validation_abs_tolerance);
-    return true;
-}
-
 } // namespace
 
 int main(int argc, char ** argv) {
@@ -294,10 +247,14 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    ggml_backend_load_all();
-    ggml_backend_t backend = init_gpu_backend();
+    if (!validate) {
+        ggml_backend_load_all();
+    }
+    ggml_backend_t backend = validate
+        ? ggml_backend_cpu_init()
+        : init_gpu_backend();
     if (backend == nullptr) {
-        std::fprintf(stderr, "failed to initialize GGML GPU/IGPU backend\n");
+        std::fprintf(stderr, "failed to initialize GGML %s backend\n", validate ? "CPU" : "GPU/IGPU");
         return 1;
     }
 
@@ -321,27 +278,7 @@ int main(int argc, char ** argv) {
         static_cast<long long>(shape.n_embd), static_cast<long long>(shape.n_tokens),
         output_data.empty() ? 0.0f : output_data[0]);
 
-    if (validate) {
-        if (!validate_against_cpu(output_data, shape, activation_data)) {
-            ggml_backend_free(backend);
-            return 1;
-        }
-        if (!output_path.empty()) {
-            ggml_backend_t cpu_backend = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, nullptr);
-            if (cpu_backend == nullptr) {
-                std::fprintf(stderr, "failed to initialize GGML CPU backend\n");
-                ggml_backend_free(backend);
-                return 1;
-            }
-            std::vector<float> cpu_output;
-            const bool cpu_ok = run_rms_norm(cpu_backend, shape, activation_data, cpu_output);
-            ggml_backend_free(cpu_backend);
-            if (!cpu_ok || !write_f32_file(output_path, cpu_output)) {
-                ggml_backend_free(backend);
-                return 1;
-            }
-        }
-    } else if (!output_path.empty() && !write_f32_file(output_path, output_data)) {
+    if (!output_path.empty() && !write_f32_file(output_path, output_data)) {
         ggml_backend_free(backend);
         return 1;
     }
