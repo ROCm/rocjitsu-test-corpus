@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -19,9 +20,22 @@
 
 namespace {
 
-constexpr int64_t n_embd = 128;
-constexpr int64_t n_tokens = 1;
+struct RunShape {
+    int64_t n_embd = 128;
+    int64_t n_tokens = 1;
+};
+
 constexpr float validation_abs_tolerance = 1.0e-2f;
+
+bool parse_positive_i64(const char * value, int64_t & result) {
+    char * end = nullptr;
+    const long long parsed = std::strtoll(value, &end, 10);
+    if (end == value || *end != '\0' || parsed <= 0) {
+        return false;
+    }
+    result = static_cast<int64_t>(parsed);
+    return true;
+}
 
 bool parse_input_assignment(const char * arg, std::string & name, std::string & path) {
     const char * equals = std::strchr(arg, '=');
@@ -37,6 +51,7 @@ bool parse_args(
         int argc,
         char ** argv,
         bool & validate,
+        RunShape & shape,
         std::unordered_map<std::string, std::string> & inputs,
         std::string & output_path) {
     validate = false;
@@ -76,17 +91,67 @@ bool parse_args(
             }
             output_path = argv[i + 1];
             i += 2;
+        } else if (std::strcmp(argv[i], "--n-embd") == 0 || std::strncmp(argv[i], "--n-embd=", 9) == 0) {
+            const char * value = nullptr;
+            if (std::strncmp(argv[i], "--n-embd=", 9) == 0) {
+                value = argv[i] + 9;
+                ++i;
+            } else {
+                if (i + 1 >= argc) {
+                    std::fprintf(stderr, "--n-embd requires a positive integer\n");
+                    return false;
+                }
+                value = argv[i + 1];
+                i += 2;
+            }
+            if (!parse_positive_i64(value, shape.n_embd)) {
+                std::fprintf(stderr, "invalid --n-embd value: %s\n", value);
+                return false;
+            }
+        } else if (std::strcmp(argv[i], "--n-tokens") == 0 || std::strncmp(argv[i], "--n-tokens=", 11) == 0) {
+            const char * value = nullptr;
+            if (std::strncmp(argv[i], "--n-tokens=", 11) == 0) {
+                value = argv[i] + 11;
+                ++i;
+            } else {
+                if (i + 1 >= argc) {
+                    std::fprintf(stderr, "--n-tokens requires a positive integer\n");
+                    return false;
+                }
+                value = argv[i + 1];
+                i += 2;
+            }
+            if (!parse_positive_i64(value, shape.n_tokens)) {
+                std::fprintf(stderr, "invalid --n-tokens value: %s\n", value);
+                return false;
+            }
         } else {
             std::fprintf(stderr, "unknown argument: %s\n", argv[i]);
             std::fprintf(
                 stderr,
-                "usage: %s [--input name=path ...] [--output path|--output=path] "
+                "usage: %s [--n-embd N] [--n-tokens N] [--input name=path ...] [--output path|--output=path] "
                 "[--validate|--validate=true|--validate=false]\n",
                 argv[0]);
             return false;
         }
     }
     return true;
+}
+
+std::vector<float> make_default_matrix_values(const RunShape & shape) {
+    std::vector<float> data(static_cast<size_t>(shape.n_embd * shape.n_embd));
+    for (size_t i = 0; i < data.size(); ++i) {
+        data[i] = 0.125f * static_cast<float>((static_cast<int>(i % 7) - 3));
+    }
+    return data;
+}
+
+std::vector<float> make_default_vector_data(const RunShape & shape) {
+    std::vector<float> data(static_cast<size_t>(shape.n_embd * shape.n_tokens));
+    for (size_t i = 0; i < data.size(); ++i) {
+        data[i] = 0.25f * static_cast<float>((static_cast<int>(i % 5) + 1));
+    }
+    return data;
 }
 
 bool read_f32_file(const std::string & path, size_t expected_elements, std::vector<float> & data) {
@@ -134,6 +199,7 @@ ggml_backend_t init_gpu_backend() {
 
 bool run_mul_mat(
         ggml_backend_t backend,
+        const RunShape & shape,
         const std::vector<unsigned char> & matrix_data,
         const std::vector<float> & vector_data,
         std::vector<float> & output_data) {
@@ -148,9 +214,9 @@ bool run_mul_mat(
     }
 
     ggml_tensor * quantized_matrix =
-        ggml_new_tensor_2d(ctx, GGML_TYPE_Q4_0, n_embd, n_embd);
+        ggml_new_tensor_2d(ctx, GGML_TYPE_Q4_0, shape.n_embd, shape.n_embd);
     ggml_tensor * vector =
-        ggml_new_tensor_2d(ctx, GGML_TYPE_F32, n_embd, n_tokens);
+        ggml_new_tensor_2d(ctx, GGML_TYPE_F32, shape.n_embd, shape.n_tokens);
     ggml_tensor * output = ggml_mul_mat(ctx, quantized_matrix, vector);
 
     ggml_cgraph * graph = ggml_new_graph(ctx);
@@ -183,6 +249,7 @@ bool run_mul_mat(
 }
 
 bool validate_against_cpu(const std::vector<float> & gpu_output,
+        const RunShape & shape,
         const std::vector<unsigned char> & matrix_data,
         const std::vector<float> & vector_data) {
     ggml_backend_t cpu_backend = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, nullptr);
@@ -192,7 +259,7 @@ bool validate_against_cpu(const std::vector<float> & gpu_output,
     }
 
     std::vector<float> cpu_output;
-    const bool cpu_ok = run_mul_mat(cpu_backend, matrix_data, vector_data, cpu_output);
+    const bool cpu_ok = run_mul_mat(cpu_backend, shape, matrix_data, vector_data, cpu_output);
     ggml_backend_free(cpu_backend);
     if (!cpu_ok) {
         return false;
@@ -231,13 +298,10 @@ bool validate_against_cpu(const std::vector<float> & gpu_output,
 
 int main(int argc, char ** argv) {
     bool validate = false;
+    RunShape shape;
     std::unordered_map<std::string, std::string> inputs;
     std::string output_path;
-    if (!parse_args(argc, argv, validate, inputs, output_path)) {
-        return 1;
-    }
-    if (inputs.find("matrix") == inputs.end() || inputs.find("vector") == inputs.end()) {
-        std::fprintf(stderr, "required inputs: matrix, vector\n");
+    if (!parse_args(argc, argv, validate, shape, inputs, output_path)) {
         return 1;
     }
 
@@ -249,17 +313,27 @@ int main(int argc, char ** argv) {
     }
 
     std::vector<float> matrix_values;
-    if (!read_f32_file(inputs.at("matrix"), static_cast<size_t>(n_embd * n_embd), matrix_values)) {
-        ggml_backend_free(backend);
-        return 1;
+    const auto matrix_input = inputs.find("matrix");
+    if (matrix_input != inputs.end()) {
+        if (!read_f32_file(matrix_input->second, static_cast<size_t>(shape.n_embd * shape.n_embd), matrix_values)) {
+            ggml_backend_free(backend);
+            return 1;
+        }
+    } else {
+        matrix_values = make_default_matrix_values(shape);
     }
 
     const size_t q4_0_block_size = ggml_blck_size(GGML_TYPE_Q4_0);
     const size_t q4_0_type_size = ggml_type_size(GGML_TYPE_Q4_0);
+    if (shape.n_embd % static_cast<int64_t>(q4_0_block_size) != 0) {
+        std::fprintf(stderr, "--n-embd must be a multiple of Q4_0 block size %zu\n", q4_0_block_size);
+        ggml_backend_free(backend);
+        return 1;
+    }
     std::vector<unsigned char> matrix_data(
-        static_cast<size_t>(n_embd * n_embd / q4_0_block_size) * q4_0_type_size);
+        static_cast<size_t>(shape.n_embd * shape.n_embd / static_cast<int64_t>(q4_0_block_size)) * q4_0_type_size);
     const size_t quantized_size = ggml_quantize_chunk(
-        GGML_TYPE_Q4_0, matrix_values.data(), matrix_data.data(), 0, n_embd, n_embd, nullptr);
+        GGML_TYPE_Q4_0, matrix_values.data(), matrix_data.data(), 0, shape.n_embd, shape.n_embd, nullptr);
     if (quantized_size != matrix_data.size()) {
         std::fprintf(stderr, "failed to quantize Q4_0 matrix\n");
         ggml_backend_free(backend);
@@ -267,21 +341,27 @@ int main(int argc, char ** argv) {
     }
 
     std::vector<float> vector_data;
-    if (!read_f32_file(inputs.at("vector"), static_cast<size_t>(n_embd * n_tokens), vector_data)) {
-        ggml_backend_free(backend);
-        return 1;
+    const auto vector_input = inputs.find("vector");
+    if (vector_input != inputs.end()) {
+        if (!read_f32_file(vector_input->second, static_cast<size_t>(shape.n_embd * shape.n_tokens), vector_data)) {
+            ggml_backend_free(backend);
+            return 1;
+        }
+    } else {
+        vector_data = make_default_vector_data(shape);
     }
 
     std::vector<float> output_data;
-    if (!run_mul_mat(backend, matrix_data, vector_data, output_data)) {
+    if (!run_mul_mat(backend, shape, matrix_data, vector_data, output_data)) {
         ggml_backend_free(backend);
         return 1;
     }
-    std::printf("llama.cpp ggml_mul_mat quantized matvec ran, output[0]=%g\n",
+    std::printf("llama.cpp ggml_mul_mat quantized matvec ran with n_embd=%lld n_tokens=%lld, output[0]=%g\n",
+        static_cast<long long>(shape.n_embd), static_cast<long long>(shape.n_tokens),
         output_data.empty() ? 0.0f : output_data[0]);
 
     if (validate) {
-        if (!validate_against_cpu(output_data, matrix_data, vector_data)) {
+        if (!validate_against_cpu(output_data, shape, matrix_data, vector_data)) {
             ggml_backend_free(backend);
             return 1;
         }
@@ -293,7 +373,7 @@ int main(int argc, char ** argv) {
                 return 1;
             }
             std::vector<float> cpu_output;
-            const bool cpu_ok = run_mul_mat(cpu_backend, matrix_data, vector_data, cpu_output);
+            const bool cpu_ok = run_mul_mat(cpu_backend, shape, matrix_data, vector_data, cpu_output);
             ggml_backend_free(cpu_backend);
             if (!cpu_ok || !write_f32_file(output_path, cpu_output)) {
                 ggml_backend_free(backend);

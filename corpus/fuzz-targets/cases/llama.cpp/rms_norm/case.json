@@ -14,6 +14,10 @@
   "run": {
     "executable": "cases/llama.cpp/llama_cpp_rms_norm",
     "args": [
+      "--n-embd",
+      128,
+      "--n-tokens",
+      1,
       "--validate"
     ],
     "timeout_seconds": 120
@@ -23,23 +27,6 @@
     "pass_exit_code": 0,
     "abs_tolerance": 0.00001
   },
-  "inputs": [
-    {
-      "name": "activations",
-      "format": "raw",
-      "dtype": "f32",
-      "shape": [
-        128,
-        1
-      ],
-      "generator": {
-        "kind": "repeat_affine",
-        "period": 9,
-        "scale": 0.125,
-        "offset": -4
-      }
-    }
-  ],
   "tags": [
     "llama.cpp",
     "ggml",

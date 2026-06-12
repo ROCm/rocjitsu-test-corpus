@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -23,14 +24,15 @@
 
 namespace {
 
-constexpr int64_t k_dim = 64;
-constexpr int64_t output_rows = 32;
-constexpr int64_t src1_view_cols = 17;
-constexpr int64_t src1_noncont_parent_cols = 32;
-constexpr int64_t src1_batches = 2;
+struct RunShape {
+    int64_t k_dim = 64;
+    int64_t output_rows = 32;
+    int64_t src1_view_cols = 17;
+    int64_t src1_parent_cols = 32;
+    int64_t src1_batches = 2;
+};
 
 constexpr float validation_abs_tolerance = 1.0e-3f;
-constexpr size_t bug_signal_index = output_rows * src1_view_cols;
 
 enum class Src1Layout {
     Contiguous,
@@ -39,6 +41,36 @@ enum class Src1Layout {
 
 const char * src1_layout_name(Src1Layout layout) {
     return layout == Src1Layout::Contiguous ? "contiguous" : "noncontiguous";
+}
+
+bool parse_positive_i64(const char * value, int64_t & result) {
+    char * end = nullptr;
+    const long long parsed = std::strtoll(value, &end, 10);
+    if (end == value || *end != '\0' || parsed <= 0) {
+        return false;
+    }
+    result = static_cast<int64_t>(parsed);
+    return true;
+}
+
+bool validate_shape_for_layout(const RunShape & shape, Src1Layout src1_layout) {
+    if (shape.output_rows > shape.k_dim) {
+        std::fprintf(stderr, "--output-rows must be <= --k-dim for identity src0 data\n");
+        return false;
+    }
+    if (shape.src1_parent_cols < shape.src1_view_cols) {
+        std::fprintf(stderr, "--src1-parent-cols must be >= --src1-view-cols\n");
+        return false;
+    }
+    if (src1_layout == Src1Layout::Contiguous && shape.src1_parent_cols != shape.src1_view_cols) {
+        std::fprintf(stderr, "contiguous src1 layout requires --src1-parent-cols == --src1-view-cols\n");
+        return false;
+    }
+    if (src1_layout == Src1Layout::Noncontiguous && shape.src1_parent_cols <= shape.src1_view_cols) {
+        std::fprintf(stderr, "noncontiguous src1 layout requires --src1-parent-cols > --src1-view-cols\n");
+        return false;
+    }
+    return true;
 }
 
 bool parse_src1_layout(const char * value, Src1Layout & layout) {
@@ -51,10 +83,6 @@ bool parse_src1_layout(const char * value, Src1Layout & layout) {
         return true;
     }
     return false;
-}
-
-int64_t src1_parent_cols_for_layout(Src1Layout layout) {
-    return layout == Src1Layout::Contiguous ? src1_view_cols : src1_noncont_parent_cols;
 }
 
 bool parse_input_assignment(const char * arg, std::string & name, std::string & path) {
@@ -71,6 +99,7 @@ bool parse_args(
         int argc,
         char ** argv,
         bool & validate,
+        RunShape & shape,
         Src1Layout & src1_layout,
         std::unordered_map<std::string, std::string> & inputs,
         std::string & output_path) {
@@ -129,11 +158,98 @@ bool parse_args(
                 std::fprintf(stderr, "invalid --src1-layout value: %s\n", layout_value);
                 return false;
             }
+        } else if (std::strcmp(argv[i], "--k-dim") == 0 || std::strncmp(argv[i], "--k-dim=", 8) == 0) {
+            const char * value = nullptr;
+            if (std::strncmp(argv[i], "--k-dim=", 8) == 0) {
+                value = argv[i] + 8;
+                ++i;
+            } else {
+                if (i + 1 >= argc) {
+                    std::fprintf(stderr, "--k-dim requires a positive integer\n");
+                    return false;
+                }
+                value = argv[i + 1];
+                i += 2;
+            }
+            if (!parse_positive_i64(value, shape.k_dim)) {
+                std::fprintf(stderr, "invalid --k-dim value: %s\n", value);
+                return false;
+            }
+        } else if (std::strcmp(argv[i], "--output-rows") == 0 || std::strncmp(argv[i], "--output-rows=", 14) == 0) {
+            const char * value = nullptr;
+            if (std::strncmp(argv[i], "--output-rows=", 14) == 0) {
+                value = argv[i] + 14;
+                ++i;
+            } else {
+                if (i + 1 >= argc) {
+                    std::fprintf(stderr, "--output-rows requires a positive integer\n");
+                    return false;
+                }
+                value = argv[i + 1];
+                i += 2;
+            }
+            if (!parse_positive_i64(value, shape.output_rows)) {
+                std::fprintf(stderr, "invalid --output-rows value: %s\n", value);
+                return false;
+            }
+        } else if (std::strcmp(argv[i], "--src1-view-cols") == 0 || std::strncmp(argv[i], "--src1-view-cols=", 17) == 0) {
+            const char * value = nullptr;
+            if (std::strncmp(argv[i], "--src1-view-cols=", 17) == 0) {
+                value = argv[i] + 17;
+                ++i;
+            } else {
+                if (i + 1 >= argc) {
+                    std::fprintf(stderr, "--src1-view-cols requires a positive integer\n");
+                    return false;
+                }
+                value = argv[i + 1];
+                i += 2;
+            }
+            if (!parse_positive_i64(value, shape.src1_view_cols)) {
+                std::fprintf(stderr, "invalid --src1-view-cols value: %s\n", value);
+                return false;
+            }
+        } else if (std::strcmp(argv[i], "--src1-parent-cols") == 0 || std::strncmp(argv[i], "--src1-parent-cols=", 19) == 0) {
+            const char * value = nullptr;
+            if (std::strncmp(argv[i], "--src1-parent-cols=", 19) == 0) {
+                value = argv[i] + 19;
+                ++i;
+            } else {
+                if (i + 1 >= argc) {
+                    std::fprintf(stderr, "--src1-parent-cols requires a positive integer\n");
+                    return false;
+                }
+                value = argv[i + 1];
+                i += 2;
+            }
+            if (!parse_positive_i64(value, shape.src1_parent_cols)) {
+                std::fprintf(stderr, "invalid --src1-parent-cols value: %s\n", value);
+                return false;
+            }
+        } else if (std::strcmp(argv[i], "--src1-batches") == 0 || std::strncmp(argv[i], "--src1-batches=", 15) == 0) {
+            const char * value = nullptr;
+            if (std::strncmp(argv[i], "--src1-batches=", 15) == 0) {
+                value = argv[i] + 15;
+                ++i;
+            } else {
+                if (i + 1 >= argc) {
+                    std::fprintf(stderr, "--src1-batches requires a positive integer\n");
+                    return false;
+                }
+                value = argv[i + 1];
+                i += 2;
+            }
+            if (!parse_positive_i64(value, shape.src1_batches)) {
+                std::fprintf(stderr, "invalid --src1-batches value: %s\n", value);
+                return false;
+            }
         } else {
             std::fprintf(stderr, "unknown argument: %s\n", argv[i]);
             std::fprintf(
                 stderr,
-                "usage: %s [--input name=path ...] [--output path|--output=path] "
+                "usage: %s [--k-dim N] [--output-rows N] [--src1-view-cols N] "
+                "[--src1-parent-cols N] [--src1-batches N] "
+                "[--input name=path ...] [--output path|--output=path] "
                 "[--src1-layout contiguous|noncontiguous] "
                 "[--validate|--validate=true|--validate=false]\n",
                 argv[0]);
@@ -204,24 +320,23 @@ bool write_f32_file(const std::string & path, const std::vector<float> & data) {
     return true;
 }
 
-std::vector<ggml_fp16_t> make_default_src0_data() {
-    std::vector<ggml_fp16_t> data(static_cast<size_t>(k_dim * output_rows));
-    for (int64_t row = 0; row < output_rows; ++row) {
-        for (int64_t col = 0; col < k_dim; ++col) {
+std::vector<ggml_fp16_t> make_default_src0_data(const RunShape & shape) {
+    std::vector<ggml_fp16_t> data(static_cast<size_t>(shape.k_dim * shape.output_rows));
+    for (int64_t row = 0; row < shape.output_rows; ++row) {
+        for (int64_t col = 0; col < shape.k_dim; ++col) {
             const float value = col == row ? 1.0f : 0.0f;
-            data[static_cast<size_t>(col + k_dim * row)] = ggml_fp32_to_fp16(value);
+            data[static_cast<size_t>(col + shape.k_dim * row)] = ggml_fp32_to_fp16(value);
         }
     }
     return data;
 }
 
-std::vector<float> make_default_src1_parent_data(Src1Layout src1_layout) {
-    const int64_t src1_parent_cols = src1_parent_cols_for_layout(src1_layout);
-    std::vector<float> data(static_cast<size_t>(k_dim * src1_parent_cols * src1_batches));
-    for (int64_t batch = 0; batch < src1_batches; ++batch) {
-        for (int64_t row = 0; row < src1_parent_cols; ++row) {
-            for (int64_t col = 0; col < k_dim; ++col) {
-                const size_t index = static_cast<size_t>(col + k_dim * (row + src1_parent_cols * batch));
+std::vector<float> make_default_src1_parent_data(const RunShape & shape) {
+    std::vector<float> data(static_cast<size_t>(shape.k_dim * shape.src1_parent_cols * shape.src1_batches));
+    for (int64_t batch = 0; batch < shape.src1_batches; ++batch) {
+        for (int64_t row = 0; row < shape.src1_parent_cols; ++row) {
+            for (int64_t col = 0; col < shape.k_dim; ++col) {
+                const size_t index = static_cast<size_t>(col + shape.k_dim * (row + shape.src1_parent_cols * batch));
                 data[index] = 0.25f * static_cast<float>(col)
                     + 10.0f * static_cast<float>(row)
                     + 100.0f * static_cast<float>(batch);
@@ -233,6 +348,7 @@ std::vector<float> make_default_src1_parent_data(Src1Layout src1_layout) {
 
 bool run_noncont_batched_matmul_case(
         ggml_backend_t backend,
+        const RunShape & shape,
         const std::vector<ggml_fp16_t> & src0_data,
         const std::vector<float> & src1_parent_data,
         Src1Layout src1_layout,
@@ -248,22 +364,21 @@ bool run_noncont_batched_matmul_case(
         return false;
     }
 
-    ggml_tensor * src0 = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, k_dim, output_rows);
-    const int64_t src1_parent_cols = src1_parent_cols_for_layout(src1_layout);
+    ggml_tensor * src0 = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, shape.k_dim, shape.output_rows);
     ggml_tensor * src1_parent =
-        ggml_new_tensor_4d(ctx, GGML_TYPE_F32, k_dim, src1_parent_cols, src1_batches, 1);
+        ggml_new_tensor_4d(ctx, GGML_TYPE_F32, shape.k_dim, shape.src1_parent_cols, shape.src1_batches, 1);
     ggml_tensor * src1_view = src1_parent;
     if (src1_layout == Src1Layout::Noncontiguous) {
-        const size_t src1_nb1 = k_dim * sizeof(float);
-        const size_t src1_nb2 = src1_parent_cols * src1_nb1;
-        const size_t src1_nb3 = src1_batches * src1_nb2;
+        const size_t src1_nb1 = static_cast<size_t>(shape.k_dim) * sizeof(float);
+        const size_t src1_nb2 = static_cast<size_t>(shape.src1_parent_cols) * src1_nb1;
+        const size_t src1_nb3 = static_cast<size_t>(shape.src1_batches) * src1_nb2;
         const size_t src1_view_offset = src1_nb1;
         src1_view = ggml_view_4d(
             ctx,
             src1_parent,
-            k_dim,
-            src1_view_cols,
-            src1_batches,
+            shape.k_dim,
+            shape.src1_view_cols,
+            shape.src1_batches,
             1,
             src1_nb1,
             src1_nb2,
@@ -303,6 +418,7 @@ bool run_noncont_batched_matmul_case(
 
 bool validate_against_cpu(
         const std::vector<float> & gpu_output,
+        const RunShape & shape,
         const std::vector<ggml_fp16_t> & src0_data,
         const std::vector<float> & src1_parent_data,
         Src1Layout src1_layout) {
@@ -314,7 +430,7 @@ bool validate_against_cpu(
 
     std::vector<float> cpu_output;
     const bool cpu_ok = run_noncont_batched_matmul_case(
-        cpu_backend, src0_data, src1_parent_data, src1_layout, cpu_output);
+        cpu_backend, shape, src0_data, src1_parent_data, src1_layout, cpu_output);
     ggml_backend_free(cpu_backend);
     if (!cpu_ok) {
         return false;
@@ -353,10 +469,14 @@ bool validate_against_cpu(
 
 int main(int argc, char ** argv) {
     bool validate = false;
+    RunShape shape;
     Src1Layout src1_layout = Src1Layout::Noncontiguous;
     std::unordered_map<std::string, std::string> inputs;
     std::string output_path;
-    if (!parse_args(argc, argv, validate, src1_layout, inputs, output_path)) {
+    if (!parse_args(argc, argv, validate, shape, src1_layout, inputs, output_path)) {
+        return 1;
+    }
+    if (!validate_shape_for_layout(shape, src1_layout)) {
         return 1;
     }
 
@@ -370,37 +490,46 @@ int main(int argc, char ** argv) {
     std::vector<ggml_fp16_t> src0_data;
     const auto src0_input = inputs.find("src0");
     if (src0_input != inputs.end()) {
-        if (!read_f16_file(src0_input->second, static_cast<size_t>(k_dim * output_rows), src0_data)) {
+        if (!read_f16_file(src0_input->second, static_cast<size_t>(shape.k_dim * shape.output_rows), src0_data)) {
             ggml_backend_free(backend);
             return 1;
         }
     } else {
-        src0_data = make_default_src0_data();
+        src0_data = make_default_src0_data(shape);
     }
 
     std::vector<float> src1_parent_data;
-    const int64_t src1_parent_cols = src1_parent_cols_for_layout(src1_layout);
     const auto src1_parent_input = inputs.find("src1_parent");
     if (src1_parent_input != inputs.end()) {
-        if (!read_f32_file(src1_parent_input->second, static_cast<size_t>(k_dim * src1_parent_cols * src1_batches), src1_parent_data)) {
+        if (!read_f32_file(src1_parent_input->second, static_cast<size_t>(shape.k_dim * shape.src1_parent_cols * shape.src1_batches), src1_parent_data)) {
             ggml_backend_free(backend);
             return 1;
         }
     } else {
-        src1_parent_data = make_default_src1_parent_data(src1_layout);
+        src1_parent_data = make_default_src1_parent_data(shape);
     }
 
     std::vector<float> output_data;
-    if (!run_noncont_batched_matmul_case(backend, src0_data, src1_parent_data, src1_layout, output_data)) {
+    if (!run_noncont_batched_matmul_case(backend, shape, src0_data, src1_parent_data, src1_layout, output_data)) {
         ggml_backend_free(backend);
         return 1;
     }
+    const size_t bug_signal_index = static_cast<size_t>(shape.output_rows * shape.src1_view_cols);
     const float signal = bug_signal_index < output_data.size() ? output_data[bug_signal_index] : 0.0f;
-    std::printf("llama.cpp batched matmul ran with %s src1, output[%zu]=%g\n",
-        src1_layout_name(src1_layout), bug_signal_index, signal);
+    std::printf(
+        "llama.cpp batched matmul ran with %s src1, k_dim=%lld output_rows=%lld "
+        "src1_view_cols=%lld src1_parent_cols=%lld src1_batches=%lld, output[%zu]=%g\n",
+        src1_layout_name(src1_layout),
+        static_cast<long long>(shape.k_dim),
+        static_cast<long long>(shape.output_rows),
+        static_cast<long long>(shape.src1_view_cols),
+        static_cast<long long>(shape.src1_parent_cols),
+        static_cast<long long>(shape.src1_batches),
+        bug_signal_index,
+        signal);
 
     if (validate) {
-        if (!validate_against_cpu(output_data, src0_data, src1_parent_data, src1_layout)) {
+        if (!validate_against_cpu(output_data, shape, src0_data, src1_parent_data, src1_layout)) {
             ggml_backend_free(backend);
             return 1;
         }
@@ -413,7 +542,7 @@ int main(int argc, char ** argv) {
             }
             std::vector<float> cpu_output;
             const bool cpu_ok = run_noncont_batched_matmul_case(
-                cpu_backend, src0_data, src1_parent_data, src1_layout, cpu_output);
+                cpu_backend, shape, src0_data, src1_parent_data, src1_layout, cpu_output);
             ggml_backend_free(cpu_backend);
             if (!cpu_ok || !write_f32_file(output_path, cpu_output)) {
                 ggml_backend_free(backend);

@@ -4,7 +4,9 @@
   "hip_architectures": ["gfx942"],
   "cmake": {
     "cache_variables": {
+      "ROCFUZZ_ENABLE_HIP_STREAMK": "ON",
       "ROCFUZZ_ENABLE_HIP_MATMUL": "ON",
+      "ROCFUZZ_ENABLE_HIPKITTENS": "ON",
       "ROCFUZZ_ENABLE_LLAMA_HIP": "ON"
     }
   },

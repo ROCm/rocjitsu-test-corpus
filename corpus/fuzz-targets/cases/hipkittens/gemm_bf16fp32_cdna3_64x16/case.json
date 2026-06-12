@@ -1,0 +1,37 @@
+{
+  "name": "hipkittens_gemm_bf16fp32_cdna3_64x16",
+  "project": "hipkittens",
+  "runner": "runner.hip",
+  "kind": "cmake_executable",
+  "architectures": [
+    "cdna3"
+  ],
+  "build": {
+    "system": "cmake",
+    "target": "hipkittens_gemm_bf16fp32_cdna3_64x16"
+  },
+  "run": {
+    "executable": "cases/hipkittens/hipkittens_gemm_bf16fp32_cdna3_64x16",
+    "args": [
+      "-m",
+      256,
+      "-n",
+      256,
+      "-k",
+      256
+    ],
+    "timeout_seconds": 120
+  },
+  "validation": {
+    "kind": "exit_code",
+    "pass_exit_code": 0,
+    "abs_tolerance": 0.1
+  },
+  "tags": [
+    "hipkittens",
+    "gemm",
+    "bf16-fp32",
+    "cdna3",
+    "regression"
+  ]
+}

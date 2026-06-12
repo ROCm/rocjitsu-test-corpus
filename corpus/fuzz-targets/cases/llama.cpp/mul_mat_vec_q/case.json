@@ -14,6 +14,10 @@
   "run": {
     "executable": "cases/llama.cpp/llama_cpp_mul_mat_vec_q",
     "args": [
+      "--n-embd",
+      128,
+      "--n-tokens",
+      1,
       "--validate"
     ],
     "timeout_seconds": 120
@@ -23,38 +27,6 @@
     "pass_exit_code": 0,
     "abs_tolerance": 0.01
   },
-  "inputs": [
-    {
-      "name": "matrix",
-      "format": "raw",
-      "dtype": "f32",
-      "shape": [
-        128,
-        128
-      ],
-      "generator": {
-        "kind": "repeat_affine",
-        "period": 7,
-        "scale": 0.125,
-        "offset": -3
-      }
-    },
-    {
-      "name": "vector",
-      "format": "raw",
-      "dtype": "f32",
-      "shape": [
-        128,
-        1
-      ],
-      "generator": {
-        "kind": "repeat_affine",
-        "period": 5,
-        "scale": 0.25,
-        "offset": 1
-      }
-    }
-  ],
   "tags": [
     "llama.cpp",
     "ggml",

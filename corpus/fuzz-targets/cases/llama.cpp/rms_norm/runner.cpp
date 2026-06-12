@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <limits>
@@ -19,10 +20,23 @@
 
 namespace {
 
-constexpr int64_t n_embd = 128;
-constexpr int64_t n_tokens = 1;
+struct RunShape {
+    int64_t n_embd = 128;
+    int64_t n_tokens = 1;
+};
+
 constexpr float rms_norm_epsilon = std::numeric_limits<float>::epsilon();
 constexpr float validation_abs_tolerance = 1.0e-5f;
+
+bool parse_positive_i64(const char * value, int64_t & result) {
+    char * end = nullptr;
+    const long long parsed = std::strtoll(value, &end, 10);
+    if (end == value || *end != '\0' || parsed <= 0) {
+        return false;
+    }
+    result = static_cast<int64_t>(parsed);
+    return true;
+}
 
 bool parse_input_assignment(const char * arg, std::string & name, std::string & path) {
     const char * equals = std::strchr(arg, '=');
@@ -38,6 +52,7 @@ bool parse_args(
         int argc,
         char ** argv,
         bool & validate,
+        RunShape & shape,
         std::unordered_map<std::string, std::string> & inputs,
         std::string & output_path) {
     validate = false;
@@ -77,17 +92,59 @@ bool parse_args(
             }
             output_path = argv[i + 1];
             i += 2;
+        } else if (std::strcmp(argv[i], "--n-embd") == 0 || std::strncmp(argv[i], "--n-embd=", 9) == 0) {
+            const char * value = nullptr;
+            if (std::strncmp(argv[i], "--n-embd=", 9) == 0) {
+                value = argv[i] + 9;
+                ++i;
+            } else {
+                if (i + 1 >= argc) {
+                    std::fprintf(stderr, "--n-embd requires a positive integer\n");
+                    return false;
+                }
+                value = argv[i + 1];
+                i += 2;
+            }
+            if (!parse_positive_i64(value, shape.n_embd)) {
+                std::fprintf(stderr, "invalid --n-embd value: %s\n", value);
+                return false;
+            }
+        } else if (std::strcmp(argv[i], "--n-tokens") == 0 || std::strncmp(argv[i], "--n-tokens=", 11) == 0) {
+            const char * value = nullptr;
+            if (std::strncmp(argv[i], "--n-tokens=", 11) == 0) {
+                value = argv[i] + 11;
+                ++i;
+            } else {
+                if (i + 1 >= argc) {
+                    std::fprintf(stderr, "--n-tokens requires a positive integer\n");
+                    return false;
+                }
+                value = argv[i + 1];
+                i += 2;
+            }
+            if (!parse_positive_i64(value, shape.n_tokens)) {
+                std::fprintf(stderr, "invalid --n-tokens value: %s\n", value);
+                return false;
+            }
         } else {
             std::fprintf(stderr, "unknown argument: %s\n", argv[i]);
             std::fprintf(
                 stderr,
-                "usage: %s [--input name=path ...] [--output path|--output=path] "
+                "usage: %s [--n-embd N] [--n-tokens N] [--input name=path ...] [--output path|--output=path] "
                 "[--validate|--validate=true|--validate=false]\n",
                 argv[0]);
             return false;
         }
     }
     return true;
+}
+
+std::vector<float> make_default_activation_data(const RunShape & shape) {
+    std::vector<float> data(static_cast<size_t>(shape.n_embd * shape.n_tokens));
+    for (size_t i = 0; i < data.size(); ++i) {
+        data[i] = 0.125f * static_cast<float>((static_cast<int>(i % 9) - 4));
+    }
+    return data;
 }
 
 bool read_f32_file(const std::string & path, size_t expected_elements, std::vector<float> & data) {
@@ -135,6 +192,7 @@ ggml_backend_t init_gpu_backend() {
 
 bool run_rms_norm(
         ggml_backend_t backend,
+        const RunShape & shape,
         const std::vector<float> & activation_data,
         std::vector<float> & output_data) {
     ggml_init_params params = {};
@@ -148,7 +206,7 @@ bool run_rms_norm(
     }
 
     ggml_tensor * activations =
-        ggml_new_tensor_2d(ctx, GGML_TYPE_F32, n_embd, n_tokens);
+        ggml_new_tensor_2d(ctx, GGML_TYPE_F32, shape.n_embd, shape.n_tokens);
     ggml_tensor * output = ggml_rms_norm(ctx, activations, rms_norm_epsilon);
 
     ggml_cgraph * graph = ggml_new_graph(ctx);
@@ -181,6 +239,7 @@ bool run_rms_norm(
 
 bool validate_against_cpu(
         const std::vector<float> & gpu_output,
+        const RunShape & shape,
         const std::vector<float> & activation_data) {
     ggml_backend_t cpu_backend = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, nullptr);
     if (cpu_backend == nullptr) {
@@ -189,7 +248,7 @@ bool validate_against_cpu(
     }
 
     std::vector<float> cpu_output;
-    const bool cpu_ok = run_rms_norm(cpu_backend, activation_data, cpu_output);
+    const bool cpu_ok = run_rms_norm(cpu_backend, shape, activation_data, cpu_output);
     ggml_backend_free(cpu_backend);
     if (!cpu_ok) {
         return false;
@@ -228,13 +287,10 @@ bool validate_against_cpu(
 
 int main(int argc, char ** argv) {
     bool validate = false;
+    RunShape shape;
     std::unordered_map<std::string, std::string> inputs;
     std::string output_path;
-    if (!parse_args(argc, argv, validate, inputs, output_path)) {
-        return 1;
-    }
-    if (inputs.find("activations") == inputs.end()) {
-        std::fprintf(stderr, "required input: activations\n");
+    if (!parse_args(argc, argv, validate, shape, inputs, output_path)) {
         return 1;
     }
 
@@ -246,21 +302,27 @@ int main(int argc, char ** argv) {
     }
 
     std::vector<float> activation_data;
-    if (!read_f32_file(inputs.at("activations"), static_cast<size_t>(n_embd * n_tokens), activation_data)) {
-        ggml_backend_free(backend);
-        return 1;
+    const auto activations_input = inputs.find("activations");
+    if (activations_input != inputs.end()) {
+        if (!read_f32_file(activations_input->second, static_cast<size_t>(shape.n_embd * shape.n_tokens), activation_data)) {
+            ggml_backend_free(backend);
+            return 1;
+        }
+    } else {
+        activation_data = make_default_activation_data(shape);
     }
 
     std::vector<float> output_data;
-    if (!run_rms_norm(backend, activation_data, output_data)) {
+    if (!run_rms_norm(backend, shape, activation_data, output_data)) {
         ggml_backend_free(backend);
         return 1;
     }
-    std::printf("llama.cpp ggml_rms_norm ran, output[0]=%g\n",
+    std::printf("llama.cpp ggml_rms_norm ran with n_embd=%lld n_tokens=%lld, output[0]=%g\n",
+        static_cast<long long>(shape.n_embd), static_cast<long long>(shape.n_tokens),
         output_data.empty() ? 0.0f : output_data[0]);
 
     if (validate) {
-        if (!validate_against_cpu(output_data, activation_data)) {
+        if (!validate_against_cpu(output_data, shape, activation_data)) {
             ggml_backend_free(backend);
             return 1;
         }
@@ -272,7 +334,7 @@ int main(int argc, char ** argv) {
                 return 1;
             }
             std::vector<float> cpu_output;
-            const bool cpu_ok = run_rms_norm(cpu_backend, activation_data, cpu_output);
+            const bool cpu_ok = run_rms_norm(cpu_backend, shape, activation_data, cpu_output);
             ggml_backend_free(cpu_backend);
             if (!cpu_ok || !write_f32_file(output_path, cpu_output)) {
                 ggml_backend_free(backend);

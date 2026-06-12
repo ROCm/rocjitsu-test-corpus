@@ -14,46 +14,21 @@
   "run": {
     "executable": "cases/llama.cpp/llama_cpp_noncont_batched_matmul",
     "args": [
+      "--k-dim",
+      64,
+      "--output-rows",
+      32,
+      "--src1-view-cols",
+      17,
+      "--src1-parent-cols",
+      17,
+      "--src1-batches",
+      2,
       "--src1-layout=contiguous",
       "--validate"
     ],
     "timeout_seconds": 120
   },
-  "inputs": [
-    {
-      "name": "src0",
-      "format": "raw",
-      "dtype": "f16",
-      "shape": [
-        64,
-        32
-      ],
-      "generator": {
-        "kind": "identity_diagonal",
-        "diagonal_value": 1.0,
-        "other_value": 0.0
-      }
-    },
-    {
-      "name": "src1_parent",
-      "format": "raw",
-      "dtype": "f32",
-      "shape": [
-        64,
-        17,
-        2
-      ],
-      "generator": {
-        "kind": "affine_indices",
-        "coefficients": [
-          0.25,
-          10.0,
-          100.0
-        ],
-        "bias": 0.0
-      }
-    }
-  ],
   "validation": {
     "kind": "exit_code",
     "pass_exit_code": 0,

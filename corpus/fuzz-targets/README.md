@@ -124,7 +124,7 @@ cases/
   <project>/
     <case>/
       runner.cpp|runner.hip
-      case.json|case.toml
+      case.json
       input_sets/*.json
       overrides/<relative/source/path>
       cmake/*.cmake

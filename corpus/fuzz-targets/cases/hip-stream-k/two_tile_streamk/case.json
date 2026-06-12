@@ -1,0 +1,38 @@
+{
+  "name": "hip_streamk_two_tile",
+  "project": "hip-stream-k",
+  "runner": "runner.cpp",
+  "kind": "cmake_executable",
+  "architectures": [
+    "cdna3"
+  ],
+  "build": {
+    "system": "cmake",
+    "target": "hip_streamk_two_tile"
+  },
+  "run": {
+    "executable": "cases/hip-stream-k/hip_streamk_two_tile",
+    "args": [
+      "-m",
+      256,
+      "-n",
+      256,
+      "-k",
+      256,
+      "--num_runs",
+      1,
+      "--validate"
+    ],
+    "timeout_seconds": 120
+  },
+  "validation": {
+    "kind": "exit_code",
+    "pass_exit_code": 0
+  },
+  "tags": [
+    "hip-stream-k",
+    "gemm",
+    "two-tile-streamk",
+    "regression"
+  ]
+}

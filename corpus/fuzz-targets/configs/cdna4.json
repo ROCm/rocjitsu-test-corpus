@@ -1,0 +1,14 @@
+{
+  "config_name": "cdna4",
+  "architecture_family": "cdna4",
+  "hip_architectures": ["gfx950"],
+  "cmake": {
+    "cache_variables": {
+      "ROCFUZZ_ENABLE_HIPKITTENS": "ON"
+    }
+  },
+  "skip_compile_tests": [],
+  "skip_run_tests": [],
+  "expected_compile_failures": [],
+  "expected_run_failures": []
+}

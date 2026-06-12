@@ -14,13 +14,24 @@
   "run": {
     "executable": "cases/llama.cpp/llama_cpp_noncont_batched_matmul_hazard-build/rocfuzz_llama_noncont_batched_matmul_hazard_runner",
     "args": [
+      "--k-dim",
+      64,
+      "--output-rows",
+      32,
+      "--src1-view-cols",
+      17,
+      "--src1-parent-cols",
+      32,
+      "--src1-batches",
+      2,
+      "--src1-layout=noncontiguous",
       "--validate"
     ],
     "timeout_seconds": 120
   },
   "validation": {
     "kind": "exit_code",
-    "pass_exit_code": 0,
+    "pass_exit_code": 1,
     "abs_tolerance": 0.001
   },
   "tags": [

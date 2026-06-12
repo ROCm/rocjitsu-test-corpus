@@ -11,8 +11,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FUZZ_TARGETS_ROOT = REPO_ROOT / "corpus" / "fuzz-targets"
 DEFAULT_CONFIG = FUZZ_TARGETS_ROOT / "configs" / "cdna3.json"
-SUPPORTED_PROJECTS = {"hip-matmul", "llama.cpp"}
-SUPPORTED_ARCHITECTURE_FAMILIES = {"cdna3", "rdna4"}
+SUPPORTED_PROJECTS = {"hip-matmul", "hip-stream-k", "hipkittens", "llama.cpp"}
+SUPPORTED_ARCHITECTURE_FAMILIES = {"cdna3", "cdna4", "rdna4"}
 SUPPORTED_CASE_KINDS = {"cmake_executable"}
 SUPPORTED_VALIDATION_KINDS = {"exit_code"}
 SUPPORTED_INPUT_FORMATS = {"raw"}
@@ -149,8 +149,6 @@ def discover_cases():
                     )
                 )
         else:
-            if case["project"] == "llama.cpp" and "inputs" not in case:
-                raise ValueError(f"{case_path} is missing required field 'inputs' for llama.cpp")
             cases.append(FuzzCase(path=case_path, case=case))
     return cases
 
@@ -205,6 +203,7 @@ def load_case(case_path):
 
     require_fields(case_path, case["run"], ("args", "timeout_seconds"))
     reject_unknown_fields(case_path, case["run"], {"executable", "args", "env", "timeout_seconds"})
+    _validate_run(case_path, case["run"])
 
     require_fields(case_path, case["validation"], ("kind", "pass_exit_code"))
     reject_unknown_fields(case_path, case["validation"], {"kind", "pass_exit_code", "abs_tolerance"})
@@ -222,7 +221,7 @@ def load_case(case_path):
 def load_input_set(input_set_path):
     input_set_path = Path(input_set_path)
     input_set = load_json(input_set_path)
-    require_fields(input_set_path, input_set, ("name", "inputs"))
+    require_fields(input_set_path, input_set, ("name",))
     reject_unknown_fields(
         input_set_path,
         input_set,
@@ -230,9 +229,11 @@ def load_input_set(input_set_path):
     )
     if not isinstance(input_set["name"], str) or not input_set["name"]:
         raise ValueError(f"{input_set_path} field 'name' must be a non-empty string")
-    _validate_inputs(input_set_path, input_set["inputs"])
+    if "inputs" in input_set:
+        _validate_inputs(input_set_path, input_set["inputs"])
     if "run" in input_set:
         reject_unknown_fields(input_set_path, input_set["run"], {"executable", "args", "env", "timeout_seconds"})
+        _validate_run(input_set_path, input_set["run"], require_timeout=False)
     if "validation" in input_set:
         reject_unknown_fields(input_set_path, input_set["validation"], {"kind", "pass_exit_code", "abs_tolerance"})
         if "kind" in input_set["validation"] and input_set["validation"]["kind"] not in SUPPORTED_VALIDATION_KINDS:
@@ -253,6 +254,20 @@ def reject_unknown_fields(path, data, allowed_fields):
     unknown = sorted(set(data) - allowed_fields)
     if unknown:
         raise ValueError(f"{path} has unsupported fields: {', '.join(unknown)}")
+
+
+def _validate_run(path, run, *, require_timeout=True):
+    if "args" not in run:
+        raise ValueError(f"{path} run is missing required field 'args'")
+    if require_timeout and "timeout_seconds" not in run:
+        raise ValueError(f"{path} run is missing required field 'timeout_seconds'")
+    if not isinstance(run["args"], list):
+        raise ValueError(f"{path} run field 'args' must be a list")
+    for index, arg in enumerate(run["args"]):
+        if isinstance(arg, bool) or not isinstance(arg, (str, int, float)):
+            raise ValueError(
+                f"{path} run args[{index}] must be a string or numeric value"
+            )
 
 
 def case_id(fuzz_case, target_config):
@@ -352,7 +367,8 @@ def effective_case(fuzz_case):
         return case
 
     input_set = fuzz_case.input_set
-    case["inputs"] = input_set["inputs"]
+    if "inputs" in input_set:
+        case["inputs"] = input_set["inputs"]
     if "run" in input_set:
         case["run"] = {**case["run"], **input_set["run"]}
     if "validation" in input_set:
@@ -368,7 +384,7 @@ def run_executable(case, target_config, build_dir, executable_path, run_dir, mat
     command = [str(executable_path)]
     for input_name, input_path in materialized_inputs:
         command.extend(["--input", f"{input_name}={input_path}"])
-    command.extend(list(case["run"].get("args", [])))
+    command.extend(_command_args(case["run"].get("args", [])))
     expected_exit_code = int(case["validation"]["pass_exit_code"])
     _run_command(
         command,
@@ -384,7 +400,7 @@ def run_executable(case, target_config, build_dir, executable_path, run_dir, mat
 def run_llama_output_comparison(case, target_config, build_dir, executable_path, run_dir, materialized_inputs):
     gpu_output_path = run_dir / "gpu_output.f32.raw"
     reference_output_path = run_dir / "reference_output.f32.raw"
-    run_args = list(case["run"].get("args", []))
+    run_args = _command_args(case["run"].get("args", []))
     base_args = _without_validate_args(run_args)
     timeout = case["run"]["timeout_seconds"]
     env = command_environment(target_config, case["run"].get("env", {}))
@@ -428,9 +444,13 @@ def _runner_command(executable_path, materialized_inputs, args, output_path):
     command = [str(executable_path)]
     for input_name, input_path in materialized_inputs:
         command.extend(["--input", f"{input_name}={input_path}"])
-    command.extend(args)
+    command.extend(_command_args(args))
     command.extend(["--output", str(output_path)])
     return command
+
+
+def _command_args(args):
+    return [str(arg) for arg in args]
 
 
 def _without_validate_args(args):

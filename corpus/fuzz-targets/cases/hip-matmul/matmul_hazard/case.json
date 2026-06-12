@@ -1,23 +1,22 @@
 {
-  "name": "hip_matmul_matvec",
+  "name": "hip_matmul_matmul_hazard",
   "project": "hip-matmul",
   "runner": "runner.hip",
   "kind": "cmake_executable",
   "architectures": [
-    "cdna3",
-    "rdna4"
+    "cdna3"
   ],
   "build": {
     "system": "cmake",
-    "target": "hip_matmul_matvec"
+    "target": "hip_matmul_matmul_hazard"
   },
   "run": {
-    "executable": "cases/hip-matmul/hip_matmul_matvec",
+    "executable": "cases/hip-matmul/hip_matmul_matmul_hazard",
     "args": [
       "-m",
       4096,
       "-n",
-      1,
+      4096,
       "-k",
       4096
     ],
@@ -29,11 +28,12 @@
   },
   "validation": {
     "kind": "exit_code",
-    "pass_exit_code": 0
+    "pass_exit_code": -6
   },
   "tags": [
     "hip-matmul",
-    "matvec",
+    "matmul",
+    "hazard",
     "regression"
   ]
 }

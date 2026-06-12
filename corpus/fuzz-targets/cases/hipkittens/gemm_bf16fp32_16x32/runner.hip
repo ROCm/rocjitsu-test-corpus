@@ -7,11 +7,10 @@
 #include <cstdlib>
 #include <vector>
 
+#include "../shape_args.hpp"
+
 namespace {
 
-constexpr int M = 256;
-constexpr int N = 256;
-constexpr int K = 256;
 constexpr float validation_abs_tolerance = 1.0e-2f;
 
 void hip_check(hipError_t error, const char * expression, const char * file, int line) {
@@ -34,7 +33,11 @@ float to_float(kittens::bf16 value) {
 
 } // namespace
 
-int main() {
+int main(int argc, char **argv) {
+    HipKittensShape shape = parse_hipkittens_shape_args(argc, argv, {256, 256, 256});
+    const int M = shape.m;
+    const int N = shape.n;
+    const int K = shape.k;
     std::vector<kittens::bf16> a_host(M * K);
     std::vector<kittens::bf16> b_host(N * K);
     std::vector<kittens::bf16> c_host(M * N, to_bf16(0.0f));

@@ -1,43 +1,18 @@
 {
   "name": "trigger",
   "description": "Non-contiguous F32 src1 view with ne=[64,17,2,1], parent columns=32, and view offset 256; triggers PR #13155 on the hazard backend.",
-  "inputs": [
-    {
-      "name": "src0",
-      "format": "raw",
-      "dtype": "f16",
-      "shape": [
-        64,
-        32
-      ],
-      "generator": {
-        "kind": "identity_diagonal",
-        "diagonal_value": 1.0,
-        "other_value": 0.0
-      }
-    },
-    {
-      "name": "src1_parent",
-      "format": "raw",
-      "dtype": "f32",
-      "shape": [
-        64,
-        32,
-        2
-      ],
-      "generator": {
-        "kind": "affine_indices",
-        "coefficients": [
-          0.25,
-          10.0,
-          100.0
-        ],
-        "bias": 0.0
-      }
-    }
-  ],
   "run": {
     "args": [
+      "--k-dim",
+      64,
+      "--output-rows",
+      32,
+      "--src1-view-cols",
+      17,
+      "--src1-parent-cols",
+      32,
+      "--src1-batches",
+      2,
       "--src1-layout=noncontiguous",
       "--validate"
     ]

@@ -1,30 +1,25 @@
 {
-  "name": "hip_matmul_matvec",
-  "project": "hip-matmul",
+  "name": "hipkittens_gemm_fp8fp32_4wave",
+  "project": "hipkittens",
   "runner": "runner.hip",
   "kind": "cmake_executable",
   "architectures": [
-    "cdna3",
-    "rdna4"
+    "cdna4"
   ],
   "build": {
     "system": "cmake",
-    "target": "hip_matmul_matvec"
+    "target": "hipkittens_gemm_fp8fp32_4wave"
   },
   "run": {
-    "executable": "cases/hip-matmul/hip_matmul_matvec",
+    "executable": "cases/hipkittens/hipkittens_gemm_fp8fp32_4wave",
     "args": [
       "-m",
-      4096,
+      256,
       "-n",
-      1,
+      256,
       "-k",
-      4096
+      256
     ],
-    "env": {
-      "BENCHMARK_MIN_MS": "1",
-      "FIXED_ITERATIONS": "1"
-    },
     "timeout_seconds": 120
   },
   "validation": {
@@ -32,8 +27,10 @@
     "pass_exit_code": 0
   },
   "tags": [
-    "hip-matmul",
-    "matvec",
+    "hipkittens",
+    "gemm",
+    "fp8-fp32",
+    "cdna4",
     "regression"
   ]
 }
