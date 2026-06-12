@@ -25,7 +25,8 @@
       "BENCHMARK_MIN_MS": "1",
       "FIXED_ITERATIONS": "1"
     },
-    "timeout_seconds": 120
+    "gpu_timeout_seconds": 15,
+    "cpu_timeout_seconds": 15
   },
   "validation": {
     "kind": "exit_code",

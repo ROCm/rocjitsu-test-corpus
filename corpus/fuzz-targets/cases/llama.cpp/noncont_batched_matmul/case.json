@@ -27,7 +27,8 @@
       "--src1-layout=contiguous",
       "--validate"
     ],
-    "timeout_seconds": 120
+    "gpu_timeout_seconds": 15,
+    "cpu_timeout_seconds": 15
   },
   "validation": {
     "kind": "exit_code",

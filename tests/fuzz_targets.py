@@ -4,6 +4,7 @@ import shlex
 import shutil
 import subprocess
 import struct
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -201,8 +202,12 @@ def load_case(case_path):
     if case["build"]["system"] != "cmake":
         raise ValueError(f"{case_path} has unsupported build system '{case['build']['system']}'")
 
-    require_fields(case_path, case["run"], ("args", "timeout_seconds"))
-    reject_unknown_fields(case_path, case["run"], {"executable", "args", "env", "timeout_seconds"})
+    require_fields(case_path, case["run"], ("args", "gpu_timeout_seconds", "cpu_timeout_seconds"))
+    reject_unknown_fields(
+        case_path,
+        case["run"],
+        {"executable", "args", "env", "gpu_timeout_seconds", "cpu_timeout_seconds"},
+    )
     _validate_run(case_path, case["run"])
 
     require_fields(case_path, case["validation"], ("kind", "pass_exit_code"))
@@ -232,7 +237,11 @@ def load_input_set(input_set_path):
     if "inputs" in input_set:
         _validate_inputs(input_set_path, input_set["inputs"])
     if "run" in input_set:
-        reject_unknown_fields(input_set_path, input_set["run"], {"executable", "args", "env", "timeout_seconds"})
+        reject_unknown_fields(
+            input_set_path,
+            input_set["run"],
+            {"executable", "args", "env", "gpu_timeout_seconds", "cpu_timeout_seconds"},
+        )
         _validate_run(input_set_path, input_set["run"], require_timeout=False)
     if "validation" in input_set:
         reject_unknown_fields(input_set_path, input_set["validation"], {"kind", "pass_exit_code", "abs_tolerance"})
@@ -259,8 +268,10 @@ def reject_unknown_fields(path, data, allowed_fields):
 def _validate_run(path, run, *, require_timeout=True):
     if "args" not in run:
         raise ValueError(f"{path} run is missing required field 'args'")
-    if require_timeout and "timeout_seconds" not in run:
-        raise ValueError(f"{path} run is missing required field 'timeout_seconds'")
+    if require_timeout:
+        for timeout_field in ("gpu_timeout_seconds", "cpu_timeout_seconds"):
+            if timeout_field not in run:
+                raise ValueError(f"{path} run is missing required field '{timeout_field}'")
     if not isinstance(run["args"], list):
         raise ValueError(f"{path} run field 'args' must be a list")
     for index, arg in enumerate(run["args"]):
@@ -268,6 +279,13 @@ def _validate_run(path, run, *, require_timeout=True):
             raise ValueError(
                 f"{path} run args[{index}] must be a string or numeric value"
             )
+    for timeout_field in ("gpu_timeout_seconds", "cpu_timeout_seconds"):
+        if timeout_field in run and (
+            isinstance(run[timeout_field], bool)
+            or not isinstance(run[timeout_field], (int, float))
+            or run[timeout_field] <= 0
+        ):
+            raise ValueError(f"{path} run field '{timeout_field}' must be a positive number")
 
 
 def case_id(fuzz_case, target_config):
@@ -386,14 +404,20 @@ def run_executable(case, target_config, build_dir, executable_path, run_dir, mat
         command.extend(["--input", f"{input_name}={input_path}"])
     command.extend(_command_args(case["run"].get("args", [])))
     expected_exit_code = int(case["validation"]["pass_exit_code"])
-    _run_command(
+    result = _run_command(
         command,
         cwd=build_dir,
         log_path=run_dir / "run.log",
         phase="run",
         env=command_environment(target_config, case["run"].get("env", {})),
-        timeout=case["run"]["timeout_seconds"],
+        timeout=case["run"]["gpu_timeout_seconds"],
         expected_returncode=expected_exit_code,
+    )
+    _write_timing_record(
+        run_dir / "timings.json",
+        "gpu",
+        result,
+        timeout_seconds=case["run"]["gpu_timeout_seconds"],
     )
 
 
@@ -402,18 +426,24 @@ def run_llama_output_comparison(case, target_config, build_dir, executable_path,
     reference_output_path = run_dir / "reference_output.f32.raw"
     run_args = _command_args(case["run"].get("args", []))
     base_args = _without_validate_args(run_args)
-    timeout = case["run"]["timeout_seconds"]
     env = command_environment(target_config, case["run"].get("env", {}))
 
     gpu_command = _runner_command(executable_path, materialized_inputs, base_args, gpu_output_path)
-    _run_command(
+    gpu_result = _run_command(
         gpu_command,
         cwd=build_dir,
         log_path=run_dir / "run.log",
         phase="run",
         env=env,
-        timeout=timeout,
+        timeout=case["run"]["gpu_timeout_seconds"],
         expected_returncode=0,
+    )
+    _write_timing_record(
+        run_dir / "timings.json",
+        "gpu",
+        gpu_result,
+        output_path=gpu_output_path,
+        timeout_seconds=case["run"]["gpu_timeout_seconds"],
     )
 
     reference_command = _runner_command(
@@ -422,14 +452,21 @@ def run_llama_output_comparison(case, target_config, build_dir, executable_path,
         [*base_args, "--validate"],
         reference_output_path,
     )
-    _run_command(
+    reference_result = _run_command(
         reference_command,
         cwd=build_dir,
         log_path=run_dir / "validate.log",
         phase="validate",
         env=env,
-        timeout=timeout,
+        timeout=case["run"]["cpu_timeout_seconds"],
         expected_returncode=int(case["validation"]["pass_exit_code"]),
+    )
+    _write_timing_record(
+        run_dir / "timings.json",
+        "cpu",
+        reference_result,
+        output_path=reference_output_path,
+        timeout_seconds=case["run"]["cpu_timeout_seconds"],
     )
 
     if int(case["validation"]["pass_exit_code"]) == 0:
@@ -491,6 +528,32 @@ def compare_f32_outputs(gpu_output_path, reference_output_path, *, abs_tolerance
             f"tolerance={abs_tolerance}, gpu={gpu_values[max_abs_diff_index]}, "
             f"reference={reference_values[max_abs_diff_index]}"
         )
+
+
+def _write_timing_record(
+    timings_path,
+    key,
+    result,
+    *,
+    output_path=None,
+    timeout_seconds=None,
+):
+    timings_path = Path(timings_path)
+    if timings_path.exists():
+        timings = load_json(timings_path)
+    else:
+        timings = {}
+    record = {
+        "phase": result["phase"],
+        "elapsed_seconds": result["elapsed_seconds"],
+        "timeout_seconds": timeout_seconds,
+        "returncode": result["returncode"],
+        "log_path": str(result["log_path"]),
+    }
+    if output_path is not None:
+        record["output_path"] = str(output_path)
+    timings[key] = record
+    timings_path.write_text(json.dumps(timings, indent=2) + "\n", encoding="utf-8")
 
 
 def _cmake_cache_variables(target_config):
@@ -672,6 +735,7 @@ def _run_command(
     expected_returncode=0,
 ):
     command = _resolve_command(command)
+    started_at = time.perf_counter()
     try:
         process = subprocess.run(
             command,
@@ -690,6 +754,7 @@ def _run_command(
         returncode = 124
         stdout = exc.stdout or ""
         stderr = exc.stderr or ""
+    elapsed_seconds = time.perf_counter() - started_at
 
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.write_text(
@@ -698,6 +763,7 @@ def _run_command(
                 "$ " + " ".join(shlex.quote(part) for part in command),
                 f"cwd: {cwd}",
                 f"returncode: {returncode}",
+                f"elapsed_seconds: {elapsed_seconds:.6f}",
                 "",
                 "stdout:",
                 stdout,
@@ -718,6 +784,14 @@ def _run_command(
             stderr=stderr,
             log_path=log_path,
         )
+    return {
+        "phase": phase,
+        "command": command,
+        "cwd": cwd,
+        "returncode": returncode,
+        "elapsed_seconds": elapsed_seconds,
+        "log_path": log_path,
+    }
 
 
 def _resolve_command(command):
