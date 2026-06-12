@@ -4,7 +4,8 @@
   "runner": "runner.hip",
   "kind": "cmake_executable",
   "architectures": [
-    "cdna3"
+    "cdna3",
+    "cdna4"
   ],
   "build": {
     "system": "cmake",
@@ -14,11 +15,11 @@
     "executable": "cases/hip-matmul/hip_matmul_matmul",
     "args": [
       "-m",
-      256,
+      128,
       "-n",
-      256,
+      128,
       "-k",
-      256
+      128
     ],
     "env": {
       "BENCHMARK_MIN_MS": "1",

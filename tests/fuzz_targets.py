@@ -778,6 +778,7 @@ def _run_command(
 ):
     command = _resolve_command(command)
     started_at = time.perf_counter()
+    timed_out = False
     try:
         process = subprocess.run(
             command,
@@ -794,6 +795,7 @@ def _run_command(
         stdout = process.stdout
         stderr = process.stderr
     except subprocess.TimeoutExpired as exc:
+        timed_out = True
         returncode = 124
         stdout = _to_text(exc.stdout)
         stderr = _to_text(exc.stderr)
@@ -807,6 +809,8 @@ def _run_command(
                 f"cwd: {cwd}",
                 f"returncode: {returncode}",
                 f"elapsed_seconds: {elapsed_seconds:.6f}",
+                f"timeout_seconds: {timeout}" if timeout is not None else "timeout_seconds: <none>",
+                f"timed_out: {timed_out}",
                 "",
                 "stdout:",
                 stdout,
@@ -818,8 +822,11 @@ def _run_command(
         encoding="utf-8",
     )
     if returncode != expected_returncode:
+        message = f"fuzz-target {phase} failed"
+        if timed_out:
+            message = f"fuzz-target {phase} timed out after {timeout} seconds"
         raise ToolError(
-            message=f"fuzz-target {phase} failed",
+            message=message,
             command=command,
             cwd=cwd,
             returncode=returncode,

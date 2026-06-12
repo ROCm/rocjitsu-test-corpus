@@ -4,6 +4,7 @@
   "hip_architectures": ["gfx950"],
   "cmake": {
     "cache_variables": {
+      "ROCFUZZ_ENABLE_HIP_MATMUL": "ON",
       "ROCFUZZ_ENABLE_HIPKITTENS": "ON"
     }
   },
