@@ -23,6 +23,7 @@ nanobind
 cmake
 numpy
 pytest
+pytest-timeout
 
 --pre
 --find-links https://iree.dev/pip-release-links.html
