@@ -59,4 +59,5 @@ def test_fuzz_target_case(fuzz_case, target_config, pytestconfig):
         target_config,
         pytestconfig.getoption("artifact_directory"),
         build_only=build_only,
+        run_wrapper=pytestconfig.getoption("run_wrapper"),
     )

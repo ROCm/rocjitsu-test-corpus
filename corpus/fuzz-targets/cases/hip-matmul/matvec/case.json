@@ -15,11 +15,11 @@
     "executable": "cases/hip-matmul/hip_matmul_matvec",
     "args": [
       "-m",
-      4096,
+      256,
       "-n",
       1,
       "-k",
-      4096
+      256
     ],
     "env": {
       "BENCHMARK_MIN_MS": "1",

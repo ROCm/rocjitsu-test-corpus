@@ -18,7 +18,9 @@
       "-n",
       256,
       "-k",
-      256
+      256,
+      "--rotating-buffer-count",
+      4
     ],
     "gpu_timeout_seconds": 15,
     "cpu_timeout_seconds": 15

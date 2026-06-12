@@ -300,7 +300,7 @@ def supports_target_config(fuzz_case, target_config):
     return target_config["architecture_family"] in fuzz_case.case["architectures"]
 
 
-def run_case(fuzz_case, target_config, artifact_directory, *, build_only=False):
+def run_case(fuzz_case, target_config, artifact_directory, *, build_only=False, run_wrapper=None):
     case = effective_case(fuzz_case)
     artifact_root = resolve_repo_path(artifact_directory)
     run_dir = _run_dir(artifact_root, target_config, fuzz_case)
@@ -317,6 +317,7 @@ def run_case(fuzz_case, target_config, artifact_directory, *, build_only=False):
         build_result.executable_path,
         run_dir,
         materialized_inputs,
+        run_wrapper=run_wrapper,
     )
 
 
@@ -394,12 +395,29 @@ def effective_case(fuzz_case):
     return case
 
 
-def run_executable(case, target_config, build_dir, executable_path, run_dir, materialized_inputs):
+def run_executable(
+    case,
+    target_config,
+    build_dir,
+    executable_path,
+    run_dir,
+    materialized_inputs,
+    *,
+    run_wrapper=None,
+):
     if case["project"] == "llama.cpp":
-        run_llama_output_comparison(case, target_config, build_dir, executable_path, run_dir, materialized_inputs)
+        run_llama_output_comparison(
+            case,
+            target_config,
+            build_dir,
+            executable_path,
+            run_dir,
+            materialized_inputs,
+            run_wrapper=run_wrapper,
+        )
         return
 
-    command = [str(executable_path)]
+    command = run_wrapper_command(run_wrapper, target_config) + [str(executable_path)]
     for input_name, input_path in materialized_inputs:
         command.extend(["--input", f"{input_name}={input_path}"])
     command.extend(_command_args(case["run"].get("args", [])))
@@ -421,14 +439,28 @@ def run_executable(case, target_config, build_dir, executable_path, run_dir, mat
     )
 
 
-def run_llama_output_comparison(case, target_config, build_dir, executable_path, run_dir, materialized_inputs):
+def run_llama_output_comparison(
+    case,
+    target_config,
+    build_dir,
+    executable_path,
+    run_dir,
+    materialized_inputs,
+    *,
+    run_wrapper=None,
+):
     gpu_output_path = run_dir / "gpu_output.f32.raw"
     reference_output_path = run_dir / "reference_output.f32.raw"
     run_args = _command_args(case["run"].get("args", []))
     base_args = _without_validate_args(run_args)
     env = command_environment(target_config, case["run"].get("env", {}))
 
-    gpu_command = _runner_command(executable_path, materialized_inputs, base_args, gpu_output_path)
+    gpu_command = run_wrapper_command(run_wrapper, target_config) + _runner_command(
+        executable_path,
+        materialized_inputs,
+        base_args,
+        gpu_output_path,
+    )
     gpu_result = _run_command(
         gpu_command,
         cwd=build_dir,
@@ -484,6 +516,16 @@ def _runner_command(executable_path, materialized_inputs, args, output_path):
     command.extend(_command_args(args))
     command.extend(["--output", str(output_path)])
     return command
+
+
+def run_wrapper_command(run_wrapper, target_config):
+    if run_wrapper is None:
+        wrapper = target_config.get("run_wrapper", [])
+    else:
+        wrapper = run_wrapper
+    if isinstance(wrapper, str):
+        return shlex.split(wrapper)
+    return list(wrapper)
 
 
 def _command_args(args):
@@ -744,6 +786,7 @@ def _run_command(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            errors="replace",
             check=False,
             timeout=timeout,
         )
@@ -752,8 +795,8 @@ def _run_command(
         stderr = process.stderr
     except subprocess.TimeoutExpired as exc:
         returncode = 124
-        stdout = exc.stdout or ""
-        stderr = exc.stderr or ""
+        stdout = _to_text(exc.stdout)
+        stderr = _to_text(exc.stderr)
     elapsed_seconds = time.perf_counter() - started_at
 
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -792,6 +835,14 @@ def _run_command(
         "elapsed_seconds": elapsed_seconds,
         "log_path": log_path,
     }
+
+
+def _to_text(value):
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
 
 
 def _resolve_command(command):
