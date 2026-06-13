@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -75,6 +76,13 @@ def pytest_sessionstart(session):
     session.config.fuzz_target_configs = load_fuzz_target_configs(
         session.config.getoption("fuzz_target_config_files")
     )
+    artifact_root = Path(session.config.getoption("artifact_directory"))
+    if not artifact_root.is_absolute():
+        artifact_root = Path(__file__).resolve().parent / artifact_root
+    for target_config in session.config.fuzz_target_configs:
+        artifact_dir = artifact_root / "fuzz_targets" / target_config["config_name"]
+        if artifact_dir.exists():
+            shutil.rmtree(artifact_dir)
 
 
 def pytest_collect_file(parent, file_path):

@@ -14,12 +14,10 @@ def pytest_generate_tests(metafunc):
         for target_config in metafunc.config.fuzz_target_configs:
             if not supports_target_config(fuzz_case, target_config):
                 continue
-            if case["name"] in target_config.get("skip_compile_tests", []):
+            if case["name"] in target_config.get("skip_tests", []):
                 continue
 
             marks = []
-            if case["name"].endswith("_hazard"):
-                marks.append(pytest.mark.skip(reason="Hazard kernels are disabled for now."))
             if not ignore_xfails:
                 if case["name"] in target_config.get("expected_compile_failures", []):
                     marks.append(
@@ -51,13 +49,10 @@ def pytest_generate_tests(metafunc):
 
 
 def test_fuzz_target_case(fuzz_case, target_config, pytestconfig):
-    build_only = pytestconfig.getoption("skip_all_runs") or (
-        fuzz_case.case["name"] in target_config.get("skip_run_tests", [])
-    )
     run_case(
         fuzz_case,
         target_config,
         pytestconfig.getoption("artifact_directory"),
-        build_only=build_only,
+        build_only=pytestconfig.getoption("skip_all_runs"),
         run_wrapper=pytestconfig.getoption("run_wrapper"),
     )

@@ -30,6 +30,28 @@ if(hipkittens_supports_cdna3 OR hipkittens_supports_cdna4)
         set(hipkittens_cdna_definition KITTENS_CDNA3)
     endif()
 
+    function(apply_case_compile_definitions target_name case_name)
+        set(case_json_path "${CMAKE_CURRENT_SOURCE_DIR}/${case_name}/case.json")
+        if(NOT EXISTS "${case_json_path}")
+            return()
+        endif()
+
+        file(READ "${case_json_path}" case_json)
+        string(JSON define_count ERROR_VARIABLE define_count_error LENGTH "${case_json}" build defines)
+        if(define_count_error OR define_count EQUAL 0)
+            return()
+        endif()
+
+        math(EXPR last_define_index "${define_count} - 1")
+        set(case_compile_definitions)
+        foreach(define_index RANGE 0 ${last_define_index})
+            string(JSON define_name MEMBER "${case_json}" build defines ${define_index})
+            string(JSON define_value GET "${case_json}" build defines "${define_name}")
+            list(APPEND case_compile_definitions "${define_name}=${define_value}")
+        endforeach()
+        target_compile_definitions(${target_name} PRIVATE ${case_compile_definitions})
+    endfunction()
+
     function(add_hipkittens_gemm_runner target_name case_name include_dir run_comment)
         set(runner_source "${CMAKE_CURRENT_SOURCE_DIR}/${case_name}/runner.hip")
         add_executable(${target_name}
@@ -48,6 +70,7 @@ if(hipkittens_supports_cdna3 OR hipkittens_supports_cdna4)
         target_compile_definitions(${target_name} PRIVATE
             ${hipkittens_cdna_definition}
         )
+        apply_case_compile_definitions(${target_name} ${case_name})
         target_compile_options(${target_name} PRIVATE
             $<$<COMPILE_LANGUAGE:HIP>:-fopenmp>
             $<$<COMPILE_LANGUAGE:HIP>:-Wall>

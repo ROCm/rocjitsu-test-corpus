@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -116,8 +117,7 @@ def load_target_configs(config_files):
                 "hip_architectures",
                 "cmake",
                 "run_environment",
-                "skip_compile_tests",
-                "skip_run_tests",
+                "skip_tests",
                 "expected_compile_failures",
                 "expected_run_failures",
             },
@@ -198,9 +198,10 @@ def load_case(case_path):
             raise ValueError(f"{case_path} has unsupported architecture '{architecture}'")
 
     require_fields(case_path, case["build"], ("system", "target"))
-    reject_unknown_fields(case_path, case["build"], {"system", "target"})
+    reject_unknown_fields(case_path, case["build"], {"system", "target", "defines"})
     if case["build"]["system"] != "cmake":
         raise ValueError(f"{case_path} has unsupported build system '{case['build']['system']}'")
+    _validate_build_defines(case_path, case["build"].get("defines", {}))
 
     require_fields(case_path, case["run"], ("args", "gpu_timeout_seconds", "cpu_timeout_seconds"))
     reject_unknown_fields(
@@ -263,6 +264,22 @@ def reject_unknown_fields(path, data, allowed_fields):
     unknown = sorted(set(data) - allowed_fields)
     if unknown:
         raise ValueError(f"{path} has unsupported fields: {', '.join(unknown)}")
+
+
+def _validate_build_defines(case_path, defines):
+    if not isinstance(defines, dict):
+        raise ValueError(f"{case_path} build field 'defines' must be an object")
+    for name, value in defines.items():
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+            raise ValueError(f"{case_path} build define '{name}' is not a valid C preprocessor name")
+        if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+            raise ValueError(
+                f"{case_path} build define '{name}' must be a string or numeric value"
+            )
+        if isinstance(value, str) and (";" in value or not value):
+            raise ValueError(
+                f"{case_path} build define '{name}' must be non-empty and must not contain ';'"
+            )
 
 
 def _validate_run(path, run, *, require_timeout=True):
