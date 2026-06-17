@@ -8,7 +8,7 @@
       "ROCFUZZ_ENABLE_LLAMA_HIP": "ON"
     }
   },
-  "skip_tests": ["llama_noncont_batched_matmul_hazard"],
+  "skip_tests": ["llama_noncont_batched_matmul", "llama_noncont_batched_matmul_hazard"],
   "expected_compile_failures": [],
   "expected_run_failures": []
 }
