@@ -542,7 +542,7 @@ def run_wrapper_command(run_wrapper, target_config):
         wrapper = run_wrapper
     if isinstance(wrapper, str):
         return shlex.split(wrapper)
-    return list(wrapper)
+    return [str(part) for part in wrapper]
 
 
 def _command_args(args):

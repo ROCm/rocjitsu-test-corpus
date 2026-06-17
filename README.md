@@ -52,8 +52,7 @@ Fuzz target kernels are not only fuzzer inputs. The corpus turns them into
 standalone pytest cases, so the same kernel reproducers can also run through
 rocjitsu for regression checks.
 
-Pytest automatically configures and builds the selected fuzz target cases before
-running them.
+Pytest automatically configures and builds the fuzz target cases selected by the JSON files passed to `--fuzz-target-config-files`.
 
 By default the script uses the ROCm path returned by `rocm-sdk path --root`. To
 use a different ROCm root, set `ROCM_PATH` before running pytest.

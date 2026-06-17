@@ -75,7 +75,6 @@ if(hipkittens_supports_cdna3 OR hipkittens_supports_cdna4)
             $<$<COMPILE_LANGUAGE:HIP>:-fopenmp>
             $<$<COMPILE_LANGUAGE:HIP>:-Wall>
             $<$<COMPILE_LANGUAGE:HIP>:-Wextra>
-            $<$<COMPILE_LANGUAGE:HIP>:-w>
             $<$<COMPILE_LANGUAGE:HIP>:-O3>
             $<$<COMPILE_LANGUAGE:HIP>:-Rpass-analysis=kernel-resource-usage>
         )

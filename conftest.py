@@ -76,9 +76,13 @@ def pytest_sessionstart(session):
     session.config.fuzz_target_configs = load_fuzz_target_configs(
         session.config.getoption("fuzz_target_config_files")
     )
+    repo_root = Path(__file__).resolve().parent
     artifact_root = Path(session.config.getoption("artifact_directory"))
     if not artifact_root.is_absolute():
-        artifact_root = Path(__file__).resolve().parent / artifact_root
+        artifact_root = repo_root / artifact_root
+    artifact_root = artifact_root.resolve()
+    if not artifact_root.is_relative_to(repo_root):
+        raise pytest.UsageError("--artifact-directory must resolve under the repo root")
     for target_config in session.config.fuzz_target_configs:
         artifact_dir = artifact_root / "fuzz_targets" / target_config["config_name"]
         if artifact_dir.exists():
