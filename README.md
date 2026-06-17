@@ -90,9 +90,9 @@ By default the script uses the ROCm path returned by `rocm-sdk path --root`. To
 use a different ROCm root, set `ROCM_PATH` before running pytest.
 
 ```bash
-python3 -B -m pytest tests/test_fuzz_targets.py -vv \
-  --fuzz-target-config-files corpus/fuzz-targets/configs/cdna3.json \
-  --run-wrapper "rocjitsu --config main/emulation/rocjitsu/configs/amdgpu_cdna3_kmd.json --"
+rocjitsu --config "main/emulation/rocjitsu/configs/amdgpu_cdna3_kmd.json" -- \
+  python3 -B -m pytest tests/test_fuzz_targets.py -vv \
+  --fuzz-target-config-files corpus/fuzz-targets/configs/cdna3.json
 ```
 
 ## Corpus
