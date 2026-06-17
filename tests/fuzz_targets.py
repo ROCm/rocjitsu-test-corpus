@@ -755,7 +755,7 @@ def command_environment(target_config, extra_environment=None):
     if extra_environment:
         env.update({str(k): str(v) for k, v in extra_environment.items()})
 
-    rocm_path = env.get("ROCFUZZ_THEROCK_ROCM_PATH") or env.get("ROCM_PATH")
+    rocm_path = env.get("ROCM_PATH")
     if rocm_path:
         library_paths = [str(Path(rocm_path) / "lib"), str(Path(rocm_path) / "lib64")]
         existing = env.get("LD_LIBRARY_PATH")

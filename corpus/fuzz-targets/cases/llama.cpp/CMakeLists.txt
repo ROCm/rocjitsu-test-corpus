@@ -82,8 +82,8 @@ add_custom_target(${llama_noncont_hazard_target}_overlay
 )
 
 set(configure_env)
-if(ROCFUZZ_THEROCK_ROCM_PATH)
-    list(APPEND configure_env "ROCM_PATH=${ROCFUZZ_THEROCK_ROCM_PATH}")
+if(ROCM_PATH)
+    list(APPEND configure_env "ROCM_PATH=${ROCM_PATH}")
 endif()
 
 set(configure_args
@@ -94,7 +94,7 @@ set(configure_args
     -DCMAKE_HIP_ARCHITECTURES=${CMAKE_HIP_ARCHITECTURES}
     -DROCFUZZ_NONCONT_GGML_ROOT=${llama_noncont_hazard_overlay_root}
     -DROCFUZZ_NONCONT_RUNNER_SOURCE=${llama_noncont_hazard_case_dir}/runner.cpp
-    -DROCFUZZ_THEROCK_ROCM_PATH=${ROCFUZZ_THEROCK_ROCM_PATH}
+    -DROCM_PATH=${ROCM_PATH}
 )
 if(CMAKE_MAKE_PROGRAM)
     list(APPEND configure_args -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM})

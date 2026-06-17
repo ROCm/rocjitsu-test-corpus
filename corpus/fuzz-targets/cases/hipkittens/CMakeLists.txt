@@ -85,8 +85,8 @@ if(hipkittens_supports_cdna3 OR hipkittens_supports_cdna4)
         )
         target_include_directories(${target_name} PRIVATE
             "${include_dir}"
-            "${ROCFUZZ_THEROCK_ROCM_PATH}/include"
-            "${ROCFUZZ_THEROCK_ROCM_PATH}/include/hip"
+            "${ROCM_PATH}/include"
+            "${ROCM_PATH}/include/hip"
         )
         target_link_libraries(${target_name} PRIVATE
             hip::device

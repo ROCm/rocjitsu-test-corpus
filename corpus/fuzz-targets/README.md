@@ -53,7 +53,7 @@ Collected kernel cases:
 ## CMake Presets
 
 `CMakePresets.json` only defines the shared hidden `base` preset. Put local GPU
-architecture and the unpacked TheRock artifact ROCm dist path in
+architecture and the ROCm SDK root in
 `CMakeUserPresets.json`, for example:
 
 ```json
@@ -65,7 +65,7 @@ architecture and the unpacked TheRock artifact ROCm dist path in
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_HIP_ARCHITECTURES": "<gfx target>",
-        "ROCFUZZ_THEROCK_ROCM_PATH": "~/therock-artifacts/<gfx target>/dist/rocm"
+        "ROCM_PATH": "<ROCm SDK root>"
       }
     }
   ],
@@ -85,8 +85,9 @@ To build only selected backends, add enable flags under `cacheVariables`:
 "ROCFUZZ_ENABLE_HIP_STREAMK": "ON"
 ```
 
-`ROCFUZZ_THEROCK_ROCM_PATH` must point at a TheRock ROCm dist tree with
-`lib/cmake/hip/hip-config.cmake`.
+`ROCM_PATH` must point at a ROCm SDK root with
+`lib/cmake/hip/hip-config.cmake`. If `ROCM_PATH` is unset, CMake attempts to
+discover it with `$ROCM_VENV/bin/rocm-sdk path --root` or `rocm-sdk path --root`.
 
 Then configure and build with the local preset:
 

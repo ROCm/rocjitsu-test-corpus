@@ -17,9 +17,9 @@ The IREE tools must be available in `PATH`:
 Rocjitsu must be available in `PATH`:
 - `rocjitsu`
 
-Fuzz-target kernel runners need a TheRock ROCm artifact install tree containing
-HIP; set `ROCFUZZ_THEROCK_ROCM_PATH` to that `install` directory when running
-`tests/test_fuzz_targets.py`.
+Fuzz-target kernel runners requires hip and other ROCm libraries, by
+default the script uses the ROCm path returned by `rocm-sdk path --root`. Set
+`ROCM_PATH` to override the discovered ROCm root.
 
 The Tensile runner additionally needs a ROCm rocm-libraries checkout with
 `projects/hipblaslt/tensilelite`; pass `--tensilelite-root` or set
@@ -52,21 +52,24 @@ Fuzz target kernels are not only fuzzer inputs. The corpus turns them into
 standalone pytest cases, so the same kernel reproducers can also run through
 rocjitsu for regression checks.
 
+Pytest automatically configures and builds the selected fuzz target cases before
+running them.
+
+By default the script uses the ROCm path returned by `rocm-sdk path --root`. To
+use a different ROCm root, set `ROCM_PATH` before running pytest.
+
 Fuzz target kernel pytest with rocjitsu:
 
 ```bash
-ROCFUZZ_THEROCK_ROCM_PATH=<extracted TheRock artifact folder> python3 -B -m pytest tests/test_fuzz_targets.py -vv \
+python3 -B -m pytest tests/test_fuzz_targets.py -vv \
   --fuzz-target-config-files corpus/fuzz-targets/configs/cdna3.json \
   --run-wrapper "rocjitsu --config main/emulation/rocjitsu/configs/amdgpu_cdna3_kmd.json --"
 ```
 
-`ROCFUZZ_THEROCK_ROCM_PATH` must point at the TheRock artifact install tree that
-contains HIP.
-
 Fuzz target kernel pytest without rocjitsu:
 
 ```bash
-ROCFUZZ_THEROCK_ROCM_PATH=<extracted TheRock artifact folder> python3 -B -m pytest tests/test_fuzz_targets.py -vv \
+python3 -B -m pytest tests/test_fuzz_targets.py -vv \
   --fuzz-target-config-files corpus/fuzz-targets/configs/cdna3.json
 ```
 

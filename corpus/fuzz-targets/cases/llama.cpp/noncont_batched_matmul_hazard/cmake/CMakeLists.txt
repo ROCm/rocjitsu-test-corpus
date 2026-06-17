@@ -4,7 +4,7 @@ project(rocfuzz_llama_noncont_batched_matmul_hazard_variant LANGUAGES C CXX)
 
 set(ROCFUZZ_NONCONT_GGML_ROOT "" CACHE PATH "Exact GGML overlay source tree")
 set(ROCFUZZ_NONCONT_RUNNER_SOURCE "" CACHE FILEPATH "PR #13155 runner source")
-set(ROCFUZZ_THEROCK_ROCM_PATH "" CACHE PATH "ROCm dist tree")
+set(ROCM_PATH "" CACHE PATH "ROCm SDK root")
 set(ROCFUZZ_NONCONT_AMDGCN_WAVEFRONT_SIZE "32" CACHE STRING
     "Compatibility definition for older GGML HIP sources that expect __AMDGCN_WAVEFRONT_SIZE")
 
@@ -15,10 +15,10 @@ if(NOT ROCFUZZ_NONCONT_RUNNER_SOURCE)
     message(FATAL_ERROR "ROCFUZZ_NONCONT_RUNNER_SOURCE is required")
 endif()
 
-if(ROCFUZZ_THEROCK_ROCM_PATH)
-    list(APPEND CMAKE_PREFIX_PATH "${ROCFUZZ_THEROCK_ROCM_PATH}")
-    list(APPEND CMAKE_PREFIX_PATH "${ROCFUZZ_THEROCK_ROCM_PATH}/lib/cmake")
-    list(APPEND CMAKE_PREFIX_PATH "${ROCFUZZ_THEROCK_ROCM_PATH}/lib64/cmake")
+if(ROCM_PATH)
+    list(APPEND CMAKE_PREFIX_PATH "${ROCM_PATH}")
+    list(APPEND CMAKE_PREFIX_PATH "${ROCM_PATH}/lib/cmake")
+    list(APPEND CMAKE_PREFIX_PATH "${ROCM_PATH}/lib64/cmake")
 endif()
 
 set(GGML_HIP ON CACHE BOOL "ggml: use HIP" FORCE)

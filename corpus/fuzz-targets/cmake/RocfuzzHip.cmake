@@ -1,4 +1,4 @@
-set(ROCFUZZ_THEROCK_ROCM_PATH "" CACHE PATH "TheRock ROCm dist prefix, for example <therock-build>/dist/rocm")
+set(ROCM_PATH "" CACHE PATH "ROCm SDK root")
 
 macro(rocfuzz_enable_hip)
     if(NOT CMAKE_HIP_ARCHITECTURES)
@@ -7,39 +7,61 @@ macro(rocfuzz_enable_hip)
             "for example -DCMAKE_HIP_ARCHITECTURES=gfx1200")
     endif()
 
-    if(NOT ROCFUZZ_THEROCK_ROCM_PATH AND DEFINED ENV{ROCFUZZ_THEROCK_ROCM_PATH})
-        set(ROCFUZZ_THEROCK_ROCM_PATH "$ENV{ROCFUZZ_THEROCK_ROCM_PATH}" CACHE PATH
-            "TheRock ROCm dist prefix, for example <therock-build>/dist/rocm" FORCE)
+    if(NOT ROCM_PATH AND DEFINED ENV{ROCM_PATH})
+        set(ROCM_PATH "$ENV{ROCM_PATH}" CACHE PATH "ROCm SDK root" FORCE)
     endif()
-    if(NOT ROCFUZZ_THEROCK_ROCM_PATH AND DEFINED ENV{ROCM_PATH})
-        set(ROCFUZZ_THEROCK_ROCM_PATH "$ENV{ROCM_PATH}" CACHE PATH
-            "TheRock ROCm dist prefix, for example <therock-build>/dist/rocm" FORCE)
+    if(NOT ROCM_PATH AND DEFINED ENV{ROCM_VENV} AND EXISTS "$ENV{ROCM_VENV}/bin/rocm-sdk")
+        execute_process(
+            COMMAND "$ENV{ROCM_VENV}/bin/rocm-sdk" path --root
+            RESULT_VARIABLE rocfuzz_rocm_sdk_result
+            OUTPUT_VARIABLE rocfuzz_rocm_sdk_root
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+        )
+        if(rocfuzz_rocm_sdk_result EQUAL 0 AND rocfuzz_rocm_sdk_root)
+            set(ROCM_PATH "${rocfuzz_rocm_sdk_root}" CACHE PATH "ROCm SDK root" FORCE)
+        endif()
     endif()
-    if(NOT ROCFUZZ_THEROCK_ROCM_PATH OR NOT EXISTS "${ROCFUZZ_THEROCK_ROCM_PATH}/lib/cmake/hip/hip-config.cmake")
+    if(NOT ROCM_PATH)
+        find_program(ROCFUZZ_ROCM_SDK_EXECUTABLE rocm-sdk)
+        if(ROCFUZZ_ROCM_SDK_EXECUTABLE)
+            execute_process(
+                COMMAND "${ROCFUZZ_ROCM_SDK_EXECUTABLE}" path --root
+                RESULT_VARIABLE rocfuzz_rocm_sdk_result
+                OUTPUT_VARIABLE rocfuzz_rocm_sdk_root
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET
+            )
+            if(rocfuzz_rocm_sdk_result EQUAL 0 AND rocfuzz_rocm_sdk_root)
+                set(ROCM_PATH "${rocfuzz_rocm_sdk_root}" CACHE PATH "ROCm SDK root" FORCE)
+            endif()
+        endif()
+    endif()
+    if(NOT ROCM_PATH OR NOT EXISTS "${ROCM_PATH}/lib/cmake/hip/hip-config.cmake")
         message(FATAL_ERROR
-            "HIP cases require ROCFUZZ_THEROCK_ROCM_PATH to point at a TheRock "
-            "ROCm dist tree containing lib/cmake/hip/hip-config.cmake")
+            "HIP cases require ROCM_PATH to point at a ROCm SDK root containing "
+            "lib/cmake/hip/hip-config.cmake. Set ROCM_PATH or provide rocm-sdk in PATH.")
     endif()
 
-    set(ENV{ROCM_PATH} "${ROCFUZZ_THEROCK_ROCM_PATH}")
-    set(ENV{HIP_PATH} "${ROCFUZZ_THEROCK_ROCM_PATH}")
-    set(CMAKE_HIP_COMPILER_ROCM_ROOT "${ROCFUZZ_THEROCK_ROCM_PATH}" CACHE PATH "ROCm root for the HIP compiler" FORCE)
+    set(ENV{ROCM_PATH} "${ROCM_PATH}")
+    set(ENV{HIP_PATH} "${ROCM_PATH}")
+    set(CMAKE_HIP_COMPILER_ROCM_ROOT "${ROCM_PATH}" CACHE PATH "ROCm root for the HIP compiler" FORCE)
     list(APPEND CMAKE_PREFIX_PATH
-        "${ROCFUZZ_THEROCK_ROCM_PATH}"
-        "${ROCFUZZ_THEROCK_ROCM_PATH}/lib/cmake"
-        "${ROCFUZZ_THEROCK_ROCM_PATH}/lib64/cmake"
+        "${ROCM_PATH}"
+        "${ROCM_PATH}/lib/cmake"
+        "${ROCM_PATH}/lib64/cmake"
     )
     list(APPEND CMAKE_BUILD_RPATH
-        "${ROCFUZZ_THEROCK_ROCM_PATH}/lib"
-        "${ROCFUZZ_THEROCK_ROCM_PATH}/lib64"
+        "${ROCM_PATH}/lib"
+        "${ROCM_PATH}/lib64"
     )
     if(NOT CMAKE_HIP_COMPILER)
-        if(EXISTS "${ROCFUZZ_THEROCK_ROCM_PATH}/bin/amdclang++")
-            set(CMAKE_HIP_COMPILER "${ROCFUZZ_THEROCK_ROCM_PATH}/bin/amdclang++" CACHE FILEPATH "HIP compiler" FORCE)
-        elseif(EXISTS "${ROCFUZZ_THEROCK_ROCM_PATH}/bin/clang++")
-            set(CMAKE_HIP_COMPILER "${ROCFUZZ_THEROCK_ROCM_PATH}/bin/clang++" CACHE FILEPATH "HIP compiler" FORCE)
-        elseif(EXISTS "${ROCFUZZ_THEROCK_ROCM_PATH}/llvm/bin/clang++")
-            set(CMAKE_HIP_COMPILER "${ROCFUZZ_THEROCK_ROCM_PATH}/llvm/bin/clang++" CACHE FILEPATH "HIP compiler" FORCE)
+        if(EXISTS "${ROCM_PATH}/bin/amdclang++")
+            set(CMAKE_HIP_COMPILER "${ROCM_PATH}/bin/amdclang++" CACHE FILEPATH "HIP compiler" FORCE)
+        elseif(EXISTS "${ROCM_PATH}/bin/clang++")
+            set(CMAKE_HIP_COMPILER "${ROCM_PATH}/bin/clang++" CACHE FILEPATH "HIP compiler" FORCE)
+        elseif(EXISTS "${ROCM_PATH}/llvm/bin/clang++")
+            set(CMAKE_HIP_COMPILER "${ROCM_PATH}/llvm/bin/clang++" CACHE FILEPATH "HIP compiler" FORCE)
         endif()
     endif()
 
