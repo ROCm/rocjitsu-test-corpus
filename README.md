@@ -17,9 +17,9 @@ The IREE tools must be available in `PATH`:
 Rocjitsu must be available in `PATH`:
 - `rocjitsu`
 
-Fuzz-target kernel runners requires hip and other ROCm libraries, by
-default the script uses the ROCm path returned by `rocm-sdk path --root`. Set
-`ROCM_PATH` to override the discovered ROCm root.
+Fuzz-target kernel runners require HIP and other ROCm libraries; by default the
+script uses the ROCm path returned by `rocm-sdk path --root`. Set `ROCM_PATH`
+to override the discovered ROCm root.
 
 The Tensile runner additionally needs a ROCm rocm-libraries checkout with
 `projects/hipblaslt/tensilelite`; pass `--tensilelite-root` or set
