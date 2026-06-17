@@ -56,12 +56,19 @@ macro(rocfuzz_enable_hip)
         "${ROCM_PATH}/lib64"
     )
     if(NOT CMAKE_HIP_COMPILER)
-        if(EXISTS "${ROCM_PATH}/bin/amdclang++")
-            set(CMAKE_HIP_COMPILER "${ROCM_PATH}/bin/amdclang++" CACHE FILEPATH "HIP compiler" FORCE)
-        elseif(EXISTS "${ROCM_PATH}/bin/clang++")
-            set(CMAKE_HIP_COMPILER "${ROCM_PATH}/bin/clang++" CACHE FILEPATH "HIP compiler" FORCE)
-        elseif(EXISTS "${ROCM_PATH}/llvm/bin/clang++")
-            set(CMAKE_HIP_COMPILER "${ROCM_PATH}/llvm/bin/clang++" CACHE FILEPATH "HIP compiler" FORCE)
+        find_program(ROCFUZZ_HIP_COMPILER
+            NAMES amdclang++
+            PATHS
+                "${ROCM_PATH}/lib/llvm/bin"
+                "${ROCM_PATH}/bin"
+                "${ROCM_PATH}/llvm/bin"
+            NO_DEFAULT_PATH
+        )
+        if(NOT ROCFUZZ_HIP_COMPILER)
+            find_program(ROCFUZZ_HIP_COMPILER NAMES amdclang++)
+        endif()
+        if(ROCFUZZ_HIP_COMPILER)
+            set(CMAKE_HIP_COMPILER "${ROCFUZZ_HIP_COMPILER}" CACHE FILEPATH "HIP compiler" FORCE)
         endif()
     endif()
 
