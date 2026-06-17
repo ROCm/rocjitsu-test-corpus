@@ -11,26 +11,26 @@
     "system": "cmake",
     "target": "hip_matmul_matvec"
   },
-  "run": {
-    "executable": "cases/hip-matmul/hip_matmul_matvec",
-    "args": [
-      "-m",
-      256,
-      "-n",
-      1,
-      "-k",
-      1024
-    ],
-    "env": {
-      "BENCHMARK_MIN_MS": "1",
-      "FIXED_ITERATIONS": "1"
-    },
-    "gpu_timeout_seconds": 15,
-    "cpu_timeout_seconds": 15
-  },
-  "validation": {
-    "kind": "exit_code",
-    "pass_exit_code": 0
+  "executable": "cases/hip-matmul/hip_matmul_matvec",
+  "tests": {
+    "m256_n1_k1024": {
+      "test_args": [
+        "-m",
+        256,
+        "-n",
+        1,
+        "-k",
+        1024
+      ],
+      "env": {
+        "BENCHMARK_MIN_MS": "1",
+        "FIXED_ITERATIONS": "1"
+      },
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    }
   },
   "tags": [
     "hip-matmul",

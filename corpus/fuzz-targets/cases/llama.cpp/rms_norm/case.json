@@ -11,22 +11,22 @@
     "system": "cmake",
     "target": "llama_cpp_rms_norm"
   },
-  "run": {
-    "executable": "cases/llama.cpp/llama_cpp_rms_norm",
-    "args": [
-      "--n-embd",
-      128,
-      "--n-tokens",
-      1,
-      "--validate"
-    ],
-    "gpu_timeout_seconds": 15,
-    "cpu_timeout_seconds": 15
-  },
-  "validation": {
-    "kind": "exit_code",
-    "pass_exit_code": 0,
-    "abs_tolerance": 0.00001
+  "executable": "cases/llama.cpp/llama_cpp_rms_norm",
+  "tests": {
+    "default": {
+      "test_args": [
+        "--n-embd",
+        128,
+        "--n-tokens",
+        1,
+        "--validate"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0,
+        "abs_tolerance": 1e-05
+      }
+    }
   },
   "tags": [
     "llama.cpp",

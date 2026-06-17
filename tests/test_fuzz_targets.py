@@ -1,6 +1,14 @@
 import pytest
 
-from fuzz_targets import FuzzTargetError, case_id, discover_cases, run_case, supports_target_config
+from fuzz_targets import (
+    FuzzTargetError,
+    case_config_names,
+    case_id,
+    discover_cases,
+    matches_case_selector,
+    run_case,
+    supports_target_config,
+)
 
 
 def pytest_generate_tests(metafunc):
@@ -11,15 +19,22 @@ def pytest_generate_tests(metafunc):
     ignore_xfails = metafunc.config.getoption("ignore_xfails")
     for fuzz_case in discover_cases():
         case = fuzz_case.case
+        config_names = case_config_names(fuzz_case)
         for target_config in metafunc.config.fuzz_target_configs:
             if not supports_target_config(fuzz_case, target_config):
                 continue
-            if case["name"] in target_config.get("skip_tests", []):
+            if matches_case_selector(
+                fuzz_case,
+                target_config.get("skip_tests", []),
+            ):
                 continue
 
             marks = []
             if not ignore_xfails:
-                if case["name"] in target_config.get("expected_compile_failures", []):
+                if any(
+                    name in target_config.get("expected_compile_failures", [])
+                    for name in config_names
+                ):
                     marks.append(
                         pytest.mark.xfail(
                             raises=FuzzTargetError,
@@ -27,7 +42,10 @@ def pytest_generate_tests(metafunc):
                             reason="Expected CMake build to fail for this target config.",
                         )
                     )
-                if case["name"] in target_config.get("expected_run_failures", []):
+                if any(
+                    name in target_config.get("expected_run_failures", [])
+                    for name in config_names
+                ):
                     marks.append(
                         pytest.mark.xfail(
                             raises=FuzzTargetError,

@@ -9,6 +9,7 @@
     }
   },
   "skip_tests": [
+    "hip_matmul_matmul::m4096_n4096_k4096",
     "hipkittens_gemm_mxfp8_4wave",
     "hipkittens_gemm_fp8fp32_4wave"
   ],

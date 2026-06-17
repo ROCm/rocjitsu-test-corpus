@@ -11,26 +11,44 @@
     "system": "cmake",
     "target": "hip_matmul_matmul"
   },
-  "run": {
-    "executable": "cases/hip-matmul/hip_matmul_matmul",
-    "args": [
-      "-m",
-      128,
-      "-n",
-      128,
-      "-k",
-      128
-    ],
-    "env": {
-      "BENCHMARK_MIN_MS": "1",
-      "FIXED_ITERATIONS": "1"
+  "executable": "cases/hip-matmul/hip_matmul_matmul",
+  "tests": {
+    "m128_n128_k128": {
+      "test_args": [
+        "-m",
+        128,
+        "-n",
+        128,
+        "-k",
+        128
+      ],
+      "env": {
+        "BENCHMARK_MIN_MS": "1",
+        "FIXED_ITERATIONS": "1"
+      },
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
     },
-    "gpu_timeout_seconds": 15,
-    "cpu_timeout_seconds": 15
-  },
-  "validation": {
-    "kind": "exit_code",
-    "pass_exit_code": 0
+    "m4096_n4096_k4096": {
+      "test_args": [
+        "-m",
+        4096,
+        "-n",
+        4096,
+        "-k",
+        4096
+      ],
+      "env": {
+        "BENCHMARK_MIN_MS": "1",
+        "FIXED_ITERATIONS": "1"
+      },
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    }
   },
   "tags": [
     "hip-matmul",

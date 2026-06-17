@@ -10,22 +10,22 @@
     "system": "cmake",
     "target": "hipkittens_gemm_mxfp8_4wave"
   },
-  "run": {
-    "executable": "cases/hipkittens/hipkittens_gemm_mxfp8_4wave",
-    "args": [
-      "-m",
-      256,
-      "-n",
-      256,
-      "-k",
-      256
-    ],
-    "gpu_timeout_seconds": 15,
-    "cpu_timeout_seconds": 15
-  },
-  "validation": {
-    "kind": "exit_code",
-    "pass_exit_code": 0
+  "executable": "cases/hipkittens/hipkittens_gemm_mxfp8_4wave",
+  "tests": {
+    "m256_n256_k256": {
+      "test_args": [
+        "-m",
+        256,
+        "-n",
+        256,
+        "-k",
+        256
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    }
   },
   "tags": [
     "hipkittens",

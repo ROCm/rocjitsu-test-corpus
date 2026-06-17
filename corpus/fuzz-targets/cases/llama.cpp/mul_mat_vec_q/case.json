@@ -11,22 +11,22 @@
     "system": "cmake",
     "target": "llama_cpp_mul_mat_vec_q"
   },
-  "run": {
-    "executable": "cases/llama.cpp/llama_cpp_mul_mat_vec_q",
-    "args": [
-      "--n-embd",
-      128,
-      "--n-tokens",
-      1,
-      "--validate"
-    ],
-    "gpu_timeout_seconds": 15,
-    "cpu_timeout_seconds": 15
-  },
-  "validation": {
-    "kind": "exit_code",
-    "pass_exit_code": 0,
-    "abs_tolerance": 0.01
+  "executable": "cases/llama.cpp/llama_cpp_mul_mat_vec_q",
+  "tests": {
+    "default": {
+      "test_args": [
+        "--n-embd",
+        128,
+        "--n-tokens",
+        1,
+        "--validate"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0,
+        "abs_tolerance": 0.01
+      }
+    }
   },
   "tags": [
     "llama.cpp",

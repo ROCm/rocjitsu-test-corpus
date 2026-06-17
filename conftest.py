@@ -74,8 +74,8 @@ def pytest_addoption(parser):
         type=positive_seconds,
         default=DEFAULT_CASE_TIMEOUT_SECONDS,
         help=(
-            "Timeout in seconds for each case phase; run and validation each get "
-            "this limit separately. Defaults to 15 seconds."
+            "Timeout in seconds for each fuzz target phase; run and validation "
+            "each get this limit separately. Defaults to 15 seconds."
         ),
     )
 

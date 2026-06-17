@@ -64,6 +64,8 @@ class ToolError(FuzzTargetError):
 class FuzzCase:
     path: Path
     case: dict
+    test_name: str | None = None
+    test: dict | None = None
     input_set_path: Path | None = None
     input_set: dict | None = None
 
@@ -130,6 +132,12 @@ def load_target_configs(config_files):
             )
         if not config["hip_architectures"]:
             raise ValueError(f"{path} must list at least one HIP architecture")
+        for field in (
+            "skip_tests",
+            "expected_compile_failures",
+            "expected_run_failures",
+        ):
+            _validate_case_selector_list(path, config, field)
         config["_path"] = str(path)
         configs.append(config)
     return configs
@@ -139,6 +147,11 @@ def discover_cases():
     cases = []
     for case_path in sorted((FUZZ_TARGETS_ROOT / "cases").glob("*/*/case.json")):
         case = load_case(case_path)
+        if "tests" in case:
+            for test_name, test in case["tests"].items():
+                cases.append(FuzzCase(path=case_path, case=case, test_name=test_name, test=test))
+            continue
+
         input_set_paths = sorted((case_path.parent / "input_sets").glob("*.json"))
         if input_set_paths:
             for input_set_path in input_set_paths:
@@ -168,8 +181,8 @@ def load_case(case_path):
             "kind",
             "architectures",
             "build",
-            "run",
-            "validation",
+            "executable",
+            "tests",
         ),
     )
     reject_unknown_fields(
@@ -182,8 +195,8 @@ def load_case(case_path):
             "kind",
             "architectures",
             "build",
-            "run",
-            "validation",
+            "executable",
+            "tests",
             "inputs",
             "tags",
         },
@@ -204,21 +217,9 @@ def load_case(case_path):
         raise ValueError(f"{case_path} has unsupported build system '{case['build']['system']}'")
     _validate_build_defines(case_path, case["build"].get("defines", {}))
 
-    require_fields(case_path, case["run"], ("args",))
-    reject_unknown_fields(
-        case_path,
-        case["run"],
-        {"executable", "args", "env", "gpu_timeout_seconds", "cpu_timeout_seconds"},
-    )
-    _validate_run(case_path, case["run"], require_timeout=False)
-
-    require_fields(case_path, case["validation"], ("kind", "pass_exit_code"))
-    reject_unknown_fields(case_path, case["validation"], {"kind", "pass_exit_code", "abs_tolerance"})
-    if case["validation"]["kind"] not in SUPPORTED_VALIDATION_KINDS:
-        raise ValueError(
-            f"{case_path} has unsupported validation kind "
-            f"'{case['validation']['kind']}'"
-        )
+    if not isinstance(case["executable"], str) or not case["executable"]:
+        raise ValueError(f"{case_path} field 'executable' must be a non-empty string")
+    _validate_tests(case_path, case["tests"])
 
     if "inputs" in case:
         _validate_inputs(case_path, case["inputs"])
@@ -246,12 +247,7 @@ def load_input_set(input_set_path):
         )
         _validate_run(input_set_path, input_set["run"], require_timeout=False)
     if "validation" in input_set:
-        reject_unknown_fields(input_set_path, input_set["validation"], {"kind", "pass_exit_code", "abs_tolerance"})
-        if "kind" in input_set["validation"] and input_set["validation"]["kind"] not in SUPPORTED_VALIDATION_KINDS:
-            raise ValueError(
-                f"{input_set_path} has unsupported validation kind "
-                f"'{input_set['validation']['kind']}'"
-            )
+        _validate_validation(input_set_path, input_set["validation"], require_kind=False)
     return input_set
 
 
@@ -265,6 +261,26 @@ def reject_unknown_fields(path, data, allowed_fields):
     unknown = sorted(set(data) - allowed_fields)
     if unknown:
         raise ValueError(f"{path} has unsupported fields: {', '.join(unknown)}")
+
+
+def _validate_case_selector_list(path, config, field):
+    selectors = config.get(field, [])
+    if not isinstance(selectors, list):
+        raise ValueError(f"{path} field '{field}' must be a list")
+    for index, selector in enumerate(selectors):
+        entry_path = f"{path} {field}[{index}]"
+        if not isinstance(selector, str) or not selector:
+            raise ValueError(f"{entry_path} must be a non-empty string")
+        if selector.count("::") > 1:
+            raise ValueError(
+                f"{entry_path} must be 'case_name' or 'case_name::test_case'"
+            )
+        if "::" in selector:
+            case_name, test_case = selector.split("::", 1)
+            if not case_name or not test_case:
+                raise ValueError(
+                    f"{entry_path} must be 'case_name::test_case'"
+                )
 
 
 def _validate_build_defines(case_path, defines):
@@ -306,12 +322,70 @@ def _validate_run(path, run, *, require_timeout=True):
             raise ValueError(f"{path} run field '{timeout_field}' must be a positive number")
 
 
+def _validate_tests(case_path, tests):
+    if not isinstance(tests, dict) or not tests:
+        raise ValueError(f"{case_path} field 'tests' must be a non-empty object")
+    for test_name, test in tests.items():
+        entry_path = f"{case_path} tests[{test_name!r}]"
+        if not isinstance(test_name, str) or not test_name:
+            raise ValueError(f"{case_path} tests keys must be non-empty strings")
+        if not isinstance(test, dict):
+            raise ValueError(f"{entry_path} must be an object")
+        require_fields(entry_path, test, ("test_args", "validation"))
+        reject_unknown_fields(
+            entry_path,
+            test,
+            {"description", "test_args", "env", "inputs", "validation"},
+        )
+        _validate_test_args(entry_path, test["test_args"])
+        if "inputs" in test:
+            _validate_inputs(entry_path, test["inputs"])
+        _validate_validation(entry_path, test["validation"], require_kind=True)
+
+
+def _validate_validation(path, validation, *, require_kind):
+    required_fields = ("kind", "pass_exit_code") if require_kind else ()
+    require_fields(path, validation, required_fields)
+    reject_unknown_fields(path, validation, {"kind", "pass_exit_code", "abs_tolerance"})
+    if "kind" in validation and validation["kind"] not in SUPPORTED_VALIDATION_KINDS:
+        raise ValueError(
+            f"{path} has unsupported validation kind "
+            f"'{validation['kind']}'"
+        )
+
+
+def _validate_test_args(entry_path, args):
+    if not isinstance(args, list):
+        raise ValueError(f"{entry_path} field 'test_args' must be a list")
+    for index, arg in enumerate(args):
+        if isinstance(arg, bool) or not isinstance(arg, (str, int, float)):
+            raise ValueError(
+                f"{entry_path} test_args[{index}] must be a string or numeric value"
+            )
+
+
 def case_id(fuzz_case, target_config):
     case = fuzz_case.case
     test_id = f"{target_config['config_name']}::{case['project']}/{case['name']}"
+    if fuzz_case.test_name is not None:
+        test_id += f"::{fuzz_case.test_name}"
     if fuzz_case.input_set is not None:
         test_id += f"::{fuzz_case.input_set['name']}"
     return test_id
+
+
+def case_config_names(fuzz_case):
+    case = fuzz_case.case
+    names = [case["name"]]
+    if fuzz_case.test_name is not None:
+        names.append(f"{case['name']}::{fuzz_case.test_name}")
+    if fuzz_case.input_set is not None:
+        names.append(f"{case['name']}::{fuzz_case.input_set['name']}")
+    return names
+
+
+def matches_case_selector(fuzz_case, selectors):
+    return any(name in selectors for name in case_config_names(fuzz_case))
 
 
 def supports_target_config(fuzz_case, target_config):
@@ -401,7 +475,7 @@ def build_target(case, target_config, build_dir, log_dir):
 
 
 def resolve_executable_path(case, build_dir):
-    executable = case["run"].get("executable")
+    executable = case.get("executable")
     if executable is None:
         return Path(build_dir) / case["build"]["target"]
     return Path(build_dir) / executable
@@ -409,6 +483,18 @@ def resolve_executable_path(case, build_dir):
 
 def effective_case(fuzz_case):
     case = dict(fuzz_case.case)
+    if fuzz_case.test is not None:
+        test = fuzz_case.test
+        case["run"] = {
+            "args": test["test_args"],
+        }
+        if "env" in test:
+            case["run"]["env"] = test["env"]
+        if "inputs" in test:
+            case["inputs"] = test["inputs"]
+        case["validation"] = test["validation"]
+        return case
+
     if fuzz_case.input_set is None:
         return case
 
@@ -791,6 +877,8 @@ def _run_dir(artifact_root, target_config, fuzz_case):
         / "runs"
         / relative_case
     )
+    if fuzz_case.test_name is not None:
+        run_dir = run_dir / fuzz_case.test_name
     if fuzz_case.input_set is not None:
         run_dir = run_dir / fuzz_case.input_set["name"]
     return run_dir
