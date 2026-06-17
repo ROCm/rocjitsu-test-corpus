@@ -10,18 +10,6 @@ macro(rocfuzz_enable_hip)
     if(NOT ROCM_PATH AND DEFINED ENV{ROCM_PATH})
         set(ROCM_PATH "$ENV{ROCM_PATH}" CACHE PATH "ROCm SDK root" FORCE)
     endif()
-    if(NOT ROCM_PATH AND DEFINED ENV{ROCM_VENV} AND EXISTS "$ENV{ROCM_VENV}/bin/rocm-sdk")
-        execute_process(
-            COMMAND "$ENV{ROCM_VENV}/bin/rocm-sdk" path --root
-            RESULT_VARIABLE rocfuzz_rocm_sdk_result
-            OUTPUT_VARIABLE rocfuzz_rocm_sdk_root
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET
-        )
-        if(rocfuzz_rocm_sdk_result EQUAL 0 AND rocfuzz_rocm_sdk_root)
-            set(ROCM_PATH "${rocfuzz_rocm_sdk_root}" CACHE PATH "ROCm SDK root" FORCE)
-        endif()
-    endif()
     if(NOT ROCM_PATH)
         find_program(ROCFUZZ_ROCM_SDK_EXECUTABLE rocm-sdk)
         if(ROCFUZZ_ROCM_SDK_EXECUTABLE)
