@@ -48,30 +48,6 @@ that setup.
 pytest  --run-wrapper 'rocjitsu --config /home/eochoalo/code/rocm-systems/emulation/rocjitsu/configs/amdgpu_gfx1250.json --'
 ```
 
-Fuzz target kernels are not only fuzzer inputs. The corpus turns them into
-standalone pytest cases, so the same kernel reproducers can also run through
-rocjitsu for regression checks.
-
-Pytest automatically configures and builds the fuzz target cases selected by the JSON files passed to `--fuzz-target-config-files`.
-
-By default the script uses the ROCm path returned by `rocm-sdk path --root`. To
-use a different ROCm root, set `ROCM_PATH` before running pytest.
-
-Fuzz target kernel pytest with rocjitsu:
-
-```bash
-python3 -B -m pytest tests/test_fuzz_targets.py -vv \
-  --fuzz-target-config-files corpus/fuzz-targets/configs/cdna3.json \
-  --run-wrapper "rocjitsu --config main/emulation/rocjitsu/configs/amdgpu_cdna3_kmd.json --"
-```
-
-Fuzz target kernel pytest without rocjitsu:
-
-```bash
-python3 -B -m pytest tests/test_fuzz_targets.py -vv \
-  --fuzz-target-config-files corpus/fuzz-targets/configs/cdna3.json
-```
-
 Tensile rebuild and numeric smoke checks:
 
 ```bash
@@ -103,6 +79,20 @@ The CSV columns are:
 
 ```csv
 kind,name,status,elapsed_s,returncode,log
+```
+
+## Run
+
+For tests created by kernels in the folder `fuzz-targets`,
+
+Pytest automatically configures and builds target cases selected by the JSON files passed to `--fuzz-target-config-files`.
+By default the script uses the ROCm path returned by `rocm-sdk path --root`. To
+use a different ROCm root, set `ROCM_PATH` before running pytest.
+
+```bash
+python3 -B -m pytest tests/test_fuzz_targets.py -vv \
+  --fuzz-target-config-files corpus/fuzz-targets/configs/cdna3.json \
+  --run-wrapper "rocjitsu --config main/emulation/rocjitsu/configs/amdgpu_cdna3_kmd.json --"
 ```
 
 ## Corpus
