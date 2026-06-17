@@ -27,6 +27,7 @@ ROCFUZZ_ENABLE_CACHE_VARIABLES = (
     "ROCFUZZ_ENABLE_HIP_MATMUL",
     "ROCFUZZ_ENABLE_HIPKITTENS",
 )
+DEFAULT_CASE_TIMEOUT_SECONDS = 15
 
 
 class FuzzTargetError(Exception):
@@ -203,13 +204,13 @@ def load_case(case_path):
         raise ValueError(f"{case_path} has unsupported build system '{case['build']['system']}'")
     _validate_build_defines(case_path, case["build"].get("defines", {}))
 
-    require_fields(case_path, case["run"], ("args", "gpu_timeout_seconds", "cpu_timeout_seconds"))
+    require_fields(case_path, case["run"], ("args",))
     reject_unknown_fields(
         case_path,
         case["run"],
         {"executable", "args", "env", "gpu_timeout_seconds", "cpu_timeout_seconds"},
     )
-    _validate_run(case_path, case["run"])
+    _validate_run(case_path, case["run"], require_timeout=False)
 
     require_fields(case_path, case["validation"], ("kind", "pass_exit_code"))
     reject_unknown_fields(case_path, case["validation"], {"kind", "pass_exit_code", "abs_tolerance"})
@@ -317,7 +318,15 @@ def supports_target_config(fuzz_case, target_config):
     return target_config["architecture_family"] in fuzz_case.case["architectures"]
 
 
-def run_case(fuzz_case, target_config, artifact_directory, *, build_only=False, run_wrapper=None):
+def run_case(
+    fuzz_case,
+    target_config,
+    artifact_directory,
+    *,
+    build_only=False,
+    run_wrapper=None,
+    case_timeout_seconds=DEFAULT_CASE_TIMEOUT_SECONDS,
+):
     case = effective_case(fuzz_case)
     artifact_root = resolve_repo_path(artifact_directory)
     run_dir = _run_dir(artifact_root, target_config, fuzz_case)
@@ -335,6 +344,7 @@ def run_case(fuzz_case, target_config, artifact_directory, *, build_only=False, 
         run_dir,
         materialized_inputs,
         run_wrapper=run_wrapper,
+        case_timeout_seconds=case_timeout_seconds,
     )
 
 
@@ -421,6 +431,7 @@ def run_executable(
     materialized_inputs,
     *,
     run_wrapper=None,
+    case_timeout_seconds=DEFAULT_CASE_TIMEOUT_SECONDS,
 ):
     if case["project"] == "llama.cpp":
         run_llama_output_comparison(
@@ -431,6 +442,7 @@ def run_executable(
             run_dir,
             materialized_inputs,
             run_wrapper=run_wrapper,
+            case_timeout_seconds=case_timeout_seconds,
         )
         return
 
@@ -445,14 +457,14 @@ def run_executable(
         log_path=run_dir / "run.log",
         phase="run",
         env=command_environment(target_config, case["run"].get("env", {})),
-        timeout=case["run"]["gpu_timeout_seconds"],
+        timeout=case_timeout_seconds,
         expected_returncode=expected_exit_code,
     )
     _write_timing_record(
         run_dir / "timings.json",
         "gpu",
         result,
-        timeout_seconds=case["run"]["gpu_timeout_seconds"],
+        timeout_seconds=case_timeout_seconds,
     )
 
 
@@ -465,6 +477,7 @@ def run_llama_output_comparison(
     materialized_inputs,
     *,
     run_wrapper=None,
+    case_timeout_seconds=DEFAULT_CASE_TIMEOUT_SECONDS,
 ):
     gpu_output_path = run_dir / "gpu_output.f32.raw"
     reference_output_path = run_dir / "reference_output.f32.raw"
@@ -484,7 +497,7 @@ def run_llama_output_comparison(
         log_path=run_dir / "run.log",
         phase="run",
         env=env,
-        timeout=case["run"]["gpu_timeout_seconds"],
+        timeout=case_timeout_seconds,
         expected_returncode=0,
     )
     _write_timing_record(
@@ -492,7 +505,7 @@ def run_llama_output_comparison(
         "gpu",
         gpu_result,
         output_path=gpu_output_path,
-        timeout_seconds=case["run"]["gpu_timeout_seconds"],
+        timeout_seconds=case_timeout_seconds,
     )
 
     reference_command = _runner_command(
@@ -507,7 +520,7 @@ def run_llama_output_comparison(
         log_path=run_dir / "validate.log",
         phase="validate",
         env=env,
-        timeout=case["run"]["cpu_timeout_seconds"],
+        timeout=case_timeout_seconds,
         expected_returncode=int(case["validation"]["pass_exit_code"]),
     )
     _write_timing_record(
@@ -515,7 +528,7 @@ def run_llama_output_comparison(
         "cpu",
         reference_result,
         output_path=reference_output_path,
-        timeout_seconds=case["run"]["cpu_timeout_seconds"],
+        timeout_seconds=case_timeout_seconds,
     )
 
     if int(case["validation"]["pass_exit_code"]) == 0:
