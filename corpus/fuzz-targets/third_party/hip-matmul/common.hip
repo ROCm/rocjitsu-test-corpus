@@ -9,8 +9,11 @@
 
 #include <hip/hip_runtime.h>
 
+#include <cstdlib>
+#include <cstring>
 #include <cstdio>
 #include <random>
+#include <string>
 #include <vector>
 
 inline void hip_check_impl(hipError_t hip_error_code, const char *condstr,
@@ -28,6 +31,80 @@ inline int getIntEnvVar(const char *name, int default_val) {
   const char *env = std::getenv(name);
   return env ? std::stoi(env) : default_val;
 };
+
+inline bool parsePositiveInt(const char *value, int &result) {
+  char *end = nullptr;
+  long parsed = std::strtol(value, &end, 10);
+  if (end == value || *end != '\0' || parsed <= 0) {
+    return false;
+  }
+  result = static_cast<int>(parsed);
+  return true;
+}
+
+inline const char *takeArgValue(int argc, char **argv, int &index,
+                               const char *option, const char *inline_value) {
+  if (inline_value) {
+    return inline_value;
+  }
+  if (index + 1 >= argc) {
+    std::fprintf(stderr, "%s requires a positive integer\n", option);
+    std::exit(EXIT_FAILURE);
+  }
+  return argv[++index];
+}
+
+inline void setIntEnvVar(const char *name, int value) {
+  std::string value_string = std::to_string(value);
+  setenv(name, value_string.c_str(), 1);
+}
+
+inline bool hasMNKEnvArgs() {
+  return std::getenv("ROCFUZZ_HIP_MATMUL_HAS_MNK_ARGS") != nullptr;
+}
+
+inline void applyMNKArgs(int argc, char **argv) {
+  bool has_mnk_arg = false;
+  for (int i = 1; i < argc; ++i) {
+    const char *arg = argv[i];
+    const char *value = nullptr;
+    const char *name = nullptr;
+    if (std::strcmp(arg, "-m") == 0 || std::strcmp(arg, "--m") == 0) {
+      name = "M";
+    } else if (std::strncmp(arg, "--m=", 4) == 0) {
+      name = "M";
+      value = arg + 4;
+    } else if (std::strcmp(arg, "-n") == 0 || std::strcmp(arg, "--n") == 0) {
+      name = "N";
+    } else if (std::strncmp(arg, "--n=", 4) == 0) {
+      name = "N";
+      value = arg + 4;
+    } else if (std::strcmp(arg, "-k") == 0 || std::strcmp(arg, "--k") == 0) {
+      name = "K";
+    } else if (std::strncmp(arg, "--k=", 4) == 0) {
+      name = "K";
+      value = arg + 4;
+    } else {
+      std::fprintf(stderr,
+                   "unknown argument: %s\n"
+                   "usage: %s [-m M|--m M] [-n N|--n N] [-k K|--k K]\n",
+                   arg, argv[0]);
+      std::exit(EXIT_FAILURE);
+    }
+
+    int parsed = 0;
+    value = takeArgValue(argc, argv, i, arg, value);
+    if (!parsePositiveInt(value, parsed)) {
+      std::fprintf(stderr, "invalid %s value: %s\n", arg, value);
+      std::exit(EXIT_FAILURE);
+    }
+    setIntEnvVar(name, parsed);
+    has_mnk_arg = true;
+  }
+  if (has_mnk_arg) {
+    setenv("ROCFUZZ_HIP_MATMUL_HAS_MNK_ARGS", "1", 1);
+  }
+}
 
 struct MNKShape {
   int M, N, K;

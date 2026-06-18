@@ -243,6 +243,12 @@ void check(const MmtKernel &kernel, const MNKShape &o) {
 
 void check(const MmtKernel &kernel) {
   std::printf("  Checking correctness... ");
+  if (hasMNKEnvArgs()) {
+    check(kernel, getBenchmarkMNKShape(kernel));
+    std::printf("OK\n");
+    return;
+  }
+
   // Test with more generic shapes than just M==N==K==2^x.
   for (MNKShape o : {MNKShape{1, 1, 1}, MNKShape{2, 1, 1}, MNKShape{1, 2, 1},
                      MNKShape{1, 1, 2}, MNKShape{1, 1, 3}, MNKShape{1, 1, 4},

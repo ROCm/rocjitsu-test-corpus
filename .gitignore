@@ -1,4 +1,8 @@
 results-*/
 gfx1250-regression-*/
 .pytest-artifacts/
+.venv/
+.cursor/
+__pycache__/
+*.py[cod]
 *.log

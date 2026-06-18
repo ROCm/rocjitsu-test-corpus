@@ -9,6 +9,8 @@
 #include <cstdlib>
 #include <vector>
 
+#include "../shape_args.hpp"
+
 namespace {
 
 constexpr float validation_abs_tolerance = 1.0e-1f;
@@ -33,7 +35,12 @@ float to_float(kittens::bf16 value) {
 
 } // namespace
 
-int main() {
+int main(int argc, char **argv) {
+    HipKittensShape shape = parse_hipkittens_shape_args(
+        argc, argv, {ROCFUZZ_HIPKITTENS_M, ROCFUZZ_HIPKITTENS_N, ROCFUZZ_HIPKITTENS_K});
+    require_hipkittens_compiled_shape(
+        shape, {ROCFUZZ_HIPKITTENS_M, ROCFUZZ_HIPKITTENS_N, ROCFUZZ_HIPKITTENS_K});
+
     std::vector<kittens::bf16> a_host(M * K);
     std::vector<kittens::bf16> b_host(N * K);
     std::vector<kittens::bf16> c_host(M * N, to_bf16(0.0f));

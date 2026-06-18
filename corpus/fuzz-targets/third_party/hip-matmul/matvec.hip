@@ -600,10 +600,18 @@ void test(const MatvecKernel &kernel) {
     check(kernel);
   }
 
-  MNKShape test_shapes[] = {
-      {14336, 1, 4096}, {4096, 1, 14336}, {4096, 1, 4096}, {1024, 1, 4096}};
-  for (MNKShape shape : test_shapes) {
-    benchmark(kernel, shape);
+  if (hasMNKEnvArgs()) {
+    benchmark(kernel, MNKShape{
+        getIntEnvVar("M", 4096),
+        getIntEnvVar("N", 1),
+        getIntEnvVar("K", 4096),
+    });
+  } else {
+    MNKShape test_shapes[] = {
+        {14336, 1, 4096}, {4096, 1, 14336}, {4096, 1, 4096}, {1024, 1, 4096}};
+    for (MNKShape shape : test_shapes) {
+      benchmark(kernel, shape);
+    }
   }
 }
 

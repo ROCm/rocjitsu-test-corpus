@@ -1,0 +1,38 @@
+{
+  "name": "hipkittens_gemm_bf16fp32_16x32",
+  "project": "hipkittens",
+  "runner": "runner.hip",
+  "kind": "cmake_executable",
+  "architectures": [
+    "cdna4"
+  ],
+  "build": {
+    "system": "cmake",
+    "target": "hipkittens_gemm_bf16fp32_16x32"
+  },
+  "executable": "cases/hipkittens/hipkittens_gemm_bf16fp32_16x32",
+  "tests": {
+    "m256_n256_k256": {
+      "test_args": [
+        "-m",
+        256,
+        "-n",
+        256,
+        "-k",
+        256
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0,
+        "abs_tolerance": 0.01
+      }
+    }
+  },
+  "tags": [
+    "hipkittens",
+    "gemm",
+    "bf16-fp32",
+    "cdna4",
+    "regression"
+  ]
+}

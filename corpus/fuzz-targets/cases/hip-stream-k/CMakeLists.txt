@@ -8,7 +8,6 @@ endif()
 
 find_package(hip REQUIRED CONFIG)
 find_package(rocthrust REQUIRED CONFIG)
-find_package(rocblas REQUIRED CONFIG)
 
 function(add_hip_streamk_runner target_name case_name run_comment)
     set(runner_source "${CMAKE_CURRENT_SOURCE_DIR}/${case_name}/runner.cpp")
@@ -31,12 +30,11 @@ function(add_hip_streamk_runner target_name case_name run_comment)
     target_include_directories(${target_name} PRIVATE
         "${HIP_STREAMK_ROOT}/include"
         "${HIP_STREAMK_ROOT}/benchmarks"
-        "${ROCFUZZ_THEROCK_ROCM_PATH}/include"
+        "${ROCM_PATH}/include"
     )
     target_link_libraries(${target_name} PRIVATE
         hip::device
         roc::rocthrust
-        roc::rocblas
     )
 
     add_custom_target(run_${target_name}

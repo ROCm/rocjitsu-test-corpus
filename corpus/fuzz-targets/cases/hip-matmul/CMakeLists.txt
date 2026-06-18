@@ -57,6 +57,12 @@ endforeach()
 if(hip_matmul_supports_mfma)
     add_hip_matmul_runner(hip_matmul_matmul matmul "Run nod-ai hip-matmul matmul runner")
     list(APPEND hip_matmul_runner_targets hip_matmul_matmul)
+    add_hip_matmul_runner(
+        hip_matmul_matmul_hazard
+        matmul_hazard
+        "Run nod-ai hip-matmul matmul hazard runner"
+    )
+    list(APPEND hip_matmul_runner_targets hip_matmul_matmul_hazard)
 else()
     message(STATUS "Skipping hip_matmul_matmul: upstream MFMA kernels require a gfx9-family target")
 endif()

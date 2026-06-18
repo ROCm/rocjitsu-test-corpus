@@ -60,6 +60,11 @@ This means the TheRock 7.14 failure is best understood as the newer compiler
 exposing undefined synchronization in the upstream kernel, not as a ROCfuzz
 wrapper bug.
 
+The corpus keeps the unmodified upstream behavior in `matmul_hazard`. The normal
+`matmul` runner preserves the upstream test list but overrides
+`doublebuffer_take2` with a case-local copy that adds barriers before either
+double buffer can be overwritten.
+
 Useful direct upstream repro commands:
 
 ```sh

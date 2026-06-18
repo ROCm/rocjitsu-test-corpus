@@ -4,25 +4,15 @@
 
 #pragma once
 
-/**
- * If this is not set, rocBLAS creates a struct for rocblas_half and uses that
- * as a half type. It is defined as following:
- *
- * ```
- * typedef struct rocblas_half
- * {
- *     uint16_t data;
- * } rocblas_half;
- * ```
- */
-#define ROCM_USE_FLOAT16
-
-#include <hip/hip_ext.h>
 #include <hip/hip_fp16.h>
 #include <hip/hip_runtime.h>
 
-#include <rocblas/rocblas.h>
 #include <streamk/utils/mfma.hpp>
+
+#include <cstddef>
+#include <cstdint>
+
+#include <thrust/host_vector.h>
 
 namespace streamk {
 
@@ -38,8 +28,9 @@ namespace streamk {
  * @param c device pointer storing matrix C.
  * @param beta scalar beta.
  * @param alpha scalar alpha.
- * @param transpose_a specifies the form of op( A ).
- * @param transpose_b specifies the form of op( B ).
+ *
+ * This CPU reference matches the rocBLAS call that used
+ * rocblas_operation_none for A and rocblas_operation_transpose for B.
  */
 template <typename input_t, typename output_t, typename compute_t>
 void validate(uint32_t m,
@@ -49,116 +40,36 @@ void validate(uint32_t m,
               input_t const* b,
               output_t* c,
               compute_t alpha,
-              compute_t beta,
-              rocblas_operation transpose_a = rocblas_operation_none,
-              rocblas_operation transpose_b = rocblas_operation_transpose);
+              compute_t beta) {
+  const std::size_t size_a = static_cast<std::size_t>(m) * k;
+  const std::size_t size_b = static_cast<std::size_t>(k) * n;
+  const std::size_t size_c = static_cast<std::size_t>(m) * n;
 
-template <>
-void validate(uint32_t m,
-              uint32_t n,
-              uint32_t k,
-              double const* a,
-              double const* b,
-              double* c,
-              double alpha,
-              double beta,
-              rocblas_operation transpose_a,
-              rocblas_operation transpose_b) {
-  rocblas_int lda, ldb, ldc;
+  thrust::host_vector<input_t> a_host(size_a);
+  thrust::host_vector<input_t> b_host(size_b);
+  thrust::host_vector<output_t> c_host(size_c);
 
-  if (transpose_a == rocblas_operation_none) {
-    lda = m;
-  } else {
-    lda = k;
+  hipMemcpy(a_host.data(), a, size_a * sizeof(input_t), hipMemcpyDeviceToHost);
+  hipMemcpy(b_host.data(), b, size_b * sizeof(input_t), hipMemcpyDeviceToHost);
+  hipMemcpy(c_host.data(), c, size_c * sizeof(output_t), hipMemcpyDeviceToHost);
+
+  for (uint32_t col = 0; col < n; ++col) {
+    for (uint32_t row = 0; row < m; ++row) {
+      compute_t acc = static_cast<compute_t>(0);
+      for (uint32_t inner = 0; inner < k; ++inner) {
+        const compute_t a_value =
+            static_cast<compute_t>(a_host[row + inner * m]);
+        const compute_t b_value =
+            static_cast<compute_t>(b_host[col + inner * n]);
+        acc += a_value * b_value;
+      }
+      const std::size_t offset = row + static_cast<std::size_t>(col) * m;
+      c_host[offset] =
+          static_cast<output_t>(alpha * acc + beta * c_host[offset]);
+    }
   }
 
-  if (transpose_b == rocblas_operation_none) {
-    ldb = k;
-  } else {
-    ldb = n;
-  }
-
-  ldc = m;
-
-  rocblas_handle handle;
-  rocblas_create_handle(&handle);
-  rocblas_dgemm(handle, transpose_a, transpose_b, m, n, k, &alpha, a, lda, b,
-                ldb, &beta, c, ldc);
-  hipDeviceSynchronize();
-  rocblas_destroy_handle(handle);
-}
-
-template <>
-void validate(uint32_t m,
-              uint32_t n,
-              uint32_t k,
-              float const* a,
-              float const* b,
-              float* c,
-              float alpha,
-              float beta,
-              rocblas_operation transpose_a,
-              rocblas_operation transpose_b) {
-  rocblas_int lda, ldb, ldc;
-
-  if (transpose_a == rocblas_operation_none) {
-    lda = m;
-  } else {
-    lda = k;
-  }
-
-  if (transpose_b == rocblas_operation_none) {
-    ldb = k;
-  } else {
-    ldb = n;
-  }
-
-  ldc = m;
-
-  rocblas_handle handle;
-  rocblas_create_handle(&handle);
-  rocblas_sgemm(handle, transpose_a, transpose_b, m, n, k, &alpha, a, lda, b,
-                ldb, &beta, c, ldc);
-  hipDeviceSynchronize();
-  rocblas_destroy_handle(handle);
-}
-
-template <>
-void validate(uint32_t m,
-              uint32_t n,
-              uint32_t k,
-              float16_t const* a,
-              float16_t const* b,
-              float16_t* c,
-              float32_t alpha,
-              float32_t beta,
-              rocblas_operation transpose_a,
-              rocblas_operation transpose_b) {
-  rocblas_int lda, ldb, ldc;
-
-  if (transpose_a == rocblas_operation_none) {
-    lda = m;
-  } else {
-    lda = k;
-  }
-
-  if (transpose_b == rocblas_operation_none) {
-    ldb = k;
-  } else {
-    ldb = n;
-  }
-
-  ldc = m;
-
-  rocblas_half roc_alpha = static_cast<rocblas_half>(alpha);
-  rocblas_half roc_beta = static_cast<rocblas_half>(beta);
-
-  rocblas_handle handle;
-  rocblas_create_handle(&handle);
-  rocblas_hgemm(handle, transpose_a, transpose_b, m, n, k, &roc_alpha, a, lda,
-                b, ldb, &roc_beta, c, ldc);
-  hipDeviceSynchronize();
-  rocblas_destroy_handle(handle);
+  hipMemcpy(c, c_host.data(), size_c * sizeof(output_t), hipMemcpyHostToDevice);
 }
 
 }  // namespace streamk

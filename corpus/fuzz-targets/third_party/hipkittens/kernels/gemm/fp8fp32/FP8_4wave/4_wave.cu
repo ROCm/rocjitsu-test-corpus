@@ -826,8 +826,13 @@ __global__ __launch_bounds__(256, 1) void matmul_device_2048(const kittens::gl<f
     store(C, c[1][1], {0, 0, (block_row * WARPS_ROW + 1) * 2 + warp_m, (block_col * WARPS_COL + 1) * 2 + warp_n});
 }
 
-// Rotating buffer configuration (global constant)
-constexpr int ROTATING_BUFFER_COUNT = ((((1024*1024)/SIZE)*512)/SIZE)/2; // 500 MiB
+// Rotating buffer configuration. The default keeps upstream benchmark behavior.
+constexpr int DEFAULT_ROTATING_BUFFER_COUNT = ((((1024*1024)/SIZE)*512)/SIZE)/2; // 500 MiB
+int ROTATING_BUFFER_COUNT = DEFAULT_ROTATING_BUFFER_COUNT;
+
+void set_rotating_buffer_count(int count) {
+    ROTATING_BUFFER_COUNT = count;
+}
 
 // Random initialization function
 template <int M, int N, int K>
@@ -852,7 +857,7 @@ TimingResult matmul_host(std::vector<fp8e4m3>& a, std::vector<fp8e4m3>& b, std::
     constexpr int threadblocks = M / BLOCK_SIZE * N / BLOCK_SIZE;
 
     // Use global rotating buffer configuration
-    constexpr int block_count = ROTATING_BUFFER_COUNT;
+    int block_count = ROTATING_BUFFER_COUNT;
     
     // Ensure input vectors have correct size
     if (a.size() != M * K) {

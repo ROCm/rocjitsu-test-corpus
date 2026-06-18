@@ -17,6 +17,10 @@ The IREE tools must be available in `PATH`:
 Rocjitsu must be available in `PATH`:
 - `rocjitsu`
 
+Fuzz-target kernel runners require HIP and other ROCm libraries; by default the
+script uses the ROCm path returned by `rocm-sdk path --root`. Set `ROCM_PATH`
+to override the discovered ROCm root.
+
 The Tensile runner additionally needs a ROCm rocm-libraries checkout with
 `projects/hipblaslt/tensilelite`; pass `--tensilelite-root` or set
 `TENSILELITE_ROOT` if it is not in a sibling checkout.
@@ -77,6 +81,20 @@ The CSV columns are:
 kind,name,status,elapsed_s,returncode,log
 ```
 
+## Run
+
+For tests created by kernels in the folder `fuzz-targets`,
+
+Pytest automatically configures and builds target cases selected by the JSON files passed to `--fuzz-target-config-files`.
+By default the script uses the ROCm path returned by `rocm-sdk path --root`. To
+use a different ROCm root, set `ROCM_PATH` before running pytest.
+
+```bash
+rocjitsu --config "main/emulation/rocjitsu/configs/amdgpu_cdna3_kmd.json" -- \
+  python3 -B -m pytest tests/test_fuzz_targets.py -vv \
+  --fuzz-target-config-files corpus/fuzz-targets/configs/cdna3.json
+```
+
 ## Corpus
 
 - `corpus/e2e/*.vmfb`: IREE HIP e2e VMFBs compiled for gfx1250.
@@ -84,3 +102,5 @@ kind,name,status,elapsed_s,returncode,log
   VMFB pairs compiled for gfx1250.
 - `corpus/tensile/`: gfx1250 TensileLite YAML configs plus generated HSACO and
   code-object artifacts.
+- `corpus/fuzz-targets/`: HIP fuzz-target kernel reproducers packaged as pytest
+  cases that can run directly or through rocjitsu.

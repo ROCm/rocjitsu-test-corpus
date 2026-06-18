@@ -1,4 +1,0 @@
-name = "upstream"
-description = "Unmodified GGML source extracted from the pinned llama.cpp commit."
-patches = []
-expect = "pass"

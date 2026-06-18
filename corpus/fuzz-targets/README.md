@@ -10,7 +10,7 @@ source:
 
 ```text
 cases/
-  <project>/<case>/      runner, metadata, and source variants
+  <project>/<case>/      runner, metadata, and optional overrides/helpers
 
 third_party/
   <project>/             vendored or extracted upstream sources
@@ -31,8 +31,9 @@ Collected kernel cases:
   - `gemm_mxfp8_4wave`
 - `llama.cpp/`:
   - `mul_mat_vec_q`
+  - `noncont_batched_matmul`
+  - `noncont_batched_matmul_hazard`
   - `rms_norm`
-  - `pr13155_noncont_batched_matmul`
 
 | Case | Target Arch | Check |
 | --- | --- | --- |
@@ -45,13 +46,14 @@ Collected kernel cases:
 | `hipkittens/gemm_fp8fp32_4wave` | `gfx950` | - |
 | `hipkittens/gemm_mxfp8_4wave` | `gfx950` | - |
 | `llama.cpp/mul_mat_vec_q` | CDNA3/RDNA4 | Pass |
+| `llama.cpp/noncont_batched_matmul` | CDNA3/RDNA4 | Pass |
+| `llama.cpp/noncont_batched_matmul_hazard` | CDNA3/RDNA4 | Pass/Bug |
 | `llama.cpp/rms_norm` | CDNA3/RDNA4 | Pass |
-| `llama.cpp/pr13155_noncont_batched_matmul` | CDNA3/RDNA4 | Bug/Fix |
 
 ## CMake Presets
 
 `CMakePresets.json` only defines the shared hidden `base` preset. Put local GPU
-architecture and the unpacked TheRock artifact ROCm dist path in
+architecture and the ROCm SDK root in
 `CMakeUserPresets.json`, for example:
 
 ```json
@@ -63,7 +65,7 @@ architecture and the unpacked TheRock artifact ROCm dist path in
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_HIP_ARCHITECTURES": "<gfx target>",
-        "ROCFUZZ_THEROCK_ROCM_PATH": "~/therock-artifacts/<gfx target>/dist/rocm"
+        "ROCM_PATH": "<ROCm SDK root>"
       }
     }
   ],
@@ -83,8 +85,9 @@ To build only selected backends, add enable flags under `cacheVariables`:
 "ROCFUZZ_ENABLE_HIP_STREAMK": "ON"
 ```
 
-`ROCFUZZ_THEROCK_ROCM_PATH` must point at a TheRock ROCm dist tree with
-`lib/cmake/hip/hip-config.cmake`.
+`ROCM_PATH` must point at a ROCm SDK root with
+`lib/cmake/hip/hip-config.cmake`. If `ROCM_PATH` is unset, CMake attempts to
+discover it with `$ROCM_VENV/bin/rocm-sdk path --root` or `rocm-sdk path --root`.
 
 Then configure and build with the local preset:
 
@@ -115,39 +118,45 @@ source tree in `third_party/hipkittens`. See
 ## Corpus Layout
 
 Runnable reproducer cases live under `cases/`. A case owns its runner, metadata,
-and source variants:
+and any local source overrides or helper CMake files:
 
 ```text
 cases/
   <project>/
     <case>/
       runner.cpp|runner.hip
-      case.toml
-      variants/<variant>/variant.toml
+      case.json
+      input_sets/*.json
+      overrides/<relative/source/path>
+      cmake/*.cmake
 ```
 
-Most current llama.cpp cases use the `upstream` variant, which means the runner
-is linked against the unmodified GGML source in `third_party/llama.cpp/ggml`.
-The PR #13155 case records `pr13155_bug` and `pr13155_fix` backend variants that
-share the same non-contiguous batched matmul input runner. The fixed variant
-links directly against the current vendored GGML. The bug variant creates a
-CMake-only symlink overlay from vendored GGML, copies `ggml-cuda.cu`, and applies
-the small patch that restores the PR #13155 pre-fix behavior.
+Most current llama.cpp cases link against the unmodified GGML source in
+`third_party/llama.cpp/ggml`.
+The non-contiguous batched matmul cases share one runner with a
+`--src1-layout` selector. The fixed `noncont_batched_matmul` case embeds its
+contiguous F32 src1 input directly in `case.json`, matching the other ordinary
+kernel cases. The hazard backend keeps `input_sets/normal.json` and
+`input_sets/trigger.json` because it intentionally exercises a known-bug kernel:
+the normal input set passes and the non-contiguous triggering input set fails.
+The hazard build creates a CMake-only symlink overlay from vendored GGML, copies
+`ggml-cuda.cu`, and overrides it with a case-local file that restores the PR
+#13155 pre-fix behavior.
 
-The current Stream-K cases use `upstream` variants, which means the runners are
-compiled against extracted hip-stream-k sources in `third_party/hip-stream-k`.
+The current Stream-K cases compile against extracted hip-stream-k sources in
+`third_party/hip-stream-k`.
 
-The current hip-matmul cases use `upstream` variants, which means the case-local
-wrappers compile the upstream self-contained `matmul.hip` and `matvec.hip`
-programs from `third_party/hip-matmul`. Those upstream programs include host
-runner code that allocates inputs and invokes the HIP kernels.
+The current hip-matmul case-local wrappers compile the upstream self-contained
+`matmul.hip` and `matvec.hip` programs from `third_party/hip-matmul`. Those
+upstream programs include host runner code that allocates inputs and invokes the
+HIP kernels.
 
-The current HipKittens GEMM cases use `upstream` variants. The MXFP8 and FP8
-cases compile upstream self-contained 4-wave GEMM programs from the HipKittens
-main branch. The BF16 cases wrap upstream pybind-oriented kernel sources in
-standalone ROCfuzz HIP runners: one from the main branch for CDNA4 / `gfx950`,
-and one from the HipKittens `cdna3` branch for CDNA3 / `gfx942`. The wrappers
-reduce the default matrix and benchmark sizes for corpus runs.
+The current HipKittens MXFP8 and FP8 cases compile upstream self-contained
+4-wave GEMM programs from the HipKittens main branch. The BF16 cases wrap
+upstream pybind-oriented kernel sources in standalone ROCfuzz HIP runners: one
+from the main branch for CDNA4 / `gfx950`, and one from the HipKittens `cdna3`
+branch for CDNA3 / `gfx942`. The wrappers reduce the default matrix and
+benchmark sizes for corpus runs.
 
 Use a TheRock ROCm artifact for the ROCm/HIP stack. Point the CMake preset
 below at the unpacked artifact's ROCm dist tree that you want to test.
@@ -194,30 +203,40 @@ Useful run targets:
 cmake --build --preset local-hip --target run_hip_streamk_simple
 cmake --build --preset local-hip --target run_hip_streamk_two_tile
 cmake --build --preset local-hip --target run_llama_mul_mat_vec_q
-cmake --build --preset local-hip --target run_llama_pr13155_noncont_batched_matmul
-cmake --build --preset local-hip --target run_llama_cpp_pr13155_noncont_batched_matmul_bug
-cmake --build --preset local-hip --target run_llama_cpp_pr13155_noncont_batched_matmul_fix
 cmake --build --preset local-hip --target run_llama_rms_norm
 cmake --build --preset local-hip --target run_hip_matmul_matvec
 ```
 
+Useful llama.cpp build targets:
+
+```sh
+cmake --build --preset local-hip --target llama_cpp_mul_mat_vec_q
+cmake --build --preset local-hip --target llama_cpp_noncont_batched_matmul
+cmake --build --preset local-hip --target llama_cpp_noncont_batched_matmul_hazard
+cmake --build --preset local-hip --target llama_cpp_rms_norm
+```
+
 The llama.cpp harnesses also support correctness checks that compare the GPU
-result against the GGML CPU backend. Build the harnesses, then run the binaries
-with `--validate`:
+result against the GGML CPU backend. Pytest configures and builds the requested
+CMake targets, materializes declared inputs from `case.json` and
+`input_sets/*.json`, runs each llama.cpp binary once without `--validate` to
+capture GPU output, runs it again with `--validate` to capture CPU reference
+output, and compares the two outputs with the case tolerance.
+For manual smoke checks of cases without declared input files, build the
+harnesses, then run the binaries with `--validate`:
 
 ```sh
 cmake --build --preset local-hip --target llama_cpp_kernels
 ./build/local-hip/cases/llama.cpp/llama_cpp_mul_mat_vec_q --validate
-./build/local-hip/cases/llama.cpp/llama_cpp_pr13155_noncont_batched_matmul_fix-build/rocfuzz_llama_pr13155_runner --validate
 ./build/local-hip/cases/llama.cpp/llama_cpp_rms_norm --validate
 ```
 
 The RMS norm validator uses a fixed absolute tolerance of `1.0e-5f`.
-The PR #13155 validator uses a fixed absolute tolerance of `1.0e-3f`. Its input
-uses 17 `src1` columns so latest `gfx1201` GGML dispatch does not select
-`ggml_cuda_mul_mat_f` and instead reaches the patched batched cuBLAS path. The
-`pr13155_fix` variant passes; the patched `pr13155_bug` overlay is expected to
-fail.
+The non-contiguous batched matmul validator uses a fixed absolute tolerance of
+`1.0e-3f`. The fixed case uses a contiguous `src1` tensor with 17 columns. The
+hazard triggering input set uses a non-contiguous `src1` view with 17 columns so
+latest `gfx1201` GGML dispatch does not select `ggml_cuda_mul_mat_f` and instead
+reaches the overridden batched cuBLAS path.
 The quantized matvec validator uses a fixed absolute tolerance of `1.0e-2f`
 because the Q4_0 CPU and GPU matvec kernels use different quantized execution
 paths. This is a smoke correctness check for obviously wrong GPU output, not a

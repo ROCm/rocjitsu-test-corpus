@@ -14,6 +14,7 @@ invoke
 numpy
 hip-python
 pytest>=5.4.1
+pytest-timeout
 pytest-xdist>=1.32.0
 filelock
 setuptools
@@ -22,8 +23,6 @@ scikit-build-core
 nanobind
 cmake
 numpy
-pytest
-pytest-timeout
 
 --pre
 --find-links https://iree.dev/pip-release-links.html
