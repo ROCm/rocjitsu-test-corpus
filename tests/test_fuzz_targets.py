@@ -73,5 +73,4 @@ def test_fuzz_target_case(fuzz_case, target_config, pytestconfig):
         pytestconfig.getoption("artifact_directory"),
         build_only=pytestconfig.getoption("skip_all_runs"),
         run_wrapper=pytestconfig.getoption("run_wrapper"),
-        case_timeout_seconds=pytestconfig.getoption("case_timeout"),
     )

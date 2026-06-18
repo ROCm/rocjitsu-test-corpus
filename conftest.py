@@ -18,7 +18,6 @@ from iree_corpus import (  # noqa: E402
     run_case,
 )
 from fuzz_targets import (  # noqa: E402
-    DEFAULT_CASE_TIMEOUT_SECONDS,
     default_config_files as default_fuzz_target_config_files,
     load_target_configs as load_fuzz_target_configs,
 )
@@ -68,23 +67,6 @@ def pytest_addoption(parser):
         default=default_fuzz_target_config_files(),
         help="Target config JSON files used to build and run kernel cases.",
     )
-    parser.addoption(
-        "--case-timeout",
-        action="store",
-        type=positive_seconds,
-        default=DEFAULT_CASE_TIMEOUT_SECONDS,
-        help=(
-            "Timeout in seconds for each fuzz target phase; run and validation "
-            "each get this limit separately. Defaults to 15 seconds."
-        ),
-    )
-
-
-def positive_seconds(value):
-    timeout = float(value)
-    if timeout <= 0:
-        raise ValueError("--case-timeout must be a positive number")
-    return timeout
 
 
 def pytest_sessionstart(session):
