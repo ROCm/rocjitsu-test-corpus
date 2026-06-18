@@ -64,6 +64,18 @@ namespace fpsan_gtest
         std::exit(1);
     }
 
+    inline int& skipped_count()
+    {
+        static int skipped = 0;
+        return skipped;
+    }
+
+    inline void skip(const char* file, int line)
+    {
+        ++skipped_count();
+        std::cerr << "SKIP: " << file << ":" << line << "\n";
+    }
+
     template <class A, class B>
     Stream expect_eq(const A& a, const B& b, const char* file, int line)
     {
@@ -138,6 +150,11 @@ namespace fpsan_gtest
     {
         for(const TestCase& test : registry())
             test.fn();
+        if(skipped_count() != 0)
+        {
+            std::cerr << "SKIPPED: " << skipped_count() << " test(s)\n";
+            return 77;
+        }
         return 0;
     }
 } // namespace fpsan_gtest
@@ -172,7 +189,7 @@ namespace fpsan_gtest
 
 #define GTEST_SKIP() \
     if(true)         \
-    return;          \
+    return ::fpsan_gtest::skip(__FILE__, __LINE__); \
     else             \
         ::fpsan_gtest::Stream()
 

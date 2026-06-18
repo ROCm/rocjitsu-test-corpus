@@ -268,10 +268,14 @@ run_case() {
   local test_name=$1
   local safe_name=${test_name//[^A-Za-z0-9_.-]/_}
   local log="$out_dir/logs/fpsan_${safe_name}.log"
-  local build_rc ctest_rc rc status start_ns end_ns elapsed_ms elapsed_s
+  local build_rc=0 ctest_rc=0 rc status start_ns end_ns elapsed_ms elapsed_s
 
   local build_cmd=("$CMAKE" --build "$build_dir" --target "$test_name")
   local ctest_cmd=("$CTEST" --test-dir "$build_dir" -R "^${test_name}$" --output-on-failure)
+  local prebuild=1
+  if [[ "$test_name" == fpsan_neg_* ]]; then
+    prebuild=0
+  fi
 
   {
     printf 'CONFIG: %q\n' "$config_file"
@@ -286,28 +290,39 @@ run_case() {
 
   printf '%-6s %-56s ' "fpsan" "$test_name"
   start_ns=$(date +%s%N)
-  if (( TIMEOUT_SECS > 0 )); then
-    timeout --foreground "$TIMEOUT_SECS" "${build_cmd[@]}" >> "$log" 2>&1
-  else
-    "${build_cmd[@]}" >> "$log" 2>&1
-  fi
-  build_rc=$?
 
-  if (( TIMEOUT_SECS > 0 )); then
-    timeout --foreground "$TIMEOUT_SECS" "${ctest_cmd[@]}" >> "$log" 2>&1
+  if (( prebuild != 0 && TIMEOUT_SECS > 0 )); then
+    timeout --foreground "$TIMEOUT_SECS" "${build_cmd[@]}" >> "$log" 2>&1
+    build_rc=$?
+  elif (( prebuild != 0 )); then
+    "${build_cmd[@]}" >> "$log" 2>&1
+    build_rc=$?
   else
-    "${ctest_cmd[@]}" >> "$log" 2>&1
+    printf 'BUILD_SKIPPED: compile-fail test is built by CTest\n' >> "$log"
   fi
-  ctest_rc=$?
+
+  if (( build_rc == 0 && TIMEOUT_SECS > 0 )); then
+    timeout --foreground "$TIMEOUT_SECS" "${ctest_cmd[@]}" >> "$log" 2>&1
+    ctest_rc=$?
+  elif (( build_rc == 0 )); then
+    "${ctest_cmd[@]}" >> "$log" 2>&1
+    ctest_rc=$?
+  else
+    printf 'CTEST_SKIPPED: target build failed\n' >> "$log"
+  fi
 
   end_ns=$(date +%s%N)
   elapsed_ms=$(((end_ns - start_ns) / 1000000))
   elapsed_s=$(fmt_ms_as_s "$elapsed_ms")
 
-  rc=$ctest_rc
-  if [[ "$ctest_rc" -eq 0 ]]; then
+  if [[ "$build_rc" -ne 0 ]]; then
+    rc=$build_rc
+    status=FAIL
+  elif [[ "$ctest_rc" -eq 0 ]]; then
+    rc=$ctest_rc
     status=PASS
   else
+    rc=$ctest_rc
     status=FAIL
   fi
 
