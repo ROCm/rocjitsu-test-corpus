@@ -1,6 +1,6 @@
 {
   "config_name": "general",
-  "hip_architectures": ["gfx942", "gfx950", "gfx1100", "gfx1200"],
+  "hip_architectures": ["gfx942", "gfx950", "gfx1100", "gfx1200", "gfx1201"],
   "tests": [
     "fpsan_neg_cross_mode",
     "fpsan_neg_explicit_ctor",
