@@ -95,6 +95,30 @@ rocjitsu --config "main/emulation/rocjitsu/configs/amdgpu_cdna3_kmd.json" -- \
   --fuzz-target-config-files corpus/fuzz-targets/configs/cdna3.json
 ```
 
+## Run FPSAN
+
+The FPSAN corpus is configured, built, and run through CTest by
+`scripts/run_fpsan_ctest.sh`. By default it uses
+`corpus/fpsan/configs/general.json`.
+
+```bash
+rocjitsu --config "main/emulation/rocjitsu/configs/amdgpu_cdna3_kmd.json" -- \
+  ./scripts/run_fpsan_ctest.sh \
+  --config "corpus/fpsan/configs/cdna3.json"
+```
+
+Useful subsets:
+
+```bash
+./scripts/run_fpsan_ctest.sh --list
+./scripts/run_fpsan_ctest.sh --case fpsan_math
+./scripts/run_fpsan_ctest.sh --config corpus/fpsan/configs/general.json --limit 3
+```
+
+Set `ROCM_PATH` to override the ROCm root passed to CMake. Each run writes a
+timestamped `results-fpsan-<config-name>-<timestamp>/results.csv` plus per-case
+logs under `logs/`.
+
 ## Corpus
 
 - `corpus/e2e/*.vmfb`: IREE HIP e2e VMFBs compiled for gfx1250.
@@ -104,3 +128,5 @@ rocjitsu --config "main/emulation/rocjitsu/configs/amdgpu_cdna3_kmd.json" -- \
   code-object artifacts.
 - `corpus/fuzz-targets/`: HIP fuzz-target kernel reproducers packaged as pytest
   cases that can run directly or through rocjitsu.
+- `corpus/fpsan/`: deterministic HIP FPSAN tests configured and run through
+  CTest.
