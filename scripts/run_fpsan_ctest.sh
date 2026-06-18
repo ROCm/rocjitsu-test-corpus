@@ -14,6 +14,7 @@ Options:
   --out-dir DIR        Output directory for logs, build tree, and results.csv.
   --case TEXT          Run tests whose name contains TEXT.
   --limit N            Stop after N matching tests.
+  --timeout SECS       Timeout for configure, build, and ctest steps. 0 disables.
   --list               Print selected tests without running them.
   -h, --help           Show this help.
 
@@ -55,6 +56,7 @@ out_dir=${OUT_DIR:-}
 case_filter=
 limit=0
 list_only=0
+timeout_secs=
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -77,6 +79,15 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 ]] || die "--limit requires a value"
       limit=$2
       shift 2
+      ;;
+    --timeout)
+      [[ $# -ge 2 ]] || die "--timeout requires a value"
+      timeout_secs=$2
+      shift 2
+      ;;
+    --timeout=*)
+      timeout_secs=${1#--timeout=}
+      shift
       ;;
     --list)
       list_only=1
@@ -108,6 +119,9 @@ PYTHON=${PYTHON:-python3}
 TIMEOUT_SECS=${TIMEOUT_SECS:-10}
 CMAKE=${CMAKE:-cmake}
 CTEST=${CTEST:-ctest}
+if [[ -n "$timeout_secs" ]]; then
+  TIMEOUT_SECS=$timeout_secs
+fi
 
 [[ "$TIMEOUT_SECS" =~ ^[0-9]+$ ]] || die "TIMEOUT_SECS must be an integer"
 command -v "$PYTHON" >/dev/null 2>&1 || die "missing tool in PATH: $PYTHON"
