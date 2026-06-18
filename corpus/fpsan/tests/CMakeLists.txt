@@ -2,7 +2,7 @@ add_subdirectory(compile_fail)
 add_subdirectory(general)
 
 if(FPSAN_TESTS_HAS_RDNA3)
-    add_subdirectory(gfx11)
+    add_subdirectory(rdna3)
 endif()
 
 if(FPSAN_TESTS_HAS_GFX1250)
@@ -10,7 +10,7 @@ if(FPSAN_TESTS_HAS_GFX1250)
 endif()
 
 if(FPSAN_TESTS_HAS_CDNA4)
-    add_subdirectory(gfx950)
+    add_subdirectory(cdna4)
 endif()
 
 if(FPSAN_TESTS_HAS_CDNA3)

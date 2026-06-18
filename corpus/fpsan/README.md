@@ -12,8 +12,9 @@ third_party/
 tests/
   general/          Architecture-independent FPSan API and payload tests.
   gfx1250/          gfx1250-only AMDGPU intrinsic wrapper tests.
-  gfx950/           gfx950/CDNA4-specific AMDGPU intrinsic wrapper tests.
+  cdna4/            CDNA4/gfx950-specific AMDGPU intrinsic wrapper tests.
   cdna3/            CDNA3/gfx94x-specific AMDGPU intrinsic wrapper tests.
+  rdna3/            RDNA3/gfx11-specific AMDGPU intrinsic wrapper tests.
   rdna4/            RDNA4/gfx120x-specific AMDGPU intrinsic wrapper tests.
 
 configs/            Test target configs and selected test lists.
