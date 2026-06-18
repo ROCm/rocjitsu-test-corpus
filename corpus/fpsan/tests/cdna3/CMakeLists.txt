@@ -1,0 +1,2 @@
+fpsan_add_hip_test(fpsan_mfma_cdna3_test mfma_cdna3_test.cpp)
+fpsan_add_hip_test(fpsan_smfmac_cdna3_test smfmac_cdna3_test.cpp)
