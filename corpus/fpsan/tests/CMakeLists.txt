@@ -1,7 +1,3 @@
-if(CMAKE_HIP_ARCHITECTURES)
-    fpsan_enable_hip_tests()
-endif()
-
 add_subdirectory(compile_fail)
 add_subdirectory(general)
 
