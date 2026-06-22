@@ -1,1 +1,2 @@
 fpsan_add_hip_test(fpsan_amdgcn_bf16_trans_test amdgcn_bf16_trans_test.hip)
+fpsan_add_hip_test(fpsan_cvt_scalef32_pk_gfx1250_test cvt_scalef32_pk_gfx1250_test.cpp)
