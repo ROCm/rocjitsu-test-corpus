@@ -1,0 +1,1 @@
+fpsan_add_hip_test(fpsan_amdgcn_bf16_trans_test amdgcn_bf16_trans_test.hip)
