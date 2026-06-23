@@ -1,0 +1,10 @@
+{
+  "config_name": "gfx1250",
+  "hip_architectures": [
+    "gfx1250"
+  ],
+  "tests": [
+    "fpsan_amdgcn_bf16_trans_test",
+    "fpsan_cvt_scalef32_pk_gfx1250_test"
+  ]
+}
