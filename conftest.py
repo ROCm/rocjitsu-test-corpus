@@ -21,13 +21,8 @@ from fuzz_targets import (  # noqa: E402
     default_config_files as default_fuzz_target_config_files,
     load_target_configs as load_fuzz_target_configs,
 )
-from fpsan_cts import (  # noqa: E402
-    default_config_files as default_fpsan_config_files,
-    load_target_configs as load_fpsan_target_configs,
-)
 
 collect_ignore = ["tests/test_iree_corpus.py"]
-
 
 def pytest_addoption(parser):
     parser.addoption(
@@ -72,13 +67,6 @@ def pytest_addoption(parser):
         default=default_fuzz_target_config_files(),
         help="Target config JSON files used to build and run kernel cases.",
     )
-    parser.addoption(
-        "--fpsan-config-files",
-        action="store",
-        nargs="*",
-        default=default_fpsan_config_files(),
-        help="Target config JSON files used to build and run FPSAN CTS cases.",
-    )
 
 
 def pytest_sessionstart(session):
@@ -87,9 +75,6 @@ def pytest_sessionstart(session):
     )
     session.config.fuzz_target_configs = load_fuzz_target_configs(
         session.config.getoption("fuzz_target_config_files")
-    )
-    session.config.fpsan_target_configs = load_fpsan_target_configs(
-        session.config.getoption("fpsan_config_files")
     )
     repo_root = Path(__file__).resolve().parent
     artifact_root = Path(session.config.getoption("artifact_directory"))
@@ -100,10 +85,6 @@ def pytest_sessionstart(session):
         raise pytest.UsageError("--artifact-directory must resolve under the repo root")
     for target_config in session.config.fuzz_target_configs:
         artifact_dir = artifact_root / "fuzz_targets" / target_config["config_name"]
-        if artifact_dir.exists():
-            shutil.rmtree(artifact_dir)
-    for target_config in session.config.fpsan_target_configs:
-        artifact_dir = artifact_root / "cts" / target_config["config_name"]
         if artifact_dir.exists():
             shutil.rmtree(artifact_dir)
 
