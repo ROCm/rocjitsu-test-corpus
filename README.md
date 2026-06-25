@@ -97,27 +97,26 @@ rocjitsu --config "main/emulation/rocjitsu/configs/amdgpu_cdna3_kmd.json" -- \
 
 ## Run FPSAN
 
-The FPSAN corpus is configured, built, and run through CTest by
-`scripts/run_fpsan_ctest.sh`. By default it uses
-`corpus/fpsan/configs/general.json`.
+Pytest configures the FPSAN CTS CMake tree and runs the CTest targets selected
+by the JSON files passed to `--fpsan-config-files`. By default it uses
+`corpus/cts/configs/gfx1250.json`.
 
 ```bash
-rocjitsu --config "main/emulation/rocjitsu/configs/amdgpu_cdna3_kmd.json" -- \
-  ./scripts/run_fpsan_ctest.sh \
-  --config "corpus/fpsan/configs/cdna3.json"
+rocjitsu --config "main/emulation/rocjitsu/configs/amdgpu_gfx1250.json" -- \
+  python3 -B -m pytest tests/test_fpsan_cts.py -vv \
+  --fpsan-config-files corpus/cts/configs/gfx1250.json
 ```
 
 Useful subsets:
 
 ```bash
-./scripts/run_fpsan_ctest.sh --list
-./scripts/run_fpsan_ctest.sh --case fpsan_math
-./scripts/run_fpsan_ctest.sh --config corpus/fpsan/configs/general.json --limit 3
+python3 -B -m pytest tests/test_fpsan_cts.py -vv -k fpsan_amdgcn_bf16
+python3 -B -m pytest tests/test_fpsan_cts.py -vv \
+  --fpsan-config-files corpus/cts/configs/cdna3.json corpus/cts/configs/cdna4.json
 ```
 
-Set `ROCM_PATH` to override the ROCm root passed to CMake. Each run writes a
-timestamped `results-fpsan-<config-name>-<timestamp>/results.csv` plus per-case
-logs under `logs/`.
+Set `ROCM_PATH` to override the ROCm root passed to CMake. Each run writes
+configure, build, and CTest logs under `.pytest-artifacts/cts/`.
 
 ## Corpus
 
@@ -128,5 +127,5 @@ logs under `logs/`.
   code-object artifacts.
 - `corpus/fuzz-targets/`: HIP fuzz-target kernel reproducers packaged as pytest
   cases that can run directly or through rocjitsu.
-- `corpus/fpsan/`: deterministic HIP FPSAN tests configured and run through
+- `corpus/cts/`: deterministic HIP FPSAN CTS tests configured and run through
   CTest.

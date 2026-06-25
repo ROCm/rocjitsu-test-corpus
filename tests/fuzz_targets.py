@@ -27,7 +27,6 @@ ROCFUZZ_ENABLE_CACHE_VARIABLES = (
     "ROCFUZZ_ENABLE_HIP_MATMUL",
     "ROCFUZZ_ENABLE_HIPKITTENS",
 )
-DEFAULT_CASE_TIMEOUT_SECONDS = 15
 
 
 class FuzzTargetError(Exception):
@@ -399,7 +398,7 @@ def run_case(
     *,
     build_only=False,
     run_wrapper=None,
-    case_timeout_seconds=DEFAULT_CASE_TIMEOUT_SECONDS,
+    case_timeout_seconds=None,
 ):
     case = effective_case(fuzz_case)
     artifact_root = resolve_repo_path(artifact_directory)
@@ -517,7 +516,7 @@ def run_executable(
     materialized_inputs,
     *,
     run_wrapper=None,
-    case_timeout_seconds=DEFAULT_CASE_TIMEOUT_SECONDS,
+    case_timeout_seconds=None,
 ):
     if case["project"] == "llama.cpp":
         run_llama_output_comparison(
@@ -563,7 +562,7 @@ def run_llama_output_comparison(
     materialized_inputs,
     *,
     run_wrapper=None,
-    case_timeout_seconds=DEFAULT_CASE_TIMEOUT_SECONDS,
+    case_timeout_seconds=None,
 ):
     gpu_output_path = run_dir / "gpu_output.f32.raw"
     reference_output_path = run_dir / "reference_output.f32.raw"
