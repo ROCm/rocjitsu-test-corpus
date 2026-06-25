@@ -98,21 +98,21 @@ rocjitsu --config "main/emulation/rocjitsu/configs/amdgpu_cdna3_kmd.json" -- \
 ## Run FPSAN
 
 The FPSAN CTS corpus is configured, built, and run through CTest by
-`scripts/run_fpsan_ctest.sh`. By default it uses
-`corpus/cts/configs/gfx1250.json`.
+`tests/run_fpsan_ctest.sh`. By default it uses
+`corpus/cts/configs/general.json`.
 
 ```bash
-rocjitsu --config "main/emulation/rocjitsu/configs/amdgpu_gfx1250.json" -- \
-  ./scripts/run_fpsan_ctest.sh \
-  --config corpus/cts/configs/gfx1250.json
+rocjitsu --config "main/emulation/rocjitsu/configs/amdgpu_cdna3_kmd.json" -- \
+  ./tests/run_fpsan_ctest.sh \
+  --config corpus/cts/configs/cdna3.json
 ```
 
 Useful subsets:
 
 ```bash
-./scripts/run_fpsan_ctest.sh --list
-./scripts/run_fpsan_ctest.sh --case fpsan_amdgcn_bf16
-./scripts/run_fpsan_ctest.sh --config corpus/cts/configs/gfx1250.json --limit 1
+./tests/run_fpsan_ctest.sh --list
+./tests/run_fpsan_ctest.sh --case fpsan_math
+./tests/run_fpsan_ctest.sh --config corpus/cts/configs/general.json --limit 3
 ```
 
 Set `ROCM_PATH` to override the ROCm root passed to CMake. Each run writes a

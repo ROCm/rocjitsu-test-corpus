@@ -4,13 +4,13 @@ set -uo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  ./scripts/run_fpsan_ctest.sh [options]
+  ./tests/run_fpsan_ctest.sh [options]
 
 Configures corpus/cts and runs selected FPSAN CTest cases listed in a target
 config JSON file.
 
 Options:
-  --config FILE        FPSAN config JSON. Default: corpus/cts/configs/gfx1250.json
+  --config FILE        FPSAN config JSON. Default: corpus/cts/configs/general.json
   --out-dir DIR        Output directory for logs, build tree, and results.csv.
   --case TEXT          Run tests whose name contains TEXT.
   --limit N            Stop after N matching tests.
@@ -51,7 +51,7 @@ quote_command() {
 }
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-config_file="corpus/cts/configs/gfx1250.json"
+config_file="corpus/cts/configs/general.json"
 out_dir=${OUT_DIR:-}
 case_filter=
 limit=0
@@ -155,48 +155,7 @@ while IFS= read -r line; do
       fi
       ;;
   esac
-done < <(
-  "$PYTHON" - "$config_file" <<'PY'
-import json
-import pathlib
-import sys
-
-config_path = pathlib.Path(sys.argv[1])
-with config_path.open("r", encoding="utf-8") as f:
-    config = json.load(f)
-
-if not isinstance(config, dict):
-    raise SystemExit(f"{config_path} must be a JSON object")
-
-for field in ("config_name", "hip_architectures", "tests"):
-    if field not in config:
-        raise SystemExit(f"{config_path} is missing required field '{field}'")
-
-config_name = config["config_name"]
-hip_architectures = config["hip_architectures"]
-tests = config["tests"]
-
-if not isinstance(config_name, str) or not config_name:
-    raise SystemExit(f"{config_path} has invalid config_name")
-if not isinstance(hip_architectures, list):
-    raise SystemExit(f"{config_path} field hip_architectures must be a list")
-if not isinstance(tests, list):
-    raise SystemExit(f"{config_path} field tests must be a list")
-
-for item in hip_architectures:
-    if not isinstance(item, str) or not item:
-        raise SystemExit(f"{config_path} has invalid hip_architecture entry")
-
-for test_name in tests:
-    if not isinstance(test_name, str) or not test_name:
-        raise SystemExit(f"{config_path} has invalid test entry")
-
-print(f"CONFIG_NAME={config_name}")
-print(f"HIP_ARCHITECTURES={';'.join(hip_architectures)}")
-for test_name in tests:
-    print(f"TEST={test_name}")
-PY
-)
+done < <("$PYTHON" "$repo_root/scripts/parse_fpsan_ctest_config.py" "$config_file")
 
 [[ -n "$config_name" ]] || die "failed to parse config_name from $config_file"
 
