@@ -380,7 +380,8 @@ __device__ inline void load_tdm(st<T, ROWS, COLS, Shape>& dst, const GL& src,
 
     detail::v4u32 g2 = {0, 0, 0, 0};
     detail::v4u32 g3 = {0, 0, 0, 0};
-    __builtin_amdgcn_tensor_load_to_lds(g0, g1, g2, g3, 0);
+    detail::v8u32 g4 = {0, 0, 0, 0, 0, 0, 0, 0};
+    __builtin_amdgcn_tensor_load_to_lds(g0, g1, g2, g3, g4, 0);
 }
 
 /**
@@ -434,7 +435,8 @@ __device__ inline void load_tdm_arrive(
 
     detail::v4u32 g2 = {0, 0, 0, 0};
     detail::v4u32 g3 = {0, 0, 0, 0};
-    __builtin_amdgcn_tensor_load_to_lds(g0, g1, g2, g3, 0);
+    detail::v8u32 g4 = {0, 0, 0, 0, 0, 0, 0, 0};
+    __builtin_amdgcn_tensor_load_to_lds(g0, g1, g2, g3, g4, 0);
 }
 
 /**

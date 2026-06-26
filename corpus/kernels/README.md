@@ -26,6 +26,7 @@ Collected kernel cases:
   - `matvec`
 - `hipkittens/`:
   - `gemm_bf16fp32_cdna3_64x16`
+  - `gemm_bf16fp32_gfx1250_naive`
   - `gemm_bf16fp32_16x32`
   - `gemm_fp8fp32_4wave`
   - `gemm_mxfp8_4wave`
@@ -43,6 +44,7 @@ Collected kernel cases:
 | `hip-matmul/matvec` | CDNA3/RDNA4 | Bug |
 | `hipkittens/gemm_bf16fp32_cdna3_64x16` | `gfx942` | Pass |
 | `hipkittens/gemm_bf16fp32_16x32` | `gfx950` | - |
+| `hipkittens/gemm_bf16fp32_gfx1250_naive` | `gfx1250` | - |
 | `hipkittens/gemm_fp8fp32_4wave` | `gfx950` | - |
 | `hipkittens/gemm_mxfp8_4wave` | `gfx950` | - |
 | `llama.cpp/mul_mat_vec_q` | CDNA3/RDNA4 | Pass |
@@ -155,8 +157,9 @@ The current HipKittens MXFP8 and FP8 cases compile upstream self-contained
 4-wave GEMM programs from the HipKittens main branch. The BF16 cases wrap
 upstream pybind-oriented kernel sources in standalone kernel corpus HIP runners: one
 from the main branch for CDNA4 / `gfx950`, and one from the HipKittens `cdna3`
-branch for CDNA3 / `gfx942`. The wrappers reduce the default matrix and
-benchmark sizes for corpus runs.
+branch for CDNA3 / `gfx942`. The UDNA1 / `gfx1250` case compiles the upstream
+BF16 GEMM naive ladder rung with its standalone harness. The wrappers reduce
+the default matrix and benchmark sizes for corpus runs.
 
 Use a TheRock ROCm artifact for the ROCm/HIP stack. Point the CMake preset
 below at the unpacked artifact's ROCm dist tree that you want to test.
@@ -250,11 +253,12 @@ The upstream hip-matmul `matmul.hip` runner uses MFMA intrinsics and is only
 built for `gfx9`-family HIP architectures. On those targets, the additional run
 target is `run_hip_matmul_matmul`.
 
-The HipKittens GEMM runners support CDNA3 / `gfx942` and CDNA4 / `gfx950` with
-different upstream sources. On `gfx942`, the additional run target is
-`run_hipkittens_gemm_bf16fp32_cdna3_64x16`. On `gfx950`, the additional run
-targets are `run_hipkittens_gemm_mxfp8_4wave`,
+The HipKittens GEMM runners support CDNA3 / `gfx942`, CDNA4 / `gfx950`, and
+UDNA1 / `gfx1250` with different upstream sources. On `gfx942`, the additional
+run target is `run_hipkittens_gemm_bf16fp32_cdna3_64x16`. On `gfx950`, the
+additional run targets are `run_hipkittens_gemm_mxfp8_4wave`,
 `run_hipkittens_gemm_fp8fp32_4wave`, and
-`run_hipkittens_gemm_bf16fp32_16x32`. The runners compute CPU references,
-validate GPU output, and then run short corpus-sized benchmarks where the
-upstream runner includes benchmarking.
+`run_hipkittens_gemm_bf16fp32_16x32`. On `gfx1250`, the additional run target
+is `run_hipkittens_gemm_bf16fp32_gfx1250_naive`. The runners compute CPU
+references, validate GPU output, and then run short corpus-sized benchmarks
+where the upstream runner includes benchmarking.

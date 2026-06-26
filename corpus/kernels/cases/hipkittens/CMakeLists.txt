@@ -12,6 +12,7 @@ set(hipkittens_gemm_targets)
 
 set(hipkittens_supports_cdna3 OFF)
 set(hipkittens_supports_cdna4 OFF)
+set(hipkittens_supports_udna1 OFF)
 foreach(hip_arch IN LISTS CMAKE_HIP_ARCHITECTURES)
     if(hip_arch STREQUAL "gfx942")
         set(hipkittens_supports_cdna3 ON)
@@ -19,16 +20,13 @@ foreach(hip_arch IN LISTS CMAKE_HIP_ARCHITECTURES)
     if(hip_arch STREQUAL "gfx950")
         set(hipkittens_supports_cdna4 ON)
     endif()
+    if(hip_arch STREQUAL "gfx1250")
+        set(hipkittens_supports_udna1 ON)
+    endif()
 endforeach()
 
-if(hipkittens_supports_cdna3 OR hipkittens_supports_cdna4)
+if(hipkittens_supports_cdna3 OR hipkittens_supports_cdna4 OR hipkittens_supports_udna1)
     find_package(OpenMP REQUIRED)
-
-    if(hipkittens_supports_cdna4)
-        set(hipkittens_cdna_definition KITTENS_CDNA4)
-    else()
-        set(hipkittens_cdna_definition KITTENS_CDNA3)
-    endif()
 
     function(apply_case_compile_definitions target_name case_name)
         set(case_json_path "${CMAKE_CURRENT_SOURCE_DIR}/${case_name}/case.json")
@@ -52,7 +50,7 @@ if(hipkittens_supports_cdna3 OR hipkittens_supports_cdna4)
         target_compile_definitions(${target_name} PRIVATE ${case_compile_definitions})
     endfunction()
 
-    function(add_hipkittens_gemm_runner target_name case_name include_dir run_comment)
+    function(add_hipkittens_gemm_runner target_name case_name include_dir arch_definition run_comment)
         set(runner_source "${CMAKE_CURRENT_SOURCE_DIR}/${case_name}/runner.hip")
         add_executable(${target_name}
             "${runner_source}"
@@ -68,7 +66,7 @@ if(hipkittens_supports_cdna3 OR hipkittens_supports_cdna4)
             HIP_EXTENSIONS OFF
         )
         target_compile_definitions(${target_name} PRIVATE
-            ${hipkittens_cdna_definition}
+            ${arch_definition}
         )
         apply_case_compile_definitions(${target_name} ${case_name})
         target_compile_options(${target_name} PRIVATE
@@ -108,18 +106,21 @@ if(hipkittens_supports_cdna3 OR hipkittens_supports_cdna4)
             hipkittens_gemm_mxfp8_4wave
             gemm_mxfp8_4wave
             "${HIPKITTENS_ROOT}/include"
+            KITTENS_CDNA4
             "Run HipKittens MXFP8 4-wave GEMM runner"
         )
         add_hipkittens_gemm_runner(
             hipkittens_gemm_fp8fp32_4wave
             gemm_fp8fp32_4wave
             "${HIPKITTENS_ROOT}/include"
+            KITTENS_CDNA4
             "Run HipKittens FP8/FP32 4-wave GEMM runner"
         )
         add_hipkittens_gemm_runner(
             hipkittens_gemm_bf16fp32_16x32
             gemm_bf16fp32_16x32
             "${HIPKITTENS_ROOT}/include"
+            KITTENS_CDNA4
             "Run HipKittens BF16/FP32 16x32 GEMM runner"
         )
     else()
@@ -131,11 +132,22 @@ if(hipkittens_supports_cdna3 OR hipkittens_supports_cdna4)
             hipkittens_gemm_bf16fp32_cdna3_64x16
             gemm_bf16fp32_cdna3_64x16
             "${HIPKITTENS_ROOT}/cdna3/include"
+            KITTENS_CDNA3
             "Run HipKittens CDNA3 BF16/FP32 64x16 GEMM runner"
         )
     endif()
+
+    if(hipkittens_supports_udna1)
+        add_hipkittens_gemm_runner(
+            hipkittens_gemm_bf16fp32_gfx1250_naive
+            gemm_bf16fp32_gfx1250_naive
+            "${HIPKITTENS_ROOT}/include"
+            KITTENS_UDNA1
+            "Run HipKittens gfx1250 BF16/FP32 naive GEMM runner"
+        )
+    endif()
 else()
-    message(STATUS "Skipping HipKittens GEMM runners: enabled runners require CDNA3/gfx942 or CDNA4/gfx950")
+    message(STATUS "Skipping HipKittens GEMM runners: enabled runners require CDNA3/gfx942, CDNA4/gfx950, or UDNA1/gfx1250")
 endif()
 
 add_custom_target(hipkittens_gemm_runners ALL
