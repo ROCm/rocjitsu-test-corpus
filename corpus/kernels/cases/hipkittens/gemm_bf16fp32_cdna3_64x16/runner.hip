@@ -2,7 +2,7 @@
 #define KERNEL_CORPUS_HIPKITTENS_M 256
 #define KERNEL_CORPUS_HIPKITTENS_N 256
 #define KERNEL_CORPUS_HIPKITTENS_K 256
-#include "../../../third_party/hipkittens/kernels/gemm/bf16fp32/mi325x/8192_256_256_64_16/256_256_64_16.cpp"
+#include "../../../third_party/hipkittens/kernels/gemm/bf16fp32/cdna3/8192_256_256_64_16/256_256_64_16.cpp"
 
 #include <cmath>
 #include <cstdio>
