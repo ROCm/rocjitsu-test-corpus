@@ -32,7 +32,6 @@
     "gemm",
     "bf16-fp32",
     "gfx1250",
-    "udna1",
     "regression"
   ]
 }

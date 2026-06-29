@@ -1,5 +1,5 @@
 {
-  "config_name": "udna1",
+  "config_name": "gfx1250",
   "target": "gfx1250",
   "cmake": {
     "cache_variables": {
@@ -7,6 +7,7 @@
     }
   },
   "skip_compile_tests": [],
+  "skip_run_tests": [],
   "expected_compile_failures": [],
   "expected_run_failures": []
 }

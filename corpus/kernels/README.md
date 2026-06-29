@@ -157,7 +157,7 @@ The current HipKittens MXFP8 and FP8 cases compile upstream self-contained
 4-wave GEMM programs from the HipKittens main branch. The BF16 cases wrap
 upstream pybind-oriented kernel sources in standalone kernel corpus HIP runners: one
 from the main branch for CDNA4 / `gfx950`, and one from the HipKittens `cdna3`
-branch for CDNA3 / `gfx942`. The UDNA1 / `gfx1250` case compiles the upstream
+branch for CDNA3 / `gfx942`. The `gfx1250` case compiles the upstream
 BF16 GEMM naive ladder rung with its standalone harness. The wrappers reduce
 the default matrix and benchmark sizes for corpus runs.
 
@@ -254,7 +254,7 @@ built for `gfx9`-family HIP architectures. On those targets, the additional run
 target is `run_hip_matmul_matmul`.
 
 The HipKittens GEMM runners support CDNA3 / `gfx942`, CDNA4 / `gfx950`, and
-UDNA1 / `gfx1250` with different upstream sources. On `gfx942`, the additional
+`gfx1250` with different upstream sources. On `gfx942`, the additional
 run target is `run_hipkittens_gemm_bf16fp32_cdna3_64x16`. On `gfx950`, the
 additional run targets are `run_hipkittens_gemm_mxfp8_4wave`,
 `run_hipkittens_gemm_fp8fp32_4wave`, and
