@@ -17,7 +17,7 @@ The IREE tools must be available in `PATH`:
 Rocjitsu must be available in `PATH`:
 - `rocjitsu`
 
-Fuzz-target kernel runners require HIP and other ROCm libraries; by default the
+Kernel corpus runners require HIP and other ROCm libraries; by default the
 script uses the ROCm path returned by `rocm-sdk path --root`. Set `ROCM_PATH`
 to override the discovered ROCm root.
 
@@ -44,8 +44,11 @@ that setup.
 
 ## Run
 
+Unified corpus entrypoint:
+
 ```bash
-pytest  --run-wrapper 'rocjitsu --config /home/eochoalo/code/rocm-systems/emulation/rocjitsu/configs/amdgpu_gfx1250.json --'
+rocjitsu --config /path/to/gfx1250.json -- \
+  pytest tests/test_corpus.py --target gfx1250
 ```
 
 Tensile rebuild and numeric smoke checks:
@@ -81,21 +84,33 @@ The CSV columns are:
 kind,name,status,elapsed_s,returncode,log
 ```
 
-## Run
-
-For tests created by kernels in the folder `fuzz-targets`,
-
-Pytest automatically configures and builds target cases selected by the JSON files passed to `--fuzz-target-config-files`.
-By default the script uses the ROCm path returned by `rocm-sdk path --root`. To
-use a different ROCm root, set `ROCM_PATH` before running pytest.
+For kernels-only runs:
 
 ```bash
-rocjitsu --config "main/emulation/rocjitsu/configs/amdgpu_cdna3_kmd.json" -- \
-  python3 -B -m pytest tests/test_fuzz_targets.py -vv \
-  --fuzz-target-config-files corpus/fuzz-targets/configs/cdna3.json
+rocjitsu --config /path/to/gfx1250.json -- \
+  pytest tests/test_corpus.py \
+  --target gfx1250 \
+  --suite kernels
 ```
 
-## Run FPSAN
+For one backend only:
+
+```bash
+rocjitsu --config /path/to/gfx1250.json -- \
+  pytest tests/test_corpus.py \
+  --target gfx1250 \
+  --suite kernels \
+  --backend hipkittens
+```
+
+For downstream CI matrix generation, use pytest collection output:
+
+```bash
+rocjitsu --config /path/to/gfx1250.json -- \
+  pytest --collect-only tests/test_corpus.py --target gfx1250
+```
+
+## Run CTS (FPSAN)
 
 The FPSAN CTS corpus is configured, built, and run through CTest by
 `tests/run_fpsan_ctest.sh`. By default it uses
@@ -107,7 +122,14 @@ rocjitsu --config "main/emulation/rocjitsu/configs/amdgpu_cdna3_kmd.json" -- \
   --config corpus/cts/configs/cdna3.json
 ```
 
-Useful subsets:
+Use the unified entrypoint for CTS discovery/runs:
+
+```bash
+rocjitsu --config /path/to/gfx1250.json -- \
+  pytest tests/test_corpus.py --target gfx1250 --suite cts
+```
+
+Useful direct subsets (shell helper):
 
 ```bash
 ./tests/run_fpsan_ctest.sh --list
@@ -126,7 +148,7 @@ logs under `logs/`.
   VMFB pairs compiled for gfx1250.
 - `corpus/tensile/`: gfx1250 TensileLite YAML configs plus generated HSACO and
   code-object artifacts.
-- `corpus/fuzz-targets/`: HIP fuzz-target kernel reproducers packaged as pytest
-  cases that can run directly or through rocjitsu.
+- `corpus/kernels/`: HIP kernel reproducers packaged as pytest cases that can
+  run directly or through rocjitsu.
 - `corpus/cts/`: deterministic HIP FPSAN CTS tests configured and run through
   CTest.
