@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 CORPUS_ROOT = REPO_ROOT / "corpus" / "iree"
 DEFAULT_CONFIG = CORPUS_ROOT / "configs" / "gfx1250_hip.json"
 

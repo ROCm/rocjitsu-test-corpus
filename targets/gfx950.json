@@ -1,0 +1,10 @@
+{
+  "target": "gfx950",
+  "architecture_family": "cdna4",
+  "hip_architectures": [
+    "gfx950"
+  ],
+  "tags": [
+    "cdna4"
+  ]
+}

@@ -10,9 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-FUZZ_TARGETS_ROOT = REPO_ROOT / "corpus" / "fuzz-targets"
-DEFAULT_CONFIG = FUZZ_TARGETS_ROOT / "configs" / "cdna3.json"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+KERNELS_ROOT = REPO_ROOT / "corpus" / "kernels"
+LEGACY_KERNELS_ROOT = REPO_ROOT / "corpus" / "fuzz-targets"
+FUZZ_TARGETS_ROOT = KERNELS_ROOT if KERNELS_ROOT.exists() else LEGACY_KERNELS_ROOT
+DEFAULT_CONFIGS = tuple(sorted((FUZZ_TARGETS_ROOT / "configs").glob("*.json")))
 SUPPORTED_PROJECTS = {"hip-matmul", "hip-stream-k", "hipkittens", "llama.cpp"}
 SUPPORTED_ARCHITECTURE_FAMILIES = {"cdna3", "cdna4", "rdna4"}
 SUPPORTED_CASE_KINDS = {"cmake_executable"}
@@ -29,11 +31,11 @@ ROCFUZZ_ENABLE_CACHE_VARIABLES = (
 )
 
 
-class FuzzTargetError(Exception):
+class KernelCaseError(Exception):
     pass
 
 
-class ToolError(FuzzTargetError):
+class ToolError(KernelCaseError):
     def __init__(self, *, message, command, cwd, returncode, stdout, stderr, log_path):
         self.command = command
         self.cwd = cwd
@@ -57,6 +59,9 @@ class ToolError(FuzzTargetError):
                 ]
             )
         )
+
+
+FuzzTargetError = KernelCaseError
 
 
 @dataclass(frozen=True)
@@ -88,7 +93,11 @@ def split_config_files(value):
 
 
 def default_config_files():
-    return split_config_files(os.getenv("ROCFUZZ_TEST_CONFIG_FILES")) or [DEFAULT_CONFIG]
+    return (
+        split_config_files(os.getenv("ROCJITSU_KERNEL_CONFIG_FILES"))
+        or split_config_files(os.getenv("ROCFUZZ_TEST_CONFIG_FILES"))
+        or list(DEFAULT_CONFIGS)
+    )
 
 
 def resolve_repo_path(path):
@@ -660,16 +669,16 @@ def compare_f32_outputs(gpu_output_path, reference_output_path, *, abs_tolerance
     gpu_data = Path(gpu_output_path).read_bytes()
     reference_data = Path(reference_output_path).read_bytes()
     if len(gpu_data) != len(reference_data):
-        raise FuzzTargetError(
+        raise KernelCaseError(
             f"output size mismatch: gpu={gpu_output_path} has {len(gpu_data)} bytes, "
             f"reference={reference_output_path} has {len(reference_data)} bytes"
         )
     if len(gpu_data) % 4 != 0:
-        raise FuzzTargetError(f"output is not f32-sized: {gpu_output_path}")
+        raise KernelCaseError(f"output is not f32-sized: {gpu_output_path}")
 
     count = len(gpu_data) // 4
     if count == 0:
-        raise FuzzTargetError(f"output is empty: {gpu_output_path}")
+        raise KernelCaseError(f"output is empty: {gpu_output_path}")
     gpu_values = struct.unpack(f"<{count}f", gpu_data)
     reference_values = struct.unpack(f"<{count}f", reference_data)
     max_abs_diff = 0.0
@@ -680,7 +689,7 @@ def compare_f32_outputs(gpu_output_path, reference_output_path, *, abs_tolerance
             max_abs_diff = abs_diff
             max_abs_diff_index = index
     if max_abs_diff > abs_tolerance:
-        raise FuzzTargetError(
+        raise KernelCaseError(
             f"output mismatch: max_abs_diff={max_abs_diff} at index {max_abs_diff_index}, "
             f"tolerance={abs_tolerance}, gpu={gpu_values[max_abs_diff_index]}, "
             f"reference={reference_values[max_abs_diff_index]}"
@@ -864,14 +873,14 @@ def command_environment(target_config, extra_environment=None):
 
 
 def _build_dir(artifact_root, target_config):
-    return Path(artifact_root) / "fuzz_targets" / target_config["config_name"] / "build"
+    return Path(artifact_root) / "kernels" / target_config["config_name"] / "build"
 
 
 def _run_dir(artifact_root, target_config, fuzz_case):
     relative_case = fuzz_case.path.resolve().relative_to(FUZZ_TARGETS_ROOT).parent
     run_dir = (
         Path(artifact_root)
-        / "fuzz_targets"
+        / "kernels"
         / target_config["config_name"]
         / "runs"
         / relative_case
@@ -939,9 +948,9 @@ def _run_command(
         encoding="utf-8",
     )
     if returncode != expected_returncode:
-        message = f"fuzz-target {phase} failed"
+        message = f"kernel case {phase} failed"
         if timed_out:
-            message = f"fuzz-target {phase} timed out after {timeout} seconds"
+            message = f"kernel case {phase} timed out after {timeout} seconds"
         raise ToolError(
             message=message,
             command=command,

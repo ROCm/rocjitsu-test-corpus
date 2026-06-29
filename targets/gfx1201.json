@@ -1,0 +1,10 @@
+{
+  "target": "gfx1201",
+  "architecture_family": "rdna4",
+  "hip_architectures": [
+    "gfx1201"
+  ],
+  "tags": [
+    "rdna4"
+  ]
+}
