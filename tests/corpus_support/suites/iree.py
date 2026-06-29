@@ -1,3 +1,9 @@
+"""IREE suite adapter for the unified corpus entrypoint.
+
+This adapter translates legacy IREE corpus discovery/build/run logic into the
+common `CorpusCase`/`BuildResult` interface used by `tests/test_corpus.py`.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

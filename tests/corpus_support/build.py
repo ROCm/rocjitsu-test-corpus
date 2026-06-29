@@ -1,3 +1,13 @@
+"""Build coordination utilities for the unified corpus pytest flow.
+
+This module owns two cross-suite concerns:
+1) normalizing/validating artifact directories under the repo root, and
+2) caching build results so the same suite/target/build config is not rebuilt.
+
+Suite adapters expose `build(case, context)` and `run(...)`; `BuildManager`
+memoizes the build step and returns a `BuildResult` used by each suite runner.
+"""
+
 from __future__ import annotations
 
 import hashlib

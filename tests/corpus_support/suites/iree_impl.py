@@ -1,3 +1,9 @@
+"""Legacy IREE corpus implementation retained behind the suite adapter.
+
+This file contains the low-level IREE compile/run/output validation logic and
+target-config parsing that existed before the unified `test_corpus.py` flow.
+"""
+
 import hashlib
 import json
 import os
@@ -9,7 +15,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CORPUS_ROOT = REPO_ROOT / "corpus" / "iree"
-DEFAULT_CONFIG = CORPUS_ROOT / "configs" / "gfx1250_hip.json"
+DEFAULT_CONFIGS = tuple(sorted((CORPUS_ROOT / "configs").glob("*.json")))
 
 _COMPILE_CACHE = {}
 
@@ -68,7 +74,7 @@ def split_config_files(value):
 
 
 def default_config_files():
-    return split_config_files(os.getenv("IREE_TEST_CONFIG_FILES")) or [DEFAULT_CONFIG]
+    return split_config_files(os.getenv("IREE_TEST_CONFIG_FILES")) or list(DEFAULT_CONFIGS)
 
 
 def load_json(path):

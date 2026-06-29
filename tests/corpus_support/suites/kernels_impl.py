@@ -1,3 +1,9 @@
+"""Legacy kernels corpus implementation retained behind the suite adapter.
+
+This file contains kernel case schema validation, CMake build orchestration,
+input generation, runner execution, and output/timing validation logic.
+"""
+
 import json
 import os
 import re

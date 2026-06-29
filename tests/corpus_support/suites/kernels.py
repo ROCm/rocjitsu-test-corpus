@@ -1,3 +1,9 @@
+"""Kernels suite adapter for the unified corpus entrypoint.
+
+This adapter wraps legacy kernel case discovery/build/run behavior and exposes
+it through normalized `CorpusCase` rows and the shared build/run interface.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

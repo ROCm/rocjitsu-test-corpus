@@ -13,11 +13,17 @@ from corpus_support.selection import (
     parse_csv_values,
     selection_from_profile,
 )
-from corpus_support.suites import DEFAULT_SUITES, SUITE_MODULES
-from corpus_support.targets import require_target
+from corpus_support.suites import cts, iree, kernels
+from corpus_support.targets import load_target_spec, require_target
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+SUITE_MODULES = {
+    "iree": iree,
+    "kernels": kernels,
+    "cts": cts,
+}
+DEFAULT_SUITES = ("iree", "kernels", "cts")
 
 
 def pytest_generate_tests(metafunc):
@@ -26,18 +32,29 @@ def pytest_generate_tests(metafunc):
 
     config = metafunc.config
     target_name = config.getoption("target")
-    if not target_name:
-        raise pytest.UsageError("--target is required")
-
-    target = require_target(target_name)
+    target_config_file = config.getoption("target_config_file")
+    target = _resolve_target(
+        target_name=target_name,
+        target_config_file=target_config_file,
+    )
     profile_path = config.getoption("corpus_config_file", default=None)
     if profile_path is None:
         profile_path = config.getoption("config_file", default=None)
     profile = _load_profile(profile_path)
 
-    selected_suites = parse_csv_values(config.getoption("suite"))
-    if not selected_suites:
-        selected_suites = DEFAULT_SUITES
+    requested_suites = parse_csv_values(config.getoption("suite"))
+    selected_suites = requested_suites or (
+        target.supported_suites if target.supported_suites else DEFAULT_SUITES
+    )
+
+    if target.supported_suites:
+        unsupported = sorted(set(selected_suites) - set(target.supported_suites))
+        if unsupported:
+            raise pytest.UsageError(
+                "Requested suites are not supported by target "
+                f"'{target.target}': {', '.join(unsupported)}"
+            )
+
     for suite in selected_suites:
         if suite not in SUITE_MODULES:
             allowed = ", ".join(sorted(SUITE_MODULES))
@@ -45,11 +62,17 @@ def pytest_generate_tests(metafunc):
                 f"Unknown suite '{suite}'. Allowed suites: {allowed}"
             )
 
+    include_backends = parse_csv_values(config.getoption("backend"))
+    if not include_backends and "kernels" in selected_suites:
+        include_backends = tuple(
+            target.suite_defaults.get("kernels", {}).get("backends", [])
+        )
+
     profile_selection = selection_from_profile(profile)
     cli_selection = SelectionOptions(
         include_suites=selected_suites,
         exclude_suites=parse_csv_values(config.getoption("exclude_suite")),
-        include_backends=parse_csv_values(config.getoption("backend")),
+        include_backends=include_backends,
         exclude_backends=parse_csv_values(config.getoption("exclude_backend")),
         include_cases=parse_csv_values(config.getoption("case")),
         exclude_cases=parse_csv_values(config.getoption("exclude_case")),
@@ -114,3 +137,26 @@ def _load_profile(path: str | None) -> dict:
     profile_path = Path(path)
     with profile_path.open("r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def _resolve_target(*, target_name: str | None, target_config_file: str | None):
+    target_from_file = None
+    if target_config_file:
+        config_path = Path(target_config_file)
+        if not config_path.is_absolute():
+            config_path = REPO_ROOT / config_path
+        try:
+            target_from_file = load_target_spec(config_path, target_name=target_name)
+        except ValueError as exc:
+            raise pytest.UsageError(str(exc)) from exc
+        if target_name and target_name != target_from_file.target:
+            raise pytest.UsageError(
+                "--target does not match --target-config-file target: "
+                f"{target_name} != {target_from_file.target}"
+            )
+
+    if target_from_file is not None:
+        return target_from_file
+    if not target_name:
+        raise pytest.UsageError("--target is required (or use --target-config-file)")
+    return require_target(target_name)

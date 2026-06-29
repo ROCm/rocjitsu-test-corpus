@@ -110,36 +110,30 @@ rocjitsu --config /path/to/gfx1250.json -- \
   pytest --collect-only tests/test_corpus.py --target gfx1250
 ```
 
-## Run CTS (FPSAN)
+Target metadata lives in one file:
 
-The FPSAN CTS corpus is configured, built, and run through CTest by
-`tests/run_fpsan_ctest.sh`. By default it uses
-`corpus/cts/configs/general.json`.
+- `tests/corpus_support/target_capabilities.json`: central target test config that maps
+  each gfx target to architecture, hip_architectures, supported suites, and
+  default kernel backends.
+
+You can pass this config directly as test config and skip `--suite`:
 
 ```bash
-rocjitsu --config "main/emulation/rocjitsu/configs/amdgpu_cdna3_kmd.json" -- \
-  ./tests/run_fpsan_ctest.sh \
-  --config corpus/cts/configs/cdna3.json
+pytest tests/test_corpus.py \
+  --target gfx1201 \
+  --target-config-file tests/corpus_support/target_capabilities.json
 ```
 
-Use the unified entrypoint for CTS discovery/runs:
+## Run CTS (FPSAN)
+
+CTS/FPSAN execution is handled directly by `tests/test_corpus.py` and
+`tests/corpus_support/suites/cts.py` (native Python runner, no shell wrapper):
 
 ```bash
 rocjitsu --config /path/to/gfx1250.json -- \
   pytest tests/test_corpus.py --target gfx1250 --suite cts
 ```
-
-Useful direct subsets (shell helper):
-
-```bash
-./tests/run_fpsan_ctest.sh --list
-./tests/run_fpsan_ctest.sh --case fpsan_math
-./tests/run_fpsan_ctest.sh --config corpus/cts/configs/general.json --limit 3
-```
-
-Set `ROCM_PATH` to override the ROCm root passed to CMake. Each run writes a
-timestamped `results-fpsan-<config-name>-<timestamp>/results.csv` plus per-case
-logs under `logs/`.
+Use `--case` selectors against collected CTS IDs for subsets.
 
 ## Corpus
 

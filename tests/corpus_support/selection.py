@@ -1,3 +1,10 @@
+"""Selection parsing and deterministic include/exclude filtering.
+
+This module converts CLI/profile selector inputs into `SelectionOptions` and
+applies suite/backend/case/tag filters to discovered `CorpusCase` rows before
+pytest parametrization.
+"""
+
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -69,7 +76,7 @@ def filter_cases(cases: list[CorpusCase], selection: SelectionOptions) -> list[C
 def _include_match(case: CorpusCase, selection: SelectionOptions) -> bool:
     if selection.include_suites and case.suite not in selection.include_suites:
         return False
-    if selection.include_backends:
+    if case.suite == "kernels" and selection.include_backends:
         if case.backend is None or case.backend not in selection.include_backends:
             return False
     if selection.include_cases and not _matches_case_selector(case, selection.include_cases):
@@ -82,7 +89,7 @@ def _include_match(case: CorpusCase, selection: SelectionOptions) -> bool:
 def _exclude_match(case: CorpusCase, selection: SelectionOptions) -> bool:
     if case.suite in selection.exclude_suites:
         return True
-    if case.backend is not None and case.backend in selection.exclude_backends:
+    if case.suite == "kernels" and case.backend is not None and case.backend in selection.exclude_backends:
         return True
     if _matches_case_selector(case, selection.exclude_cases):
         return True

@@ -13,6 +13,16 @@ def pytest_addoption(parser):
         help="Simulated target to run (for example gfx1250, gfx1201, gfx942).",
     )
     parser.addoption(
+        "--target-config-file",
+        action="store",
+        default=None,
+        help=(
+            "Optional targets config JSON (for example "
+            "tests/corpus_support/target_capabilities.json). If set, this can provide "
+            "default suites/backends without passing --suite."
+        ),
+    )
+    parser.addoption(
         "--suite",
         action="append",
         default=[],
