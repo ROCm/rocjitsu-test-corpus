@@ -1,7 +1,7 @@
 {
   "name": "llama_noncont_batched_matmul_hazard",
   "project": "llama.cpp",
-  "runner": "runner.cpp",
+  "runner": "../noncont_batched_matmul/runner.cpp",
   "kind": "cmake_executable",
   "supported_targets": [
     "gfx942",
