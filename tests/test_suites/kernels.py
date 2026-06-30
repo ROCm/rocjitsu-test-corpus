@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..model import BuildResult, CorpusCase, RunContext, TargetSpec
-from ..targets import supports_target
+from support.define_contracts import BuildResult, CorpusCase, RunContext, TargetSpec
+from support.prepare_inputs import supports_target
 
 from . import kernels_impl as legacy_kernels
 
@@ -90,7 +90,6 @@ def build(case: CorpusCase, context: RunContext) -> BuildResult | None:
         run_dir,
     )
     return BuildResult(
-        cache_key="",
         build_dir=result.build_dir,
         executable_path=result.executable_path,
         metadata={

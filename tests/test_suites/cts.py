@@ -13,12 +13,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from ..configs import load_json, load_suite_target_configs
-from ..model import BuildResult, CorpusCase, RunContext, TargetSpec
-from ..targets import supports_target
+from support.define_contracts import BuildResult, CorpusCase, RunContext, TargetSpec
+from support.prepare_inputs import load_json, load_suite_target_configs, supports_target
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIGS_ROOT = REPO_ROOT / "corpus" / "cts" / "configs"
 CTS_SOURCE_DIR = REPO_ROOT / "corpus" / "cts"
 TEST_CASES_ROOT = CTS_SOURCE_DIR / "test_cases"
@@ -152,7 +151,6 @@ def build(case: CorpusCase, context: RunContext) -> BuildResult | None:
     )
 
     return BuildResult(
-        cache_key="",
         build_dir=build_dir,
         executable_path=None,
         metadata={"logs_dir": str(logs_dir)},

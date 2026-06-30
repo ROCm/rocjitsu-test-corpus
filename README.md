@@ -121,7 +121,7 @@ pytest --collect-only tests/test_corpus.py
 ## Run CTS (FPSAN)
 
 CTS/FPSAN execution is handled directly by `tests/test_corpus.py` and
-`tests/corpus_support/suites/cts.py` (native Python runner, no shell wrapper):
+`tests/test_suites/cts.py` (native Python runner, no shell wrapper):
 
 ```bash
 rocjitsu --config /path/to/gfx1201.json -- \

@@ -4,15 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from corpus_support.build import BuildManager, resolve_artifact_directory
-from corpus_support.model import RunContext, SelectionOptions
-from corpus_support.selection import (
+from support.define_contracts import RunContext, SelectionOptions
+from support.manage_builds import BuildManager, resolve_artifact_directory
+from support.prepare_inputs import (
     filter_cases,
-    merge_selection,
+    make_target_spec,
     parse_csv_values,
 )
-from corpus_support.suites import cts, iree, kernels
-from corpus_support.targets import make_target_spec
+from test_suites import cts, iree, kernels
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -38,7 +37,7 @@ def pytest_generate_tests(metafunc):
     selected_suites = requested_suites or DEFAULT_SUITES
     _validate_selected_suites(selected_suites)
 
-    cli_selection = SelectionOptions(
+    selection = SelectionOptions(
         include_suites=requested_suites,
         exclude_suites=parse_csv_values(config.getoption("exclude_suite")),
         include_backends=parse_csv_values(config.getoption("backend")),
@@ -46,7 +45,6 @@ def pytest_generate_tests(metafunc):
         include_cases=parse_csv_values(config.getoption("case")),
         exclude_cases=parse_csv_values(config.getoption("exclude_case")),
     )
-    selection = merge_selection(cli_selection)
 
     target_cases = []
     for suite in selected_suites:

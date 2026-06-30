@@ -1,11 +1,4 @@
-"""Core datamodels used by corpus discovery, selection, and execution.
-
-These dataclasses define the normalized contract between:
-- target capability loading (`TargetSpec`),
-- suite discovery output (`CorpusCase`),
-- CLI/profile selection filters (`SelectionOptions`), and
-- runtime/build orchestration (`RunContext`, `BuildResult`).
-"""
+"""Core datamodels used by corpus discovery, selection, and execution."""
 
 from __future__ import annotations
 
@@ -58,7 +51,6 @@ class RunContext:
 
 @dataclass(frozen=True)
 class BuildResult:
-    cache_key: str
     build_dir: Path | None
     executable_path: Path | None
     metadata: Mapping[str, Any] = field(default_factory=dict)

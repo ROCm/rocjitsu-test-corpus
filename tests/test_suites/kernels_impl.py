@@ -15,10 +15,10 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..configs import load_suite_target_configs
+from support.prepare_inputs import load_suite_target_configs
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 KERNELS_ROOT = REPO_ROOT / "corpus" / "kernels"
 KERNEL_CORPUS_ROOT = KERNELS_ROOT
 DEFAULT_CONFIGS = tuple(sorted((KERNEL_CORPUS_ROOT / "configs").glob("*.json")))

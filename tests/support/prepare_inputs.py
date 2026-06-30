@@ -1,13 +1,4 @@
-"""Shared target config loading for vendored corpus suites.
-
-Corpus config files use a common base contract:
-- ``config_name`` is a stable artifact/id component.
-- ``target`` is the concrete gfx target selected by pytest.
-
-Runtime/build helpers may need HIP architecture lists, so this module derives
-``hip_architectures`` from ``target`` in memory. Config files should not store
-that duplicate value.
-"""
+"""Prepare target configs, target selection, and discovered case filters."""
 
 from __future__ import annotations
 
@@ -15,6 +6,8 @@ import json
 import re
 from pathlib import Path
 from typing import Iterable
+
+from .define_contracts import CorpusCase, SelectionOptions, TargetSpec
 
 
 BASE_CONFIG_FIELDS = {"config_name", "target"}
@@ -95,3 +88,65 @@ def reject_unknown_fields(path: Path, config: dict, allowed_fields: set[str]) ->
     if unknown:
         joined = ", ".join(unknown)
         raise ValueError(f"{path} has unknown field(s): {joined}")
+
+
+def make_target_spec(target_name: str) -> TargetSpec:
+    if not re.fullmatch(r"gfx[0-9A-Za-z]+", target_name):
+        raise ValueError(f"Target '{target_name}' must be a concrete gfx target")
+    return TargetSpec(target=target_name)
+
+
+def supports_target(target: TargetSpec, target_config: dict) -> bool:
+    return target_config.get("target") == target.target
+
+
+def parse_csv_values(values: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    if not values:
+        return ()
+    parsed: list[str] = []
+    for value in values:
+        for piece in str(value).split(","):
+            stripped = piece.strip()
+            if stripped:
+                parsed.append(stripped)
+    return tuple(parsed)
+
+
+def filter_cases(cases: list[CorpusCase], selection: SelectionOptions) -> list[CorpusCase]:
+    filtered: list[CorpusCase] = []
+    for case in cases:
+        if not _include_match(case, selection):
+            continue
+        if _exclude_match(case, selection):
+            continue
+        filtered.append(case)
+    return filtered
+
+
+def _include_match(case: CorpusCase, selection: SelectionOptions) -> bool:
+    if selection.include_suites and case.suite not in selection.include_suites:
+        return False
+    if case.suite == "kernels" and selection.include_backends:
+        if case.backend is None or case.backend not in selection.include_backends:
+            return False
+    if selection.include_cases and not _matches_case_selector(case, selection.include_cases):
+        return False
+    return True
+
+
+def _exclude_match(case: CorpusCase, selection: SelectionOptions) -> bool:
+    if case.suite in selection.exclude_suites:
+        return True
+    if case.suite == "kernels" and case.backend is not None and case.backend in selection.exclude_backends:
+        return True
+    if _matches_case_selector(case, selection.exclude_cases):
+        return True
+    return False
+
+
+def _matches_case_selector(case: CorpusCase, selectors: tuple[str, ...]) -> bool:
+    if case.id in selectors:
+        return True
+    if case.metadata.get("name") in selectors:
+        return True
+    return any(selector in selectors for selector in case.selector_names)

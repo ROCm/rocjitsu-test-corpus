@@ -12,14 +12,14 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from ..configs import (
+from support.prepare_inputs import (
     load_json,
     load_suite_target_configs,
     resolve_repo_path as _resolve_repo_path,
 )
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 CORPUS_ROOT = REPO_ROOT / "corpus" / "iree"
 DEFAULT_CONFIGS = tuple(sorted((CORPUS_ROOT / "configs").glob("*.json")))
 

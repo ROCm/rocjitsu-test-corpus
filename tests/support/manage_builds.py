@@ -14,7 +14,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from .model import BuildResult, CorpusCase, RunContext
+from .define_contracts import BuildResult, CorpusCase, RunContext
 
 
 class BuildManager:
@@ -31,17 +31,9 @@ class BuildManager:
         suite_result = suite_module.build(case, self._context)
         if suite_result is None:
             suite_result = BuildResult(
-                cache_key=cache_key,
                 build_dir=None,
                 executable_path=None,
                 metadata={},
-            )
-        elif suite_result.cache_key != cache_key:
-            suite_result = BuildResult(
-                cache_key=cache_key,
-                build_dir=suite_result.build_dir,
-                executable_path=suite_result.executable_path,
-                metadata=suite_result.metadata,
             )
         self._cache[cache_key] = suite_result
         return suite_result
