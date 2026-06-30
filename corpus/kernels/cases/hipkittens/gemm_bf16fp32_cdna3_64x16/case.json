@@ -3,7 +3,7 @@
   "project": "hipkittens",
   "runner": "runner.hip",
   "kind": "cmake_executable",
-  "targets": [
+  "supported_targets": [
     "gfx942"
   ],
   "build": {

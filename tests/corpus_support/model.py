@@ -17,8 +17,6 @@ from typing import Any, Mapping
 @dataclass(frozen=True)
 class TargetSpec:
     target: str
-    supported_suites: tuple[str, ...] = ()
-    suite_defaults: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def hip_architectures(self) -> tuple[str, ...]:

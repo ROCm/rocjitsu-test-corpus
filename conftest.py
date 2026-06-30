@@ -16,15 +16,6 @@ def pytest_addoption(parser):
         ),
     )
     parser.addoption(
-        "--target-config-file",
-        action="store",
-        default=None,
-        help=(
-            "Optional target capabilities JSON. Defaults to "
-            "tests/corpus_support/target_capabilities.json."
-        ),
-    )
-    parser.addoption(
         "--suite",
         action="append",
         default=[],

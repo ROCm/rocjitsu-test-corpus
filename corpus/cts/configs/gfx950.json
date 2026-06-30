@@ -1,27 +1,11 @@
 {
   "config_name": "gfx950",
   "target": "gfx950",
-  "tests": [
+  "skip_compile_tests": [
     "fpsan_neg_cross_mode",
     "fpsan_neg_explicit_ctor",
     "fpsan_neg_explicit_mixed_pod",
-    "fpsan_neg_non_float_type",
-    "fpsan_build_canary",
-    "fpsan_cast_test",
-    "fpsan_core_test",
-    "fpsan_drop_in_test",
-    "fpsan_fp8_test",
-    "fpsan_math_test",
-    "fpsan_parity_test",
-    "fpsan_vector_test",
-    "fpsan_mfma_gfx950_test",
-    "fpsan_ds_read_tr_test",
-    "fpsan_cvt_gfx950_test",
-    "fpsan_cvt_scalef32_mx_gfx950_test",
-    "fpsan_cvt_scalef32_fp4_gfx950_test",
-    "fpsan_cvt_scalef32_fp6_gfx950_test",
-    "fpsan_cvt_scalef32_fp8vec_gfx950_test",
-    "fpsan_cvt_scalef32_sr_gfx950_test",
-    "fpsan_xlane_gfx950_test"
-  ]
+    "fpsan_neg_non_float_type"
+  ],
+  "skip_run_tests": []
 }

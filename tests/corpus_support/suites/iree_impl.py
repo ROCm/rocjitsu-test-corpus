@@ -12,7 +12,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from ..targets import normalize_target_config
+from ..configs import (
+    load_json,
+    load_suite_target_configs,
+    resolve_repo_path as _resolve_repo_path,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -79,30 +83,24 @@ def default_config_files():
     return split_config_files(os.getenv("IREE_TEST_CONFIG_FILES")) or list(DEFAULT_CONFIGS)
 
 
-def load_json(path):
-    with Path(path).open("r", encoding="utf-8") as f:
-        return json.load(f)
-
-
 def load_target_configs(config_files):
-    configs = []
-    for config_file in config_files:
-        path = resolve_repo_path(config_file)
-        config = load_json(path)
-        normalize_target_config(path, config)
-        for field in ("config_name", "iree_compile_flags", "iree_run_module_flags"):
-            if field not in config:
-                raise ValueError(f"{path} is missing required field '{field}'")
-        config["_path"] = str(path)
-        configs.append(config)
-    return configs
+    return load_suite_target_configs(
+        config_files,
+        repo_root=REPO_ROOT,
+        required_fields=("iree_compile_flags", "iree_run_module_flags"),
+        allowed_fields={
+            "$schema",
+            "iree_compile_flags",
+            "iree_run_module_flags",
+            "iree_run_module_wrapper",
+            "expected_compile_failures",
+            "expected_run_failures",
+        },
+    )
 
 
 def resolve_repo_path(path):
-    path = Path(path)
-    if path.is_absolute():
-        return path
-    return REPO_ROOT / path
+    return _resolve_repo_path(REPO_ROOT, path)
 
 
 def is_case_json(path):

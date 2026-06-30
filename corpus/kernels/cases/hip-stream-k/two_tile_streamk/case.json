@@ -3,7 +3,7 @@
   "project": "hip-stream-k",
   "runner": "runner.cpp",
   "kind": "cmake_executable",
-  "targets": [
+  "supported_targets": [
     "gfx942"
   ],
   "build": {

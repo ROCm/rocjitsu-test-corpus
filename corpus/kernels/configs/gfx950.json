@@ -7,11 +7,12 @@
       "ROCFUZZ_ENABLE_HIPKITTENS": "ON"
     }
   },
-  "skip_tests": [
+  "skip_compile_tests": [
     "hip_matmul_matmul::m4096_n4096_k4096",
     "hipkittens_gemm_mxfp8_4wave",
     "hipkittens_gemm_fp8fp32_4wave"
   ],
+  "skip_run_tests": [],
   "expected_compile_failures": [],
   "expected_run_failures": []
 }

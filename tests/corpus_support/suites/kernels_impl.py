@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..targets import normalize_target_config
+from ..configs import load_suite_target_configs
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -121,34 +121,25 @@ def load_json(path):
 
 
 def load_target_configs(config_files):
-    configs = []
-    for config_file in config_files:
-        path = resolve_repo_path(config_file)
-        config = load_json(path)
-        normalize_target_config(path, config)
-        require_fields(path, config, ("config_name", "target"))
-        reject_unknown_fields(
-            path,
-            config,
-            {
-                "config_name",
-                "target",
-                "hip_architectures",
-                "cmake",
-                "run_environment",
-                "skip_tests",
-                "expected_compile_failures",
-                "expected_run_failures",
-            },
-        )
+    configs = load_suite_target_configs(
+        config_files,
+        repo_root=REPO_ROOT,
+        allowed_fields={
+            "cmake",
+            "run_environment",
+            "expected_compile_failures",
+            "expected_run_failures",
+        },
+    )
+    for config in configs:
+        path = Path(config["_path"])
         for field in (
-            "skip_tests",
+            "skip_compile_tests",
+            "skip_run_tests",
             "expected_compile_failures",
             "expected_run_failures",
         ):
             _validate_case_selector_list(path, config, field)
-        config["_path"] = str(path)
-        configs.append(config)
     return configs
 
 
@@ -188,7 +179,7 @@ def load_case(case_path):
             "project",
             "runner",
             "kind",
-            "targets",
+            "supported_targets",
             "build",
             "executable",
             "tests",
@@ -202,7 +193,7 @@ def load_case(case_path):
             "project",
             "runner",
             "kind",
-            "targets",
+            "supported_targets",
             "build",
             "executable",
             "tests",
@@ -214,7 +205,7 @@ def load_case(case_path):
         raise ValueError(f"{case_path} has unsupported project '{case['project']}'")
     if case["kind"] not in SUPPORTED_CASE_KINDS:
         raise ValueError(f"{case_path} has unsupported kind '{case['kind']}'")
-    _validate_case_targets(case_path, case["targets"])
+    _validate_supported_targets(case_path, case["supported_targets"])
 
     require_fields(case_path, case["build"], ("system", "target"))
     reject_unknown_fields(case_path, case["build"], {"system", "target", "defines"})
@@ -304,10 +295,12 @@ def _validate_build_defines(case_path, defines):
             )
 
 
-def _validate_case_targets(case_path, targets):
-    if not isinstance(targets, list) or not targets:
-        raise ValueError(f"{case_path} field 'targets' must be a non-empty list")
-    for target in targets:
+def _validate_supported_targets(case_path, supported_targets):
+    if not isinstance(supported_targets, list) or not supported_targets:
+        raise ValueError(
+            f"{case_path} field 'supported_targets' must be a non-empty list"
+        )
+    for target in supported_targets:
         if not isinstance(target, str) or not re.fullmatch(r"gfx[0-9A-Za-z]+", target):
             raise ValueError(f"{case_path} has unsupported target '{target}'")
 
@@ -402,7 +395,7 @@ def matches_case_selector(fuzz_case, selectors):
 
 
 def supports_target_config(fuzz_case, target_config):
-    return target_config["target"] in fuzz_case.case["targets"]
+    return target_config["target"] in fuzz_case.case["supported_targets"]
 
 
 def run_case(

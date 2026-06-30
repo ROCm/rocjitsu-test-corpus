@@ -3,7 +3,7 @@
   "project": "hip-matmul",
   "runner": "runner.hip",
   "kind": "cmake_executable",
-  "targets": [
+  "supported_targets": [
     "gfx942",
     "gfx1201"
   ],

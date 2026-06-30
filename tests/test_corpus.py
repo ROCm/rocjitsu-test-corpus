@@ -12,7 +12,7 @@ from corpus_support.selection import (
     parse_csv_values,
 )
 from corpus_support.suites import cts, iree, kernels
-from corpus_support.targets import load_target_spec, require_target
+from corpus_support.targets import make_target_spec
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -30,28 +30,18 @@ def pytest_generate_tests(metafunc):
         return
 
     config = metafunc.config
-    target = _resolve_target(
-        target_name=config.getoption("target"),
-        target_config_file=config.getoption("target_config_file"),
-    )
+    target = _resolve_target(target_name=config.getoption("target"))
     requested_suites = parse_csv_values(config.getoption("suite"))
 
     discovered = []
     suite_config_cache = {}
-    selected_suites = requested_suites or target.supported_suites or DEFAULT_SUITES
+    selected_suites = requested_suites or DEFAULT_SUITES
     _validate_selected_suites(selected_suites)
-    _validate_target_suites(target, selected_suites)
 
-    requested_backends = parse_csv_values(config.getoption("backend"))
-    include_backends = requested_backends
-    if not include_backends and "kernels" in selected_suites:
-        include_backends = tuple(
-            target.suite_defaults.get("kernels", {}).get("backends", [])
-        )
     cli_selection = SelectionOptions(
         include_suites=requested_suites,
         exclude_suites=parse_csv_values(config.getoption("exclude_suite")),
-        include_backends=include_backends,
+        include_backends=parse_csv_values(config.getoption("backend")),
         exclude_backends=parse_csv_values(config.getoption("exclude_backend")),
         include_cases=parse_csv_values(config.getoption("case")),
         exclude_cases=parse_csv_values(config.getoption("exclude_case")),
@@ -115,19 +105,9 @@ def test_corpus_case(corpus_case, run_context, build_manager):
 def _resolve_target(
     *,
     target_name: str | None,
-    target_config_file: str | None,
 ):
-    if target_config_file:
-        config_path = Path(target_config_file)
-        if not config_path.is_absolute():
-            config_path = REPO_ROOT / config_path
-        try:
-            return load_target_spec(config_path, target_name=target_name)
-        except ValueError as exc:
-            raise pytest.UsageError(str(exc)) from exc
-
     try:
-        return require_target(target_name or DEFAULT_TARGET)
+        return make_target_spec(target_name or DEFAULT_TARGET)
     except ValueError as exc:
         raise pytest.UsageError(str(exc)) from exc
 
@@ -139,16 +119,5 @@ def _validate_selected_suites(selected_suites) -> None:
             raise pytest.UsageError(
                 f"Unknown suite '{suite}'. Allowed suites: {allowed}"
             )
-
-
-def _validate_target_suites(target, selected_suites) -> None:
-    if not target.supported_suites:
-        return
-    unsupported = sorted(set(selected_suites) - set(target.supported_suites))
-    if unsupported:
-        raise pytest.UsageError(
-            "Requested suites are not supported by target "
-            f"'{target.target}': {', '.join(unsupported)}"
-        )
 
 

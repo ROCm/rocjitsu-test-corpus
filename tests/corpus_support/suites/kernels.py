@@ -34,7 +34,7 @@ def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]
             if not legacy_kernels.supports_target_config(kernel_case, target_config):
                 continue
             if legacy_kernels.matches_case_selector(
-                kernel_case, target_config.get("skip_tests", [])
+                kernel_case, target_config.get("skip_compile_tests", [])
             ):
                 continue
 
@@ -109,6 +109,10 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     effective_case = build_result.metadata["effective_case"]
     target_config = build_result.metadata["target_config"]
     run_dir = build_result.metadata["run_dir"]
+    if legacy_kernels.matches_case_selector(
+        case.metadata["kernel_case"], target_config.get("skip_run_tests", [])
+    ):
+        return
     materialized_inputs = legacy_kernels.materialize_inputs(effective_case, run_dir)
     legacy_kernels.run_executable(
         effective_case,

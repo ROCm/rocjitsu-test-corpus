@@ -6,7 +6,6 @@ the CTS project once per target config, and runs selected tests via CTest.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import shlex
@@ -14,13 +13,15 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from ..configs import load_json, load_suite_target_configs
 from ..model import BuildResult, CorpusCase, RunContext, TargetSpec
-from ..targets import normalize_target_config, supports_target
+from ..targets import supports_target
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CONFIGS_ROOT = REPO_ROOT / "corpus" / "cts" / "configs"
 CTS_SOURCE_DIR = REPO_ROOT / "corpus" / "cts"
+TESTS_ROOT = CTS_SOURCE_DIR / "tests"
 
 
 def default_config_files() -> tuple[Path, ...]:
@@ -28,35 +29,37 @@ def default_config_files() -> tuple[Path, ...]:
 
 
 def load_target_configs(config_files: tuple[str, ...] | list[str]) -> list[dict]:
-    configs: list[dict] = []
-    for config_file in config_files:
-        config_path = _resolve_repo_path(config_file)
-        with config_path.open("r", encoding="utf-8") as f:
-            config = json.load(f)
-        normalize_target_config(config_path, config)
-        for field in ("config_name", "tests"):
-            if field not in config:
-                raise ValueError(f"{config_path} is missing required field '{field}'")
-        config["_path"] = str(config_path)
-        configs.append(config)
-    return configs
+    return load_suite_target_configs(
+        config_files,
+        repo_root=REPO_ROOT,
+    )
 
 
 def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]:
     discovered: list[CorpusCase] = []
+    cts_cases = discover_cases()
     for target_config in target_configs:
         if not _supports_target(target, target_config):
             continue
-        for test_name in target_config["tests"]:
+        for cts_case in cts_cases:
+            test_name = cts_case["name"]
+            collection = cts_case["collection"]
+            if target_config["target"] not in cts_case["supported_targets"]:
+                continue
+            if test_name in target_config.get("skip_compile_tests", []):
+                continue
             discovered.append(
                 CorpusCase(
-                    id=f"cts.{target.target}.fpsan.{_sanitize_id_component(test_name)}",
+                    id=(
+                        f"cts.{target.target}.{collection}."
+                        f"{_sanitize_id_component(test_name)}"
+                    ),
                     suite="cts",
                     target=target.target,
-                    collection="fpsan",
+                    collection=collection,
                     backend=None,
-                    path=Path(target_config["_path"]),
-                    tags=("cts", "fpsan"),
+                    path=Path(cts_case["_path"]),
+                    tags=("cts", collection),
                     build={
                         "system": "cmake_ctest",
                         "config_name": target_config["config_name"],
@@ -64,6 +67,7 @@ def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]
                     run={"kind": "ctest_case"},
                     metadata={
                         "name": test_name,
+                        "cts_case": cts_case,
                         "config_path": target_config["_path"],
                         "target_config": target_config,
                     },
@@ -71,6 +75,50 @@ def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]
                 )
             )
     return discovered
+
+
+def discover_cases() -> list[dict]:
+    cases: list[dict] = []
+    for case_file in sorted(TESTS_ROOT.glob("*.json")):
+        case_inventory = load_json(case_file)
+        collection = case_inventory.get("collection")
+        if not isinstance(collection, str) or not collection:
+            raise ValueError(f"{case_file} is missing required field 'collection'")
+        entries = case_inventory.get("cases")
+        if not isinstance(entries, list):
+            raise ValueError(f"{case_file} field 'cases' must be a list")
+        for entry in entries:
+            _validate_case_entry(case_file, entry)
+            case = dict(entry)
+            case["collection"] = collection
+            case["_path"] = str(case_file)
+            cases.append(case)
+    return cases
+
+
+def _validate_case_entry(case_file: Path, entry: dict) -> None:
+    if not isinstance(entry, dict):
+        raise ValueError(f"{case_file} case entries must be objects")
+    allowed_fields = {"name", "supported_targets"}
+    unknown = sorted(set(entry) - allowed_fields)
+    if unknown:
+        joined = ", ".join(unknown)
+        raise ValueError(f"{case_file} case has unknown field(s): {joined}")
+    name = entry.get("name")
+    if not isinstance(name, str) or not name:
+        raise ValueError(f"{case_file} case field 'name' must be a non-empty string")
+    supported_targets = entry.get("supported_targets")
+    if not isinstance(supported_targets, list) or not supported_targets:
+        raise ValueError(
+            f"{case_file} case field 'supported_targets' must be a non-empty list"
+        )
+    for supported_target in supported_targets:
+        if not isinstance(supported_target, str) or not re.fullmatch(
+            r"gfx[0-9A-Za-z]+", supported_target
+        ):
+            raise ValueError(
+                f"{case_file} has unsupported target '{supported_target}'"
+            )
 
 
 def build(case: CorpusCase, context: RunContext) -> BuildResult | None:
@@ -128,6 +176,9 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
             phase="build",
         )
 
+    if test_name in case.metadata["target_config"].get("skip_run_tests", []):
+        return
+
     _run_command(
         [
             "ctest",
@@ -141,13 +192,6 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
         log_path=logs_dir / f"{safe_name}.ctest.log",
         phase="ctest",
     )
-
-
-def _resolve_repo_path(path: str | Path) -> Path:
-    path = Path(path)
-    if path.is_absolute():
-        return path
-    return REPO_ROOT / path
 
 
 def _supports_target(target: TargetSpec, target_config: dict) -> bool:
