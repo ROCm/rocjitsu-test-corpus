@@ -1,6 +1,7 @@
 {
   "$schema": "../schemas/target_config.schema.json",
   "config_name": "gfx1201_hip",
+  "target": "gfx1201",
   "iree_compile_flags": [
     "--iree-hal-target-backends=rocm",
     "--iree-rocm-target=gfx1201"

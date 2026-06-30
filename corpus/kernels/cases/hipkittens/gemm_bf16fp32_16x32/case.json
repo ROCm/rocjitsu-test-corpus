@@ -3,8 +3,8 @@
   "project": "hipkittens",
   "runner": "runner.hip",
   "kind": "cmake_executable",
-  "architectures": [
-    "cdna4"
+  "targets": [
+    "gfx950"
   ],
   "build": {
     "system": "cmake",

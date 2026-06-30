@@ -1,7 +1,6 @@
 {
-  "config_name": "cdna3",
-  "architecture_family": "cdna3",
-  "hip_architectures": ["gfx942"],
+  "config_name": "gfx942",
+  "target": "gfx942",
   "cmake": {
     "cache_variables": {
       "ROCFUZZ_ENABLE_HIP_STREAMK": "ON",

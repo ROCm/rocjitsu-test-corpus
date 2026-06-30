@@ -1,9 +1,5 @@
 {
   "gfx942": {
-    "architecture_family": "cdna3",
-    "hip_architectures": [
-      "gfx942"
-    ],
     "supported_suites": [
       "iree",
       "kernels",
@@ -21,10 +17,6 @@
     }
   },
   "gfx950": {
-    "architecture_family": "cdna4",
-    "hip_architectures": [
-      "gfx950"
-    ],
     "supported_suites": [
       "iree",
       "kernels",
@@ -40,10 +32,6 @@
     }
   },
   "gfx1100": {
-    "architecture_family": "rdna3",
-    "hip_architectures": [
-      "gfx1100"
-    ],
     "supported_suites": [
       "iree",
       "cts"
@@ -51,10 +39,6 @@
     "suite_defaults": {}
   },
   "gfx1201": {
-    "architecture_family": "rdna4",
-    "hip_architectures": [
-      "gfx1201"
-    ],
     "supported_suites": [
       "iree",
       "kernels",
@@ -70,10 +54,6 @@
     }
   },
   "gfx1250": {
-    "architecture_family": "rdna4",
-    "hip_architectures": [
-      "gfx1250"
-    ],
     "supported_suites": [
       "iree",
       "kernels",

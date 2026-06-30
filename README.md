@@ -47,8 +47,17 @@ that setup.
 Unified corpus entrypoint:
 
 ```bash
-rocjitsu --config /path/to/gfx1250.json -- \
-  pytest tests/test_corpus.py --target gfx1250
+pytest tests/test_corpus.py
+```
+
+By default, `tests/test_corpus.py` uses the concrete `gfx1201` target and all
+corpus suites (`iree`, `kernels`, and `cts`). For a rocjitsu run with another
+target, pass a concrete gfx target that matches the simulator config:
+
+```bash
+rocjitsu --config /path/to/gfx1201.json -- \
+  pytest tests/test_corpus.py \
+  --target gfx1201
 ```
 
 Tensile rebuild and numeric smoke checks:
@@ -87,18 +96,18 @@ kind,name,status,elapsed_s,returncode,log
 For kernels-only runs:
 
 ```bash
-rocjitsu --config /path/to/gfx1250.json -- \
+rocjitsu --config /path/to/gfx1201.json -- \
   pytest tests/test_corpus.py \
-  --target gfx1250 \
+  --target gfx1201 \
   --suite kernels
 ```
 
 For one backend only:
 
 ```bash
-rocjitsu --config /path/to/gfx1250.json -- \
+rocjitsu --config /path/to/gfx1201.json -- \
   pytest tests/test_corpus.py \
-  --target gfx1250 \
+  --target gfx1201 \
   --suite kernels \
   --backend hipkittens
 ```
@@ -106,22 +115,7 @@ rocjitsu --config /path/to/gfx1250.json -- \
 For downstream CI matrix generation, use pytest collection output:
 
 ```bash
-rocjitsu --config /path/to/gfx1250.json -- \
-  pytest --collect-only tests/test_corpus.py --target gfx1250
-```
-
-Target metadata lives in one file:
-
-- `tests/corpus_support/target_capabilities.json`: central target test config that maps
-  each gfx target to architecture, hip_architectures, supported suites, and
-  default kernel backends.
-
-You can pass this config directly as test config and skip `--suite`:
-
-```bash
-pytest tests/test_corpus.py \
-  --target gfx1201 \
-  --target-config-file tests/corpus_support/target_capabilities.json
+pytest --collect-only tests/test_corpus.py
 ```
 
 ## Run CTS (FPSAN)
@@ -130,8 +124,10 @@ CTS/FPSAN execution is handled directly by `tests/test_corpus.py` and
 `tests/corpus_support/suites/cts.py` (native Python runner, no shell wrapper):
 
 ```bash
-rocjitsu --config /path/to/gfx1250.json -- \
-  pytest tests/test_corpus.py --target gfx1250 --suite cts
+rocjitsu --config /path/to/gfx1201.json -- \
+  pytest tests/test_corpus.py \
+  --target gfx1201 \
+  --suite cts
 ```
 Use `--case` selectors against collected CTS IDs for subsets.
 

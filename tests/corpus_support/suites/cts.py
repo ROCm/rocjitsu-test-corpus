@@ -15,16 +15,16 @@ import subprocess
 from pathlib import Path
 
 from ..model import BuildResult, CorpusCase, RunContext, TargetSpec
+from ..targets import normalize_target_config, supports_target
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_CONFIG = REPO_ROOT / "corpus" / "cts" / "configs" / "general.json"
+CONFIGS_ROOT = REPO_ROOT / "corpus" / "cts" / "configs"
 CTS_SOURCE_DIR = REPO_ROOT / "corpus" / "cts"
 
 
 def default_config_files() -> tuple[Path, ...]:
-    configs_root = DEFAULT_CONFIG.parent
-    return tuple(sorted(configs_root.glob("*.json")))
+    return tuple(sorted(CONFIGS_ROOT.glob("*.json")))
 
 
 def load_target_configs(config_files: tuple[str, ...] | list[str]) -> list[dict]:
@@ -33,7 +33,8 @@ def load_target_configs(config_files: tuple[str, ...] | list[str]) -> list[dict]
         config_path = _resolve_repo_path(config_file)
         with config_path.open("r", encoding="utf-8") as f:
             config = json.load(f)
-        for field in ("config_name", "hip_architectures", "tests"):
+        normalize_target_config(config_path, config)
+        for field in ("config_name", "tests"):
             if field not in config:
                 raise ValueError(f"{config_path} is missing required field '{field}'")
         config["_path"] = str(config_path)
@@ -150,7 +151,7 @@ def _resolve_repo_path(path: str | Path) -> Path:
 
 
 def _supports_target(target: TargetSpec, target_config: dict) -> bool:
-    return bool(set(target.hip_architectures).intersection(target_config["hip_architectures"]))
+    return supports_target(target, target_config)
 
 
 def _sanitize_id_component(value: str) -> str:

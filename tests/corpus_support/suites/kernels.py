@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..model import BuildResult, CorpusCase, RunContext, TargetSpec
+from ..targets import supports_target
 
 from . import kernels_impl as legacy_kernels
 
@@ -122,11 +123,7 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
 
 
 def _supports_target(target: TargetSpec, target_config: dict) -> bool:
-    if target.architecture_family == target_config.get("architecture_family"):
-        return True
-    return bool(
-        set(target.hip_architectures).intersection(target_config.get("hip_architectures", []))
-    )
+    return supports_target(target, target_config)
 
 
 def _variant_name(kernel_case) -> str:

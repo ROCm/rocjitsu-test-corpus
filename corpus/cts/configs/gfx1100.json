@@ -1,0 +1,23 @@
+{
+  "config_name": "gfx1100",
+  "target": "gfx1100",
+  "tests": [
+    "fpsan_neg_cross_mode",
+    "fpsan_neg_explicit_ctor",
+    "fpsan_neg_explicit_mixed_pod",
+    "fpsan_neg_non_float_type",
+    "fpsan_build_canary",
+    "fpsan_cast_test",
+    "fpsan_core_test",
+    "fpsan_drop_in_test",
+    "fpsan_fp8_test",
+    "fpsan_math_test",
+    "fpsan_parity_test",
+    "fpsan_vector_test",
+    "fpsan_wmma_gfx11_test",
+    "fpsan_wmma_gfx11_w64_test",
+    "fpsan_xlane_w64_test",
+    "fpsan_classify_w64_test",
+    "fpsan_wave_gfx11_w64_test"
+  ]
+}

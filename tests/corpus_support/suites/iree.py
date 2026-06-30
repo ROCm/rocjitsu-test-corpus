@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..model import BuildResult, CorpusCase, RunContext, TargetSpec
+from ..targets import supports_target
 
 from . import iree_impl as legacy_iree
 
@@ -85,7 +86,4 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
 
 
 def _supports_target(target: TargetSpec, target_config: dict) -> bool:
-    compile_flags = " ".join(target_config.get("iree_compile_flags", []))
-    if any(hip_arch in compile_flags for hip_arch in target.hip_architectures):
-        return True
-    return target.target in target_config.get("config_name", "")
+    return supports_target(target, target_config)

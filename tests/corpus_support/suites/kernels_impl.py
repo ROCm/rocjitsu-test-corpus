@@ -15,6 +15,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..targets import normalize_target_config
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 KERNELS_ROOT = REPO_ROOT / "corpus" / "kernels"
@@ -22,7 +24,6 @@ LEGACY_KERNELS_ROOT = REPO_ROOT / "corpus" / "fuzz-targets"
 FUZZ_TARGETS_ROOT = KERNELS_ROOT if KERNELS_ROOT.exists() else LEGACY_KERNELS_ROOT
 DEFAULT_CONFIGS = tuple(sorted((FUZZ_TARGETS_ROOT / "configs").glob("*.json")))
 SUPPORTED_PROJECTS = {"hip-matmul", "hip-stream-k", "hipkittens", "llama.cpp"}
-SUPPORTED_ARCHITECTURE_FAMILIES = {"cdna3", "cdna4", "rdna4"}
 SUPPORTED_CASE_KINDS = {"cmake_executable"}
 SUPPORTED_VALIDATION_KINDS = {"exit_code"}
 SUPPORTED_INPUT_FORMATS = {"raw"}
@@ -124,13 +125,14 @@ def load_target_configs(config_files):
     for config_file in config_files:
         path = resolve_repo_path(config_file)
         config = load_json(path)
-        require_fields(path, config, ("config_name", "architecture_family", "hip_architectures"))
+        normalize_target_config(path, config)
+        require_fields(path, config, ("config_name", "target"))
         reject_unknown_fields(
             path,
             config,
             {
                 "config_name",
-                "architecture_family",
+                "target",
                 "hip_architectures",
                 "cmake",
                 "run_environment",
@@ -139,13 +141,6 @@ def load_target_configs(config_files):
                 "expected_run_failures",
             },
         )
-        if config["architecture_family"] not in SUPPORTED_ARCHITECTURE_FAMILIES:
-            raise ValueError(
-                f"{path} has unsupported architecture_family "
-                f"'{config['architecture_family']}'"
-            )
-        if not config["hip_architectures"]:
-            raise ValueError(f"{path} must list at least one HIP architecture")
         for field in (
             "skip_tests",
             "expected_compile_failures",
@@ -193,7 +188,7 @@ def load_case(case_path):
             "project",
             "runner",
             "kind",
-            "architectures",
+            "targets",
             "build",
             "executable",
             "tests",
@@ -207,7 +202,7 @@ def load_case(case_path):
             "project",
             "runner",
             "kind",
-            "architectures",
+            "targets",
             "build",
             "executable",
             "tests",
@@ -219,11 +214,7 @@ def load_case(case_path):
         raise ValueError(f"{case_path} has unsupported project '{case['project']}'")
     if case["kind"] not in SUPPORTED_CASE_KINDS:
         raise ValueError(f"{case_path} has unsupported kind '{case['kind']}'")
-    if not case["architectures"]:
-        raise ValueError(f"{case_path} must list at least one architecture")
-    for architecture in case["architectures"]:
-        if architecture not in SUPPORTED_ARCHITECTURE_FAMILIES:
-            raise ValueError(f"{case_path} has unsupported architecture '{architecture}'")
+    _validate_case_targets(case_path, case["targets"])
 
     require_fields(case_path, case["build"], ("system", "target"))
     reject_unknown_fields(case_path, case["build"], {"system", "target", "defines"})
@@ -311,6 +302,14 @@ def _validate_build_defines(case_path, defines):
             raise ValueError(
                 f"{case_path} build define '{name}' must be non-empty and must not contain ';'"
             )
+
+
+def _validate_case_targets(case_path, targets):
+    if not isinstance(targets, list) or not targets:
+        raise ValueError(f"{case_path} field 'targets' must be a non-empty list")
+    for target in targets:
+        if not isinstance(target, str) or not re.fullmatch(r"gfx[0-9A-Za-z]+", target):
+            raise ValueError(f"{case_path} has unsupported target '{target}'")
 
 
 def _validate_run(path, run, *, require_timeout=True):
@@ -403,7 +402,7 @@ def matches_case_selector(fuzz_case, selectors):
 
 
 def supports_target_config(fuzz_case, target_config):
-    return target_config["architecture_family"] in fuzz_case.case["architectures"]
+    return target_config["target"] in fuzz_case.case["targets"]
 
 
 def run_case(

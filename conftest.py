@@ -10,16 +10,18 @@ def pytest_addoption(parser):
         "--target",
         action="store",
         default=None,
-        help="Simulated target to run (for example gfx1250, gfx1201, gfx942).",
+        help=(
+            "Concrete gfx target to run (for example gfx1201, gfx1250, gfx942). "
+            "Defaults to gfx1201."
+        ),
     )
     parser.addoption(
         "--target-config-file",
         action="store",
         default=None,
         help=(
-            "Optional targets config JSON (for example "
-            "tests/corpus_support/target_capabilities.json). If set, this can provide "
-            "default suites/backends without passing --suite."
+            "Optional target capabilities JSON. Defaults to "
+            "tests/corpus_support/target_capabilities.json."
         ),
     )
     parser.addoption(
@@ -70,20 +72,6 @@ def pytest_addoption(parser):
         default=[],
         help="Exclude tags (repeat or comma-separated).",
     )
-    try:
-        parser.addoption(
-            "--config-file",
-            action="store",
-            default=None,
-            help="Optional JSON profile containing include/exclude selectors.",
-        )
-    except Exception:
-        parser.addoption(
-            "--corpus-config-file",
-            action="store",
-            default=None,
-            help="Optional JSON profile containing include/exclude selectors.",
-        )
     parser.addoption(
         "--artifact-directory",
         action="store",

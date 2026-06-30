@@ -3,9 +3,9 @@
   "project": "hip-matmul",
   "runner": "runner.hip",
   "kind": "cmake_executable",
-  "architectures": [
-    "cdna3",
-    "cdna4"
+  "targets": [
+    "gfx942",
+    "gfx950"
   ],
   "build": {
     "system": "cmake",

@@ -17,10 +17,12 @@ from typing import Any, Mapping
 @dataclass(frozen=True)
 class TargetSpec:
     target: str
-    architecture_family: str
-    hip_architectures: tuple[str, ...]
     supported_suites: tuple[str, ...] = ()
     suite_defaults: Mapping[str, Any] = field(default_factory=dict)
+
+    @property
+    def hip_architectures(self) -> tuple[str, ...]:
+        return (self.target,)
 
 
 @dataclass(frozen=True)

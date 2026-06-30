@@ -3,9 +3,9 @@
   "project": "llama.cpp",
   "runner": "runner.cpp",
   "kind": "cmake_executable",
-  "architectures": [
-    "cdna3",
-    "rdna4"
+  "targets": [
+    "gfx942",
+    "gfx1201"
   ],
   "build": {
     "system": "cmake",

@@ -1,9 +1,7 @@
 """Target capability loading and target resolution helpers.
 
-This module loads `TargetSpec` entries from the shared capabilities file and
-supports `--target-config-file` in two forms:
-- a single-target object, or
-- a multi-target mapping (requires `--target` to choose one entry).
+Targets are concrete gfx names. HIP architectures are derived from the target
+name, so target capability entries only describe suite support/defaults.
 """
 
 from __future__ import annotations
@@ -19,15 +17,38 @@ TARGET_CAPABILITIES_FILE = Path(__file__).resolve().parent / "target_capabilitie
 
 def load_targets() -> dict[str, TargetSpec]:
     entries = _load_targets_entries(TARGET_CAPABILITIES_FILE)
-    return {target: _target_spec_from_entry(target, entry) for target, entry in entries.items()}
+    return {
+        target: _target_spec_from_entry(target, entry)
+        for target, entry in entries.items()
+    }
 
 
 def require_target(target_name: str) -> TargetSpec:
     targets = load_targets()
     if target_name not in targets:
         available = ", ".join(sorted(targets))
-        raise ValueError(f"Unknown target '{target_name}'. Available targets: {available}")
+        raise ValueError(
+            f"Unknown target '{target_name}'. Available targets: {available}"
+        )
     return targets[target_name]
+
+
+def normalize_target_config(path: str | Path, config: dict) -> dict:
+    if "target" not in config:
+        raise ValueError(f"{path} is missing required field 'target'")
+    target = config["target"]
+    expected_hip_architectures = [target]
+    hip_architectures = config.get("hip_architectures", expected_hip_architectures)
+    if hip_architectures != expected_hip_architectures:
+        raise ValueError(
+            f"{path} field 'hip_architectures' must be {expected_hip_architectures!r}"
+        )
+    config["hip_architectures"] = expected_hip_architectures
+    return config
+
+
+def supports_target(target: TargetSpec, target_config: dict) -> bool:
+    return target_config.get("target") == target.target
 
 
 def load_target_spec(
@@ -74,8 +95,6 @@ def _load_targets_entries(path: Path, *, data: dict | None = None) -> dict[str, 
 def _target_spec_from_entry(target_name: str, entry: dict) -> TargetSpec:
     return TargetSpec(
         target=target_name,
-        architecture_family=entry["architecture_family"],
-        hip_architectures=tuple(entry["hip_architectures"]),
         supported_suites=tuple(entry.get("supported_suites", [])),
         suite_defaults=entry.get("suite_defaults", {}),
     )

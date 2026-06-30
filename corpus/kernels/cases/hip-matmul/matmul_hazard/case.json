@@ -3,8 +3,8 @@
   "project": "hip-matmul",
   "runner": "runner.hip",
   "kind": "cmake_executable",
-  "architectures": [
-    "cdna3"
+  "targets": [
+    "gfx942"
   ],
   "build": {
     "system": "cmake",

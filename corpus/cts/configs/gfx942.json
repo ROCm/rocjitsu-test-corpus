@@ -1,6 +1,6 @@
 {
-  "config_name": "general",
-  "hip_architectures": ["gfx942", "gfx950", "gfx1100", "gfx1200", "gfx1201"],
+  "config_name": "gfx942",
+  "target": "gfx942",
   "tests": [
     "fpsan_neg_cross_mode",
     "fpsan_neg_explicit_ctor",
@@ -13,6 +13,8 @@
     "fpsan_fp8_test",
     "fpsan_math_test",
     "fpsan_parity_test",
-    "fpsan_vector_test"
+    "fpsan_vector_test",
+    "fpsan_mfma_cdna3_test",
+    "fpsan_smfmac_cdna3_test"
   ]
 }

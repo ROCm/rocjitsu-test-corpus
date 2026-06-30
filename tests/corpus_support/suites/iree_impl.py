@@ -12,6 +12,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from ..targets import normalize_target_config
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CORPUS_ROOT = REPO_ROOT / "corpus" / "iree"
@@ -87,6 +89,7 @@ def load_target_configs(config_files):
     for config_file in config_files:
         path = resolve_repo_path(config_file)
         config = load_json(path)
+        normalize_target_config(path, config)
         for field in ("config_name", "iree_compile_flags", "iree_run_module_flags"):
             if field not in config:
                 raise ValueError(f"{path} is missing required field '{field}'")
