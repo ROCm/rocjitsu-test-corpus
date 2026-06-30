@@ -45,8 +45,6 @@ def pytest_generate_tests(metafunc):
         exclude_backends=parse_csv_values(config.getoption("exclude_backend")),
         include_cases=parse_csv_values(config.getoption("case")),
         exclude_cases=parse_csv_values(config.getoption("exclude_case")),
-        include_tags=parse_csv_values(config.getoption("tag")),
-        exclude_tags=parse_csv_values(config.getoption("exclude_tag")),
     )
     selection = merge_selection(cli_selection)
 

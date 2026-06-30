@@ -31,7 +31,6 @@ class CorpusCase:
     collection: str | None
     backend: str | None
     path: Path
-    tags: tuple[str, ...]
     build: Mapping[str, Any]
     run: Mapping[str, Any]
     metadata: Mapping[str, Any] = field(default_factory=dict)
@@ -48,8 +47,6 @@ class SelectionOptions:
     exclude_backends: tuple[str, ...] = ()
     include_cases: tuple[str, ...] = ()
     exclude_cases: tuple[str, ...] = ()
-    include_tags: tuple[str, ...] = ()
-    exclude_tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

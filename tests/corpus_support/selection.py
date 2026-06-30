@@ -1,7 +1,7 @@
 """Selection parsing and deterministic include/exclude filtering.
 
 This module converts CLI/profile selector inputs into `SelectionOptions` and
-applies suite/backend/case/tag filters to discovered `CorpusCase` rows before
+applies suite/backend/case filters to discovered `CorpusCase` rows before
 pytest parametrization.
 """
 
@@ -40,8 +40,6 @@ def selection_from_profile(profile: dict | None) -> SelectionOptions:
         ),
         include_cases=tuple(include.get("cases", [])),
         exclude_cases=tuple(exclude.get("cases", [])),
-        include_tags=tuple(include.get("tags", [])),
-        exclude_tags=tuple(exclude.get("tags", [])),
     )
 
 
@@ -53,8 +51,6 @@ def merge_selection(*selections: SelectionOptions) -> SelectionOptions:
         "exclude_backends": [],
         "include_cases": [],
         "exclude_cases": [],
-        "include_tags": [],
-        "exclude_tags": [],
     }
     for selection in selections:
         for key, values in asdict(selection).items():
@@ -81,8 +77,6 @@ def _include_match(case: CorpusCase, selection: SelectionOptions) -> bool:
             return False
     if selection.include_cases and not _matches_case_selector(case, selection.include_cases):
         return False
-    if selection.include_tags and not set(case.tags).intersection(selection.include_tags):
-        return False
     return True
 
 
@@ -92,8 +86,6 @@ def _exclude_match(case: CorpusCase, selection: SelectionOptions) -> bool:
     if case.suite == "kernels" and case.backend is not None and case.backend in selection.exclude_backends:
         return True
     if _matches_case_selector(case, selection.exclude_cases):
-        return True
-    if set(case.tags).intersection(selection.exclude_tags):
         return True
     return False
 

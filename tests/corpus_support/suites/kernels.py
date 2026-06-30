@@ -50,7 +50,6 @@ def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]
                     collection=None,
                     backend=backend,
                     path=Path(kernel_case.path),
-                    tags=tuple(["kernels", backend] + list(case.get("tags", []))),
                     build={
                         "system": "cmake",
                         "config_name": target_config["config_name"],

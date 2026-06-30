@@ -52,18 +52,6 @@ def pytest_addoption(parser):
         help="Exclude case selector (case id or case selector name).",
     )
     parser.addoption(
-        "--tag",
-        action="append",
-        default=[],
-        help="Include tags (repeat or comma-separated).",
-    )
-    parser.addoption(
-        "--exclude-tag",
-        action="append",
-        default=[],
-        help="Exclude tags (repeat or comma-separated).",
-    )
-    parser.addoption(
         "--artifact-directory",
         action="store",
         default=".pytest-artifacts",

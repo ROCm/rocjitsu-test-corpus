@@ -41,7 +41,6 @@ def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]
                     collection=None,
                     backend=None,
                     path=Path(case_path),
-                    tags=tuple(["iree"] + list(case.get("tags", []))),
                     build={
                         "system": "iree_compile",
                         "config_name": target_config["config_name"],
