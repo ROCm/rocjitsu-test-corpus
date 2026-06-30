@@ -57,7 +57,7 @@ list(APPEND llama_noncont_targets llama_cpp_noncont_batched_matmul)
 
 set(llama_noncont_hazard_target llama_cpp_noncont_batched_matmul_hazard)
 set(llama_noncont_hazard_overlay_root "${CMAKE_BINARY_DIR}/generated/llama_noncont_batched_matmul/hazard_from_vendored/ggml")
-set(llama_noncont_hazard_overlay_stamp "${llama_noncont_hazard_overlay_root}/.rocfuzz-overlay-stamp")
+set(llama_noncont_hazard_overlay_stamp "${llama_noncont_hazard_overlay_root}/.kernel-corpus-overlay-stamp")
 set(llama_noncont_hazard_build_dir "${CMAKE_BINARY_DIR}/cases/llama.cpp/${llama_noncont_hazard_target}-build")
 set(llama_noncont_hazard_override_root "${llama_noncont_hazard_case_dir}/overrides")
 
@@ -65,10 +65,10 @@ add_custom_command(
     OUTPUT "${llama_noncont_hazard_overlay_stamp}"
     COMMAND
         ${CMAKE_COMMAND}
-        -DROCFUZZ_VENDOR_ROOT=${LLAMA_GGML_ROOT}
-        -DROCFUZZ_OUTPUT_ROOT=${llama_noncont_hazard_overlay_root}
-        -DROCFUZZ_STAMP_FILE=${llama_noncont_hazard_overlay_stamp}
-        -DROCFUZZ_OVERRIDE_ROOT=${llama_noncont_hazard_override_root}
+        -DKERNEL_CORPUS_VENDOR_ROOT=${LLAMA_GGML_ROOT}
+        -DKERNEL_CORPUS_OUTPUT_ROOT=${llama_noncont_hazard_overlay_root}
+        -DKERNEL_CORPUS_STAMP_FILE=${llama_noncont_hazard_overlay_stamp}
+        -DKERNEL_CORPUS_OVERRIDE_ROOT=${llama_noncont_hazard_override_root}
         -P "${llama_noncont_hazard_case_dir}/cmake/CreateVendoredOverrideOverlay.cmake"
     DEPENDS
         "${llama_noncont_hazard_case_dir}/cmake/CreateVendoredOverrideOverlay.cmake"
@@ -92,8 +92,8 @@ set(configure_args
     -G "${CMAKE_GENERATOR}"
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     -DCMAKE_HIP_ARCHITECTURES=${CMAKE_HIP_ARCHITECTURES}
-    -DROCFUZZ_NONCONT_GGML_ROOT=${llama_noncont_hazard_overlay_root}
-    -DROCFUZZ_NONCONT_RUNNER_SOURCE=${llama_noncont_hazard_case_dir}/runner.cpp
+    -DKERNEL_CORPUS_NONCONT_GGML_ROOT=${llama_noncont_hazard_overlay_root}
+    -DKERNEL_CORPUS_NONCONT_RUNNER_SOURCE=${llama_noncont_hazard_case_dir}/runner.cpp
     -DROCM_PATH=${ROCM_PATH}
 )
 if(CMAKE_MAKE_PROGRAM)
@@ -111,7 +111,7 @@ endif()
 
 add_custom_target(${llama_noncont_hazard_target}
     COMMAND ${CMAKE_COMMAND} -E env ${configure_env} ${CMAKE_COMMAND} ${configure_args}
-    COMMAND ${CMAKE_COMMAND} --build "${llama_noncont_hazard_build_dir}" --target rocfuzz_llama_noncont_batched_matmul_hazard_runner
+    COMMAND ${CMAKE_COMMAND} --build "${llama_noncont_hazard_build_dir}" --target kernel_corpus_llama_noncont_batched_matmul_hazard_runner
     DEPENDS ${llama_noncont_hazard_target}_overlay
     COMMENT "Build llama.cpp non-contiguous batched matmul hazard backend from vendored GGML plus override files"
     VERBATIM

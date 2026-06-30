@@ -20,21 +20,20 @@ from ..configs import load_suite_target_configs
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 KERNELS_ROOT = REPO_ROOT / "corpus" / "kernels"
-LEGACY_KERNELS_ROOT = REPO_ROOT / "corpus" / "fuzz-targets"
-FUZZ_TARGETS_ROOT = KERNELS_ROOT if KERNELS_ROOT.exists() else LEGACY_KERNELS_ROOT
-DEFAULT_CONFIGS = tuple(sorted((FUZZ_TARGETS_ROOT / "configs").glob("*.json")))
+KERNEL_CORPUS_ROOT = KERNELS_ROOT
+DEFAULT_CONFIGS = tuple(sorted((KERNEL_CORPUS_ROOT / "configs").glob("*.json")))
 SUPPORTED_PROJECTS = {"hip-matmul", "hip-stream-k", "hipkittens", "llama.cpp"}
 SUPPORTED_CASE_KINDS = {"cmake_executable"}
 SUPPORTED_VALIDATION_KINDS = {"exit_code"}
 SUPPORTED_INPUT_FORMATS = {"raw"}
 SUPPORTED_INPUT_DTYPES = {"f32", "f16"}
 SUPPORTED_INPUT_GENERATORS = {"repeat_affine", "identity_diagonal", "affine_indices"}
-ROCFUZZ_ENABLE_CACHE_VARIABLES = (
-    "ROCFUZZ_ENABLE_ALL",
-    "ROCFUZZ_ENABLE_HIP_STREAMK",
-    "ROCFUZZ_ENABLE_LLAMA_HIP",
-    "ROCFUZZ_ENABLE_HIP_MATMUL",
-    "ROCFUZZ_ENABLE_HIPKITTENS",
+KERNEL_CORPUS_ENABLE_CACHE_VARIABLES = (
+    "KERNEL_CORPUS_ENABLE_ALL",
+    "KERNEL_CORPUS_ENABLE_HIP_STREAMK",
+    "KERNEL_CORPUS_ENABLE_LLAMA_HIP",
+    "KERNEL_CORPUS_ENABLE_HIP_MATMUL",
+    "KERNEL_CORPUS_ENABLE_HIPKITTENS",
 )
 
 
@@ -68,11 +67,11 @@ class ToolError(KernelCaseError):
         )
 
 
-FuzzTargetError = KernelCaseError
+KernelCorpusError = KernelCaseError
 
 
 @dataclass(frozen=True)
-class FuzzCase:
+class KernelCase:
     path: Path
     case: dict
     test_name: str | None = None
@@ -102,7 +101,6 @@ def split_config_files(value):
 def default_config_files():
     return (
         split_config_files(os.getenv("ROCJITSU_KERNEL_CONFIG_FILES"))
-        or split_config_files(os.getenv("ROCFUZZ_TEST_CONFIG_FILES"))
         or list(DEFAULT_CONFIGS)
     )
 
@@ -145,18 +143,18 @@ def load_target_configs(config_files):
 
 def discover_cases():
     cases = []
-    for case_path in sorted((FUZZ_TARGETS_ROOT / "cases").glob("*/*/case.json")):
+    for case_path in sorted((KERNEL_CORPUS_ROOT / "cases").glob("*/*/case.json")):
         case = load_case(case_path)
         if "tests" in case:
             for test_name, test in case["tests"].items():
-                cases.append(FuzzCase(path=case_path, case=case, test_name=test_name, test=test))
+                cases.append(KernelCase(path=case_path, case=case, test_name=test_name, test=test))
             continue
 
         input_set_paths = sorted((case_path.parent / "input_sets").glob("*.json"))
         if input_set_paths:
             for input_set_path in input_set_paths:
                 cases.append(
-                    FuzzCase(
+                    KernelCase(
                         path=case_path,
                         case=case,
                         input_set_path=input_set_path,
@@ -164,7 +162,7 @@ def discover_cases():
                     )
                 )
         else:
-            cases.append(FuzzCase(path=case_path, case=case))
+            cases.append(KernelCase(path=case_path, case=case))
     return cases
 
 
@@ -370,36 +368,36 @@ def _validate_test_args(entry_path, args):
             )
 
 
-def case_id(fuzz_case, target_config):
-    case = fuzz_case.case
+def case_id(kernel_case, target_config):
+    case = kernel_case.case
     test_id = f"{target_config['config_name']}::{case['project']}/{case['name']}"
-    if fuzz_case.test_name is not None:
-        test_id += f"::{fuzz_case.test_name}"
-    if fuzz_case.input_set is not None:
-        test_id += f"::{fuzz_case.input_set['name']}"
+    if kernel_case.test_name is not None:
+        test_id += f"::{kernel_case.test_name}"
+    if kernel_case.input_set is not None:
+        test_id += f"::{kernel_case.input_set['name']}"
     return test_id
 
 
-def case_config_names(fuzz_case):
-    case = fuzz_case.case
+def case_config_names(kernel_case):
+    case = kernel_case.case
     names = [case["name"]]
-    if fuzz_case.test_name is not None:
-        names.append(f"{case['name']}::{fuzz_case.test_name}")
-    if fuzz_case.input_set is not None:
-        names.append(f"{case['name']}::{fuzz_case.input_set['name']}")
+    if kernel_case.test_name is not None:
+        names.append(f"{case['name']}::{kernel_case.test_name}")
+    if kernel_case.input_set is not None:
+        names.append(f"{case['name']}::{kernel_case.input_set['name']}")
     return names
 
 
-def matches_case_selector(fuzz_case, selectors):
-    return any(name in selectors for name in case_config_names(fuzz_case))
+def matches_case_selector(kernel_case, selectors):
+    return any(name in selectors for name in case_config_names(kernel_case))
 
 
-def supports_target_config(fuzz_case, target_config):
-    return target_config["target"] in fuzz_case.case["supported_targets"]
+def supports_target_config(kernel_case, target_config):
+    return target_config["target"] in kernel_case.case["supported_targets"]
 
 
 def run_case(
-    fuzz_case,
+    kernel_case,
     target_config,
     artifact_directory,
     *,
@@ -407,9 +405,9 @@ def run_case(
     run_wrapper=None,
     case_timeout_seconds=None,
 ):
-    case = effective_case(fuzz_case)
+    case = effective_case(kernel_case)
     artifact_root = resolve_repo_path(artifact_directory)
-    run_dir = _run_dir(artifact_root, target_config, fuzz_case)
+    run_dir = _run_dir(artifact_root, target_config, kernel_case)
     run_dir.mkdir(parents=True, exist_ok=True)
 
     build_result = build_runner(case, target_config, artifact_root, run_dir)
@@ -446,7 +444,7 @@ def build_runner(case, target_config, artifact_root, log_dir):
 def configure_cmake(target_config, build_dir, log_dir):
     cache_variables = _cmake_cache_variables(target_config)
     cache_variables["CMAKE_HIP_ARCHITECTURES"] = ";".join(target_config["hip_architectures"])
-    command = ["cmake", "-S", str(FUZZ_TARGETS_ROOT), "-B", str(build_dir)]
+    command = ["cmake", "-S", str(KERNEL_CORPUS_ROOT), "-B", str(build_dir)]
     if "generator" in target_config.get("cmake", {}):
         command.extend(["-G", target_config["cmake"]["generator"]])
     elif shutil.which("ninja"):
@@ -455,7 +453,7 @@ def configure_cmake(target_config, build_dir, log_dir):
         command.append(f"-D{key}={value}")
     _run_command(
         command,
-        cwd=FUZZ_TARGETS_ROOT,
+        cwd=KERNEL_CORPUS_ROOT,
         log_path=Path(log_dir) / "configure.log",
         phase="configure",
         env=command_environment(target_config),
@@ -473,7 +471,7 @@ def build_target(case, target_config, build_dir, log_dir):
     ]
     _run_command(
         command,
-        cwd=FUZZ_TARGETS_ROOT,
+        cwd=KERNEL_CORPUS_ROOT,
         log_path=Path(log_dir) / "build.log",
         phase="build",
         env=command_environment(target_config),
@@ -487,10 +485,10 @@ def resolve_executable_path(case, build_dir):
     return Path(build_dir) / executable
 
 
-def effective_case(fuzz_case):
-    case = dict(fuzz_case.case)
-    if fuzz_case.test is not None:
-        test = fuzz_case.test
+def effective_case(kernel_case):
+    case = dict(kernel_case.case)
+    if kernel_case.test is not None:
+        test = kernel_case.test
         case["run"] = {
             "args": test["test_args"],
         }
@@ -501,10 +499,10 @@ def effective_case(fuzz_case):
         case["validation"] = test["validation"]
         return case
 
-    if fuzz_case.input_set is None:
+    if kernel_case.input_set is None:
         return case
 
-    input_set = fuzz_case.input_set
+    input_set = kernel_case.input_set
     if "inputs" in input_set:
         case["inputs"] = input_set["inputs"]
     if "run" in input_set:
@@ -722,7 +720,7 @@ def _write_timing_record(
 
 def _cmake_cache_variables(target_config):
     cache_variables = dict(target_config.get("cmake", {}).get("cache_variables", {}))
-    for key in ROCFUZZ_ENABLE_CACHE_VARIABLES:
+    for key in KERNEL_CORPUS_ENABLE_CACHE_VARIABLES:
         cache_variables[key] = "ON" if str(cache_variables.get(key, "")).upper() == "ON" else "OFF"
     return cache_variables
 
@@ -874,8 +872,8 @@ def _build_dir(artifact_root, target_config):
     return Path(artifact_root) / "kernels" / target_config["config_name"] / "build"
 
 
-def _run_dir(artifact_root, target_config, fuzz_case):
-    relative_case = fuzz_case.path.resolve().relative_to(FUZZ_TARGETS_ROOT).parent
+def _run_dir(artifact_root, target_config, kernel_case):
+    relative_case = kernel_case.path.resolve().relative_to(KERNEL_CORPUS_ROOT).parent
     run_dir = (
         Path(artifact_root)
         / "kernels"
@@ -883,10 +881,10 @@ def _run_dir(artifact_root, target_config, fuzz_case):
         / "runs"
         / relative_case
     )
-    if fuzz_case.test_name is not None:
-        run_dir = run_dir / fuzz_case.test_name
-    if fuzz_case.input_set is not None:
-        run_dir = run_dir / fuzz_case.input_set["name"]
+    if kernel_case.test_name is not None:
+        run_dir = run_dir / kernel_case.test_name
+    if kernel_case.input_set is not None:
+        run_dir = run_dir / kernel_case.input_set["name"]
     return run_dir
 
 

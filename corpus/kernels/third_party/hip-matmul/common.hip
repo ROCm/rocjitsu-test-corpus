@@ -60,7 +60,7 @@ inline void setIntEnvVar(const char *name, int value) {
 }
 
 inline bool hasMNKEnvArgs() {
-  return std::getenv("ROCFUZZ_HIP_MATMUL_HAS_MNK_ARGS") != nullptr;
+  return std::getenv("KERNEL_CORPUS_HIP_MATMUL_HAS_MNK_ARGS") != nullptr;
 }
 
 inline void applyMNKArgs(int argc, char **argv) {
@@ -102,7 +102,7 @@ inline void applyMNKArgs(int argc, char **argv) {
     has_mnk_arg = true;
   }
   if (has_mnk_arg) {
-    setenv("ROCFUZZ_HIP_MATMUL_HAS_MNK_ARGS", "1", 1);
+    setenv("KERNEL_CORPUS_HIP_MATMUL_HAS_MNK_ARGS", "1", 1);
   }
 }
 
@@ -178,7 +178,7 @@ void fillRandomBuffer(int size, std::minstd_rand &r, void *out_buffer) {
     // Generate small integers in [-2, +2] so products are in [-4, +4] so
     // accumulators are in [-4K, +4K] for accumulation depth K so they're
     // exactly representable, float rounding is exact and we don't need
-    // fuzzy compares.
+    // tolerance-based compares.
     out_buffer_typed[i] = static_cast<T>(static_cast<int>((r() % 5)) - 2);
   }
 }

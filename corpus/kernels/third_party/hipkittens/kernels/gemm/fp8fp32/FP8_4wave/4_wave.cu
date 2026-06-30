@@ -12,12 +12,12 @@ using namespace kittens;
 #define SIZE 8192
 #endif
 
-#ifndef ROCFUZZ_HIPKITTENS_WARMUP_ITERS
-#define ROCFUZZ_HIPKITTENS_WARMUP_ITERS 500
+#ifndef KERNEL_CORPUS_HIPKITTENS_WARMUP_ITERS
+#define KERNEL_CORPUS_HIPKITTENS_WARMUP_ITERS 500
 #endif
 
-#ifndef ROCFUZZ_HIPKITTENS_TIMING_ITERS
-#define ROCFUZZ_HIPKITTENS_TIMING_ITERS 100
+#ifndef KERNEL_CORPUS_HIPKITTENS_TIMING_ITERS
+#define KERNEL_CORPUS_HIPKITTENS_TIMING_ITERS 100
 #endif
 
 constexpr int NUM_WARPS = 4;
@@ -1014,8 +1014,8 @@ int main() {
     constexpr int CUs = 256; // 256 threadblocks (1 outer iteration)
     
     // Timing parameters to keep total runtime reasonable  
-    constexpr int warmup_iters = ROCFUZZ_HIPKITTENS_WARMUP_ITERS;
-    constexpr int timing_iters = ROCFUZZ_HIPKITTENS_TIMING_ITERS;
+    constexpr int warmup_iters = KERNEL_CORPUS_HIPKITTENS_WARMUP_ITERS;
+    constexpr int timing_iters = KERNEL_CORPUS_HIPKITTENS_TIMING_ITERS;
 
     printf("Matrix dimensions: %dx%dx%d, CUs: %d\n", M, N, K, CUs);
     printf("Warmup iterations: %d, Timing iterations: %d\n\n", warmup_iters, timing_iters);

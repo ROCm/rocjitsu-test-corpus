@@ -1,6 +1,6 @@
 # llama.cpp Extracted Sources
 
-This directory contains the GGML sources extracted from `llama.cpp` for the ROCfuzz corpus cases.
+This directory contains the GGML sources extracted from `llama.cpp` for the kernel corpus cases.
 
 - Upstream repository: https://github.com/ggml-org/llama.cpp
 - Source commit: `2084434e666c5b08cd5e2a2f256e583a0f85a44c`

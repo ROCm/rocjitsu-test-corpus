@@ -19,11 +19,11 @@ sources:
 The MXFP8 and FP8 main-branch sources define launchable HIP kernels, prepare
 input data, compute CPU references, launch the GEMM kernels, validate GPU
 output, and then run benchmarks. The BF16 sources define launchable HIP kernels
-and dispatch helpers; the ROCfuzz cases supply standalone host runners and CPU
+and dispatch helpers; the kernel corpus cases supply standalone host runners and CPU
 references. The CDNA3 BF16 source is paired with the CDNA3 branch include tree.
 
 The corpus applies small local compatibility edits to make `SIZE`, warmup
 iterations, and timing iterations overridable by the MXFP8/FP8 case wrappers,
 to make the CDNA3 BF16 dimensions overridable without preprocessor pollution,
 and to let the BF16 sources compile without their upstream pybind/PyTorch
-modules when used by standalone ROCfuzz runners.
+modules when used by standalone kernel corpus runners.

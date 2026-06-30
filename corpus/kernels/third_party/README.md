@@ -1,6 +1,6 @@
 # Third-Party Extracted Sources
 
-This directory contains third-party source used by the ROCfuzz corpus cases.
+This directory contains third-party source used by the kernel corpus cases.
 
 - `llama.cpp/` contains the `ggml/` subtree extracted from
   `ggml-org/llama.cpp`. See `llama.cpp/NOTICE.md`, `llama.cpp/LICENSE`, and

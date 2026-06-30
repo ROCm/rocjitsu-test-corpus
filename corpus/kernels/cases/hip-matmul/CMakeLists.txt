@@ -2,7 +2,7 @@ set(HIP_MATMUL_ROOT "${PROJECT_SOURCE_DIR}/third_party/hip-matmul")
 
 if(NOT EXISTS "${HIP_MATMUL_ROOT}/matmul.hip")
     message(FATAL_ERROR
-        "ROCFUZZ_ENABLE_HIP_MATMUL=ON requires extracted hip-matmul sources at "
+        "KERNEL_CORPUS_ENABLE_HIP_MATMUL=ON requires extracted hip-matmul sources at "
         "${HIP_MATMUL_ROOT}")
 endif()
 
@@ -40,7 +40,7 @@ set(hip_matmul_runner_targets)
 
 add_hip_matmul_runner(hip_matmul_matvec matvec "Run nod-ai hip-matmul matvec runner")
 target_compile_definitions(hip_matmul_matvec PRIVATE
-    ROCFUZZ_HIP_MATMUL_WARP_SIZE=64
+    KERNEL_CORPUS_HIP_MATMUL_WARP_SIZE=64
 )
 target_compile_options(hip_matmul_matvec PRIVATE
     $<$<COMPILE_LANGUAGE:HIP>:-mwavefrontsize64>

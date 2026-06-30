@@ -21,7 +21,7 @@ from ..targets import supports_target
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CONFIGS_ROOT = REPO_ROOT / "corpus" / "cts" / "configs"
 CTS_SOURCE_DIR = REPO_ROOT / "corpus" / "cts"
-TESTS_ROOT = CTS_SOURCE_DIR / "tests"
+TEST_CASES_ROOT = CTS_SOURCE_DIR / "test_cases"
 
 
 def default_config_files() -> tuple[Path, ...]:
@@ -79,7 +79,7 @@ def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]
 
 def discover_cases() -> list[dict]:
     cases: list[dict] = []
-    for case_file in sorted(TESTS_ROOT.glob("*.json")):
+    for case_file in sorted(TEST_CASES_ROOT.glob("*.json")):
         case_inventory = load_json(case_file)
         collection = case_inventory.get("collection")
         if not isinstance(collection, str) or not collection:

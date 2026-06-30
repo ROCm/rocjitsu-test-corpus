@@ -1,5 +1,5 @@
 #include "kittens.cuh"
-#ifndef ROCFUZZ_HIPKITTENS_STANDALONE
+#ifndef KERNEL_CORPUS_HIPKITTENS_STANDALONE
 #include "pyutils/pyutils.cuh"
 #endif
 using namespace kittens;
@@ -334,7 +334,7 @@ void dispatch_micro(micro_globals g) {
     micro_tk<<<g.grid(), g.block(), mem_size, g.stream>>>(g, g.M, g.N, g.K);
 }
 
-#ifndef ROCFUZZ_HIPKITTENS_STANDALONE
+#ifndef KERNEL_CORPUS_HIPKITTENS_STANDALONE
 PYBIND11_MODULE(tk_kernel, m) {
     m.doc() = "tk_kernel python module";
     // py::bind_kernel<micro_tk>(m, "micro_tk", &micro_globals::a, &micro_globals::b, &micro_globals::c); 

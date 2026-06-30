@@ -2,7 +2,7 @@ set(HIP_STREAMK_ROOT "${PROJECT_SOURCE_DIR}/third_party/hip-stream-k")
 
 if(NOT EXISTS "${HIP_STREAMK_ROOT}/include/streamk/simple_streamk.hpp")
     message(FATAL_ERROR
-        "ROCFUZZ_ENABLE_HIP_STREAMK=ON requires extracted hip-stream-k sources at "
+        "KERNEL_CORPUS_ENABLE_HIP_STREAMK=ON requires extracted hip-stream-k sources at "
         "${HIP_STREAMK_ROOT}")
 endif()
 

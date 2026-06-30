@@ -3,10 +3,10 @@
   "target": "gfx942",
   "cmake": {
     "cache_variables": {
-      "ROCFUZZ_ENABLE_HIP_STREAMK": "ON",
-      "ROCFUZZ_ENABLE_HIP_MATMUL": "ON",
-      "ROCFUZZ_ENABLE_HIPKITTENS": "ON",
-      "ROCFUZZ_ENABLE_LLAMA_HIP": "ON"
+      "KERNEL_CORPUS_ENABLE_HIP_STREAMK": "ON",
+      "KERNEL_CORPUS_ENABLE_HIP_MATMUL": "ON",
+      "KERNEL_CORPUS_ENABLE_HIPKITTENS": "ON",
+      "KERNEL_CORPUS_ENABLE_LLAMA_HIP": "ON"
     }
   },
   "skip_compile_tests": [

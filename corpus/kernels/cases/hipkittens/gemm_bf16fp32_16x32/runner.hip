@@ -1,4 +1,4 @@
-#define ROCFUZZ_HIPKITTENS_STANDALONE
+#define KERNEL_CORPUS_HIPKITTENS_STANDALONE
 #include "../../../third_party/hipkittens/kernels/gemm/bf16fp32/256_256_64_32_with16x32.cpp"
 
 #include <algorithm>
@@ -21,7 +21,7 @@ void hip_check(hipError_t error, const char * expression, const char * file, int
     }
 }
 
-#define ROCFUZZ_HIP_CHECK(expr) hip_check((expr), #expr, __FILE__, __LINE__)
+#define KERNEL_CORPUS_HIP_CHECK(expr) hip_check((expr), #expr, __FILE__, __LINE__)
 
 kittens::bf16 to_bf16(float value) {
     return __float2bfloat16(value);
@@ -53,22 +53,22 @@ int main(int argc, char **argv) {
     kittens::bf16 * d_a = nullptr;
     kittens::bf16 * d_b = nullptr;
     kittens::bf16 * d_c = nullptr;
-    ROCFUZZ_HIP_CHECK(hipMalloc(&d_a, a_host.size() * sizeof(kittens::bf16)));
-    ROCFUZZ_HIP_CHECK(hipMalloc(&d_b, b_host.size() * sizeof(kittens::bf16)));
-    ROCFUZZ_HIP_CHECK(hipMalloc(&d_c, c_host.size() * sizeof(kittens::bf16)));
-    ROCFUZZ_HIP_CHECK(hipMemcpy(d_a, a_host.data(), a_host.size() * sizeof(kittens::bf16), hipMemcpyHostToDevice));
-    ROCFUZZ_HIP_CHECK(hipMemcpy(d_b, b_host.data(), b_host.size() * sizeof(kittens::bf16), hipMemcpyHostToDevice));
-    ROCFUZZ_HIP_CHECK(hipMemset(d_c, 0, c_host.size() * sizeof(kittens::bf16)));
+    KERNEL_CORPUS_HIP_CHECK(hipMalloc(&d_a, a_host.size() * sizeof(kittens::bf16)));
+    KERNEL_CORPUS_HIP_CHECK(hipMalloc(&d_b, b_host.size() * sizeof(kittens::bf16)));
+    KERNEL_CORPUS_HIP_CHECK(hipMalloc(&d_c, c_host.size() * sizeof(kittens::bf16)));
+    KERNEL_CORPUS_HIP_CHECK(hipMemcpy(d_a, a_host.data(), a_host.size() * sizeof(kittens::bf16), hipMemcpyHostToDevice));
+    KERNEL_CORPUS_HIP_CHECK(hipMemcpy(d_b, b_host.data(), b_host.size() * sizeof(kittens::bf16), hipMemcpyHostToDevice));
+    KERNEL_CORPUS_HIP_CHECK(hipMemset(d_c, 0, c_host.size() * sizeof(kittens::bf16)));
 
     _gl_A a_gl(d_a, 1, 1, M, K);
     _gl_B b_gl(d_b, 1, 1, N, K);
     _gl_C c_gl(d_c, 1, 1, M, N);
     micro_globals globals{a_gl, b_gl, c_gl, hipStreamDefault};
     dispatch_micro(globals);
-    ROCFUZZ_HIP_CHECK(hipGetLastError());
-    ROCFUZZ_HIP_CHECK(hipDeviceSynchronize());
+    KERNEL_CORPUS_HIP_CHECK(hipGetLastError());
+    KERNEL_CORPUS_HIP_CHECK(hipDeviceSynchronize());
 
-    ROCFUZZ_HIP_CHECK(hipMemcpy(c_host.data(), d_c, c_host.size() * sizeof(kittens::bf16), hipMemcpyDeviceToHost));
+    KERNEL_CORPUS_HIP_CHECK(hipMemcpy(c_host.data(), d_c, c_host.size() * sizeof(kittens::bf16), hipMemcpyDeviceToHost));
 
     for (int row = 0; row < M; ++row) {
         for (int col = 0; col < N; ++col) {
@@ -90,9 +90,9 @@ int main(int argc, char **argv) {
         }
     }
 
-    ROCFUZZ_HIP_CHECK(hipFree(d_a));
-    ROCFUZZ_HIP_CHECK(hipFree(d_b));
-    ROCFUZZ_HIP_CHECK(hipFree(d_c));
+    KERNEL_CORPUS_HIP_CHECK(hipFree(d_a));
+    KERNEL_CORPUS_HIP_CHECK(hipFree(d_b));
+    KERNEL_CORPUS_HIP_CHECK(hipFree(d_c));
 
     if (max_abs_diff > validation_abs_tolerance) {
         std::fprintf(stderr,

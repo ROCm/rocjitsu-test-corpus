@@ -5,7 +5,7 @@
 The extracted upstream source is `nod-ai/hip-matmul` at revision
 `f932f783976342b397b255361f158bbc7c7a7ea3`. The upstream repository was also
 cloned locally at `/home/amily/hip-matmul/main` and tested directly with its
-native `./build_and_test.sh` script, outside ROCfuzz.
+native `./build_and_test.sh` script, outside this corpus.
 
 On `gfx942`, the same upstream `matmul.hip` source behaves differently across
 TheRock toolchains:
@@ -15,8 +15,8 @@ TheRock toolchains:
   `MmtKernel_256t_MSxNS_amdgcn_mfma_f32_16x16x4f32_shared_Kx4_doublebuffer_take2<8, 8>`.
 - With TheRock `7.14.0a20260602`, upstream `matvec.hip` also does not compile
   directly because HIP 7 exposes `warpSize` in a way that is not usable as a
-  non-type template argument. The ROCfuzz matvec wrapper works around that by
-  defining `warpSize` to `ROCFUZZ_HIP_MATMUL_WARP_SIZE`.
+  non-type template argument. The kernel corpus matvec wrapper works around
+  that by defining `warpSize` to `KERNEL_CORPUS_HIP_MATMUL_WARP_SIZE`.
 
 The relevant toolchains were:
 
@@ -57,8 +57,8 @@ Side-by-side assembly showed why the versions differ in practice:
   still be in flight across the workgroup.
 
 This means the TheRock 7.14 failure is best understood as the newer compiler
-exposing undefined synchronization in the upstream kernel, not as a ROCfuzz
-wrapper bug.
+exposing undefined synchronization in the upstream kernel, not as a kernel
+corpus wrapper bug.
 
 The corpus keeps the unmodified upstream behavior in `matmul_hazard`. The normal
 `matmul` runner preserves the upstream test list but overrides

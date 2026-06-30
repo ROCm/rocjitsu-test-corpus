@@ -11,7 +11,7 @@
     "system": "cmake",
     "target": "llama_cpp_noncont_batched_matmul_hazard"
   },
-  "executable": "cases/llama.cpp/llama_cpp_noncont_batched_matmul_hazard-build/rocfuzz_llama_noncont_batched_matmul_hazard_runner",
+  "executable": "cases/llama.cpp/llama_cpp_noncont_batched_matmul_hazard-build/kernel_corpus_llama_noncont_batched_matmul_hazard_runner",
   "tests": {
     "normal": {
       "description": "Contiguous F32 src1 tensor with ne=[64,17,2,1]; does not trigger PR #13155.",

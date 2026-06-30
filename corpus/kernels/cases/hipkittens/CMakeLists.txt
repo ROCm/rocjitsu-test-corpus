@@ -2,7 +2,7 @@ set(HIPKITTENS_ROOT "${PROJECT_SOURCE_DIR}/third_party/hipkittens")
 
 if(NOT EXISTS "${HIPKITTENS_ROOT}/include/kittens.cuh")
     message(FATAL_ERROR
-        "ROCFUZZ_ENABLE_HIPKITTENS=ON requires extracted HipKittens sources at "
+        "KERNEL_CORPUS_ENABLE_HIPKITTENS=ON requires extracted HipKittens sources at "
         "${HIPKITTENS_ROOT}")
 endif()
 

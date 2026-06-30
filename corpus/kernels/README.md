@@ -1,7 +1,7 @@
-# ROCfuzz Corpus
+# Kernel Corpus
 
-Small runnable ROCm fuzzing corpus for exercising kernels and higher-level
-library entry points from upstream projects.
+Small runnable ROCm corpus for exercising kernels and higher-level library
+entry points from upstream projects.
 
 ## At a Glance
 
@@ -81,8 +81,8 @@ architecture and the ROCm SDK root in
 To build only selected backends, add enable flags under `cacheVariables`:
 
 ```json
-"ROCFUZZ_ENABLE_ALL": "OFF",
-"ROCFUZZ_ENABLE_HIP_STREAMK": "ON"
+"KERNEL_CORPUS_ENABLE_ALL": "OFF",
+"KERNEL_CORPUS_ENABLE_HIP_STREAMK": "ON"
 ```
 
 `ROCM_PATH` must point at a ROCm SDK root with
@@ -153,7 +153,7 @@ HIP kernels.
 
 The current HipKittens MXFP8 and FP8 cases compile upstream self-contained
 4-wave GEMM programs from the HipKittens main branch. The BF16 cases wrap
-upstream pybind-oriented kernel sources in standalone ROCfuzz HIP runners: one
+upstream pybind-oriented kernel sources in standalone kernel corpus HIP runners: one
 from the main branch for CDNA4 / `gfx950`, and one from the HipKittens `cdna3`
 branch for CDNA3 / `gfx942`. The wrappers reduce the default matrix and
 benchmark sizes for corpus runs.
@@ -174,15 +174,15 @@ tar -xf <therock artifact>.tar.* -C ~/therock-artifacts/<gfx target>
 The artifact must provide a ROCm dist tree with the packages needed by this
 corpus: HIP runtime, rocPRIM/rocThrust, rocBLAS, and hipBLAS.
 
-`ROCFUZZ_ENABLE_ALL=ON` makes every corpus backend default to enabled. Set it to
+`KERNEL_CORPUS_ENABLE_ALL=ON` makes every corpus backend default to enabled. Set it to
 `OFF` when configuring a smaller build and enable individual backends with the
 options below.
 
-`ROCFUZZ_ENABLE_LLAMA_HIP=ON` needs `hip`, `rocBLAS`, and `hipBLAS`.
-`ROCFUZZ_ENABLE_HIP_STREAMK=ON` needs `hip`, `rocThrust`/`rocPRIM`, and
+`KERNEL_CORPUS_ENABLE_LLAMA_HIP=ON` needs `hip`, `rocBLAS`, and `hipBLAS`.
+`KERNEL_CORPUS_ENABLE_HIP_STREAMK=ON` needs `hip`, `rocThrust`/`rocPRIM`, and
 `rocBLAS` for validation.
-`ROCFUZZ_ENABLE_HIP_MATMUL=ON` needs `hip`.
-`ROCFUZZ_ENABLE_HIPKITTENS=ON` needs `hip` and an OpenMP-capable host compiler
+`KERNEL_CORPUS_ENABLE_HIP_MATMUL=ON` needs `hip`.
+`KERNEL_CORPUS_ENABLE_HIPKITTENS=ON` needs `hip` and an OpenMP-capable host compiler
 runtime.
 
 The Stream-K runner is intended for CDNA / gfx9-family targets and is not expected
@@ -194,7 +194,7 @@ or includes rocWMMA.
 ## Targets
 
 The CMake project builds the HIP Stream-K runner by default. It also builds
-llama.cpp HIP harnesses when `ROCFUZZ_ENABLE_LLAMA_HIP` is enabled and
+llama.cpp HIP harnesses when `KERNEL_CORPUS_ENABLE_LLAMA_HIP` is enabled and
 `CMAKE_HIP_ARCHITECTURES` is set.
 
 Useful run targets:

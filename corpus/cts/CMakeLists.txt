@@ -71,4 +71,4 @@ find_package(hip REQUIRED CONFIG)
 include(cmake/FpsanTests.cmake)
 
 enable_testing()
-add_subdirectory(tests)
+add_subdirectory(test_cases)

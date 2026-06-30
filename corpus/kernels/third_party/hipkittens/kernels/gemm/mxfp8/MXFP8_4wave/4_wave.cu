@@ -24,12 +24,12 @@ using namespace kittens;
 #define SIZE 8192
 #endif
 
-#ifndef ROCFUZZ_HIPKITTENS_WARMUP_ITERS
-#define ROCFUZZ_HIPKITTENS_WARMUP_ITERS 500
+#ifndef KERNEL_CORPUS_HIPKITTENS_WARMUP_ITERS
+#define KERNEL_CORPUS_HIPKITTENS_WARMUP_ITERS 500
 #endif
 
-#ifndef ROCFUZZ_HIPKITTENS_TIMING_ITERS
-#define ROCFUZZ_HIPKITTENS_TIMING_ITERS 100
+#ifndef KERNEL_CORPUS_HIPKITTENS_TIMING_ITERS
+#define KERNEL_CORPUS_HIPKITTENS_TIMING_ITERS 100
 #endif
 
 #define HipCheckError() do { \
@@ -592,8 +592,8 @@ int main() {
     constexpr int M             = SIZE;
     constexpr int N             = SIZE;
     constexpr int K             = SIZE;
-    constexpr int warmup_iters  = ROCFUZZ_HIPKITTENS_WARMUP_ITERS;
-    constexpr int timing_iters  = ROCFUZZ_HIPKITTENS_TIMING_ITERS;
+    constexpr int warmup_iters  = KERNEL_CORPUS_HIPKITTENS_WARMUP_ITERS;
+    constexpr int timing_iters  = KERNEL_CORPUS_HIPKITTENS_TIMING_ITERS;
 
     printf("=== MXFP8 TN 4-wave GEMM ===\n");
     printf("Matrix dimensions: %dx%dx%d\n", M, N, K);

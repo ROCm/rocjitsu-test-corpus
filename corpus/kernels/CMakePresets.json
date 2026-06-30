@@ -13,7 +13,7 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "ROCFUZZ_ENABLE_ALL": "ON"
+        "KERNEL_CORPUS_ENABLE_ALL": "ON"
       }
     }
   ]

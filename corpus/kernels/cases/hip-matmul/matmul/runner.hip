@@ -1,4 +1,4 @@
-#define main rocfuzz_hip_matmul_upstream_main
+#define main kernel_corpus_hip_matmul_upstream_main
 #define MmtKernel_256t_MSxNS_amdgcn_mfma_f32_16x16x4f32_shared_Kx4_doublebuffer_take2 \
   MmtKernel_256t_MSxNS_amdgcn_mfma_f32_16x16x4f32_shared_Kx4_doublebuffer_take2_hazard_original
 #include "../../../third_party/hip-matmul/matmul.hip"
@@ -124,7 +124,7 @@ class
 int main(int argc, char **argv) {
   applyMNKArgs(argc, argv);
 
-  std::printf("ROCfuzz selected hip-matmul kernels:\n\n");
+  std::printf("Kernel corpus selected hip-matmul kernels:\n\n");
   test(MmtKernel_256t_MSxNS_amdgcn_mfma_i32_16x16x32i8_shared_Kx2_pipeline_v3<
        8, 8>());
   test(MmtKernel_256t_MSxNS_amdgcn_mfma_f32_16x16x16f16_shared_Kx2<8, 8>());

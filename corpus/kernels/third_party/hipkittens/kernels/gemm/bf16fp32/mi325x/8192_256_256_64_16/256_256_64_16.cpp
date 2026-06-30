@@ -1,5 +1,5 @@
 #include "kittens.cuh"
-#ifndef ROCFUZZ_HIPKITTENS_STANDALONE
+#ifndef KERNEL_CORPUS_HIPKITTENS_STANDALONE
 #include "pyutils/pyutils.cuh"
 #endif
 using namespace kittens;
@@ -13,22 +13,22 @@ constexpr int DOT_SLICE        = 16;
 #define NUM_THREADS (kittens::WARP_THREADS * NUM_WARPS)
 
 #ifndef M
-#ifdef ROCFUZZ_HIPKITTENS_M
-#define M ROCFUZZ_HIPKITTENS_M
+#ifdef KERNEL_CORPUS_HIPKITTENS_M
+#define M KERNEL_CORPUS_HIPKITTENS_M
 #else
 #define M 8192
 #endif
 #endif
 #ifndef K
-#ifdef ROCFUZZ_HIPKITTENS_K
-#define K ROCFUZZ_HIPKITTENS_K
+#ifdef KERNEL_CORPUS_HIPKITTENS_K
+#define K KERNEL_CORPUS_HIPKITTENS_K
 #else
 #define K 8192
 #endif
 #endif
 #ifndef N
-#ifdef ROCFUZZ_HIPKITTENS_N
-#define N ROCFUZZ_HIPKITTENS_N
+#ifdef KERNEL_CORPUS_HIPKITTENS_N
+#define N KERNEL_CORPUS_HIPKITTENS_N
 #else
 #define N 8192
 #endif
@@ -252,7 +252,7 @@ void dispatch_micro(micro_globals g) {
     micro_tk<<<g.grid(), g.block(), mem_size, g.stream>>>(g);
 }
 
-#ifndef ROCFUZZ_HIPKITTENS_STANDALONE
+#ifndef KERNEL_CORPUS_HIPKITTENS_STANDALONE
 PYBIND11_MODULE(tk_kernel, m) {
     m.doc() = "tk_kernel python module";
     py::bind_kernel<micro_tk>(m, "micro_tk", &micro_globals::a, &micro_globals::b, &micro_globals::c);

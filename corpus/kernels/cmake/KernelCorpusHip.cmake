@@ -1,6 +1,6 @@
 set(ROCM_PATH "" CACHE PATH "ROCm SDK root")
 
-macro(rocfuzz_enable_hip)
+macro(kernel_corpus_enable_hip)
     if(NOT CMAKE_HIP_ARCHITECTURES)
         message(FATAL_ERROR
             "HIP cases require -DCMAKE_HIP_ARCHITECTURES=<gfx target>, "
@@ -11,17 +11,17 @@ macro(rocfuzz_enable_hip)
         set(ROCM_PATH "$ENV{ROCM_PATH}" CACHE PATH "ROCm SDK root" FORCE)
     endif()
     if(NOT ROCM_PATH)
-        find_program(ROCFUZZ_ROCM_SDK_EXECUTABLE rocm-sdk)
-        if(ROCFUZZ_ROCM_SDK_EXECUTABLE)
+        find_program(KERNEL_CORPUS_ROCM_SDK_EXECUTABLE rocm-sdk)
+        if(KERNEL_CORPUS_ROCM_SDK_EXECUTABLE)
             execute_process(
-                COMMAND "${ROCFUZZ_ROCM_SDK_EXECUTABLE}" path --root
-                RESULT_VARIABLE rocfuzz_rocm_sdk_result
-                OUTPUT_VARIABLE rocfuzz_rocm_sdk_root
+                COMMAND "${KERNEL_CORPUS_ROCM_SDK_EXECUTABLE}" path --root
+                RESULT_VARIABLE kernel_corpus_rocm_sdk_result
+                OUTPUT_VARIABLE kernel_corpus_rocm_sdk_root
                 OUTPUT_STRIP_TRAILING_WHITESPACE
                 ERROR_QUIET
             )
-            if(rocfuzz_rocm_sdk_result EQUAL 0 AND rocfuzz_rocm_sdk_root)
-                set(ROCM_PATH "${rocfuzz_rocm_sdk_root}" CACHE PATH "ROCm SDK root" FORCE)
+            if(kernel_corpus_rocm_sdk_result EQUAL 0 AND kernel_corpus_rocm_sdk_root)
+                set(ROCM_PATH "${kernel_corpus_rocm_sdk_root}" CACHE PATH "ROCm SDK root" FORCE)
             endif()
         endif()
     endif()
@@ -44,7 +44,7 @@ macro(rocfuzz_enable_hip)
         "${ROCM_PATH}/lib64"
     )
     if(NOT CMAKE_HIP_COMPILER)
-        find_program(ROCFUZZ_HIP_COMPILER
+        find_program(KERNEL_CORPUS_HIP_COMPILER
             NAMES amdclang++
             PATHS
                 "${ROCM_PATH}/lib/llvm/bin"
@@ -52,11 +52,11 @@ macro(rocfuzz_enable_hip)
                 "${ROCM_PATH}/llvm/bin"
             NO_DEFAULT_PATH
         )
-        if(NOT ROCFUZZ_HIP_COMPILER)
-            find_program(ROCFUZZ_HIP_COMPILER NAMES amdclang++)
+        if(NOT KERNEL_CORPUS_HIP_COMPILER)
+            find_program(KERNEL_CORPUS_HIP_COMPILER NAMES amdclang++)
         endif()
-        if(ROCFUZZ_HIP_COMPILER)
-            set(CMAKE_HIP_COMPILER "${ROCFUZZ_HIP_COMPILER}" CACHE FILEPATH "HIP compiler" FORCE)
+        if(KERNEL_CORPUS_HIP_COMPILER)
+            set(CMAKE_HIP_COMPILER "${KERNEL_CORPUS_HIP_COMPILER}" CACHE FILEPATH "HIP compiler" FORCE)
         endif()
     endif()
 
