@@ -1,58 +1,65 @@
-# RocJITsu gfx1250 Corpus
+# RocJITsu Test Corpus
 
-This repository packages gfx1250 VMFB and TensileLite kernel corpora for quick
-FFM and kmd.so regression checks.
+This repository vendors third-party resources and adapts them into test cases
+for RocJITsu regression coverage. The main pytest entrypoint is `tests/test_corpus.py`.
 
-The runner is intentionally simple: it sources one environment file, then runs a
-fixed list of commands over the packaged VMFBs and records pass/fail plus
-wall-clock time.
+## Repository Layout
 
-## Requirements
+```text
+corpus/
+  iree/       IREE run-module cases and target configs.
+  kernels/    HIP kernel reproducers, CMake runners, and vendored sources.
+  cts/        Deterministic HIP FPSAN CTS tests run through CTest.
+  tensile/    gfx1250 TensileLite configs and generated artifacts.
 
-The IREE tools must be available in `PATH`:
+tests/
+  test_corpus.py       Unified pytest entrypoint for iree, kernels, and cts.
+  test_suites/         Suite adapters used by test_corpus.py.
+  support/             Shared discovery, target, build, and run helpers.
 
-- `iree-compile`
-- `iree-run-module`
+scripts/
+  run_gfx1250_regression.sh
+  ... additional corpus helper scripts
 
-Rocjitsu must be available in `PATH`:
-- `rocjitsu`
+requirements.txt       Python packages for pytest and corpus helpers.
+```
 
-Kernel corpus runners require HIP and other ROCm libraries; by default the
-script uses the ROCm path returned by `rocm-sdk path --root`. Set `ROCM_PATH`
-to override the discovered ROCm root.
+## Corpus Contents
 
-The Tensile runner additionally needs a ROCm rocm-libraries checkout with
-`projects/hipblaslt/tensilelite`; pass `--tensilelite-root` or set
-`TENSILELITE_ROOT` if it is not in a sibling checkout.
+- `corpus/iree/`: IREE HIP e2e and matmul cases described by JSON files. The
+  suite compiles with `iree-compile` and runs with `iree-run-module`.
+- `corpus/kernels/`: standalone HIP kernel reproducers. Current backends include
+  `hip-stream-k`, `hip-matmul`, `hipkittens`, and `llama.cpp`.
+- `corpus/cts/`: HIP FPSAN tests organized by target family, including gfx942,
+  gfx950, gfx1100, gfx1201, and gfx1250 configs.
+- `corpus/tensile/`: gfx1250 TensileLite YAML configs, manifests, numeric smoke
+  lists, and generated HSACO/code-object artifacts. This corpus is run by the
+  Tensile scripts, not by `tests/test_corpus.py`.
 
-To prepare a fresh machine or venv for the Tensile corpus:
+`tests/test_corpus.py` discovers and runs the `iree`, `kernels`, and `cts`
+suites. By default it uses target `gfx1201` and selects all three suites.
+
+## Prerequisites
 
 ```bash
+# Install Python packages in your virtual environment.
 python -m pip install -r requirements.txt
-./scripts/build_tensilelite_repro.sh \
-  --env-file env/kmd-so.example.sh \
-  --tensilelite-root /path/to/rocm-libraries/projects/hipblaslt/tensilelite
+
+# Check that the IREE tools are available.
+command -v iree-compile iree-run-module
+
+# Check ROCm SDK discovery, or set ROCM_PATH explicitly.
+rocm-sdk path --root
 ```
 
-The build script uses the env file for ROCm/TheRock paths but unsets runtime
-preload variables before configuring and building.
-
-The env file is responsible for selecting the runtime mode. For FFM, pass a
-local env file for the shell/runtime setup you want to test. For kmd.so it
-should set `LD_PRELOAD`, `RJ_CONFIG`, and any ROCm runtime variables required by
-that setup.
-
-## Run
-
-Unified corpus entrypoint:
+## Run `tests/test_corpus.py`
+Preview the selected pytest cases without running them:
 
 ```bash
-pytest tests/test_corpus.py
+pytest --collect-only tests/test_corpus.py
 ```
 
-By default, `tests/test_corpus.py` uses the concrete `gfx1201` target and all
-corpus suites (`iree`, `kernels`, and `cts`). For a rocjitsu run with another
-target, pass a concrete gfx target that matches the simulator config:
+Run through RocJITsu with an explicit target:
 
 ```bash
 rocjitsu --config /path/to/gfx1201.json -- \
@@ -60,85 +67,36 @@ rocjitsu --config /path/to/gfx1201.json -- \
   --target gfx1201
 ```
 
-Tensile rebuild and numeric smoke checks:
-
-```bash
-./scripts/run_tensile_gfx1250_repro.sh env/kmd-so.example.sh
-./scripts/run_tensile_gfx1250_repro.sh --numeric env/kmd-so.example.sh
-```
-
-The default Tensile numeric smoke uses a reduced SGEMM runtime config,
-`sk_sgemm_runtime_smoke.yaml`, plus sparse and DGELU checks. The original
-upstream `sk_sgemm_quick.yaml` is still packaged, but it expands to a large
-tuning sweep and is not used by the default kmd.so smoke.
-
-Useful subsets:
-
-```bash
-./scripts/run_gfx1250_regression.sh --only e2e path/to/ffm-env.sh
-./scripts/run_gfx1250_regression.sh --only matmul path/to/ffm-env.sh
-./scripts/run_gfx1250_regression.sh --list path/to/ffm-env.sh
-```
-
-Each run writes:
-
-```text
-<out-dir>/results.csv
-<out-dir>/logs/*.log
-```
-
-The CSV columns are:
-
-```csv
-kind,name,status,elapsed_s,returncode,log
-```
-
-For kernels-only runs:
+Run selected suites:
 
 ```bash
 rocjitsu --config /path/to/gfx1201.json -- \
   pytest tests/test_corpus.py \
   --target gfx1201 \
-  --suite kernels
+  --suite kernels,cts
 ```
 
-For one backend only:
+Run selected cases:
 
 ```bash
 rocjitsu --config /path/to/gfx1201.json -- \
   pytest tests/test_corpus.py \
   --target gfx1201 \
-  --suite kernels \
-  --backend hipkittens
+  --suite cts \
+  --case fpsan_wmma
 ```
 
-For downstream CI matrix generation, use pytest collection output:
+Useful selectors:
 
-```bash
-pytest --collect-only tests/test_corpus.py
-```
-
-## Run CTS (FPSAN)
-
-CTS/FPSAN execution is handled directly by `tests/test_corpus.py` and
-`tests/test_suites/cts.py` (native Python runner, no shell wrapper):
-
-```bash
-rocjitsu --config /path/to/gfx1201.json -- \
-  pytest tests/test_corpus.py \
-  --target gfx1201 \
-  --suite cts
-```
-Use `--case` selectors against collected CTS IDs for subsets.
-
-## Corpus
-
-- `corpus/e2e/*.vmfb`: IREE HIP e2e VMFBs compiled for gfx1250.
-- `corpus/matmul/<case>/*_{matmul,calls}.vmfb`: specialized IREE matmul e2e
-  VMFB pairs compiled for gfx1250.
-- `corpus/tensile/`: gfx1250 TensileLite YAML configs plus generated HSACO and
-  code-object artifacts.
-- `corpus/kernels/`: HIP kernel reproducers packaged as pytest cases that can
-  run directly or through rocjitsu.
-- `corpus/cts/`: deterministic HIP FPSAN CTS tests configured and run through
-  CTest.
+- `--target <gfx target>`: target to run, for example `gfx942`, `gfx950`,
+  `gfx1201`, or `gfx1250`.
+- `--suite <iree|kernels|cts>`: include a suite. Repeat or pass comma-separated
+  values.
+- `--exclude-suite <suite>`: exclude a suite.
+- `--backend <backend>`: include a kernel backend such as `hipkittens`.
+- `--exclude-backend <backend>`: exclude a kernel backend.
+- `--case <selector>`: include a case by case id or selector name.
+- `--exclude-case <selector>`: exclude a case.
+- `--artifact-directory <path>`: write build artifacts, logs, and generated
+  outputs somewhere other than `.pytest-artifacts`.
+- `--skip-all-runs`: build or compile only where supported.
