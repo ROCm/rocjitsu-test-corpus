@@ -59,12 +59,13 @@ Preview the selected pytest cases without running them:
 pytest --collect-only tests/test_corpus.py
 ```
 
-Run through RocJITsu with an explicit target:
+Run through RocJITsu with all valid test suites for that target:
 
 ```bash
 rocjitsu --config /path/to/gfx1201.json -- \
   pytest tests/test_corpus.py \
-  --target gfx1201
+  --target gfx1201 \
+  --timeout 15
 ```
 
 Run selected suites:
@@ -73,7 +74,8 @@ Run selected suites:
 rocjitsu --config /path/to/gfx1201.json -- \
   pytest tests/test_corpus.py \
   --target gfx1201 \
-  --suite kernels,cts
+  --suite kernels,cts \
+  --timeout 15
 ```
 
 Run selected cases:
@@ -83,7 +85,17 @@ rocjitsu --config /path/to/gfx1201.json -- \
   pytest tests/test_corpus.py \
   --target gfx1201 \
   --suite cts \
-  --case fpsan_wmma
+  --case fpsan_wmma \
+  --timeout 15
+```
+
+Run with a list of tests to skip:
+
+```bash
+rocjitsu --config /path/to/gfx1201.json -- \
+  pytest tests/test_corpus.py \
+  --target gfx1201 \
+  --skip-tests-config tests/gfx1201_skip_tests.example.json
 ```
 
 Useful selectors:
@@ -99,4 +111,7 @@ Useful selectors:
 - `--exclude-case <selector>`: exclude a case.
 - `--artifact-directory <path>`: write build artifacts, logs, and generated
   outputs somewhere other than `.pytest-artifacts`.
+- `--timeout <seconds>`: fail an individual pytest case if it exceeds this
+  runtime. This is provided by `pytest-timeout` and is not a timeout for the
+  entire script; use `--session-timeout <seconds>` for a whole-session limit.
 - `--skip-all-runs`: build or compile only where supported.

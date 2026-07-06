@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -9,7 +10,9 @@ from support.manage_builds import BuildManager, resolve_artifact_directory
 from support.prepare_inputs import (
     filter_cases,
     make_target_spec,
+    matches_case_selector,
     parse_csv_values,
+    resolve_repo_path,
 )
 from test_suites import cts, iree, kernels
 
@@ -36,6 +39,8 @@ def pytest_generate_tests(metafunc):
     suite_config_cache = {}
     selected_suites = requested_suites or DEFAULT_SUITES
     _validate_selected_suites(selected_suites)
+
+    skip_tests_config = _load_skip_tests_config(config.getoption("skip_tests_config"))
 
     selection = SelectionOptions(
         include_suites=requested_suites,
@@ -68,6 +73,12 @@ def pytest_generate_tests(metafunc):
                 pytest.mark.xfail(
                     strict=True,
                     reason="Expected failure for this target configuration.",
+                )
+            )
+        if matches_case_selector(case, skip_tests_config.get(case.suite, ())):
+            marks.append(
+                pytest.mark.skip(
+                    reason="Skipped by --skip-tests-config configuration.",
                 )
             )
         params.append(pytest.param(case, id=case.id, marks=marks))
@@ -115,5 +126,47 @@ def _validate_selected_suites(selected_suites) -> None:
             raise pytest.UsageError(
                 f"Unknown suite '{suite}'. Allowed suites: {allowed}"
             )
+
+
+def _load_skip_tests_config(path_value: str | None) -> dict[str, tuple[str, ...]]:
+    if path_value is None:
+        return {}
+
+    path = resolve_repo_path(REPO_ROOT, path_value)
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except OSError as exc:
+        raise pytest.UsageError(
+            f"Could not read skip tests config {path}: {exc}"
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise pytest.UsageError(f"Invalid skip tests config {path}: {exc}") from exc
+
+    if not isinstance(payload, dict):
+        raise pytest.UsageError(f"{path} must contain an object keyed by suite name")
+
+    skip_tests_config: dict[str, tuple[str, ...]] = {}
+    for suite, selectors in payload.items():
+        if suite not in SUITE_MODULES:
+            allowed = ", ".join(sorted(SUITE_MODULES))
+            raise pytest.UsageError(
+                f"{path} has unknown suite '{suite}'. Allowed suites: {allowed}"
+            )
+        skip_tests_config[suite] = tuple(
+            _validate_skip_test_selectors(path, suite, selectors)
+        )
+    return skip_tests_config
+
+
+def _validate_skip_test_selectors(path: Path, suite: str, selectors) -> list[str]:
+    if not isinstance(selectors, list):
+        raise pytest.UsageError(f"{path} field '{suite}' must be a list")
+    for selector in selectors:
+        if not isinstance(selector, str) or not selector:
+            raise pytest.UsageError(
+                f"{path} field '{suite}' must contain non-empty strings"
+            )
+    return selectors
 
 

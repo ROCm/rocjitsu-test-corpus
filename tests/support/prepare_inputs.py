@@ -129,7 +129,7 @@ def _include_match(case: CorpusCase, selection: SelectionOptions) -> bool:
     if case.suite == "kernels" and selection.include_backends:
         if case.backend is None or case.backend not in selection.include_backends:
             return False
-    if selection.include_cases and not _matches_case_selector(case, selection.include_cases):
+    if selection.include_cases and not matches_case_selector(case, selection.include_cases):
         return False
     return True
 
@@ -139,12 +139,12 @@ def _exclude_match(case: CorpusCase, selection: SelectionOptions) -> bool:
         return True
     if case.suite == "kernels" and case.backend is not None and case.backend in selection.exclude_backends:
         return True
-    if _matches_case_selector(case, selection.exclude_cases):
+    if matches_case_selector(case, selection.exclude_cases):
         return True
     return False
 
 
-def _matches_case_selector(case: CorpusCase, selectors: tuple[str, ...]) -> bool:
+def matches_case_selector(case: CorpusCase, selectors: tuple[str, ...]) -> bool:
     if case.id in selectors:
         return True
     if case.metadata.get("name") in selectors:

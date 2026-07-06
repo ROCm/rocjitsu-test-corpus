@@ -52,6 +52,15 @@ def pytest_addoption(parser):
         help="Exclude case selector (case id or case selector name).",
     )
     parser.addoption(
+        "--skip-tests-config",
+        action="store",
+        default=None,
+        help=(
+            "JSON file containing suite-specific test selectors to skip, keyed "
+            "by suite name."
+        ),
+    )
+    parser.addoption(
         "--artifact-directory",
         action="store",
         default=".pytest-artifacts",
