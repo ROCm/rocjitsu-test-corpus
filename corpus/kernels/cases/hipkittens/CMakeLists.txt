@@ -142,7 +142,7 @@ if(hipkittens_supports_cdna3 OR hipkittens_supports_cdna4 OR hipkittens_supports
             hipkittens_gemm_bf16fp32_gfx1250_naive
             gemm_bf16fp32_gfx1250_naive
             "${HIPKITTENS_ROOT}/include"
-            KITTENS_UDNA1
+            KITTENS_GFX1250
             "Run HipKittens gfx1250 BF16/FP32 naive GEMM runner"
         )
     endif()

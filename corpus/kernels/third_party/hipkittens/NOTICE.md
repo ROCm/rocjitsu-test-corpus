@@ -22,8 +22,8 @@ input data, compute CPU references, launch the GEMM kernels, validate GPU
 output, and then run benchmarks. The BF16 sources define launchable HIP kernels
 and dispatch helpers; the kernel corpus cases supply standalone host runners and CPU
 references. The CDNA3 BF16 source is paired with the CDNA3 branch include tree.
-The gfx1250 BF16 ladder sources are paired with the main-branch `KITTENS_UDNA1`
-include tree.
+The gfx1250 BF16 ladder sources are paired with the main-branch gfx1250 include
+tree.
 
 The corpus applies small local compatibility edits to make `SIZE`, warmup
 iterations, and timing iterations overridable by the MXFP8/FP8 case wrappers,

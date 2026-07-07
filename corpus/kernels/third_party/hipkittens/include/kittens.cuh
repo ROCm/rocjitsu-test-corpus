@@ -7,8 +7,8 @@
 
 #if defined(KITTENS_CDNA4)
 #include "cdna4/includes.cuh"
-#elif defined(KITTENS_UDNA1)
-#include "udna1/includes.cuh"
+#elif defined(KITTENS_GFX1250)
+#include "gfx1250/includes.cuh"
 #endif
 
 #include "pyutils/util.cuh"

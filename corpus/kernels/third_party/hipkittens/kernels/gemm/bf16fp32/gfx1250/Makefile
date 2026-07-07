@@ -1,7 +1,7 @@
-# Build system for the gfx1250 (UDNA1) GEMM optimization ladder.
+# Build system for the gfx1250 GEMM optimization ladder.
 #
-# Arch flags (-DKITTENS_UDNA1 --offload-arch=gfx1250, std, opt level) come from
-# the shared kernels/common.mk via GPU_TARGET=UDNA1. This Makefile keeps the
+# Arch flags (-DKITTENS_GFX1250 --offload-arch=gfx1250, std, opt level) come from
+# the shared kernels/common.mk via GPU_TARGET=GFX1250. This Makefile keeps the
 # ladder's per-rung standalone-exe build by defining its own rules
 # (CUSTOM_RULES=1).
 #
@@ -14,7 +14,7 @@
 # Requires `hipcc` from ROCm 7.2+ (clang 22+). On a host without that, run
 # the make inside the `rocm/dev-ubuntu-24.04:7.2` docker image.
 
-GPU_TARGET ?= UDNA1
+GPU_TARGET ?= GFX1250
 BUILD_MODE ?= standalone
 CUSTOM_RULES := 1
 

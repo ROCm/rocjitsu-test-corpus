@@ -29,7 +29,7 @@ The kernels target `gfx1250` and require **clang 22+** (ROCm 7.2 hipcc).
 On a host without that toolchain, run the make inside the
 `rocm/dev-ubuntu-24.04:7.2` docker image; bind-mount the repo at `/work`.
 
-The `Makefile` defines `KITTENS_UDNA1` and sets `--offload-arch=gfx1250`
+The `Makefile` defines `KITTENS_GFX1250` and sets `--offload-arch=gfx1250`
 automatically. From inside this directory:
 
 ```
