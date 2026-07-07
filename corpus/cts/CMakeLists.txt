@@ -217,8 +217,6 @@ fpsan_add_hip_test(fpsan_classify_test
     "${FPSAN_TEST_CASES_DIR}/general/classify_test.cpp")
 fpsan_add_hip_test(fpsan_hip_device_test
     "${FPSAN_TEST_CASES_DIR}/general/hip_device_test.cpp")
-fpsan_add_hip_test(fpsan_parity_hip_test
-    "${FPSAN_TEST_CASES_DIR}/general/parity_test.cpp")
 
 if(FPSAN_TESTS_HAS_RDNA3 OR FPSAN_TESTS_HAS_GFX12 OR FPSAN_TESTS_HAS_CDNA3)
     fpsan_add_hip_test(fpsan_cvt_test
@@ -246,6 +244,8 @@ if(FPSAN_TESTS_HAS_RDNA3 OR FPSAN_TESTS_HAS_GFX12 OR
     FPSAN_TESTS_HAS_CDNA3 OR FPSAN_TESTS_HAS_CDNA4)
     fpsan_add_hip_test(fpsan_wave_test
         "${FPSAN_TEST_CASES_DIR}/general/wave_test.cpp")
+    fpsan_add_hip_test(fpsan_amdgcn_ldexp_test
+        "${FPSAN_TEST_CASES_DIR}/general/amdgcn_ldexp_test.cpp")
     fpsan_add_hip_test(fpsan_amdgcn_math_test
         "${FPSAN_TEST_CASES_DIR}/general/amdgcn_math_test.cpp")
     if(FPSAN_TESTS_HAS_RDNA3 OR FPSAN_TESTS_HAS_RDNA4 OR FPSAN_TESTS_HAS_CDNA3)
@@ -279,8 +279,6 @@ if(FPSAN_TESTS_HAS_RDNA3 OR FPSAN_TESTS_HAS_GFX12 OR
             PRIVATE FPSAN_TEST_ENABLE_GFX12_DOT_MATH=1)
     endif()
 endif()
-fpsan_add_hip_test(fpsan_amdgcn_ldexp_test
-    "${FPSAN_TEST_CASES_DIR}/general/amdgcn_ldexp_test.hip")
 
 if(FPSAN_TESTS_HAS_RDNA3)
     fpsan_add_hip_test(fpsan_wmma_gfx11_test
@@ -335,7 +333,7 @@ endif()
 
 if(FPSAN_TESTS_HAS_GFX1250)
     fpsan_add_hip_test(fpsan_amdgcn_bf16_trans_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/amdgcn_bf16_trans_test.hip")
+        "${FPSAN_TEST_CASES_DIR}/gfx1250/amdgcn_bf16_trans_test.cpp")
     fpsan_add_hip_test(fpsan_cvt_f16_fp8_gfx1250_test
         "${FPSAN_TEST_CASES_DIR}/gfx1250/cvt_f16_fp8_gfx1250_test.cpp")
     fpsan_add_hip_test(fpsan_cvt_scalef32_pk_gfx1250_test

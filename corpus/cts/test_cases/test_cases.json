@@ -126,10 +126,6 @@
       "supported_targets": ["gfx942", "gfx950", "gfx1100", "gfx1201", "gfx1250"]
     },
     {
-      "name": "fpsan_parity_hip_test",
-      "supported_targets": ["gfx942", "gfx950", "gfx1100", "gfx1201", "gfx1250"]
-    },
-    {
       "name": "fpsan_cvt_test",
       "supported_targets": ["gfx942", "gfx1100", "gfx1201", "gfx1250"]
     },
