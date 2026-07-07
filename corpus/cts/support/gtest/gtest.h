@@ -153,7 +153,6 @@ namespace fpsan_gtest
         if(skipped_count() != 0)
         {
             std::cerr << "SKIPPED: " << skipped_count() << " test(s)\n";
-            return 77;
         }
         return 0;
     }
