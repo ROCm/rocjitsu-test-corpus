@@ -1,0 +1,39 @@
+{
+  "name": "hip_streamk_two_tile",
+  "project": "hip-stream-k",
+  "runner": "runner.cpp",
+  "kind": "cmake_executable",
+  "supported_targets": [
+    "gfx942"
+  ],
+  "build": {
+    "system": "cmake",
+    "target": "hip_streamk_two_tile"
+  },
+  "executable": "cases/hip-stream-k/hip_streamk_two_tile",
+  "tests": {
+    "m256_n256_k256": {
+      "test_args": [
+        "-m",
+        256,
+        "-n",
+        256,
+        "-k",
+        256,
+        "--num_runs",
+        1,
+        "--validate"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    }
+  },
+  "tags": [
+    "hip-stream-k",
+    "gemm",
+    "two-tile-streamk",
+    "regression"
+  ]
+}

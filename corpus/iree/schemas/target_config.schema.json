@@ -7,6 +7,7 @@
   "additionalProperties": false,
   "required": [
     "config_name",
+    "target",
     "iree_compile_flags",
     "iree_run_module_flags"
   ],
@@ -18,6 +19,11 @@
       "type": "string",
       "pattern": "^[A-Za-z0-9_.-]+$",
       "description": "Stable identifier used in pytest ids and artifact paths."
+    },
+    "target": {
+      "type": "string",
+      "pattern": "^gfx[0-9A-Za-z]+$",
+      "description": "Concrete gfx target selected by pytest."
     },
     "iree_compile_flags": {
       "type": "array",

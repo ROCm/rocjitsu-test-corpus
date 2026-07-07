@@ -1,0 +1,63 @@
+"""Build coordination utilities for the unified corpus pytest flow.
+
+This module owns two cross-suite concerns:
+1) normalizing/validating artifact directories under the repo root, and
+2) caching build results so the same suite/target/build config is not rebuilt.
+
+Suite adapters expose `build(case, context)` and `run(...)`; `BuildManager`
+memoizes the build step and returns a `BuildResult` used by each suite runner.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+
+from .define_contracts import BuildResult, CorpusCase, RunContext
+
+
+class BuildManager:
+    def __init__(self, context: RunContext):
+        self._context = context
+        self._cache: dict[str, BuildResult] = {}
+
+    def ensure_built(self, case: CorpusCase, suite_module) -> BuildResult:
+        cache_key = self._cache_key(case)
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        suite_result = suite_module.build(case, self._context)
+        if suite_result is None:
+            suite_result = BuildResult(
+                build_dir=None,
+                executable_path=None,
+                metadata={},
+            )
+        self._cache[cache_key] = suite_result
+        return suite_result
+
+    @staticmethod
+    def _cache_key(case: CorpusCase) -> str:
+        payload = {
+            "suite": case.suite,
+            "target": case.target,
+            "backend": case.backend,
+            "collection": case.collection,
+            "build": case.build,
+            "path": str(case.path),
+        }
+        encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
+        digest = hashlib.sha256(encoded).hexdigest()[:16]
+        return f"{case.suite}:{case.target}:{digest}"
+
+
+def resolve_artifact_directory(repo_root: Path, artifact_directory: str) -> Path:
+    path = Path(artifact_directory)
+    if not path.is_absolute():
+        path = repo_root / path
+    path = path.resolve()
+    if not path.is_relative_to(repo_root):
+        raise ValueError("--artifact-directory must resolve under the repo root")
+    return path

@@ -1,0 +1,70 @@
+{
+  "name": "llama_noncont_batched_matmul_hazard",
+  "project": "llama.cpp",
+  "runner": "runner.cpp",
+  "kind": "cmake_executable",
+  "supported_targets": [
+    "gfx942",
+    "gfx1201"
+  ],
+  "build": {
+    "system": "cmake",
+    "target": "llama_cpp_noncont_batched_matmul_hazard"
+  },
+  "executable": "cases/llama.cpp/llama_cpp_noncont_batched_matmul_hazard-build/kernel_corpus_llama_noncont_batched_matmul_hazard_runner",
+  "tests": {
+    "normal": {
+      "description": "Contiguous F32 src1 tensor with ne=[64,17,2,1]; does not trigger PR #13155.",
+      "test_args": [
+        "--k-dim",
+        64,
+        "--output-rows",
+        32,
+        "--src1-view-cols",
+        17,
+        "--src1-parent-cols",
+        17,
+        "--src1-batches",
+        2,
+        "--src1-layout=contiguous",
+        "--validate"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0,
+        "abs_tolerance": 0.001
+      }
+    },
+    "trigger": {
+      "description": "Non-contiguous F32 src1 view with ne=[64,17,2,1], parent columns=32, and view offset 256; triggers PR #13155 on the hazard backend.",
+      "test_args": [
+        "--k-dim",
+        64,
+        "--output-rows",
+        32,
+        "--src1-view-cols",
+        17,
+        "--src1-parent-cols",
+        32,
+        "--src1-batches",
+        2,
+        "--src1-layout=noncontiguous",
+        "--validate"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 1,
+        "abs_tolerance": 0.001
+      }
+    }
+  },
+  "tags": [
+    "llama.cpp",
+    "ggml",
+    "matmul",
+    "non-contiguous",
+    "hazard",
+    "pr13155",
+    "regression"
+  ]
+}

@@ -1,6 +1,6 @@
 {
-  "config_name": "gfx1250",
-  "target": "gfx1250",
+  "config_name": "gfx1100",
+  "target": "gfx1100",
   "skip_compile_tests": [
     "fpsan_neg_cross_mode",
     "fpsan_neg_explicit_ctor",
