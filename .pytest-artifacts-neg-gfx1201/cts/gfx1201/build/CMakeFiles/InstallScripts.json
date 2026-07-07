@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/amily/rocjitsu-test-corpus/add_test/.pytest-artifacts-neg-gfx1201/cts/gfx1201/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

@@ -70,6 +70,23 @@ find_package(hip REQUIRED CONFIG)
 
 enable_testing()
 
+# Match upstream hip-fpsan: prefer an installed GoogleTest package, otherwise
+# fetch the pinned release at configure time. Offline runs can provide a local
+# checkout with -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=<path>.
+find_package(GTest QUIET)
+if(NOT TARGET GTest::gtest_main)
+    include(FetchContent)
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG v1.15.2
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(googletest)
+endif()
+
 set(FPSAN_TESTS_THIRD_PARTY_DIR "${CMAKE_CURRENT_LIST_DIR}/third_party")
 
 set(FPSAN_TESTS_INCLUDE_DIR "${FPSAN_TESTS_THIRD_PARTY_DIR}/hip-fpsan/include")
@@ -110,12 +127,16 @@ foreach(hip_arch IN LISTS CMAKE_HIP_ARCHITECTURES)
 endforeach()
 
 function(fpsan_add_cxx_test target_name source)
+    cmake_parse_arguments(FPSAN_TEST "NO_GTEST" "" "" ${ARGN})
     add_executable(${target_name} "${source}")
     target_compile_features(${target_name} PRIVATE cxx_std_17)
     target_include_directories(${target_name} PRIVATE
         "${FPSAN_TESTS_INCLUDE_DIR}"
         "${FPSAN_TESTS_SUPPORT_INCLUDE_DIR}"
     )
+    if(NOT FPSAN_TEST_NO_GTEST)
+        target_link_libraries(${target_name} PRIVATE GTest::gtest_main)
+    endif()
     add_test(NAME ${target_name} COMMAND ${target_name})
 endfunction()
 
@@ -133,6 +154,7 @@ function(fpsan_add_compile_fail_test target_name source)
 endfunction()
 
 function(fpsan_add_hip_test target_name source)
+    cmake_parse_arguments(FPSAN_TEST "NO_GTEST" "" "" ${ARGN})
     add_executable(${target_name} "${source}")
     set_source_files_properties("${source}" PROPERTIES LANGUAGE HIP)
     target_compile_features(${target_name} PRIVATE cxx_std_17)
@@ -146,6 +168,9 @@ function(fpsan_add_hip_test target_name source)
         "${FPSAN_TESTS_SUPPORT_INCLUDE_DIR}"
     )
     target_link_libraries(${target_name} PRIVATE hip::device)
+    if(NOT FPSAN_TEST_NO_GTEST)
+        target_link_libraries(${target_name} PRIVATE GTest::gtest_main)
+    endif()
     add_test(NAME ${target_name} COMMAND ${target_name})
 endfunction()
 
@@ -188,7 +213,7 @@ fpsan_add_compile_fail_test(fpsan_neg_non_float_type
 
 # Tests shared across supported GPU families.
 fpsan_add_cxx_test(fpsan_build_canary
-    "${FPSAN_TEST_CASES_DIR}/general/build_canary.cpp")
+    "${FPSAN_TEST_CASES_DIR}/general/build_canary.cpp" NO_GTEST)
 fpsan_add_cxx_test(fpsan_cast_test
     "${FPSAN_TEST_CASES_DIR}/general/cast_test.cpp")
 fpsan_add_cxx_test(fpsan_core_test
@@ -202,9 +227,9 @@ fpsan_add_cxx_test(fpsan_math_test
 fpsan_add_cxx_test(fpsan_parity_test
     "${FPSAN_TEST_CASES_DIR}/general/parity_test.cpp")
 fpsan_add_cxx_test(fpsan_algebraic_proto_test
-    "${FPSAN_TEST_CASES_DIR}/general/algebraic_proto_test.cpp")
+    "${FPSAN_TEST_CASES_DIR}/general/algebraic_proto_test.cpp" NO_GTEST)
 fpsan_add_hip_test(fpsan_algebraic_value_test
-    "${FPSAN_TEST_CASES_DIR}/general/algebraic_value_test.cpp")
+    "${FPSAN_TEST_CASES_DIR}/general/algebraic_value_test.cpp" NO_GTEST)
 fpsan_add_hip_test(fpsan_vector_test
     "${FPSAN_TEST_CASES_DIR}/general/vector_test.cpp")
 fpsan_add_hip_test(fpsan_extern_tagged_test

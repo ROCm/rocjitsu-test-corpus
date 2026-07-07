@@ -1,0 +1,2 @@
+# Empty dependencies file for fpsan_wave_gfx12_w64_test.
+# This may be replaced when dependencies are built.
