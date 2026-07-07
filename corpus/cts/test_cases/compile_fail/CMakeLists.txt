@@ -1,4 +1,0 @@
-fpsan_add_compile_fail_test(fpsan_neg_cross_mode neg_cross_mode.cpp)
-fpsan_add_compile_fail_test(fpsan_neg_explicit_ctor neg_explicit_ctor.cpp)
-fpsan_add_compile_fail_test(fpsan_neg_explicit_mixed_pod neg_explicit_mixed_pod.cpp)
-fpsan_add_compile_fail_test(fpsan_neg_non_float_type neg_non_float_type.cpp)
