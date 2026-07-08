@@ -68,6 +68,15 @@ rocjitsu --config /path/to/gfx1201.json -- \
   --timeout 15
 ```
 
+Run the RocJITsu corpus matrix for all configured gfx targets:
+
+```bash
+ROCM_VENV=path/to/.venv \
+ROCJITSU_WORKSPACE=path/to/rocjitsu-workspace \ # contains configs and rocjitsu binary
+ROCJITSU_EXE=path/to/rocjitsu-binary \
+./scripts/run_rocjitsu_corpus_matrix.sh
+```
+
 Run selected suites:
 
 ```bash
