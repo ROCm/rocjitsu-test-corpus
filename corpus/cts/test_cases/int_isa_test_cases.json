@@ -1,0 +1,29 @@
+{
+  "collection": "int_isa",
+  "cases": [
+    {
+      "name": "int_isa_rdna4_scalar_valu_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "int_isa_rdna4_packed_valu_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "int_isa_rdna4_wave_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "int_isa_rdna4_wave_w64_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "int_isa_rdna4_matrix_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "int_isa_rdna4_matrix_w64_test",
+      "supported_targets": ["gfx1201"]
+    }
+  ]
+}
