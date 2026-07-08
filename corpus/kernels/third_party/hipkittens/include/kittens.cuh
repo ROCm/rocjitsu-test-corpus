@@ -5,9 +5,12 @@
 
 #pragma once
 
-#include "common/common.cuh"
-#include "types/types.cuh"
-#include "ops/ops.cuh"
+#if defined(KITTENS_CDNA4)
+#include "cdna4/includes.cuh"
+#elif defined(KITTENS_GFX1250)
+#include "gfx1250/includes.cuh"
+#endif
+
 #include "pyutils/util.cuh"
 
 

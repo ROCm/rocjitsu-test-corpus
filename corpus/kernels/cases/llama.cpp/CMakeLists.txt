@@ -93,7 +93,7 @@ set(configure_args
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     -DCMAKE_HIP_ARCHITECTURES=${CMAKE_HIP_ARCHITECTURES}
     -DKERNEL_CORPUS_NONCONT_GGML_ROOT=${llama_noncont_hazard_overlay_root}
-    -DKERNEL_CORPUS_NONCONT_RUNNER_SOURCE=${llama_noncont_hazard_case_dir}/runner.cpp
+    -DKERNEL_CORPUS_NONCONT_RUNNER_SOURCE=${llama_noncont_case_dir}/runner.cpp
     -DROCM_PATH=${ROCM_PATH}
 )
 if(CMAKE_MAKE_PROGRAM)

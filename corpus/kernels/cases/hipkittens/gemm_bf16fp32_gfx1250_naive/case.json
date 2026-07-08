@@ -1,0 +1,37 @@
+{
+  "name": "hipkittens_gemm_bf16fp32_gfx1250_naive",
+  "project": "hipkittens",
+  "runner": "runner.hip",
+  "kind": "cmake_executable",
+  "supported_targets": [
+    "gfx1250"
+  ],
+  "build": {
+    "system": "cmake",
+    "target": "hipkittens_gemm_bf16fp32_gfx1250_naive"
+  },
+  "executable": "cases/hipkittens/hipkittens_gemm_bf16fp32_gfx1250_naive",
+  "tests": {
+    "m256_n256_k256": {
+      "test_args": [
+        256,
+        256,
+        256,
+        1,
+        1
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0,
+        "abs_tolerance": 1.0
+      }
+    }
+  },
+  "tags": [
+    "hipkittens",
+    "gemm",
+    "bf16-fp32",
+    "gfx1250",
+    "regression"
+  ]
+}
