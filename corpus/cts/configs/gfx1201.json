@@ -1,11 +1,6 @@
 {
   "config_name": "gfx1201",
   "target": "gfx1201",
-  "skip_compile_tests": [
-    "fpsan_neg_cross_mode",
-    "fpsan_neg_explicit_ctor",
-    "fpsan_neg_explicit_mixed_pod",
-    "fpsan_neg_non_float_type"
-  ],
+  "skip_compile_tests": [],
   "skip_run_tests": []
 }

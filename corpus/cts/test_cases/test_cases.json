@@ -126,10 +126,6 @@
       "supported_targets": ["gfx942", "gfx950", "gfx1100", "gfx1201", "gfx1250"]
     },
     {
-      "name": "fpsan_parity_hip_test",
-      "supported_targets": ["gfx942", "gfx950", "gfx1100", "gfx1201", "gfx1250"]
-    },
-    {
       "name": "fpsan_cvt_test",
       "supported_targets": ["gfx942", "gfx1100", "gfx1201", "gfx1250"]
     },
@@ -256,6 +252,230 @@
     {
       "name": "fpsan_swmmac_16x16x64_16_gfx1250_test",
       "supported_targets": ["gfx1250"]
+    },
+    {
+      "name": "fpsan_algebraic_proto_test",
+      "supported_targets": ["gfx942", "gfx950", "gfx1100", "gfx1201", "gfx1250"]
+    },
+    {
+      "name": "fpsan_algebraic_value_test",
+      "supported_targets": ["gfx942", "gfx950", "gfx1100", "gfx1201", "gfx1250"]
+    },
+    {
+      "name": "fpsan_extern_tagged_test",
+      "supported_targets": ["gfx942", "gfx950", "gfx1100", "gfx1201", "gfx1250"]
+    },
+    {
+      "name": "fpsan_subbyte_widen_test",
+      "supported_targets": ["gfx942", "gfx950", "gfx1100", "gfx1201", "gfx1250"]
+    },
+    {
+      "name": "fpsan_amdgcn_math_extra_test",
+      "supported_targets": ["gfx942", "gfx950", "gfx1100", "gfx1201", "gfx1250"]
+    },
+    {
+      "name": "fpsan_cvt_fp8_pk_test",
+      "supported_targets": ["gfx942", "gfx1201", "gfx1250"]
+    },
+    {
+      "name": "fpsan_cvt_fp8_pack_test",
+      "supported_targets": ["gfx942", "gfx1201", "gfx1250"]
+    },
+    {
+      "name": "fpsan_cvt_fp8_sr_test",
+      "supported_targets": ["gfx942", "gfx1201", "gfx1250"]
+    },
+    {
+      "name": "fpsan_amdgcn_math_fdot2_test",
+      "supported_targets": ["gfx942", "gfx1100", "gfx1201"]
+    },
+    {
+      "name": "fpsan_amdgcn_math_dot4_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_wmma_gfx11_acc16_test",
+      "supported_targets": ["gfx1100"]
+    },
+    {
+      "name": "fpsan_wmma_gfx11_tied_test",
+      "supported_targets": ["gfx1100"]
+    },
+    {
+      "name": "fpsan_wmma_gfx11_tied_bf16_test",
+      "supported_targets": ["gfx1100"]
+    },
+    {
+      "name": "fpsan_wmma_gfx11_acc16_w64_test",
+      "supported_targets": ["gfx1100"]
+    },
+    {
+      "name": "fpsan_wmma_gfx11_tied_w64_test",
+      "supported_targets": ["gfx1100"]
+    },
+    {
+      "name": "fpsan_wmma_gfx11_tied_bf16_w64_test",
+      "supported_targets": ["gfx1100"]
+    },
+    {
+      "name": "fpsan_wmma_gfx12_acc16_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_wmma_gfx12_fp8_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_wmma_gfx12_fp8_bf8_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_wmma_gfx12_fp8_mixed_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_wmma_gfx12_acc16_w64_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_wmma_gfx12_w64_fp8_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_wmma_gfx12_w64_fp8_bf8_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_wmma_gfx12_w64_fp8_mixed_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_swmmac_gfx12_h_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_swmmac_gfx12_h_bf16_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_swmmac_gfx12_h_f16out_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_swmmac_gfx12_fp8_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_swmmac_gfx12_fp8_mixed_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_swmmac_gfx12_w64_16_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_swmmac_gfx12_w64_fp8_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_swmmac_gfx12_w64_fp8_bf8_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_swmmac_gfx12_w64_fp8_mixed_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_swmmac_gfx12_w64_fp8_bf8bf8_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_algebraic_device_test",
+      "supported_targets": ["gfx1201"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_f16_16x16x4_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_f16_wide_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_f16_32x32x4_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_f16_4x4x4_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_bf16_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_bf16_16x16x4_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_bf16_wide_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_bf16_32x32x4_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_bf16_4x4x4_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_fp8_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_fp8_16x16x32_bf8_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_fp8_32x32x16_fp8_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_fp8_32x32x16_bf8_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_xf32_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_f32_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_f32_32x32_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_f32_4x4_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_f64_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_cdna3_f64_4x4_test",
+      "supported_targets": ["gfx942"]
+    },
+    {
+      "name": "fpsan_mfma_gfx950_scaled_test",
+      "supported_targets": ["gfx950"]
+    },
+    {
+      "name": "fpsan_mfma_gfx950_smfmac_test",
+      "supported_targets": ["gfx950"]
     }
   ]
 }

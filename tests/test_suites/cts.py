@@ -139,8 +139,8 @@ def build(case: CorpusCase, context: RunContext) -> BuildResult | None:
         configure_cmd.append(
             "-DCMAKE_HIP_ARCHITECTURES=" + ";".join(hip_architectures)
         )
-    rocm_path = _detect_rocm_path()
-    if rocm_path:
+    rocm_path = os.getenv("ROCM_PATH")
+    if rocm_path and (Path(rocm_path) / "lib" / "cmake" / "hip" / "hip-config.cmake").exists():
         configure_cmd.append(f"-DROCM_PATH={rocm_path}")
 
     _run_command(
@@ -265,18 +265,3 @@ def _resolve_command(command: list[str]) -> list[str]:
     if tool is None:
         raise RuntimeError(f"Missing required tool '{first}' in PATH")
     return [tool] + command[1:]
-
-
-def _detect_rocm_path() -> str | None:
-    env_value = os.getenv("ROCM_PATH")
-    if env_value and _has_hip_config(Path(env_value)):
-        return env_value
-
-    for candidate in (Path("/opt/rocm"), Path("/opt/rocm-7.2.4")):
-        if _has_hip_config(candidate):
-            return str(candidate)
-    return None
-
-
-def _has_hip_config(root: Path) -> bool:
-    return (root / "lib" / "cmake" / "hip" / "hip-config.cmake").exists()
