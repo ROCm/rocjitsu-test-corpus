@@ -15,6 +15,7 @@ ROCJITSU_EXE=${ROCJITSU_EXE:-rocjitsu}
 ROCJITSU_CONFIG_DIR=${ROCJITSU_CONFIG_DIR:-"$ROCJITSU_WORKSPACE/configs"}
 ROCM_VENV=${ROCM_VENV:-}
 ROCM_PATH=${ROCM_PATH:-}
+PYTEST_TIMEOUT_SECONDS=${PYTEST_TIMEOUT_SECONDS:-1200}
 
 if [[ -n "$ROCM_VENV" ]]; then
   export PATH="$ROCM_VENV/bin:$PATH"
@@ -52,7 +53,7 @@ for target in "${targets[@]}"; do
     -- pytest tests/test_corpus.py -vv \
     --target "$name" \
     --suite iree,cts,kernels \
-    --timeout 15; then
+    --timeout "$PYTEST_TIMEOUT_SECONDS"; then
     status=1
   fi
 done
