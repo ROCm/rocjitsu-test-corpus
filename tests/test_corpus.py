@@ -34,6 +34,7 @@ def pytest_generate_tests(metafunc):
     config = metafunc.config
     target = _resolve_target(target_name=config.getoption("target"))
     requested_suites = parse_csv_values(config.getoption("suite"))
+    run_tests_config = _load_run_tests_config(config.getoption("run_tests_config"))
 
     discovered = []
     suite_config_cache = {}
@@ -47,35 +48,40 @@ def pytest_generate_tests(metafunc):
         exclude_suites=parse_csv_values(config.getoption("exclude_suite")),
         include_backends=parse_csv_values(config.getoption("backend")),
         exclude_backends=parse_csv_values(config.getoption("exclude_backend")),
-        include_cases=parse_csv_values(config.getoption("case")),
+        include_cases=_resolve_include_cases(
+            parse_csv_values(config.getoption("case")),
+            run_tests_config,
+            selected_suites,
+        ),
         exclude_cases=parse_csv_values(config.getoption("exclude_case")),
     )
 
-    target_cases = []
-    for suite in selected_suites:
-        suite_module = SUITE_MODULES[suite]
-        if suite not in suite_config_cache:
-            suite_config_cache[suite] = suite_module.load_target_configs(
-                tuple(str(path) for path in suite_module.default_config_files())
+    if run_tests_config is None or selection.include_cases:
+        target_cases = []
+        for suite in selected_suites:
+            suite_module = SUITE_MODULES[suite]
+            if suite not in suite_config_cache:
+                suite_config_cache[suite] = suite_module.load_target_configs(
+                    tuple(str(path) for path in suite_module.default_config_files())
+                )
+            discovered_suite_cases = suite_module.discover(
+                target, suite_config_cache[suite]
             )
-        discovered_suite_cases = suite_module.discover(
-            target, suite_config_cache[suite]
-        )
-        coalesce_cases = getattr(suite_module, "coalesce_cases", None)
-        if coalesce_cases is None:
-            target_cases.extend(filter_cases(discovered_suite_cases, selection))
-            continue
+            coalesce_cases = getattr(suite_module, "coalesce_cases", None)
+            if coalesce_cases is None:
+                target_cases.extend(filter_cases(discovered_suite_cases, selection))
+                continue
 
-        skip_selectors = skip_tests_config.get(suite, ())
-        target_cases.extend(
-            _filter_coalesced_suite_cases(
-                discovered_suite_cases,
-                selection,
-                skip_selectors,
-                coalesce_cases,
+            skip_selectors = skip_tests_config.get(suite, ())
+            target_cases.extend(
+                _filter_coalesced_suite_cases(
+                    discovered_suite_cases,
+                    selection,
+                    skip_selectors,
+                    coalesce_cases,
+                )
             )
-        )
-    discovered.extend(target_cases)
+        discovered.extend(target_cases)
 
     cases = discovered
     config._corpus_target = target.target
@@ -254,34 +260,48 @@ def _load_skip_tests_config(path_value: str | None) -> dict[str, tuple[str, ...]
     if path_value is None:
         return {}
 
+    return _load_suite_selector_config(path_value, "--skip-tests-config")
+
+
+def _load_run_tests_config(path_value: str | None) -> dict[str, tuple[str, ...]] | None:
+    if path_value is None:
+        return None
+
+    return _load_suite_selector_config(path_value, "--run-tests-config")
+
+
+def _load_suite_selector_config(
+    path_value: str,
+    option_name: str,
+) -> dict[str, tuple[str, ...]]:
     path = resolve_repo_path(REPO_ROOT, path_value)
     try:
         with path.open("r", encoding="utf-8") as f:
             payload = json.load(f)
     except OSError as exc:
         raise pytest.UsageError(
-            f"Could not read skip tests config {path}: {exc}"
+            f"Could not read {option_name} config {path}: {exc}"
         ) from exc
     except json.JSONDecodeError as exc:
-        raise pytest.UsageError(f"Invalid skip tests config {path}: {exc}") from exc
+        raise pytest.UsageError(f"Invalid {option_name} config {path}: {exc}") from exc
 
     if not isinstance(payload, dict):
         raise pytest.UsageError(f"{path} must contain an object keyed by suite name")
 
-    skip_tests_config: dict[str, tuple[str, ...]] = {}
+    selector_config: dict[str, tuple[str, ...]] = {}
     for suite, selectors in payload.items():
         if suite not in SUITE_MODULES:
             allowed = ", ".join(sorted(SUITE_MODULES))
             raise pytest.UsageError(
                 f"{path} has unknown suite '{suite}'. Allowed suites: {allowed}"
             )
-        skip_tests_config[suite] = tuple(
-            _validate_skip_test_selectors(path, suite, selectors)
+        selector_config[suite] = tuple(
+            _validate_suite_selectors(path, suite, selectors)
         )
-    return skip_tests_config
+    return selector_config
 
 
-def _validate_skip_test_selectors(path: Path, suite: str, selectors) -> list[str]:
+def _validate_suite_selectors(path: Path, suite: str, selectors) -> list[str]:
     if not isinstance(selectors, list):
         raise pytest.UsageError(f"{path} field '{suite}' must be a list")
     for selector in selectors:
@@ -290,3 +310,17 @@ def _validate_skip_test_selectors(path: Path, suite: str, selectors) -> list[str
                 f"{path} field '{suite}' must contain non-empty strings"
             )
     return selectors
+
+
+def _resolve_include_cases(
+    requested_cases: tuple[str, ...],
+    run_tests_config: dict[str, tuple[str, ...]] | None,
+    selected_suites: tuple[str, ...],
+) -> tuple[str, ...]:
+    if run_tests_config is None:
+        return requested_cases
+
+    configured_cases = []
+    for suite in selected_suites:
+        configured_cases.extend(run_tests_config.get(suite, ()))
+    return (*requested_cases, *configured_cases)
