@@ -58,8 +58,26 @@ def pytest_generate_tests(metafunc):
             suite_config_cache[suite] = suite_module.load_target_configs(
                 tuple(str(path) for path in suite_module.default_config_files())
             )
-        target_cases.extend(suite_module.discover(target, suite_config_cache[suite]))
-    discovered.extend(filter_cases(target_cases, selection))
+        suite_cases = filter_cases(
+            suite_module.discover(target, suite_config_cache[suite]), selection
+        )
+        coalesce_cases = getattr(suite_module, "coalesce_cases", None)
+        if coalesce_cases is None:
+            target_cases.extend(suite_cases)
+            continue
+
+        skip_selectors = skip_tests_config.get(suite, ())
+        standalone_cases = [
+            case for case in suite_cases if _must_stay_standalone(case, skip_selectors)
+        ]
+        coalescible_cases = [
+            case
+            for case in suite_cases
+            if case not in standalone_cases
+        ]
+        target_cases.extend(coalesce_cases(coalescible_cases))
+        target_cases.extend(standalone_cases)
+    discovered.extend(target_cases)
 
     cases = discovered
     config._corpus_target = target.target
@@ -95,6 +113,10 @@ def run_context(pytestconfig) -> RunContext:
         repo_root=REPO_ROOT,
         artifact_directory=artifact_directory,
         skip_all_runs=pytestconfig.getoption("skip_all_runs"),
+        ctest_jobs=_positive_int_option(pytestconfig, "ctest_jobs", "--ctest-jobs"),
+        ctest_timeout=_positive_int_option(
+            pytestconfig, "ctest_timeout", "--ctest-timeout"
+        ),
     )
 
 
@@ -126,6 +148,22 @@ def _validate_selected_suites(selected_suites) -> None:
             raise pytest.UsageError(
                 f"Unknown suite '{suite}'. Allowed suites: {allowed}"
             )
+
+
+def _positive_int_option(config, option_name: str, display_name: str) -> int:
+    value = config.getoption(option_name)
+    if value <= 0:
+        raise pytest.UsageError(f"{display_name} must be a positive integer")
+    return value
+
+
+def _must_stay_standalone(case, skip_selectors: tuple[str, ...]) -> bool:
+    return (
+        matches_case_selector(case, skip_selectors)
+        or case.expected_compile_failure
+        or case.expected_run_failure
+        or str(case.metadata.get("name", "")).startswith("fpsan_neg_")
+    )
 
 
 def _load_skip_tests_config(path_value: str | None) -> dict[str, tuple[str, ...]]:
@@ -168,5 +206,3 @@ def _validate_skip_test_selectors(path: Path, suite: str, selectors) -> list[str
                 f"{path} field '{suite}' must contain non-empty strings"
             )
     return selectors
-
-

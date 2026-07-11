@@ -65,7 +65,9 @@ Run through RocJITsu with all valid test suites for that target:
 rocjitsu --config /path/to/gfx1201.json -- \
   pytest tests/test_corpus.py \
   --target gfx1201 \
-  --timeout 15
+  --timeout 1200 \
+  --ctest-jobs 16 \
+  --ctest-timeout 200
 ```
 
 Run the RocJITsu corpus matrix for all configured gfx targets:
@@ -84,7 +86,9 @@ rocjitsu --config /path/to/gfx1201.json -- \
   pytest tests/test_corpus.py \
   --target gfx1201 \
   --suite kernels,cts \
-  --timeout 15
+  --timeout 1200 \
+  --ctest-jobs 16 \
+  --ctest-timeout 200
 ```
 
 Run selected cases:
@@ -95,7 +99,9 @@ rocjitsu --config /path/to/gfx1201.json -- \
   --target gfx1201 \
   --suite cts \
   --case fpsan_wmma \
-  --timeout 15
+  --timeout 1200 \
+  --ctest-jobs 16 \
+  --ctest-timeout 200
 ```
 
 Run with a list of tests to skip:
@@ -123,4 +129,8 @@ Useful selectors:
 - `--timeout <seconds>`: fail an individual pytest case if it exceeds this
   runtime. This is provided by `pytest-timeout` and is not a timeout for the
   entire script; use `--session-timeout <seconds>` for a whole-session limit.
+- `--ctest-jobs <jobs>`: number of parallel CTest jobs to use inside CTS cases.
+  The matrix helper defaults to `16`.
+- `--ctest-timeout <seconds>`: CTest per-test timeout for CTS cases. The default
+  is `200`.
 - `--skip-all-runs`: build or compile only where supported.
