@@ -94,8 +94,6 @@ def pytest_addoption(parser):
         type=int,
         default=200,
         help="Per-CTest-case timeout in seconds for CTS cases.",
-    )
-    parser.addoption(
         "--run-tests-config",
         action="store",
         default=None,
