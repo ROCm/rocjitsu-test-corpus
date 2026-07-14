@@ -5,7 +5,6 @@ TESTS_DIR = Path(__file__).resolve().parent / "tests"
 if str(TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(TESTS_DIR))
 
-
 def pytest_addoption(parser):
     parser.addoption(
         "--target",
@@ -72,20 +71,6 @@ def pytest_addoption(parser):
         action="store_true",
         default=False,
         help="Build/compile only and skip runtime execution where supported.",
-    )
-    parser.addoption(
-        "--ctest-jobs",
-        action="store",
-        type=int,
-        default=1,
-        help="Number of parallel CTest jobs to use for CTS cases.",
-    )
-    parser.addoption(
-        "--ctest-timeout",
-        action="store",
-        type=int,
-        default=200,
-        help="Per-CTest-case timeout in seconds for CTS cases.",
     )
 
 
