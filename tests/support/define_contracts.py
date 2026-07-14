@@ -47,6 +47,8 @@ class RunContext:
     repo_root: Path
     artifact_directory: Path
     skip_all_runs: bool
+    ctest_jobs: int
+    ctest_timeout: int
 
 
 @dataclass(frozen=True)

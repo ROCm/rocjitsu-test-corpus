@@ -70,6 +70,12 @@ find_package(hip REQUIRED CONFIG)
 
 enable_testing()
 
+option(
+    CTS_CTEST_PER_CASE
+    "Register each GoogleTest TEST() as a separate CTest entry"
+    ON
+)
+
 # Match upstream hip-fpsan: prefer an installed GoogleTest package, otherwise
 # fetch the pinned release at configure time. Offline runs can provide a local
 # checkout with -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=<path>.
@@ -86,6 +92,7 @@ if(NOT TARGET GTest::gtest_main)
     )
     FetchContent_MakeAvailable(googletest)
 endif()
+include(GoogleTest)
 
 set(FPSAN_TESTS_THIRD_PARTY_DIR "${CMAKE_CURRENT_LIST_DIR}/third_party")
 
@@ -136,6 +143,11 @@ function(fpsan_add_cxx_test target_name source)
     )
     if(NOT FPSAN_TEST_NO_GTEST)
         target_link_libraries(${target_name} PRIVATE GTest::gtest_main)
+        if(CTS_CTEST_PER_CASE)
+            gtest_discover_tests(${target_name}
+                TEST_PREFIX "${target_name}.")
+            return()
+        endif()
     endif()
     add_test(NAME ${target_name} COMMAND ${target_name})
 endfunction()
@@ -170,6 +182,11 @@ function(fpsan_add_hip_test target_name source)
     target_link_libraries(${target_name} PRIVATE hip::device)
     if(NOT FPSAN_TEST_NO_GTEST)
         target_link_libraries(${target_name} PRIVATE GTest::gtest_main)
+        if(CTS_CTEST_PER_CASE)
+            gtest_discover_tests(${target_name}
+                TEST_PREFIX "${target_name}.")
+            return()
+        endif()
     endif()
     add_test(NAME ${target_name} COMMAND ${target_name})
 endfunction()

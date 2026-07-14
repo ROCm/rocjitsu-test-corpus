@@ -3,7 +3,7 @@
 Vendored from:
 
 - Repository: https://github.com/ROCm/hip-fpsan.git
-- Commit: 59a6dec60030cee91328f01919b977ebaa42e11f
+- Commit: 0ac9be8a1539a473ba21dfa686564c3be33c890e
 - License: MIT, see `LICENSE.md`
 
 Only the header-only `include/fpsan` library is vendored here for FPSan tests.

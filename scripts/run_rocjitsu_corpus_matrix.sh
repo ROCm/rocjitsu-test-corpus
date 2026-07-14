@@ -15,6 +15,9 @@ ROCJITSU_EXE=${ROCJITSU_EXE:-rocjitsu}
 ROCJITSU_CONFIG_DIR=${ROCJITSU_CONFIG_DIR:-"$ROCJITSU_WORKSPACE/configs"}
 ROCM_VENV=${ROCM_VENV:-}
 ROCM_PATH=${ROCM_PATH:-}
+PYTEST_TIMEOUT_SECONDS=${PYTEST_TIMEOUT_SECONDS:-1200}
+ROCJITSU_CORPUS_CTEST_JOBS=${ROCJITSU_CORPUS_CTEST_JOBS:-16}
+ROCJITSU_CORPUS_CTEST_TIMEOUT=${ROCJITSU_CORPUS_CTEST_TIMEOUT:-200}
 
 if [[ -n "$ROCM_VENV" ]]; then
   export PATH="$ROCM_VENV/bin:$PATH"
@@ -33,8 +36,8 @@ export ROCM_PATH
 export LD_LIBRARY_PATH="$ROCM_PATH/lib:${LD_LIBRARY_PATH:-}"
 
 targets=(
-  "gfx942 gfx942_cdna3.json"
-  "gfx950 gfx950_cdna4.json"
+  "gfx942 gfx942_cdna3_kmd.json"
+  "gfx950 gfx950_cdna4_kmd.json"
   "gfx1100 gfx1100_w7900.json"
   "gfx1201 gfx1201_r9700.json"
   "gfx1250 gfx1250.json"
@@ -52,7 +55,9 @@ for target in "${targets[@]}"; do
     -- pytest tests/test_corpus.py -vv \
     --target "$name" \
     --suite iree,cts,kernels \
-    --timeout 15; then
+    --timeout "$PYTEST_TIMEOUT_SECONDS" \
+    --ctest-jobs "$ROCJITSU_CORPUS_CTEST_JOBS" \
+    --ctest-timeout "$ROCJITSU_CORPUS_CTEST_TIMEOUT"; then
     status=1
   fi
 done
