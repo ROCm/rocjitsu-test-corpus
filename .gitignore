@@ -6,3 +6,4 @@ gfx1250-regression-*/
 __pycache__/
 *.py[cod]
 *.log
+pytest-results.xml
