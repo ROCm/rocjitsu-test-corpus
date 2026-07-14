@@ -120,7 +120,6 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
         run_dir,
         materialized_inputs,
         run_wrapper=None,
-        case_timeout_seconds=None,
     )
 
 
