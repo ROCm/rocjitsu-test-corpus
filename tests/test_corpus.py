@@ -101,6 +101,7 @@ def run_context(pytestconfig) -> RunContext:
         repo_root=REPO_ROOT,
         artifact_directory=artifact_directory,
         skip_all_runs=pytestconfig.getoption("skip_all_runs"),
+        run_wrapper=pytestconfig.getoption("run_wrapper"),
     )
 
 

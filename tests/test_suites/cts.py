@@ -176,15 +176,16 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     if test_name in case.metadata["target_config"].get("skip_run_tests", []):
         return
 
+    ctest_command = [
+        "ctest",
+        "--test-dir",
+        str(build_dir),
+        "-R",
+        f"^{re.escape(test_name)}$",
+        "--output-on-failure",
+    ]
     _run_command(
-        [
-            "ctest",
-            "--test-dir",
-            str(build_dir),
-            "-R",
-            f"^{re.escape(test_name)}$",
-            "--output-on-failure",
-        ],
+        _run_wrapper_command(context.run_wrapper) + ctest_command,
         cwd=REPO_ROOT,
         log_path=logs_dir / f"{safe_name}.ctest.log",
         phase="ctest",
@@ -201,6 +202,14 @@ def _sanitize_id_component(value: str) -> str:
 
 def _sanitize_log_component(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", value)
+
+
+def _run_wrapper_command(run_wrapper: str | list[str] | None) -> list[str]:
+    if run_wrapper is None:
+        return []
+    if isinstance(run_wrapper, str):
+        return shlex.split(run_wrapper)
+    return [str(part) for part in run_wrapper]
 
 
 def _run_command(

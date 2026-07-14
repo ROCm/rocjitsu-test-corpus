@@ -79,7 +79,7 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
         target_config,
         str(context.artifact_directory),
         compile_only=compile_only,
-        run_wrapper=None,
+        run_wrapper=context.run_wrapper,
     )
 
 

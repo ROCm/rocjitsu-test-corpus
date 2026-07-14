@@ -119,7 +119,7 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
         build_result.executable_path,
         run_dir,
         materialized_inputs,
-        run_wrapper=None,
+        run_wrapper=context.run_wrapper,
     )
 
 

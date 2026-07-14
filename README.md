@@ -98,6 +98,14 @@ rocjitsu --config /path/to/gfx1201.json -- \
   --timeout 15
 ```
 
+Run suite runtime commands through a wrapper:
+
+```bash
+pytest tests/test_corpus.py \
+  --target gfx1201 \
+  --run-wrapper "rocjitsu --config ${CONFIG} --"
+```
+
 Run with a list of tests to skip:
 
 ```bash
@@ -120,6 +128,8 @@ Useful selectors:
 - `--exclude-case <selector>`: exclude a case.
 - `--artifact-directory <path>`: write build artifacts, logs, and generated
   outputs somewhere other than `.pytest-artifacts`.
+- `--run-wrapper <command>`: prepend a shell-style command prefix to IREE,
+  kernels, and CTS runtime commands.
 - `--timeout <seconds>`: fail an individual pytest case if it exceeds this
   runtime. This is provided by `pytest-timeout` and is not a timeout for the
   entire script; use `--session-timeout <seconds>` for a whole-session limit.
