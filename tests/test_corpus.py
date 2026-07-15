@@ -115,9 +115,14 @@ def build_manager(run_context) -> BuildManager:
     return BuildManager(run_context)
 
 
-def test_corpus_case(corpus_case, run_context, build_manager):
+@pytest.fixture
+def build_result(corpus_case, build_manager):
     suite_module = SUITE_MODULES[corpus_case.suite]
-    build_result = build_manager.ensure_built(corpus_case, suite_module)
+    return build_manager.ensure_built(corpus_case, suite_module)
+
+
+def test_corpus_case(corpus_case, run_context, build_result):
+    suite_module = SUITE_MODULES[corpus_case.suite]
     suite_module.run(corpus_case, build_result, run_context)
 
 

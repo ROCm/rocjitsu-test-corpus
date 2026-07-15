@@ -22,6 +22,8 @@ CONFIGS_ROOT = REPO_ROOT / "corpus" / "cts" / "configs"
 CTS_SOURCE_DIR = REPO_ROOT / "corpus" / "cts"
 TEST_CASES_ROOT = CTS_SOURCE_DIR / "test_cases"
 
+_CONFIGURED_BUILD_DIRS: set[Path] = set()
+
 
 def default_config_files() -> tuple[Path, ...]:
     return tuple(sorted(CONFIGS_ROOT.glob("*.json")))
@@ -61,6 +63,7 @@ def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]
                     build={
                         "system": "cmake_ctest",
                         "config_name": target_config["config_name"],
+                        "target": test_name,
                     },
                     run={"kind": "ctest_case"},
                     metadata={
@@ -127,28 +130,16 @@ def build(case: CorpusCase, context: RunContext) -> BuildResult | None:
     logs_dir = build_root / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    configure_cmd = [
-        "cmake",
-        "-S",
-        str(CTS_SOURCE_DIR),
-        "-B",
-        str(build_dir),
-    ]
-    hip_architectures = target_config.get("hip_architectures", [])
-    if hip_architectures:
-        configure_cmd.append(
-            "-DCMAKE_HIP_ARCHITECTURES=" + ";".join(hip_architectures)
+    _ensure_configured(target_config, build_dir, logs_dir)
+    test_name = case.metadata["name"]
+    if not test_name.startswith("fpsan_neg_"):
+        safe_name = _sanitize_log_component(test_name)
+        _run_command(
+            ["cmake", "--build", str(build_dir), "--target", test_name],
+            cwd=REPO_ROOT,
+            log_path=logs_dir / f"{safe_name}.build.log",
+            phase="build",
         )
-    rocm_path = os.getenv("ROCM_PATH")
-    if rocm_path and (Path(rocm_path) / "lib" / "cmake" / "hip" / "hip-config.cmake").exists():
-        configure_cmd.append(f"-DROCM_PATH={rocm_path}")
-
-    _run_command(
-        configure_cmd,
-        cwd=REPO_ROOT,
-        log_path=logs_dir / "configure.log",
-        phase="configure",
-    )
 
     return BuildResult(
         build_dir=build_dir,
@@ -164,14 +155,6 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     build_dir = build_result.build_dir
     logs_dir = Path(build_result.metadata["logs_dir"])
     safe_name = _sanitize_log_component(test_name)
-
-    if not test_name.startswith("fpsan_neg_"):
-        _run_command(
-            ["cmake", "--build", str(build_dir), "--target", test_name],
-            cwd=REPO_ROOT,
-            log_path=logs_dir / f"{safe_name}.build.log",
-            phase="build",
-        )
 
     if test_name in case.metadata["target_config"].get("skip_run_tests", []):
         return
@@ -214,6 +197,37 @@ def _run_wrapper_command(run_wrapper: str | list[str] | None) -> list[str]:
 
 def _suite_shard(case: CorpusCase) -> str:
     return str(case.build.get("suite_shard", "cts_shard_0"))
+
+
+def _ensure_configured(target_config: dict, build_dir: Path, logs_dir: Path) -> None:
+    if build_dir in _CONFIGURED_BUILD_DIRS:
+        return
+
+    configure_cmd = [
+        "cmake",
+        "-S",
+        str(CTS_SOURCE_DIR),
+        "-B",
+        str(build_dir),
+    ]
+    hip_architectures = target_config.get("hip_architectures", [])
+    if hip_architectures:
+        configure_cmd.append(
+            "-DCMAKE_HIP_ARCHITECTURES=" + ";".join(hip_architectures)
+        )
+    rocm_path = os.getenv("ROCM_PATH")
+    if rocm_path:
+        hip_config = Path(rocm_path) / "lib" / "cmake" / "hip" / "hip-config.cmake"
+        if hip_config.exists():
+            configure_cmd.append(f"-DROCM_PATH={rocm_path}")
+
+    _run_command(
+        configure_cmd,
+        cwd=REPO_ROOT,
+        log_path=logs_dir / "configure.log",
+        phase="configure",
+    )
+    _CONFIGURED_BUILD_DIRS.add(build_dir)
 
 
 def _run_command(

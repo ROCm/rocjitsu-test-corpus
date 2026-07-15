@@ -62,10 +62,17 @@ def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]
 
 
 def build(case: CorpusCase, context: RunContext) -> BuildResult | None:
+    target_config = dict(case.metadata["target_config"])
+    artifact_directory = _artifact_directory_for_case(case, context)
+    metadata = legacy_iree.build_case(
+        case.metadata["case_path"],
+        target_config,
+        artifact_directory,
+    )
     return BuildResult(
         build_dir=None,
         executable_path=None,
-        metadata={},
+        metadata=metadata,
     )
 
 
@@ -74,18 +81,24 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     compile_only = context.skip_all_runs or (
         case.metadata["name"] in target_config.get("skip_run_tests", [])
     )
-    artifact_directory = context.artifact_directory
-    suite_shard = case.build.get("suite_shard")
-    if suite_shard:
-        artifact_directory = artifact_directory / "_suite_shards" / str(suite_shard)
+    artifact_directory = _artifact_directory_for_case(case, context)
     legacy_iree.run_case(
         case.metadata["case_path"],
         target_config,
-        str(artifact_directory),
+        artifact_directory,
         compile_only=compile_only,
         run_wrapper=context.run_wrapper,
+        modules=build_result.metadata["modules"],
     )
 
 
 def _supports_target(target: TargetSpec, target_config: dict) -> bool:
     return supports_target(target, target_config)
+
+
+def _artifact_directory_for_case(case: CorpusCase, context: RunContext) -> Path:
+    artifact_directory = context.artifact_directory
+    suite_shard = case.build.get("suite_shard")
+    if suite_shard:
+        artifact_directory = artifact_directory / "_suite_shards" / str(suite_shard)
+    return artifact_directory
