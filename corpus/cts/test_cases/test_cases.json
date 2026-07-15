@@ -3,19 +3,23 @@
   "cases": [
     {
       "name": "fpsan_neg_cross_mode",
-      "supported_targets": ["gfx942", "gfx950", "gfx1100", "gfx1201"]
+      "supported_targets": ["gfx942", "gfx950", "gfx1100", "gfx1201"],
+      "compile_fail": true
     },
     {
       "name": "fpsan_neg_explicit_ctor",
-      "supported_targets": ["gfx942", "gfx950", "gfx1100", "gfx1201"]
+      "supported_targets": ["gfx942", "gfx950", "gfx1100", "gfx1201"],
+      "compile_fail": true
     },
     {
       "name": "fpsan_neg_explicit_mixed_pod",
-      "supported_targets": ["gfx942", "gfx950", "gfx1100", "gfx1201"]
+      "supported_targets": ["gfx942", "gfx950", "gfx1100", "gfx1201"],
+      "compile_fail": true
     },
     {
       "name": "fpsan_neg_non_float_type",
-      "supported_targets": ["gfx942", "gfx950", "gfx1100", "gfx1201"]
+      "supported_targets": ["gfx942", "gfx950", "gfx1100", "gfx1201"],
+      "compile_fail": true
     },
     {
       "name": "fpsan_build_canary",

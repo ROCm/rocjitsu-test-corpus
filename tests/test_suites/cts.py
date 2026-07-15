@@ -13,7 +13,13 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from support.define_contracts import BuildResult, CorpusCase, RunContext, TargetSpec
+from support.define_contracts import (
+    BuildResult,
+    BuildState,
+    CorpusCase,
+    RunContext,
+    TargetSpec,
+)
 from support.prepare_inputs import load_json, load_suite_target_configs, supports_target
 
 
@@ -21,7 +27,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIGS_ROOT = REPO_ROOT / "corpus" / "cts" / "configs"
 CTS_SOURCE_DIR = REPO_ROOT / "corpus" / "cts"
 TEST_CASES_ROOT = CTS_SOURCE_DIR / "test_cases"
-
 
 def default_config_files() -> tuple[Path, ...]:
     return tuple(sorted(CONFIGS_ROOT.glob("*.json")))
@@ -61,6 +66,7 @@ def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]
                     build={
                         "system": "cmake_ctest",
                         "config_name": target_config["config_name"],
+                        "target": test_name,
                     },
                     run={"kind": "ctest_case"},
                     metadata={
@@ -97,7 +103,7 @@ def discover_cases() -> list[dict]:
 def _validate_case_entry(case_file: Path, entry: dict) -> None:
     if not isinstance(entry, dict):
         raise ValueError(f"{case_file} case entries must be objects")
-    allowed_fields = {"name", "supported_targets"}
+    allowed_fields = {"name", "supported_targets", "compile_fail"}
     unknown = sorted(set(entry) - allowed_fields)
     if unknown:
         joined = ", ".join(unknown)
@@ -117,38 +123,38 @@ def _validate_case_entry(case_file: Path, entry: dict) -> None:
             raise ValueError(
                 f"{case_file} has unsupported target '{supported_target}'"
             )
+    compile_fail = entry.get("compile_fail", False)
+    if not isinstance(compile_fail, bool):
+        raise ValueError(f"{case_file} case field 'compile_fail' must be a boolean")
 
 
-def build(case: CorpusCase, context: RunContext) -> BuildResult | None:
+def build(
+    case: CorpusCase,
+    context: RunContext,
+    build_state: BuildState,
+) -> BuildResult | None:
     target_config = case.metadata["target_config"]
     config_name = target_config["config_name"]
-    build_root = context.artifact_directory / "cts" / config_name
+    build_root = context.artifact_directory / "cts" / _suite_shard(case) / config_name
     build_dir = build_root / "build"
     logs_dir = build_root / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    configure_cmd = [
-        "cmake",
-        "-S",
-        str(CTS_SOURCE_DIR),
-        "-B",
-        str(build_dir),
-    ]
-    hip_architectures = target_config.get("hip_architectures", [])
-    if hip_architectures:
-        configure_cmd.append(
-            "-DCMAKE_HIP_ARCHITECTURES=" + ";".join(hip_architectures)
-        )
-    rocm_path = os.getenv("ROCM_PATH")
-    if rocm_path and (Path(rocm_path) / "lib" / "cmake" / "hip" / "hip-config.cmake").exists():
-        configure_cmd.append(f"-DROCM_PATH={rocm_path}")
-
-    _run_command(
-        configure_cmd,
-        cwd=REPO_ROOT,
-        log_path=logs_dir / "configure.log",
-        phase="configure",
+    build_state.configured_build_dirs = _ensure_configured(
+        target_config,
+        build_dir,
+        logs_dir,
+        build_state.configured_build_dirs,
     )
+    test_name = case.metadata["name"]
+    if not case.metadata["cts_case"].get("compile_fail", False):
+        safe_name = _sanitize_log_component(test_name)
+        _run_command(
+            ["cmake", "--build", str(build_dir), "--target", test_name],
+            cwd=REPO_ROOT,
+            log_path=logs_dir / f"{safe_name}.build.log",
+            phase="build",
+        )
 
     return BuildResult(
         build_dir=build_dir,
@@ -164,14 +170,6 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     build_dir = build_result.build_dir
     logs_dir = Path(build_result.metadata["logs_dir"])
     safe_name = _sanitize_log_component(test_name)
-
-    if not test_name.startswith("fpsan_neg_"):
-        _run_command(
-            ["cmake", "--build", str(build_dir), "--target", test_name],
-            cwd=REPO_ROOT,
-            log_path=logs_dir / f"{safe_name}.build.log",
-            phase="build",
-        )
 
     if test_name in case.metadata["target_config"].get("skip_run_tests", []):
         return
@@ -210,6 +208,46 @@ def _run_wrapper_command(run_wrapper: str | list[str] | None) -> list[str]:
     if isinstance(run_wrapper, str):
         return shlex.split(run_wrapper)
     return [str(part) for part in run_wrapper]
+
+
+def _suite_shard(case: CorpusCase) -> str:
+    return str(case.build.get("suite_shard", "cts_shard_0"))
+
+
+def _ensure_configured(
+    target_config: dict,
+    build_dir: Path,
+    logs_dir: Path,
+    configured_build_dirs: frozenset[Path],
+) -> frozenset[Path]:
+    if build_dir in configured_build_dirs:
+        return configured_build_dirs
+
+    configure_cmd = [
+        "cmake",
+        "-S",
+        str(CTS_SOURCE_DIR),
+        "-B",
+        str(build_dir),
+    ]
+    hip_architectures = target_config.get("hip_architectures", [])
+    if hip_architectures:
+        configure_cmd.append(
+            "-DCMAKE_HIP_ARCHITECTURES=" + ";".join(hip_architectures)
+        )
+    rocm_path = os.getenv("ROCM_PATH")
+    if rocm_path:
+        hip_config = Path(rocm_path) / "lib" / "cmake" / "hip" / "hip-config.cmake"
+        if hip_config.exists():
+            configure_cmd.append(f"-DROCM_PATH={rocm_path}")
+
+    _run_command(
+        configure_cmd,
+        cwd=REPO_ROOT,
+        log_path=logs_dir / "configure.log",
+        phase="configure",
+    )
+    return configured_build_dirs | {build_dir}
 
 
 def _run_command(

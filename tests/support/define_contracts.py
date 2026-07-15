@@ -50,6 +50,13 @@ class RunContext:
     run_wrapper: str | None = None
 
 
+@dataclass
+class BuildState:
+    """Mutable build coordination state owned by a single BuildManager session."""
+
+    configured_build_dirs: frozenset[Path] = frozenset()
+
+
 @dataclass(frozen=True)
 class BuildResult:
     build_dir: Path | None

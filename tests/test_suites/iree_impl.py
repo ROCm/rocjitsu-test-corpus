@@ -144,7 +144,7 @@ def case_id(case_path, target_config):
     return f"{target_config['config_name']}::{relative.as_posix()}::{case['name']}"
 
 
-def run_case(case_path, target_config, artifact_directory, *, compile_only=False, run_wrapper=None):
+def build_case(case_path, target_config, artifact_directory):
     case_path = Path(case_path).resolve()
     case_dir = case_path.parent
     case = load_case(case_path)
@@ -162,6 +162,30 @@ def run_case(case_path, target_config, artifact_directory, *, compile_only=False
         )
         for source, vmfb_name in zip(case["sources"], case["vmfb_names"])
     ]
+    return {
+        "modules": tuple(modules),
+        "run_dir": run_dir,
+    }
+
+
+def run_case(
+    case_path,
+    target_config,
+    artifact_directory,
+    *,
+    compile_only=False,
+    run_wrapper=None,
+    modules=None,
+):
+    case_path = Path(case_path).resolve()
+    case_dir = case_path.parent
+    case = load_case(case_path)
+    if modules is None:
+        modules = build_case(case_path, target_config, artifact_directory)["modules"]
+
+    artifact_root = resolve_repo_path(artifact_directory)
+    run_dir = _run_dir(artifact_root, target_config, case_path, case)
+    run_dir.mkdir(parents=True, exist_ok=True)
 
     if compile_only or case.get("compile_only", False):
         return
@@ -198,14 +222,17 @@ def compile_source(*, source, vmfb_name, case, target_config, artifact_root):
     source = Path(source).resolve()
     if not source.exists():
         raise FileNotFoundError(source)
+    artifact_root = Path(artifact_root).resolve()
 
     compile_flags = (
         list(target_config.get("iree_compile_flags", [])) + list(case.get("compile_flags", []))
     )
     cache_key = (
+        str(artifact_root),
+        target_config["config_name"],
         str(source),
-        tuple(target_config.get("iree_compile_flags", [])),
-        tuple(case.get("compile_flags", [])),
+        Path(vmfb_name).name,
+        tuple(compile_flags),
     )
     cached = _COMPILE_CACHE.get(cache_key)
     if cached and cached.exists():
