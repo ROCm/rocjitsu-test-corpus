@@ -92,7 +92,6 @@ def load_target_configs(config_files):
             "$schema",
             "iree_compile_flags",
             "iree_run_module_flags",
-            "iree_run_module_wrapper",
             "expected_compile_failures",
             "expected_run_failures",
         },
@@ -181,16 +180,15 @@ def run_case(case_path, target_config, artifact_directory, *, compile_only=False
         + [f"--input=@{path}" for path in inputs]
         + [f"--output=@{path}" for path in outputs]
     )
-    command = run_module_wrapper(run_wrapper, target_config) + iree_run_module_command
+    command = run_module_wrapper(run_wrapper) + iree_run_module_command
     _run_command(command, cwd=case_dir, log_path=run_dir / "run.log", phase="run")
     validate_outputs(case, case_dir, inputs, outputs)
 
 
-def run_module_wrapper(run_wrapper, target_config):
+def run_module_wrapper(run_wrapper):
     if run_wrapper is None:
-        wrapper = target_config.get("iree_run_module_wrapper", [])
-    else:
-        wrapper = run_wrapper
+        return []
+    wrapper = run_wrapper
     if isinstance(wrapper, str):
         return shlex.split(wrapper)
     return list(wrapper)
