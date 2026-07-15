@@ -82,6 +82,15 @@ def pytest_addoption(parser):
         help="Build/compile only and skip runtime execution where supported.",
     )
     parser.addoption(
+        "--run-wrapper",
+        action="store",
+        default=None,
+        help=(
+            "Shell-style command prefix for suite runtime commands, for example "
+            "'rocjitsu --config /path/to/config.json --'."
+        ),
+    )
+    parser.addoption(
         "--run-tests-config",
         action="store",
         default=None,

@@ -39,13 +39,6 @@
       },
       "description": "Flags passed to iree-run-module for every case using this target."
     },
-    "iree_run_module_wrapper": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "description": "Optional command prefix inserted before iree-run-module, such as a RocJITsu launcher and its flags."
-    },
     "skip_compile_tests": {
       "$ref": "#/$defs/caseNameList",
       "description": "Case names skipped before compilation."

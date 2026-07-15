@@ -47,6 +47,7 @@ class RunContext:
     repo_root: Path
     artifact_directory: Path
     skip_all_runs: bool
+    run_wrapper: str | None = None
 
 
 @dataclass(frozen=True)
