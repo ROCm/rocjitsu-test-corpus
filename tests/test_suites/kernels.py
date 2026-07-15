@@ -80,7 +80,7 @@ def build(case: CorpusCase, context: RunContext) -> BuildResult | None:
     effective_case = case.metadata["effective_case"]
     target_config = case.metadata["target_config"]
     kernel_case = case.metadata["kernel_case"]
-    artifact_root = legacy_kernels.resolve_repo_path(str(context.artifact_directory))
+    artifact_root = _artifact_root_with_shard(case, context)
     run_dir = legacy_kernels._run_dir(artifact_root, target_config, kernel_case)
     run_dir.mkdir(parents=True, exist_ok=True)
     result = legacy_kernels.build_runner(
@@ -137,3 +137,11 @@ def _variant_name(kernel_case) -> str:
 
 def _sanitize_id_component(value: str) -> str:
     return value.replace("/", "_").replace(":", "_")
+
+
+def _artifact_root_with_shard(case: CorpusCase, context: RunContext) -> Path:
+    base = context.artifact_directory
+    suite_shard = case.build.get("suite_shard")
+    if suite_shard:
+        base = base / "_suite_shards" / str(suite_shard)
+    return legacy_kernels.resolve_repo_path(str(base))

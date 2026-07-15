@@ -122,7 +122,7 @@ def _validate_case_entry(case_file: Path, entry: dict) -> None:
 def build(case: CorpusCase, context: RunContext) -> BuildResult | None:
     target_config = case.metadata["target_config"]
     config_name = target_config["config_name"]
-    build_root = context.artifact_directory / "cts" / config_name
+    build_root = context.artifact_directory / "cts" / _suite_shard(case) / config_name
     build_dir = build_root / "build"
     logs_dir = build_root / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -210,6 +210,10 @@ def _run_wrapper_command(run_wrapper: str | list[str] | None) -> list[str]:
     if isinstance(run_wrapper, str):
         return shlex.split(run_wrapper)
     return [str(part) for part in run_wrapper]
+
+
+def _suite_shard(case: CorpusCase) -> str:
+    return str(case.build.get("suite_shard", "cts_shard_0"))
 
 
 def _run_command(

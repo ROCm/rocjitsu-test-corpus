@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from support.define_contracts import RunContext, SelectionOptions
+from support.define_contracts import CorpusCase, RunContext, SelectionOptions
 from support.manage_builds import BuildManager, resolve_artifact_directory
 from support.prepare_inputs import (
     filter_cases,
@@ -67,7 +70,8 @@ def pytest_generate_tests(metafunc):
             target_cases.extend(suite_module.discover(target, suite_config_cache[suite]))
         discovered.extend(filter_cases(target_cases, selection))
 
-    cases = discovered
+    worker_groups = _requested_worker_groups(config)
+    cases = _annotate_suite_shards(discovered, worker_groups)
     config._corpus_target = target.target
     config._corpus_case_count = len(cases)
 
@@ -87,6 +91,7 @@ def pytest_generate_tests(metafunc):
                     reason="Skipped by --skip-tests-config configuration.",
                 )
             )
+        marks.append(pytest.mark.xdist_group(case.metadata["suite_shard"]))
         params.append(pytest.param(case, id=case.id, marks=marks))
 
     metafunc.parametrize("corpus_case", params)
@@ -203,5 +208,52 @@ def _resolve_include_cases(
     for suite in selected_suites:
         configured_cases.extend(run_tests_config.get(suite, ()))
     return (*requested_cases, *configured_cases)
+
+
+def _annotate_suite_shards(
+    cases: list[CorpusCase],
+    worker_groups: int,
+) -> list[CorpusCase]:
+    annotated: list[CorpusCase] = []
+    for case in cases:
+        shard_index = _suite_shard_index(case, worker_groups)
+        shard_name = f"{case.suite}_shard_{shard_index}"
+        build = dict(case.build)
+        build["suite_shard"] = shard_name
+        metadata = dict(case.metadata)
+        metadata["suite_shard"] = shard_name
+        metadata["suite_shard_index"] = shard_index
+        annotated.append(replace(case, build=build, metadata=metadata))
+    return annotated
+
+
+def _suite_shard_index(case: CorpusCase, worker_groups: int) -> int:
+    if worker_groups <= 1:
+        return 0
+    digest = hashlib.sha256(f"{case.suite}:{case.id}".encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], byteorder="big", signed=False) % worker_groups
+
+
+def _requested_worker_groups(config) -> int:
+    worker_count = os.getenv("PYTEST_XDIST_WORKER_COUNT")
+    if worker_count:
+        try:
+            return max(1, int(worker_count))
+        except ValueError:
+            pass
+    numprocesses = getattr(config.option, "numprocesses", None)
+    if numprocesses in (None, 0, "0"):
+        return 1
+    if isinstance(numprocesses, int):
+        return max(1, numprocesses)
+    text = str(numprocesses).strip().lower()
+    if text in {"", "no"}:
+        return 1
+    if text in {"auto", "logical"}:
+        return max(1, os.cpu_count() or 1)
+    try:
+        return max(1, int(text))
+    except ValueError:
+        return 1
 
 
