@@ -1,7 +1,7 @@
 """Legacy kernels corpus implementation retained behind the suite adapter.
 
 This file contains kernel case schema validation, CMake build orchestration,
-input generation, runner execution, and output/timing validation logic.
+input generation, runner execution, and output validation logic.
 """
 
 import json
@@ -11,7 +11,6 @@ import shlex
 import shutil
 import subprocess
 import struct
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,32 +38,6 @@ KERNEL_CORPUS_ENABLE_CACHE_VARIABLES = (
 
 class KernelCaseError(Exception):
     pass
-
-
-class ToolError(KernelCaseError):
-    def __init__(self, *, message, command, cwd, returncode, stdout, stderr, log_path):
-        self.command = command
-        self.cwd = cwd
-        self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = stderr
-        self.log_path = log_path
-        super().__init__(
-            "\n".join(
-                [
-                    message,
-                    "Command:",
-                    "  " + " ".join(command),
-                    f"CWD: {cwd}",
-                    f"Return code: {returncode}",
-                    f"Log: {log_path}",
-                    "stdout:",
-                    stdout or "<empty>",
-                    "stderr:",
-                    stderr or "<empty>",
-                ]
-            )
-        )
 
 
 KernelCorpusError = KernelCaseError
@@ -237,9 +210,9 @@ def load_input_set(input_set_path):
         reject_unknown_fields(
             input_set_path,
             input_set["run"],
-            {"executable", "args", "env", "gpu_timeout_seconds", "cpu_timeout_seconds"},
+            {"executable", "args", "env"},
         )
-        _validate_run(input_set_path, input_set["run"], require_timeout=False)
+        _validate_run(input_set_path, input_set["run"])
     if "validation" in input_set:
         _validate_validation(input_set_path, input_set["validation"], require_kind=False)
     return input_set
@@ -303,13 +276,9 @@ def _validate_supported_targets(case_path, supported_targets):
             raise ValueError(f"{case_path} has unsupported target '{target}'")
 
 
-def _validate_run(path, run, *, require_timeout=True):
+def _validate_run(path, run):
     if "args" not in run:
         raise ValueError(f"{path} run is missing required field 'args'")
-    if require_timeout:
-        for timeout_field in ("gpu_timeout_seconds", "cpu_timeout_seconds"):
-            if timeout_field not in run:
-                raise ValueError(f"{path} run is missing required field '{timeout_field}'")
     if not isinstance(run["args"], list):
         raise ValueError(f"{path} run field 'args' must be a list")
     for index, arg in enumerate(run["args"]):
@@ -317,13 +286,6 @@ def _validate_run(path, run, *, require_timeout=True):
             raise ValueError(
                 f"{path} run args[{index}] must be a string or numeric value"
             )
-    for timeout_field in ("gpu_timeout_seconds", "cpu_timeout_seconds"):
-        if timeout_field in run and (
-            isinstance(run[timeout_field], bool)
-            or not isinstance(run[timeout_field], (int, float))
-            or run[timeout_field] <= 0
-        ):
-            raise ValueError(f"{path} run field '{timeout_field}' must be a positive number")
 
 
 def _validate_tests(case_path, tests):
@@ -403,7 +365,6 @@ def run_case(
     *,
     build_only=False,
     run_wrapper=None,
-    case_timeout_seconds=None,
 ):
     case = effective_case(kernel_case)
     artifact_root = resolve_repo_path(artifact_directory)
@@ -422,7 +383,6 @@ def run_case(
         run_dir,
         materialized_inputs,
         run_wrapper=run_wrapper,
-        case_timeout_seconds=case_timeout_seconds,
     )
 
 
@@ -521,7 +481,6 @@ def run_executable(
     materialized_inputs,
     *,
     run_wrapper=None,
-    case_timeout_seconds=None,
 ):
     if case["project"] == "llama.cpp":
         run_llama_output_comparison(
@@ -532,7 +491,6 @@ def run_executable(
             run_dir,
             materialized_inputs,
             run_wrapper=run_wrapper,
-            case_timeout_seconds=case_timeout_seconds,
         )
         return
 
@@ -541,20 +499,13 @@ def run_executable(
         command.extend(["--input", f"{input_name}={input_path}"])
     command.extend(_command_args(case["run"].get("args", [])))
     expected_exit_code = int(case["validation"]["pass_exit_code"])
-    result = _run_command(
+    _run_command(
         command,
         cwd=build_dir,
         log_path=run_dir / "run.log",
         phase="run",
         env=command_environment(target_config, case["run"].get("env", {})),
-        timeout=case_timeout_seconds,
         expected_returncode=expected_exit_code,
-    )
-    _write_timing_record(
-        run_dir / "timings.json",
-        "gpu",
-        result,
-        timeout_seconds=case_timeout_seconds,
     )
 
 
@@ -567,7 +518,6 @@ def run_llama_output_comparison(
     materialized_inputs,
     *,
     run_wrapper=None,
-    case_timeout_seconds=None,
 ):
     gpu_output_path = run_dir / "gpu_output.f32.raw"
     reference_output_path = run_dir / "reference_output.f32.raw"
@@ -581,21 +531,13 @@ def run_llama_output_comparison(
         base_args,
         gpu_output_path,
     )
-    gpu_result = _run_command(
+    _run_command(
         gpu_command,
         cwd=build_dir,
         log_path=run_dir / "run.log",
         phase="run",
         env=env,
-        timeout=case_timeout_seconds,
         expected_returncode=0,
-    )
-    _write_timing_record(
-        run_dir / "timings.json",
-        "gpu",
-        gpu_result,
-        output_path=gpu_output_path,
-        timeout_seconds=case_timeout_seconds,
     )
 
     reference_command = _runner_command(
@@ -604,21 +546,13 @@ def run_llama_output_comparison(
         [*base_args, "--validate"],
         reference_output_path,
     )
-    reference_result = _run_command(
+    _run_command(
         reference_command,
         cwd=build_dir,
         log_path=run_dir / "validate.log",
         phase="validate",
         env=env,
-        timeout=case_timeout_seconds,
         expected_returncode=int(case["validation"]["pass_exit_code"]),
-    )
-    _write_timing_record(
-        run_dir / "timings.json",
-        "cpu",
-        reference_result,
-        output_path=reference_output_path,
-        timeout_seconds=case_timeout_seconds,
     )
 
     if int(case["validation"]["pass_exit_code"]) == 0:
@@ -690,32 +624,6 @@ def compare_f32_outputs(gpu_output_path, reference_output_path, *, abs_tolerance
             f"tolerance={abs_tolerance}, gpu={gpu_values[max_abs_diff_index]}, "
             f"reference={reference_values[max_abs_diff_index]}"
         )
-
-
-def _write_timing_record(
-    timings_path,
-    key,
-    result,
-    *,
-    output_path=None,
-    timeout_seconds=None,
-):
-    timings_path = Path(timings_path)
-    if timings_path.exists():
-        timings = load_json(timings_path)
-    else:
-        timings = {}
-    record = {
-        "phase": result["phase"],
-        "elapsed_seconds": result["elapsed_seconds"],
-        "timeout_seconds": timeout_seconds,
-        "returncode": result["returncode"],
-        "log_path": str(result["log_path"]),
-    }
-    if output_path is not None:
-        record["output_path"] = str(output_path)
-    timings[key] = record
-    timings_path.write_text(json.dumps(timings, indent=2) + "\n", encoding="utf-8")
 
 
 def _cmake_cache_variables(target_config):
@@ -895,33 +803,22 @@ def _run_command(
     log_path,
     phase,
     env,
-    timeout=None,
     expected_returncode=0,
 ):
     command = _resolve_command(command)
-    started_at = time.perf_counter()
-    timed_out = False
-    try:
-        process = subprocess.run(
-            command,
-            cwd=str(cwd),
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            errors="replace",
-            check=False,
-            timeout=timeout,
-        )
-        returncode = process.returncode
-        stdout = process.stdout
-        stderr = process.stderr
-    except subprocess.TimeoutExpired as exc:
-        timed_out = True
-        returncode = 124
-        stdout = _to_text(exc.stdout)
-        stderr = _to_text(exc.stderr)
-    elapsed_seconds = time.perf_counter() - started_at
+    process = subprocess.run(
+        command,
+        cwd=str(cwd),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        errors="replace",
+        check=False,
+    )
+    returncode = process.returncode
+    stdout = process.stdout
+    stderr = process.stderr
 
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.write_text(
@@ -930,9 +827,6 @@ def _run_command(
                 "$ " + " ".join(shlex.quote(part) for part in command),
                 f"cwd: {cwd}",
                 f"returncode: {returncode}",
-                f"elapsed_seconds: {elapsed_seconds:.6f}",
-                f"timeout_seconds: {timeout}" if timeout is not None else "timeout_seconds: <none>",
-                f"timed_out: {timed_out}",
                 "",
                 "stdout:",
                 stdout,
@@ -944,34 +838,20 @@ def _run_command(
         encoding="utf-8",
     )
     if returncode != expected_returncode:
-        message = f"kernel case {phase} failed"
-        if timed_out:
-            message = f"kernel case {phase} timed out after {timeout} seconds"
-        raise ToolError(
-            message=message,
-            command=command,
-            cwd=cwd,
-            returncode=returncode,
-            stdout=stdout,
-            stderr=stderr,
-            log_path=log_path,
+        raise RuntimeError(
+            "\n".join(
+                [
+                    f"kernel case {phase} failed",
+                    f"log: {log_path}",
+                    "command: " + " ".join(command),
+                    f"returncode: {returncode}",
+                    "stdout:",
+                    stdout or "<empty>",
+                    "stderr:",
+                    stderr or "<empty>",
+                ]
+            )
         )
-    return {
-        "phase": phase,
-        "command": command,
-        "cwd": cwd,
-        "returncode": returncode,
-        "elapsed_seconds": elapsed_seconds,
-        "log_path": log_path,
-    }
-
-
-def _to_text(value):
-    if value is None:
-        return ""
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    return str(value)
 
 
 def _resolve_command(command):
@@ -982,13 +862,5 @@ def _resolve_command(command):
         return command
     tool = shutil.which(first)
     if tool is None:
-        raise ToolError(
-            message=f"Could not find required tool '{first}' in PATH",
-            command=command,
-            cwd=Path.cwd(),
-            returncode=127,
-            stdout="",
-            stderr="",
-            log_path="<not written>",
-        )
+        raise RuntimeError(f"Missing required tool '{first}' in PATH")
     return [tool] + command[1:]
