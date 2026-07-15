@@ -8,7 +8,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from support.define_contracts import BuildResult, CorpusCase, RunContext, TargetSpec
+from support.define_contracts import (
+    BuildResult,
+    BuildState,
+    CorpusCase,
+    RunContext,
+    TargetSpec,
+)
 from support.prepare_inputs import supports_target
 
 from . import iree_impl as legacy_iree
@@ -61,7 +67,11 @@ def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]
     return discovered
 
 
-def build(case: CorpusCase, context: RunContext) -> BuildResult | None:
+def build(
+    case: CorpusCase,
+    context: RunContext,
+    _build_state: BuildState,
+) -> BuildResult | None:
     target_config = dict(case.metadata["target_config"])
     artifact_directory = _artifact_directory_for_case(case, context)
     metadata = legacy_iree.build_case(

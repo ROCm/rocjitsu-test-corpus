@@ -4,7 +4,7 @@ This module owns two cross-suite concerns:
 1) normalizing/validating artifact directories under the repo root, and
 2) caching build results so the same suite/target/build config is not rebuilt.
 
-Suite adapters expose `build(case, context)` and `run(...)`; `BuildManager`
+Suite adapters expose `build(case, context, state)` and `run(...)`; `BuildManager`
 memoizes the build step and returns a `BuildResult` used by each suite runner.
 """
 
@@ -14,12 +14,13 @@ import hashlib
 import json
 from pathlib import Path
 
-from .define_contracts import BuildResult, CorpusCase, RunContext
+from .define_contracts import BuildResult, BuildState, CorpusCase, RunContext
 
 
 class BuildManager:
     def __init__(self, context: RunContext):
         self._context = context
+        self._state = BuildState()
         self._cache: dict[str, BuildResult] = {}
 
     def ensure_built(self, case: CorpusCase, suite_module) -> BuildResult:
@@ -28,7 +29,7 @@ class BuildManager:
         if cached is not None:
             return cached
 
-        suite_result = suite_module.build(case, self._context)
+        suite_result = suite_module.build(case, self._context, self._state)
         if suite_result is None:
             suite_result = BuildResult(
                 build_dir=None,

@@ -13,7 +13,13 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from support.define_contracts import BuildResult, CorpusCase, RunContext, TargetSpec
+from support.define_contracts import (
+    BuildResult,
+    BuildState,
+    CorpusCase,
+    RunContext,
+    TargetSpec,
+)
 from support.prepare_inputs import load_json, load_suite_target_configs, supports_target
 
 
@@ -21,9 +27,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIGS_ROOT = REPO_ROOT / "corpus" / "cts" / "configs"
 CTS_SOURCE_DIR = REPO_ROOT / "corpus" / "cts"
 TEST_CASES_ROOT = CTS_SOURCE_DIR / "test_cases"
-
-_CONFIGURED_BUILD_DIRS: set[Path] = set()
-
 
 def default_config_files() -> tuple[Path, ...]:
     return tuple(sorted(CONFIGS_ROOT.glob("*.json")))
@@ -125,7 +128,11 @@ def _validate_case_entry(case_file: Path, entry: dict) -> None:
         raise ValueError(f"{case_file} case field 'compile_fail' must be a boolean")
 
 
-def build(case: CorpusCase, context: RunContext) -> BuildResult | None:
+def build(
+    case: CorpusCase,
+    context: RunContext,
+    build_state: BuildState,
+) -> BuildResult | None:
     target_config = case.metadata["target_config"]
     config_name = target_config["config_name"]
     build_root = context.artifact_directory / "cts" / _suite_shard(case) / config_name
@@ -133,7 +140,12 @@ def build(case: CorpusCase, context: RunContext) -> BuildResult | None:
     logs_dir = build_root / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    _ensure_configured(target_config, build_dir, logs_dir)
+    build_state.configured_build_dirs = _ensure_configured(
+        target_config,
+        build_dir,
+        logs_dir,
+        build_state.configured_build_dirs,
+    )
     test_name = case.metadata["name"]
     if not case.metadata["cts_case"].get("compile_fail", False):
         safe_name = _sanitize_log_component(test_name)
@@ -202,9 +214,14 @@ def _suite_shard(case: CorpusCase) -> str:
     return str(case.build.get("suite_shard", "cts_shard_0"))
 
 
-def _ensure_configured(target_config: dict, build_dir: Path, logs_dir: Path) -> None:
-    if build_dir in _CONFIGURED_BUILD_DIRS:
-        return
+def _ensure_configured(
+    target_config: dict,
+    build_dir: Path,
+    logs_dir: Path,
+    configured_build_dirs: frozenset[Path],
+) -> frozenset[Path]:
+    if build_dir in configured_build_dirs:
+        return configured_build_dirs
 
     configure_cmd = [
         "cmake",
@@ -230,7 +247,7 @@ def _ensure_configured(target_config: dict, build_dir: Path, logs_dir: Path) -> 
         log_path=logs_dir / "configure.log",
         phase="configure",
     )
-    _CONFIGURED_BUILD_DIRS.add(build_dir)
+    return configured_build_dirs | {build_dir}
 
 
 def _run_command(
