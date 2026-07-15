@@ -71,7 +71,10 @@ def pytest_generate_tests(metafunc):
         discovered.extend(filter_cases(target_cases, selection))
 
     worker_groups = _requested_worker_groups(config)
-    cases = _annotate_suite_shards(discovered, worker_groups)
+    cases = _order_suite_shards(
+        _annotate_suite_shards(discovered, worker_groups),
+        selected_suites,
+    )
     config._corpus_target = target.target
     config._corpus_case_count = len(cases)
 
@@ -230,6 +233,25 @@ def _annotate_suite_shards(
         metadata["suite_shard_index"] = shard_index
         annotated.append(replace(case, build=build, metadata=metadata))
     return annotated
+
+
+def _order_suite_shards(
+    cases: list[CorpusCase],
+    selected_suites: tuple[str, ...],
+) -> list[CorpusCase]:
+    suite_order = {suite: index for index, suite in enumerate(selected_suites)}
+    indexed_cases = enumerate(cases)
+    return [
+        case
+        for _, case in sorted(
+            indexed_cases,
+            key=lambda item: (
+                suite_order.get(item[1].suite, len(suite_order)),
+                item[1].metadata.get("suite_shard_index", 0),
+                item[0],
+            ),
+        )
+    ]
 
 
 def _suite_shard_index(case: CorpusCase, worker_groups: int) -> int:

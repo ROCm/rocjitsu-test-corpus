@@ -100,7 +100,7 @@ def discover_cases() -> list[dict]:
 def _validate_case_entry(case_file: Path, entry: dict) -> None:
     if not isinstance(entry, dict):
         raise ValueError(f"{case_file} case entries must be objects")
-    allowed_fields = {"name", "supported_targets"}
+    allowed_fields = {"name", "supported_targets", "compile_fail"}
     unknown = sorted(set(entry) - allowed_fields)
     if unknown:
         joined = ", ".join(unknown)
@@ -120,6 +120,9 @@ def _validate_case_entry(case_file: Path, entry: dict) -> None:
             raise ValueError(
                 f"{case_file} has unsupported target '{supported_target}'"
             )
+    compile_fail = entry.get("compile_fail", False)
+    if not isinstance(compile_fail, bool):
+        raise ValueError(f"{case_file} case field 'compile_fail' must be a boolean")
 
 
 def build(case: CorpusCase, context: RunContext) -> BuildResult | None:
@@ -132,7 +135,7 @@ def build(case: CorpusCase, context: RunContext) -> BuildResult | None:
 
     _ensure_configured(target_config, build_dir, logs_dir)
     test_name = case.metadata["name"]
-    if not test_name.startswith("fpsan_neg_"):
+    if not case.metadata["cts_case"].get("compile_fail", False):
         safe_name = _sanitize_log_component(test_name)
         _run_command(
             ["cmake", "--build", str(build_dir), "--target", test_name],
