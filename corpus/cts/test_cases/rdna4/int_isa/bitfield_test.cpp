@@ -58,6 +58,12 @@ std::vector<BfeInput> test_inputs()
         {0x80000000u, 31u, 1u},
         {0x7fffffffu, 27u, 5u},
         {0x0000f000u, 12u, 4u},
+        // Offset and width are five-bit ISA fields, not unbounded integers.
+        {0xf0e1d2c3u, 32u, 8u},
+        {0xf0e1d2c3u, 33u, 8u},
+        {0x80000001u, 0u, 32u},
+        {0x80000001u, 0u, 33u},
+        {0x80000002u, 32u, 33u},
     };
 }
 
@@ -81,7 +87,7 @@ void expect_output_eq(const BfeOutput& actual, const BfeOutput& expected, std::s
 
 } // namespace
 
-TEST(Rdna4IntIsaScalarValu, BfeMatchesPublishedOracles)
+TEST(Rdna4IntIsaBitfield, BfeMatchesPublishedOracles)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";

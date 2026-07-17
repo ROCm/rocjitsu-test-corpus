@@ -213,23 +213,25 @@ inline std::uint32_t cvt_pk_u8_f32(float value, std::uint32_t byte_select, std::
     return (src & ~mask) | (packed << (lane * 8));
 }
 
-// Bitfield extract models for the documented operand ranges covered by the CTS
-// cases. Signed extraction returns the raw two's-complement result bits.
+// RDNA4 BFE reads offset and width from five-bit operand fields. Signed
+// extraction returns the raw two's-complement result bits.
 constexpr std::uint32_t bfe_u32(std::uint32_t value, unsigned offset, unsigned width)
 {
-    if(width == 0 || offset >= 32)
+    offset &= 31u;
+    width &= 31u;
+    if(width == 0)
         return 0;
     const std::uint32_t shifted = value >> offset;
-    return width >= 32 ? shifted : (shifted & low_mask(width));
+    return shifted & low_mask(width);
 }
 
 constexpr std::uint32_t bfe_i32_bits(std::uint32_t value, unsigned offset, unsigned width)
 {
-    if(width == 0 || offset >= 32)
+    offset &= 31u;
+    width &= 31u;
+    if(width == 0)
         return 0;
     const std::uint32_t field = bfe_u32(value, offset, width);
-    if(width >= 32)
-        return field;
     const std::uint32_t sign = 1u << (width - 1);
     return (field & sign) != 0 ? (field | ~low_mask(width)) : field;
 }
