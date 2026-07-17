@@ -30,6 +30,8 @@ Collected kernel cases:
   - `gemm_bf16fp32_16x32`
   - `gemm_fp8fp32_4wave`
   - `gemm_mxfp8_4wave`
+- `rocblas/`:
+  - `sgemm`
 - `llama.cpp/`:
   - `mul_mat_vec_q`
   - `noncont_batched_matmul`
@@ -47,6 +49,7 @@ Collected kernel cases:
 | `hipkittens/gemm_bf16fp32_gfx1250_naive` | `gfx1250` | - |
 | `hipkittens/gemm_fp8fp32_4wave` | `gfx950` | - |
 | `hipkittens/gemm_mxfp8_4wave` | `gfx950` | - |
+| `rocblas/sgemm` | `gfx950`/`gfx942` | - |
 | `llama.cpp/mul_mat_vec_q` | CDNA3/RDNA4 | Pass |
 | `llama.cpp/noncont_batched_matmul` | CDNA3/RDNA4 | Pass |
 | `llama.cpp/noncont_batched_matmul_hazard` | CDNA3/RDNA4 | Pass/Bug |
@@ -187,6 +190,7 @@ options below.
 `KERNEL_CORPUS_ENABLE_HIP_MATMUL=ON` needs `hip`.
 `KERNEL_CORPUS_ENABLE_HIPKITTENS=ON` needs `hip` and an OpenMP-capable host compiler
 runtime.
+`KERNEL_CORPUS_ENABLE_ROCBLAS=ON` needs `hip` and `rocBLAS`.
 
 The Stream-K runner is intended for CDNA / gfx9-family targets and is not expected
 to work on RDNA targets. Its extracted hip-stream-k kernels use a local fragment

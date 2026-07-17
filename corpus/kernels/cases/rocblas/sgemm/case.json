@@ -1,0 +1,184 @@
+{
+  "name": "rocblas_sgemm",
+  "project": "rocblas",
+  "runner": "hip_gemm_test.cpp",
+  "kind": "cmake_executable",
+  "supported_targets": [
+    "gfx942",
+    "gfx950"
+  ],
+  "build": {
+    "system": "cmake",
+    "target": "rocblas_sgemm"
+  },
+  "executable": "cases/rocblas/rocblas_sgemm",
+  "tests": {
+    "tiny_2x2x3": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmTest.Tiny_2x2x3"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "square_4x4": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmTest.Square_4x4"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "square_8x8": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmTest.Square_8x8"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "square_16x16": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmTest.Square_16x16"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "square_32x32": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmTest.Square_32x32"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "square_64x64": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmTest.Square_64x64"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "rect_16x32x8": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmTest.Rect_16x32x8"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "rect_1x64x1": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmTest.Rect_1x64x1"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "rect_64x1x64": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmTest.Rect_64x1x64"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "rect_7x11x13": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmTest.Rect_7x11x13"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "alpha_beta": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmTest.AlphaBeta"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "beta_zero": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmTest.BetaZero"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "large_2048x2048": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmTest.Large_2048x2048"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "fuzz_iter0": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmFuzz.Iter0"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "fuzz_iter1": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmFuzz.Iter1"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "fuzz_iter2": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmFuzz.Iter2"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "fuzz_iter3": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmFuzz.Iter3"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "fuzz_iter4": {
+      "test_args": [
+        "--gtest_filter=RocblasGemmFuzz.Iter4"
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    }
+  },
+  "tags": [
+    "rocblas",
+    "sgemm",
+    "regression"
+  ]
+}

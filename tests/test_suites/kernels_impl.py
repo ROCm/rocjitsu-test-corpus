@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 KERNELS_ROOT = REPO_ROOT / "corpus" / "kernels"
 KERNEL_CORPUS_ROOT = KERNELS_ROOT
 DEFAULT_CONFIGS = tuple(sorted((KERNEL_CORPUS_ROOT / "configs").glob("*.json")))
-SUPPORTED_PROJECTS = {"hip-matmul", "hip-stream-k", "hipkittens", "llama.cpp"}
+SUPPORTED_PROJECTS = {"hip-matmul", "hip-stream-k", "hipkittens", "llama.cpp", "rocblas"}
 SUPPORTED_CASE_KINDS = {"cmake_executable"}
 SUPPORTED_VALIDATION_KINDS = {"exit_code"}
 SUPPORTED_INPUT_FORMATS = {"raw"}
@@ -33,6 +33,7 @@ KERNEL_CORPUS_ENABLE_CACHE_VARIABLES = (
     "KERNEL_CORPUS_ENABLE_LLAMA_HIP",
     "KERNEL_CORPUS_ENABLE_HIP_MATMUL",
     "KERNEL_CORPUS_ENABLE_HIPKITTENS",
+    "KERNEL_CORPUS_ENABLE_ROCBLAS",
 )
 
 
