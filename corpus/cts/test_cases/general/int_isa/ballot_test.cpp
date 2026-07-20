@@ -53,7 +53,7 @@ struct BallotTrait
 };
 } // namespace
 
-TEST(Rdna4IntIsaBallot, BuiltinsMatchOracle)
+TEST(IntIsaBallot, BuiltinsMatchOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";

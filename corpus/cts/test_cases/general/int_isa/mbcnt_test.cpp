@@ -42,7 +42,7 @@ struct MbcntTrait
 };
 } // namespace
 
-TEST(Rdna4IntIsaMbcnt, BuiltinsMatchOracle)
+TEST(IntIsaMbcnt, BuiltinsMatchOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";

@@ -43,7 +43,7 @@ struct LaneMoveTrait
 };
 } // namespace
 
-TEST(Rdna4IntIsaLaneRead, BuiltinsMatchOracle)
+TEST(IntIsaLaneRead, BuiltinsMatchOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";

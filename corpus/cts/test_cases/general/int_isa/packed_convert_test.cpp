@@ -151,21 +151,21 @@ std::vector<FloatPackInput> float_pack_inputs()
 }
 } // namespace
 
-TEST(Rdna4IntIsaPackedConvert, CvtPkI16MatchesOracle)
+TEST(IntIsaPackedConvert, CvtPkI16MatchesOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";
     int_isa_test::run_value_test_cases<CvtPkI16Trait>(cvt_i16_inputs());
 }
 
-TEST(Rdna4IntIsaPackedConvert, CvtPkU16MatchesOracle)
+TEST(IntIsaPackedConvert, CvtPkU16MatchesOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";
     int_isa_test::run_value_test_cases<CvtPkU16Trait>(cvt_u16_inputs());
 }
 
-TEST(Rdna4IntIsaPackedConvert, FloatToIntegerBuiltinsMatchOracles)
+TEST(IntIsaPackedConvert, FloatToIntegerBuiltinsMatchOracles)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";

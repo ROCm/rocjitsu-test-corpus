@@ -87,7 +87,7 @@ void expect_output_eq(const BfeOutput& actual, const BfeOutput& expected, std::s
 
 } // namespace
 
-TEST(Rdna4IntIsaBitfield, BfeMatchesPublishedOracles)
+TEST(IntIsaBitfield, BfeMatchesPublishedOracles)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";

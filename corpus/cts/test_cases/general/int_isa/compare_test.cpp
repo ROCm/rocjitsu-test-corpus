@@ -124,7 +124,7 @@ struct I64SgeCompare : CompareTraitBase<I64SgeCompare>
 };
 } // namespace
 
-TEST(Rdna4IntIsaCompare, U32BuiltinsMatchOracle)
+TEST(IntIsaCompare, U32BuiltinsMatchOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";
@@ -132,21 +132,21 @@ TEST(Rdna4IntIsaCompare, U32BuiltinsMatchOracle)
     int_isa_test::run_wave_uniform_test<U32UltCompare>();
 }
 
-TEST(Rdna4IntIsaCompare, I32BuiltinsMatchOracle)
+TEST(IntIsaCompare, I32BuiltinsMatchOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";
     int_isa_test::run_wave_uniform_test<I32SltCompare>();
 }
 
-TEST(Rdna4IntIsaCompare, U64BuiltinsMatchOracle)
+TEST(IntIsaCompare, U64BuiltinsMatchOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";
     int_isa_test::run_wave_uniform_test<U64UgeCompare>();
 }
 
-TEST(Rdna4IntIsaCompare, I64BuiltinsMatchOracle)
+TEST(IntIsaCompare, I64BuiltinsMatchOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";

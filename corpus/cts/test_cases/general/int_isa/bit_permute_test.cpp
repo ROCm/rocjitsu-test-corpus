@@ -64,7 +64,7 @@ std::vector<BitPermuteInput> bit_permute_inputs()
 }
 } // namespace
 
-TEST(Rdna4IntIsaBitPermute, BuiltinsMatchOracles)
+TEST(IntIsaBitPermute, BuiltinsMatchOracles)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";

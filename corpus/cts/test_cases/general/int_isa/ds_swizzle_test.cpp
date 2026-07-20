@@ -59,7 +59,7 @@ struct DsSwizzleTrait
 };
 } // namespace
 
-TEST(Rdna4IntIsaDsSwizzle, BuiltinMatchesOracle)
+TEST(IntIsaDsSwizzle, BuiltinMatchesOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";

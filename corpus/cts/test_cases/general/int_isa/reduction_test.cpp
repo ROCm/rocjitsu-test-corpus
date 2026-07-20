@@ -268,28 +268,28 @@ struct I64ReductionTrait
 };
 } // namespace
 
-TEST(Rdna4IntIsaReduction, U32BuiltinsMatchOracle)
+TEST(IntIsaReduction, U32BuiltinsMatchOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";
     int_isa_test::run_wave_uniform_test<U32ReductionTrait>();
 }
 
-TEST(Rdna4IntIsaReduction, I32BuiltinsMatchOracle)
+TEST(IntIsaReduction, I32BuiltinsMatchOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";
     int_isa_test::run_wave_uniform_test<I32ReductionTrait>();
 }
 
-TEST(Rdna4IntIsaReduction, U64BuiltinsMatchOracle)
+TEST(IntIsaReduction, U64BuiltinsMatchOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";
     int_isa_test::run_wave_uniform_test<U64ReductionTrait>();
 }
 
-TEST(Rdna4IntIsaReduction, I64BuiltinsMatchOracle)
+TEST(IntIsaReduction, I64BuiltinsMatchOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";

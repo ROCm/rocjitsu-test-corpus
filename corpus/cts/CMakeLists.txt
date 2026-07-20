@@ -628,22 +628,22 @@ if(CTS_HAS_RDNA4)
     endfunction()
 
     cts_add_hip_test(int_isa_rdna4_bitfield_test
-        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/bitfield_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/int_isa/bitfield_test.cpp")
     cts_add_hip_test(int_isa_rdna4_lerp_test
-        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/lerp_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/int_isa/lerp_test.cpp")
     cts_add_hip_test(int_isa_rdna4_packed_sad_test
-        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/packed_sad_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/int_isa/packed_sad_test.cpp")
     cts_add_hip_test(int_isa_rdna4_bit_permute_test
-        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/bit_permute_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/int_isa/bit_permute_test.cpp")
     cts_add_hip_test(int_isa_rdna4_integer_dot_test
         "${CTS_TEST_CASES_DIR}/rdna4/int_isa/integer_dot_test.cpp")
     cts_add_hip_test(int_isa_rdna4_packed_convert_test
-        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/packed_convert_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/int_isa/packed_convert_test.cpp")
 
     cts_add_rdna4_wave_mode_tests(lane_read
-        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/lane_read_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/int_isa/lane_read_test.cpp")
     cts_add_rdna4_wave_mode_tests(mbcnt
-        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/mbcnt_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/int_isa/mbcnt_test.cpp")
     cts_add_rdna4_wave_mode_tests(ds_permute
         "${CTS_TEST_CASES_DIR}/rdna4/int_isa/ds_permute_test.cpp")
     # Fetch-invalid semantics require the per-lane source value to remain in a
@@ -653,17 +653,17 @@ if(CTS_HAS_RDNA4)
     target_compile_options(int_isa_rdna4_ds_permute_test PRIVATE -O2)
     target_compile_options(int_isa_rdna4_ds_permute_w64_test PRIVATE -O2)
     cts_add_rdna4_wave_mode_tests(ds_swizzle
-        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/ds_swizzle_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/int_isa/ds_swizzle_test.cpp")
     cts_add_rdna4_wave_mode_tests(dpp
-        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/dpp_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/int_isa/dpp_test.cpp")
     cts_add_rdna4_wave_mode_tests(permlane
         "${CTS_TEST_CASES_DIR}/rdna4/int_isa/permlane_test.cpp")
     cts_add_rdna4_wave_mode_tests(ballot
-        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/ballot_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/int_isa/ballot_test.cpp")
     cts_add_rdna4_wave_mode_tests(compare
-        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/compare_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/int_isa/compare_test.cpp")
     cts_add_rdna4_wave_mode_tests(reduction
-        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/reduction_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/int_isa/reduction_test.cpp")
 
     cts_add_rdna4_wave_mode_tests(wmma_i32_16x16x16_iu8
         "${CTS_TEST_CASES_DIR}/rdna4/int_isa/wmma_i32_16x16x16_iu8_test.cpp")

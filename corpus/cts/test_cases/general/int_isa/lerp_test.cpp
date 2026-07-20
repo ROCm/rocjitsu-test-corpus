@@ -53,7 +53,7 @@ std::vector<LerpInput> lerp_inputs()
 }
 } // namespace
 
-TEST(Rdna4IntIsaLerp, BuiltinMatchesOracle)
+TEST(IntIsaLerp, BuiltinMatchesOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";

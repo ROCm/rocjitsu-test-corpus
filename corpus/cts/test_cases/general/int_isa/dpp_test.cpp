@@ -56,7 +56,7 @@ struct DppTrait
 };
 } // namespace
 
-TEST(Rdna4IntIsaDpp, BuiltinsMatchOracles)
+TEST(IntIsaDpp, BuiltinsMatchOracles)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";

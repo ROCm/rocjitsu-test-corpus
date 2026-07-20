@@ -130,7 +130,7 @@ std::vector<SadInput> sad_inputs()
 }
 } // namespace
 
-TEST(Rdna4IntIsaPackedSad, UnsignedPackedSadStyleBuiltinsMatchOracles)
+TEST(IntIsaPackedSad, UnsignedPackedSadStyleBuiltinsMatchOracles)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";
