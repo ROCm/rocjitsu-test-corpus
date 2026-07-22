@@ -1,9 +1,8 @@
 {
-  "config_name": "gfx1250",
-  "target": "gfx1250",
+  "config_name": "gfx1100",
+  "target": "gfx1100",
   "cmake": {
     "cache_variables": {
-      "KERNEL_CORPUS_ENABLE_HIPKITTENS": "ON",
       "KERNEL_CORPUS_ENABLE_ROCBLAS": "ON"
     }
   },
@@ -12,3 +11,4 @@
   "expected_compile_failures": [],
   "expected_run_failures": []
 }
+
