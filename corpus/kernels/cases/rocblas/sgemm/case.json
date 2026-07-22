@@ -6,8 +6,8 @@
   "supported_targets": [
     "gfx942",
     "gfx950",
-    "gfx1201",
     "gfx1100",
+    "gfx1201",
     "gfx1250"
   ],
   "build": {
