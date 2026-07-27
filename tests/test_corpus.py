@@ -17,7 +17,7 @@ from support.prepare_inputs import (
     parse_csv_values,
     resolve_repo_path,
 )
-from test_suites import cts, iree, kernels
+from test_suites import cts, dbt, iree, kernels
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +25,7 @@ SUITE_MODULES = {
     "iree": iree,
     "kernels": kernels,
     "cts": cts,
+    "dbt": dbt,
 }
 DEFAULT_TARGET = "gfx1201"
 DEFAULT_SUITES = ("iree", "kernels", "cts")
@@ -67,7 +68,37 @@ def pytest_generate_tests(metafunc):
                 suite_config_cache[suite] = suite_module.load_target_configs(
                     tuple(str(path) for path in suite_module.default_config_files())
                 )
-            target_cases.extend(suite_module.discover(target, suite_config_cache[suite]))
+            try:
+                if suite == "dbt":
+                    target_cases.extend(
+                        suite_module.discover(
+                            target,
+                            suite_config_cache[suite],
+                            corpus_directory=config.getoption("dbt_corpus"),
+                            translator=config.getoption("dbt_translator"),
+                            llvm_objdump=config.getoption("dbt_llvm_objdump"),
+                            expected_failures_path=config.getoption(
+                                "dbt_expected_failures"
+                            ),
+                            expected_rewrites_path=config.getoption(
+                                "dbt_expected_rewrites"
+                            ),
+                            package_lock_path=config.getoption("dbt_package_lock"),
+                            timeout_seconds=config.getoption("dbt_timeout"),
+                            memory_limit_mib=config.getoption(
+                                "dbt_memory_limit_mib"
+                            ),
+                            allow_incomplete=config.getoption(
+                                "dbt_allow_incomplete_corpus"
+                            ),
+                        )
+                    )
+                else:
+                    target_cases.extend(
+                        suite_module.discover(target, suite_config_cache[suite])
+                    )
+            except (OSError, TypeError, ValueError) as exc:
+                raise pytest.UsageError(f"{suite} suite: {exc}") from exc
         discovered.extend(filter_cases(target_cases, selection))
 
     worker_groups = _requested_worker_groups(config)
@@ -282,5 +313,3 @@ def _requested_worker_groups(config) -> int:
         return max(1, int(text))
     except ValueError:
         return 1
-
-
