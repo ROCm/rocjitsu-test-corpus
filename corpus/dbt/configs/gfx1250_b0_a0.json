@@ -1,0 +1,8 @@
+{
+  "config_name": "gfx1250_b0_to_a0",
+  "input_revision": "b0",
+  "memory_limit_mib": 4096,
+  "output_revision": "a0",
+  "target": "gfx1250",
+  "timeout_seconds": 30
+}

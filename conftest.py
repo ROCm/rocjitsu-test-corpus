@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 from pathlib import Path
 
 TESTS_DIR = Path(__file__).resolve().parent / "tests"
@@ -8,6 +8,8 @@ if str(TESTS_DIR) not in sys.path:
 
 
 def pytest_addoption(parser):
+    from test_suites import dbt
+
     parser.addoption(
         "--target",
         action="store",
@@ -21,7 +23,10 @@ def pytest_addoption(parser):
         "--suite",
         action="append",
         default=[],
-        help="Suite selector (iree, kernels, cts). Repeat or pass comma-separated values.",
+        help=(
+            "Suite selector (iree, kernels, cts, dbt). Repeat or pass "
+            "comma-separated values."
+        ),
     )
     parser.addoption(
         "--exclude-suite",
@@ -92,6 +97,7 @@ def pytest_addoption(parser):
             "keyed by suite name."
         ),
     )
+    dbt.add_pytest_options(parser)
 
 
 # Pytest hook: called during configuration before collection starts.
