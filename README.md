@@ -9,7 +9,6 @@ for RocJITsu regression coverage. The main pytest entrypoint is `tests/test_corp
 corpus/
   iree/       IREE run-module cases and target configs.
   kernels/    HIP kernel reproducers, CMake runners, and vendored sources.
-  cts/        Deterministic HIP FPSAN CTS tests run through CTest.
   dbt/        Offline DBT translation profiles.
   tensile/    gfx1250 TensileLite configs and generated artifacts.
 
@@ -32,8 +31,8 @@ requirements.txt       Python packages for pytest and corpus helpers.
   suite compiles with `iree-compile` and runs with `iree-run-module`.
 - `corpus/kernels/`: standalone HIP kernel reproducers. Current backends include
   `hip-stream-k`, `hip-matmul`, `hipkittens`, and `llama.cpp`.
-- `corpus/cts/`: HIP FPSAN tests organized by target family, including gfx942,
-  gfx950, gfx1100, gfx1201, and gfx1250 configs.
+- `corpus/cts/`: HIP semantic tests organized by target family, including
+  FPSan-derived floating-point cases and standalone integer ISA cases.
 - `corpus/tensile/`: gfx1250 TensileLite YAML configs, manifests, numeric smoke
   lists, and generated HSACO/code-object artifacts. This corpus is run by the
   Tensile scripts, not by `tests/test_corpus.py`.

@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.28)
 
-project(fpsan_tests LANGUAGES CXX)
+project(rocjitsu_cts_tests LANGUAGES CXX)
 
 if(NOT CMAKE_HIP_ARCHITECTURES)
     message(FATAL_ERROR
-        "FPSan HIP tests require -DCMAKE_HIP_ARCHITECTURES=<gfx target>")
+        "CTS HIP tests require -DCMAKE_HIP_ARCHITECTURES=<gfx target>")
 endif()
 
 # HIP toolchain detection for corpus tests:
@@ -17,23 +17,23 @@ if(NOT ROCM_PATH AND DEFINED ENV{ROCM_PATH})
     set(ROCM_PATH "$ENV{ROCM_PATH}" CACHE PATH "ROCm SDK root" FORCE)
 endif()
 if(NOT ROCM_PATH)
-    find_program(FPSAN_TESTS_ROCM_SDK_EXECUTABLE rocm-sdk)
-    if(FPSAN_TESTS_ROCM_SDK_EXECUTABLE)
+    find_program(CTS_ROCM_SDK_EXECUTABLE rocm-sdk)
+    if(CTS_ROCM_SDK_EXECUTABLE)
         execute_process(
-            COMMAND "${FPSAN_TESTS_ROCM_SDK_EXECUTABLE}" path --root
-            RESULT_VARIABLE fpsan_tests_rocm_sdk_result
-            OUTPUT_VARIABLE fpsan_tests_rocm_sdk_root
+            COMMAND "${CTS_ROCM_SDK_EXECUTABLE}" path --root
+            RESULT_VARIABLE cts_rocm_sdk_result
+            OUTPUT_VARIABLE cts_rocm_sdk_root
             OUTPUT_STRIP_TRAILING_WHITESPACE
             ERROR_QUIET
         )
-        if(fpsan_tests_rocm_sdk_result EQUAL 0 AND fpsan_tests_rocm_sdk_root)
-            set(ROCM_PATH "${fpsan_tests_rocm_sdk_root}" CACHE PATH "ROCm SDK root" FORCE)
+        if(cts_rocm_sdk_result EQUAL 0 AND cts_rocm_sdk_root)
+            set(ROCM_PATH "${cts_rocm_sdk_root}" CACHE PATH "ROCm SDK root" FORCE)
         endif()
     endif()
 endif()
 if(NOT ROCM_PATH OR NOT EXISTS "${ROCM_PATH}/lib/cmake/hip/hip-config.cmake")
     message(FATAL_ERROR
-        "FPSan HIP tests require ROCM_PATH to point at a ROCm SDK root containing "
+        "CTS HIP tests require ROCM_PATH to point at a ROCm SDK root containing "
         "lib/cmake/hip/hip-config.cmake")
 endif()
 
@@ -51,7 +51,7 @@ list(APPEND CMAKE_BUILD_RPATH
     "${ROCM_PATH}/lib64"
 )
 if(NOT CMAKE_HIP_COMPILER)
-    find_program(FPSAN_TESTS_HIP_COMPILER
+    find_program(CTS_HIP_COMPILER
         NAMES amdclang++
         PATHS
             "${ROCM_PATH}/lib/llvm/bin"
@@ -59,8 +59,8 @@ if(NOT CMAKE_HIP_COMPILER)
             "${ROCM_PATH}/llvm/bin"
         NO_DEFAULT_PATH
     )
-    if(FPSAN_TESTS_HIP_COMPILER)
-        set(CMAKE_HIP_COMPILER "${FPSAN_TESTS_HIP_COMPILER}" CACHE FILEPATH
+    if(CTS_HIP_COMPILER)
+        set(CMAKE_HIP_COMPILER "${CTS_HIP_COMPILER}" CACHE FILEPATH
             "HIP compiler" FORCE)
     endif()
 endif()
@@ -91,38 +91,38 @@ set(FPSAN_TESTS_THIRD_PARTY_DIR "${CMAKE_CURRENT_LIST_DIR}/third_party")
 
 set(FPSAN_TESTS_INCLUDE_DIR "${FPSAN_TESTS_THIRD_PARTY_DIR}/hip-fpsan/include")
 
-set(FPSAN_TESTS_SUPPORT_INCLUDE_DIR "${CMAKE_CURRENT_LIST_DIR}/support")
+set(CTS_SUPPORT_INCLUDE_DIR "${CMAKE_CURRENT_LIST_DIR}/support")
 
 if(NOT EXISTS "${FPSAN_TESTS_INCLUDE_DIR}/fpsan/fpsan.hpp")
     message(FATAL_ERROR
         "Expected vendored hip-fpsan headers at ${FPSAN_TESTS_INCLUDE_DIR}")
 endif()
 
-set(FPSAN_TESTS_HAS_GFX1250 OFF)
-set(FPSAN_TESTS_HAS_CDNA4 OFF)
-set(FPSAN_TESTS_HAS_CDNA3 OFF)
-set(FPSAN_TESTS_HAS_RDNA4 OFF)
-set(FPSAN_TESTS_HAS_RDNA3 OFF)
-set(FPSAN_TESTS_HAS_GFX12 OFF)
+set(CTS_HAS_GFX1250 OFF)
+set(CTS_HAS_CDNA4 OFF)
+set(CTS_HAS_CDNA3 OFF)
+set(CTS_HAS_RDNA4 OFF)
+set(CTS_HAS_RDNA3 OFF)
+set(CTS_HAS_GFX12 OFF)
 
 foreach(hip_arch IN LISTS CMAKE_HIP_ARCHITECTURES)
     if(hip_arch MATCHES "^gfx125")
-        set(FPSAN_TESTS_HAS_GFX1250 ON)
+        set(CTS_HAS_GFX1250 ON)
     endif()
     if(hip_arch MATCHES "^gfx11")
-        set(FPSAN_TESTS_HAS_RDNA3 ON)
+        set(CTS_HAS_RDNA3 ON)
     endif()
     if(hip_arch MATCHES "^gfx12")
-        set(FPSAN_TESTS_HAS_GFX12 ON)
+        set(CTS_HAS_GFX12 ON)
     endif()
     if(hip_arch STREQUAL "gfx950")
-        set(FPSAN_TESTS_HAS_CDNA4 ON)
+        set(CTS_HAS_CDNA4 ON)
     endif()
     if(hip_arch MATCHES "^gfx94[0-2]$")
-        set(FPSAN_TESTS_HAS_CDNA3 ON)
+        set(CTS_HAS_CDNA3 ON)
     endif()
     if(hip_arch MATCHES "^gfx120")
-        set(FPSAN_TESTS_HAS_RDNA4 ON)
+        set(CTS_HAS_RDNA4 ON)
     endif()
 endforeach()
 
@@ -132,7 +132,7 @@ function(fpsan_add_cxx_test target_name source)
     target_compile_features(${target_name} PRIVATE cxx_std_17)
     target_include_directories(${target_name} PRIVATE
         "${FPSAN_TESTS_INCLUDE_DIR}"
-        "${FPSAN_TESTS_SUPPORT_INCLUDE_DIR}"
+        "${CTS_SUPPORT_INCLUDE_DIR}"
     )
     if(NOT FPSAN_TEST_NO_GTEST)
         target_link_libraries(${target_name} PRIVATE GTest::gtest_main)
@@ -145,7 +145,7 @@ function(fpsan_add_compile_fail_test target_name source)
     target_compile_features(${target_name} PRIVATE cxx_std_17)
     target_include_directories(${target_name} PRIVATE
         "${FPSAN_TESTS_INCLUDE_DIR}"
-        "${FPSAN_TESTS_SUPPORT_INCLUDE_DIR}"
+        "${CTS_SUPPORT_INCLUDE_DIR}"
     )
     set_target_properties(${target_name} PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD TRUE)
     add_test(NAME ${target_name}
@@ -165,7 +165,7 @@ function(fpsan_add_hip_test target_name source)
     )
     target_include_directories(${target_name} PRIVATE
         "${FPSAN_TESTS_INCLUDE_DIR}"
-        "${FPSAN_TESTS_SUPPORT_INCLUDE_DIR}"
+        "${CTS_SUPPORT_INCLUDE_DIR}"
     )
     target_link_libraries(${target_name} PRIVATE hip::device)
     if(NOT FPSAN_TEST_NO_GTEST)
@@ -186,11 +186,31 @@ function(fpsan_add_hip_codegen_test target_name source)
     )
     target_include_directories(${target_name} PRIVATE
         "${FPSAN_TESTS_INCLUDE_DIR}"
-        "${FPSAN_TESTS_SUPPORT_INCLUDE_DIR}"
+        "${CTS_SUPPORT_INCLUDE_DIR}"
     )
     target_link_libraries(${target_name} PRIVATE hip::device)
     add_test(NAME ${target_name}
         COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}" --target ${target_name})
+endfunction()
+
+function(cts_add_hip_test target_name source)
+    cmake_parse_arguments(CTS_TEST "NO_GTEST" "" "" ${ARGN})
+    add_executable(${target_name} "${source}")
+    set_source_files_properties("${source}" PROPERTIES LANGUAGE HIP)
+    target_compile_features(${target_name} PRIVATE cxx_std_17)
+    set_target_properties(${target_name} PROPERTIES
+        HIP_STANDARD 17
+        HIP_STANDARD_REQUIRED ON
+        HIP_EXTENSIONS ON
+    )
+    target_include_directories(${target_name} PRIVATE
+        "${CTS_SUPPORT_INCLUDE_DIR}"
+    )
+    target_link_libraries(${target_name} PRIVATE hip::device)
+    if(NOT CTS_TEST_NO_GTEST)
+        target_link_libraries(${target_name} PRIVATE GTest::gtest_main)
+    endif()
+    add_test(NAME ${target_name} COMMAND ${target_name})
 endfunction()
 
 function(fpsan_enable_wave64 target_name)
@@ -199,156 +219,161 @@ function(fpsan_enable_wave64 target_name)
         $<$<COMPILE_LANGUAGE:HIP>:-mwavefrontsize64>)
 endfunction()
 
-set(FPSAN_TEST_CASES_DIR "${CMAKE_CURRENT_LIST_DIR}/test_cases")
+function(cts_enable_wave64 target_name)
+    target_compile_options(${target_name} PRIVATE
+        $<$<COMPILE_LANGUAGE:HIP>:-mwavefrontsize64>)
+endfunction()
+
+set(CTS_TEST_CASES_DIR "${CMAKE_CURRENT_LIST_DIR}/test_cases")
 
 # Compile-fail tests.
 fpsan_add_compile_fail_test(fpsan_neg_cross_mode
-    "${FPSAN_TEST_CASES_DIR}/compile_fail/neg_cross_mode.cpp")
+    "${CTS_TEST_CASES_DIR}/compile_fail/fpsan/neg_cross_mode.cpp")
 fpsan_add_compile_fail_test(fpsan_neg_explicit_ctor
-    "${FPSAN_TEST_CASES_DIR}/compile_fail/neg_explicit_ctor.cpp")
+    "${CTS_TEST_CASES_DIR}/compile_fail/fpsan/neg_explicit_ctor.cpp")
 fpsan_add_compile_fail_test(fpsan_neg_explicit_mixed_pod
-    "${FPSAN_TEST_CASES_DIR}/compile_fail/neg_explicit_mixed_pod.cpp")
+    "${CTS_TEST_CASES_DIR}/compile_fail/fpsan/neg_explicit_mixed_pod.cpp")
 fpsan_add_compile_fail_test(fpsan_neg_non_float_type
-    "${FPSAN_TEST_CASES_DIR}/compile_fail/neg_non_float_type.cpp")
+    "${CTS_TEST_CASES_DIR}/compile_fail/fpsan/neg_non_float_type.cpp")
 
 # Tests shared across supported GPU families.
 fpsan_add_cxx_test(fpsan_build_canary
-    "${FPSAN_TEST_CASES_DIR}/general/build_canary.cpp" NO_GTEST)
+    "${CTS_TEST_CASES_DIR}/general/fpsan/build_canary.cpp" NO_GTEST)
 fpsan_add_cxx_test(fpsan_cast_test
-    "${FPSAN_TEST_CASES_DIR}/general/cast_test.cpp")
+    "${CTS_TEST_CASES_DIR}/general/fpsan/cast_test.cpp")
 fpsan_add_cxx_test(fpsan_core_test
-    "${FPSAN_TEST_CASES_DIR}/general/core_test.cpp")
+    "${CTS_TEST_CASES_DIR}/general/fpsan/core_test.cpp")
 fpsan_add_cxx_test(fpsan_drop_in_test
-    "${FPSAN_TEST_CASES_DIR}/general/drop_in_test.cpp")
+    "${CTS_TEST_CASES_DIR}/general/fpsan/drop_in_test.cpp")
 fpsan_add_cxx_test(fpsan_fp8_test
-    "${FPSAN_TEST_CASES_DIR}/general/fp8_test.cpp")
+    "${CTS_TEST_CASES_DIR}/general/fpsan/fp8_test.cpp")
 fpsan_add_cxx_test(fpsan_math_test
-    "${FPSAN_TEST_CASES_DIR}/general/math_test.cpp")
+    "${CTS_TEST_CASES_DIR}/general/fpsan/math_test.cpp")
 fpsan_add_cxx_test(fpsan_parity_test
-    "${FPSAN_TEST_CASES_DIR}/general/parity_test.cpp")
+    "${CTS_TEST_CASES_DIR}/general/fpsan/parity_test.cpp")
 fpsan_add_cxx_test(fpsan_algebraic_proto_test
-    "${FPSAN_TEST_CASES_DIR}/general/algebraic_proto_test.cpp" NO_GTEST)
+    "${CTS_TEST_CASES_DIR}/general/fpsan/algebraic_proto_test.cpp" NO_GTEST)
 fpsan_add_hip_test(fpsan_algebraic_value_test
-    "${FPSAN_TEST_CASES_DIR}/general/algebraic_value_test.cpp" NO_GTEST)
+    "${CTS_TEST_CASES_DIR}/general/fpsan/algebraic_value_test.cpp" NO_GTEST)
 fpsan_add_hip_test(fpsan_vector_test
-    "${FPSAN_TEST_CASES_DIR}/general/vector_test.cpp")
+    "${CTS_TEST_CASES_DIR}/general/fpsan/vector_test.cpp")
 fpsan_add_hip_test(fpsan_extern_tagged_test
-    "${FPSAN_TEST_CASES_DIR}/general/extern_tagged_test.cpp")
+    "${CTS_TEST_CASES_DIR}/general/fpsan/extern_tagged_test.cpp")
 fpsan_add_hip_test(fpsan_subbyte_widen_test
-    "${FPSAN_TEST_CASES_DIR}/general/subbyte_widen_test.cpp")
+    "${CTS_TEST_CASES_DIR}/general/fpsan/subbyte_widen_test.cpp")
 fpsan_add_hip_test(fpsan_atomic_test
-    "${FPSAN_TEST_CASES_DIR}/general/atomic_test.cpp")
+    "${CTS_TEST_CASES_DIR}/general/fpsan/atomic_test.cpp")
 fpsan_add_hip_test(fpsan_classify_test
-    "${FPSAN_TEST_CASES_DIR}/general/classify_test.cpp")
+    "${CTS_TEST_CASES_DIR}/general/fpsan/classify_test.cpp")
 fpsan_add_hip_test(fpsan_hip_device_test
-    "${FPSAN_TEST_CASES_DIR}/general/hip_device_test.cpp")
+    "${CTS_TEST_CASES_DIR}/general/fpsan/hip_device_test.cpp")
 
-if(FPSAN_TESTS_HAS_RDNA3 OR FPSAN_TESTS_HAS_GFX12 OR FPSAN_TESTS_HAS_CDNA3)
+if(CTS_HAS_RDNA3 OR CTS_HAS_GFX12 OR CTS_HAS_CDNA3)
     fpsan_add_hip_test(fpsan_cvt_test
-        "${FPSAN_TEST_CASES_DIR}/general/cvt_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/fpsan/cvt_test.cpp")
 endif()
-if(FPSAN_TESTS_HAS_GFX12 OR FPSAN_TESTS_HAS_CDNA3)
+if(CTS_HAS_GFX12 OR CTS_HAS_CDNA3)
     fpsan_add_hip_test(fpsan_cvt_fp8_test
-        "${FPSAN_TEST_CASES_DIR}/general/cvt_fp8_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/fpsan/cvt_fp8_test.cpp")
     fpsan_add_hip_test(fpsan_cvt_fp8_pk_test
-        "${FPSAN_TEST_CASES_DIR}/general/cvt_fp8_pk_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/fpsan/cvt_fp8_pk_test.cpp")
     fpsan_add_hip_test(fpsan_cvt_fp8_pack_test
-        "${FPSAN_TEST_CASES_DIR}/general/cvt_fp8_pack_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/fpsan/cvt_fp8_pack_test.cpp")
     fpsan_add_hip_test(fpsan_cvt_fp8_sr_test
-        "${FPSAN_TEST_CASES_DIR}/general/cvt_fp8_sr_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/fpsan/cvt_fp8_sr_test.cpp")
 endif()
-if(FPSAN_TESTS_HAS_RDNA3 OR FPSAN_TESTS_HAS_GFX12)
+if(CTS_HAS_RDNA3 OR CTS_HAS_GFX12)
     fpsan_add_hip_test(fpsan_xlane_test
-        "${FPSAN_TEST_CASES_DIR}/general/xlane_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/fpsan/xlane_test.cpp")
 endif()
-if(FPSAN_TESTS_HAS_GFX12)
+if(CTS_HAS_GFX12)
     fpsan_add_hip_test(fpsan_global_load_tr_test
-        "${FPSAN_TEST_CASES_DIR}/general/global_load_tr_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/fpsan/global_load_tr_test.cpp")
 endif()
-if(FPSAN_TESTS_HAS_RDNA3 OR FPSAN_TESTS_HAS_GFX12 OR
-    FPSAN_TESTS_HAS_CDNA3 OR FPSAN_TESTS_HAS_CDNA4)
+if(CTS_HAS_RDNA3 OR CTS_HAS_GFX12 OR
+    CTS_HAS_CDNA3 OR CTS_HAS_CDNA4)
     fpsan_add_hip_test(fpsan_wave_test
-        "${FPSAN_TEST_CASES_DIR}/general/wave_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/fpsan/wave_test.cpp")
     fpsan_add_hip_test(fpsan_amdgcn_ldexp_test
-        "${FPSAN_TEST_CASES_DIR}/general/amdgcn_ldexp_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/fpsan/amdgcn_ldexp_test.cpp")
     fpsan_add_hip_test(fpsan_amdgcn_math_test
-        "${FPSAN_TEST_CASES_DIR}/general/amdgcn_math_test.cpp")
-    if(FPSAN_TESTS_HAS_RDNA3 OR FPSAN_TESTS_HAS_RDNA4 OR FPSAN_TESTS_HAS_CDNA3)
+        "${CTS_TEST_CASES_DIR}/general/fpsan/amdgcn_math_test.cpp")
+    if(CTS_HAS_RDNA3 OR CTS_HAS_RDNA4 OR CTS_HAS_CDNA3)
         target_compile_definitions(fpsan_amdgcn_math_test
             PRIVATE FPSAN_TEST_ENABLE_FDOT2=1)
     endif()
-    if(FPSAN_TESTS_HAS_RDNA3 OR FPSAN_TESTS_HAS_RDNA4)
+    if(CTS_HAS_RDNA3 OR CTS_HAS_RDNA4)
         target_compile_definitions(fpsan_amdgcn_math_test
             PRIVATE FPSAN_TEST_ENABLE_FDOT2_EXTENDED=1)
     endif()
-    if(FPSAN_TESTS_HAS_RDNA4)
+    if(CTS_HAS_RDNA4)
         target_compile_definitions(fpsan_amdgcn_math_test
             PRIVATE FPSAN_TEST_ENABLE_GFX12_DOT_MATH=1)
     endif()
     fpsan_add_hip_test(fpsan_amdgcn_math_extra_test
-        "${FPSAN_TEST_CASES_DIR}/general/amdgcn_math_extra_test.cpp")
-    if(FPSAN_TESTS_HAS_RDNA3 OR FPSAN_TESTS_HAS_RDNA4 OR FPSAN_TESTS_HAS_CDNA3)
+        "${CTS_TEST_CASES_DIR}/general/fpsan/amdgcn_math_extra_test.cpp")
+    if(CTS_HAS_RDNA3 OR CTS_HAS_RDNA4 OR CTS_HAS_CDNA3)
         fpsan_add_hip_test(fpsan_amdgcn_math_fdot2_test
-            "${FPSAN_TEST_CASES_DIR}/general/amdgcn_math_fdot2_test.cpp")
+            "${CTS_TEST_CASES_DIR}/general/fpsan/amdgcn_math_fdot2_test.cpp")
         target_compile_definitions(fpsan_amdgcn_math_fdot2_test
             PRIVATE FPSAN_TEST_ENABLE_FDOT2=1)
-        if(FPSAN_TESTS_HAS_RDNA3 OR FPSAN_TESTS_HAS_RDNA4)
+        if(CTS_HAS_RDNA3 OR CTS_HAS_RDNA4)
             target_compile_definitions(fpsan_amdgcn_math_fdot2_test
                 PRIVATE FPSAN_TEST_ENABLE_FDOT2_EXTENDED=1)
         endif()
     endif()
-    if(FPSAN_TESTS_HAS_RDNA4)
+    if(CTS_HAS_RDNA4)
         fpsan_add_hip_test(fpsan_amdgcn_math_dot4_test
-            "${FPSAN_TEST_CASES_DIR}/general/amdgcn_math_dot4_test.cpp")
+            "${CTS_TEST_CASES_DIR}/general/fpsan/amdgcn_math_dot4_test.cpp")
         target_compile_definitions(fpsan_amdgcn_math_dot4_test
             PRIVATE FPSAN_TEST_ENABLE_GFX12_DOT_MATH=1)
     endif()
 endif()
 
-if(FPSAN_TESTS_HAS_RDNA3)
+if(CTS_HAS_RDNA3)
     fpsan_add_hip_test(fpsan_wmma_gfx11_test
-        "${FPSAN_TEST_CASES_DIR}/rdna3/wmma_gfx11_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna3/fpsan/wmma_gfx11_test.cpp")
     fpsan_add_hip_test(fpsan_wmma_gfx11_acc16_test
-        "${FPSAN_TEST_CASES_DIR}/rdna3/wmma_gfx11_acc16_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna3/fpsan/wmma_gfx11_acc16_test.cpp")
     fpsan_add_hip_test(fpsan_wmma_gfx11_tied_test
-        "${FPSAN_TEST_CASES_DIR}/rdna3/wmma_gfx11_tied_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna3/fpsan/wmma_gfx11_tied_test.cpp")
     fpsan_add_hip_test(fpsan_wmma_gfx11_tied_bf16_test
-        "${FPSAN_TEST_CASES_DIR}/rdna3/wmma_gfx11_tied_bf16_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna3/fpsan/wmma_gfx11_tied_bf16_test.cpp")
 
     fpsan_add_hip_test(fpsan_wmma_gfx11_w64_test
-        "${FPSAN_TEST_CASES_DIR}/rdna3/wmma_gfx11_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna3/fpsan/wmma_gfx11_test.cpp")
     target_compile_definitions(fpsan_wmma_gfx11_w64_test
         PRIVATE FPSAN_TEST_GFX11_WAVE64=1)
     fpsan_enable_wave64(fpsan_wmma_gfx11_w64_test)
 
     fpsan_add_hip_test(fpsan_wmma_gfx11_acc16_w64_test
-        "${FPSAN_TEST_CASES_DIR}/rdna3/wmma_gfx11_acc16_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna3/fpsan/wmma_gfx11_acc16_test.cpp")
     target_compile_definitions(fpsan_wmma_gfx11_acc16_w64_test
         PRIVATE FPSAN_TEST_GFX11_WAVE64=1)
     fpsan_enable_wave64(fpsan_wmma_gfx11_acc16_w64_test)
 
     fpsan_add_hip_test(fpsan_wmma_gfx11_tied_w64_test
-        "${FPSAN_TEST_CASES_DIR}/rdna3/wmma_gfx11_tied_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna3/fpsan/wmma_gfx11_tied_test.cpp")
     target_compile_definitions(fpsan_wmma_gfx11_tied_w64_test
         PRIVATE FPSAN_TEST_GFX11_WAVE64=1)
     fpsan_enable_wave64(fpsan_wmma_gfx11_tied_w64_test)
 
     fpsan_add_hip_test(fpsan_wmma_gfx11_tied_bf16_w64_test
-        "${FPSAN_TEST_CASES_DIR}/rdna3/wmma_gfx11_tied_bf16_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna3/fpsan/wmma_gfx11_tied_bf16_test.cpp")
     target_compile_definitions(fpsan_wmma_gfx11_tied_bf16_w64_test
         PRIVATE FPSAN_TEST_GFX11_WAVE64=1)
     fpsan_enable_wave64(fpsan_wmma_gfx11_tied_bf16_w64_test)
 
     fpsan_add_hip_test(fpsan_xlane_w64_test
-        "${FPSAN_TEST_CASES_DIR}/general/xlane_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/fpsan/xlane_test.cpp")
     fpsan_enable_wave64(fpsan_xlane_w64_test)
 
     fpsan_add_hip_test(fpsan_classify_w64_test
-        "${FPSAN_TEST_CASES_DIR}/general/classify_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/fpsan/classify_test.cpp")
     fpsan_enable_wave64(fpsan_classify_w64_test)
 
     fpsan_add_hip_test(fpsan_wave_gfx11_w64_test
-        "${FPSAN_TEST_CASES_DIR}/general/wave_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/fpsan/wave_test.cpp")
     target_compile_definitions(fpsan_wave_gfx11_w64_test
         PRIVATE
             FPSAN_TEST_ENABLE_WAVE_F64=1
@@ -356,119 +381,119 @@ if(FPSAN_TESTS_HAS_RDNA3)
     fpsan_enable_wave64(fpsan_wave_gfx11_w64_test)
 endif()
 
-if(FPSAN_TESTS_HAS_GFX1250)
+if(CTS_HAS_GFX1250)
     fpsan_add_hip_test(fpsan_amdgcn_bf16_trans_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/amdgcn_bf16_trans_test.cpp")
+        "${CTS_TEST_CASES_DIR}/gfx1250/fpsan/amdgcn_bf16_trans_test.cpp")
     fpsan_add_hip_test(fpsan_cvt_f16_fp8_gfx1250_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/cvt_f16_fp8_gfx1250_test.cpp")
+        "${CTS_TEST_CASES_DIR}/gfx1250/fpsan/cvt_f16_fp8_gfx1250_test.cpp")
     fpsan_add_hip_test(fpsan_cvt_scalef32_pk_gfx1250_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/cvt_scalef32_pk_gfx1250_test.cpp")
+        "${CTS_TEST_CASES_DIR}/gfx1250/fpsan/cvt_scalef32_pk_gfx1250_test.cpp")
     fpsan_add_hip_test(fpsan_cvt_scale_unpack_gfx1250_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/cvt_scale_unpack_gfx1250_test.cpp")
+        "${CTS_TEST_CASES_DIR}/gfx1250/fpsan/cvt_scale_unpack_gfx1250_test.cpp")
     fpsan_add_hip_test(fpsan_cvt_fp8_e5m3_gfx1250_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/cvt_fp8_e5m3_gfx1250_test.cpp")
+        "${CTS_TEST_CASES_DIR}/gfx1250/fpsan/cvt_fp8_e5m3_gfx1250_test.cpp")
     fpsan_add_hip_test(fpsan_cvt_sr_pack_gfx1250_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/cvt_sr_pack_gfx1250_test.cpp")
+        "${CTS_TEST_CASES_DIR}/gfx1250/fpsan/cvt_sr_pack_gfx1250_test.cpp")
     fpsan_add_hip_test(fpsan_cvt_sr_pk_f16_gfx1250_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/cvt_sr_pk_f16_gfx1250_test.cpp")
+        "${CTS_TEST_CASES_DIR}/gfx1250/fpsan/cvt_sr_pk_f16_gfx1250_test.cpp")
     fpsan_add_hip_test(fpsan_load_tr16_gfx1250_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/load_tr16_gfx1250_test.cpp")
+        "${CTS_TEST_CASES_DIR}/gfx1250/fpsan/load_tr16_gfx1250_test.cpp")
     fpsan_add_hip_test(fpsan_wmma_16x16x4_gfx1250_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/wmma_16x16x4_gfx1250_test.cpp")
+        "${CTS_TEST_CASES_DIR}/gfx1250/fpsan/wmma_16x16x4_gfx1250_test.cpp")
     fpsan_add_hip_test(fpsan_wmma_16x16x32_gfx1250_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/wmma_16x16x32_gfx1250_test.cpp")
+        "${CTS_TEST_CASES_DIR}/gfx1250/fpsan/wmma_16x16x32_gfx1250_test.cpp")
     fpsan_add_hip_test(fpsan_wmma_16x16x64_fp8_gfx1250_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/wmma_16x16x64_fp8_gfx1250_test.cpp")
+        "${CTS_TEST_CASES_DIR}/gfx1250/fpsan/wmma_16x16x64_fp8_gfx1250_test.cpp")
     fpsan_add_hip_test(fpsan_wmma_16x16x128_fp8_gfx1250_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/wmma_16x16x128_fp8_gfx1250_test.cpp")
+        "${CTS_TEST_CASES_DIR}/gfx1250/fpsan/wmma_16x16x128_fp8_gfx1250_test.cpp")
     fpsan_add_hip_test(fpsan_wmma_16x16x128_f8f6f4_gfx1250_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/wmma_16x16x128_f8f6f4_gfx1250_test.cpp")
+        "${CTS_TEST_CASES_DIR}/gfx1250/fpsan/wmma_16x16x128_f8f6f4_gfx1250_test.cpp")
     fpsan_add_hip_test(fpsan_wmma_32x16x128_f4_gfx1250_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/wmma_32x16x128_f4_gfx1250_test.cpp")
+        "${CTS_TEST_CASES_DIR}/gfx1250/fpsan/wmma_32x16x128_f4_gfx1250_test.cpp")
     fpsan_add_hip_test(fpsan_wmma_scale_f8f6f4_gfx1250_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/wmma_scale_f8f6f4_gfx1250_test.cpp")
+        "${CTS_TEST_CASES_DIR}/gfx1250/fpsan/wmma_scale_f8f6f4_gfx1250_test.cpp")
     fpsan_add_hip_test(fpsan_swmmac_16x16x128_fp8_gfx1250_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/swmmac_16x16x128_fp8_gfx1250_test.cpp")
+        "${CTS_TEST_CASES_DIR}/gfx1250/fpsan/swmmac_16x16x128_fp8_gfx1250_test.cpp")
     fpsan_add_hip_test(fpsan_swmmac_16x16x64_16_gfx1250_test
-        "${FPSAN_TEST_CASES_DIR}/gfx1250/swmmac_16x16x64_16_gfx1250_test.cpp")
+        "${CTS_TEST_CASES_DIR}/gfx1250/fpsan/swmmac_16x16x64_16_gfx1250_test.cpp")
 endif()
 
-if(FPSAN_TESTS_HAS_CDNA4)
+if(CTS_HAS_CDNA4)
     fpsan_add_hip_test(fpsan_mfma_gfx950_test
-        "${FPSAN_TEST_CASES_DIR}/cdna4/mfma_gfx950_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna4/fpsan/mfma_gfx950_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_gfx950_scaled_test
-        "${FPSAN_TEST_CASES_DIR}/cdna4/mfma_gfx950_scaled_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna4/fpsan/mfma_gfx950_scaled_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_gfx950_smfmac_test
-        "${FPSAN_TEST_CASES_DIR}/cdna4/mfma_gfx950_smfmac_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna4/fpsan/mfma_gfx950_smfmac_test.cpp")
     fpsan_add_hip_test(fpsan_ds_read_tr_test
-        "${FPSAN_TEST_CASES_DIR}/cdna4/ds_read_tr_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna4/fpsan/ds_read_tr_test.cpp")
     fpsan_add_hip_test(fpsan_cvt_gfx950_test
-        "${FPSAN_TEST_CASES_DIR}/cdna4/cvt_gfx950_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna4/fpsan/cvt_gfx950_test.cpp")
     fpsan_add_hip_test(fpsan_cvt_scalef32_mx_gfx950_test
-        "${FPSAN_TEST_CASES_DIR}/cdna4/cvt_scalef32_mx_gfx950_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna4/fpsan/cvt_scalef32_mx_gfx950_test.cpp")
     fpsan_add_hip_test(fpsan_cvt_scalef32_fp4_gfx950_test
-        "${FPSAN_TEST_CASES_DIR}/cdna4/cvt_scalef32_fp4_gfx950_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna4/fpsan/cvt_scalef32_fp4_gfx950_test.cpp")
     fpsan_add_hip_test(fpsan_cvt_scalef32_fp6_gfx950_test
-        "${FPSAN_TEST_CASES_DIR}/cdna4/cvt_scalef32_fp6_gfx950_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna4/fpsan/cvt_scalef32_fp6_gfx950_test.cpp")
     fpsan_add_hip_test(fpsan_cvt_scalef32_fp8vec_gfx950_test
-        "${FPSAN_TEST_CASES_DIR}/cdna4/cvt_scalef32_fp8vec_gfx950_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna4/fpsan/cvt_scalef32_fp8vec_gfx950_test.cpp")
     fpsan_add_hip_test(fpsan_cvt_scalef32_sr_gfx950_test
-        "${FPSAN_TEST_CASES_DIR}/cdna4/cvt_scalef32_sr_gfx950_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna4/fpsan/cvt_scalef32_sr_gfx950_test.cpp")
 
     fpsan_add_hip_test(fpsan_xlane_gfx950_test
-        "${FPSAN_TEST_CASES_DIR}/general/xlane_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/fpsan/xlane_test.cpp")
     target_compile_definitions(fpsan_xlane_gfx950_test
         PRIVATE FPSAN_TEST_FORCE_WAVE_SIZE=64)
 endif()
 
-if(FPSAN_TESTS_HAS_CDNA3)
+if(CTS_HAS_CDNA3)
     fpsan_add_hip_test(fpsan_mfma_cdna3_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_f16_16x16x4_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_f16_16x16x4_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_f16_16x16x4_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_f16_wide_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_f16_wide_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_f16_wide_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_f16_32x32x4_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_f16_32x32x4_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_f16_32x32x4_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_f16_4x4x4_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_f16_4x4x4_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_f16_4x4x4_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_bf16_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_bf16_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_bf16_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_bf16_16x16x4_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_bf16_16x16x4_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_bf16_16x16x4_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_bf16_wide_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_bf16_wide_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_bf16_wide_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_bf16_32x32x4_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_bf16_32x32x4_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_bf16_32x32x4_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_bf16_4x4x4_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_bf16_4x4x4_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_bf16_4x4x4_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_fp8_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_fp8_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_fp8_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_fp8_16x16x32_bf8_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_fp8_16x16x32_bf8_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_fp8_16x16x32_bf8_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_fp8_32x32x16_fp8_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_fp8_32x32x16_fp8_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_fp8_32x32x16_fp8_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_fp8_32x32x16_bf8_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_fp8_32x32x16_bf8_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_fp8_32x32x16_bf8_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_xf32_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_xf32_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_xf32_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_f32_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_f32_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_f32_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_f32_32x32_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_f32_32x32_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_f32_32x32_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_f32_4x4_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_f32_4x4_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_f32_4x4_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_f64_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_f64_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_f64_test.cpp")
     fpsan_add_hip_test(fpsan_mfma_cdna3_f64_4x4_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/mfma_cdna3_f64_4x4_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/mfma_cdna3_f64_4x4_test.cpp")
     fpsan_add_hip_test(fpsan_smfmac_cdna3_test
-        "${FPSAN_TEST_CASES_DIR}/cdna3/smfmac_cdna3_test.cpp")
+        "${CTS_TEST_CASES_DIR}/cdna3/fpsan/smfmac_cdna3_test.cpp")
 endif()
 
-if(FPSAN_TESTS_HAS_RDNA4)
+if(CTS_HAS_RDNA4)
     fpsan_add_hip_test(fpsan_global_load_tr_gfx12_w64_test
-        "${FPSAN_TEST_CASES_DIR}/general/global_load_tr_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/fpsan/global_load_tr_test.cpp")
     target_compile_definitions(fpsan_global_load_tr_gfx12_w64_test
         PRIVATE
             FPSAN_TEST_GLOBAL_LOAD_TR_W64=1
@@ -476,18 +501,18 @@ if(FPSAN_TESTS_HAS_RDNA4)
     fpsan_enable_wave64(fpsan_global_load_tr_gfx12_w64_test)
 
     fpsan_add_hip_test(fpsan_wmma_gfx12_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/wmma_gfx12_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/wmma_gfx12_test.cpp")
     fpsan_add_hip_test(fpsan_wmma_gfx12_acc16_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/wmma_gfx12_acc16_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/wmma_gfx12_acc16_test.cpp")
     fpsan_add_hip_test(fpsan_wmma_gfx12_fp8_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/wmma_gfx12_fp8_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/wmma_gfx12_fp8_test.cpp")
     fpsan_add_hip_test(fpsan_wmma_gfx12_fp8_bf8_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/wmma_gfx12_fp8_bf8_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/wmma_gfx12_fp8_bf8_test.cpp")
     fpsan_add_hip_test(fpsan_wmma_gfx12_fp8_mixed_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/wmma_gfx12_fp8_mixed_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/wmma_gfx12_fp8_mixed_test.cpp")
 
     fpsan_add_hip_test(fpsan_wmma_gfx12_w64_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/wmma_gfx12_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/wmma_gfx12_test.cpp")
     target_compile_definitions(fpsan_wmma_gfx12_w64_test
         PRIVATE
             FPSAN_TEST_GFX12_WAVE64=1
@@ -495,7 +520,7 @@ if(FPSAN_TESTS_HAS_RDNA4)
     fpsan_enable_wave64(fpsan_wmma_gfx12_w64_test)
 
     fpsan_add_hip_test(fpsan_wmma_gfx12_acc16_w64_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/wmma_gfx12_acc16_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/wmma_gfx12_acc16_test.cpp")
     target_compile_definitions(fpsan_wmma_gfx12_acc16_w64_test
         PRIVATE
             FPSAN_TEST_GFX12_WAVE64=1
@@ -503,7 +528,7 @@ if(FPSAN_TESTS_HAS_RDNA4)
     fpsan_enable_wave64(fpsan_wmma_gfx12_acc16_w64_test)
 
     fpsan_add_hip_test(fpsan_wmma_gfx12_w64_fp8_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/wmma_gfx12_fp8_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/wmma_gfx12_fp8_test.cpp")
     target_compile_definitions(fpsan_wmma_gfx12_w64_fp8_test
         PRIVATE
             FPSAN_TEST_GFX12_WAVE64=1
@@ -511,7 +536,7 @@ if(FPSAN_TESTS_HAS_RDNA4)
     fpsan_enable_wave64(fpsan_wmma_gfx12_w64_fp8_test)
 
     fpsan_add_hip_test(fpsan_wmma_gfx12_w64_fp8_bf8_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/wmma_gfx12_fp8_bf8_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/wmma_gfx12_fp8_bf8_test.cpp")
     target_compile_definitions(fpsan_wmma_gfx12_w64_fp8_bf8_test
         PRIVATE
             FPSAN_TEST_GFX12_WAVE64=1
@@ -519,7 +544,7 @@ if(FPSAN_TESTS_HAS_RDNA4)
     fpsan_enable_wave64(fpsan_wmma_gfx12_w64_fp8_bf8_test)
 
     fpsan_add_hip_test(fpsan_wmma_gfx12_w64_fp8_mixed_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/wmma_gfx12_fp8_mixed_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/wmma_gfx12_fp8_mixed_test.cpp")
     target_compile_definitions(fpsan_wmma_gfx12_w64_fp8_mixed_test
         PRIVATE
             FPSAN_TEST_GFX12_WAVE64=1
@@ -527,58 +552,58 @@ if(FPSAN_TESTS_HAS_RDNA4)
     fpsan_enable_wave64(fpsan_wmma_gfx12_w64_fp8_mixed_test)
 
     fpsan_add_hip_test(fpsan_swmmac_gfx12_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/swmmac_gfx12_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/swmmac_gfx12_test.cpp")
     fpsan_add_hip_test(fpsan_swmmac_gfx12_h_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/swmmac_gfx12_h_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/swmmac_gfx12_h_test.cpp")
     fpsan_add_hip_test(fpsan_swmmac_gfx12_h_bf16_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/swmmac_gfx12_h_bf16_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/swmmac_gfx12_h_bf16_test.cpp")
     fpsan_add_hip_test(fpsan_swmmac_gfx12_h_f16out_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/swmmac_gfx12_h_f16out_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/swmmac_gfx12_h_f16out_test.cpp")
     fpsan_add_hip_test(fpsan_swmmac_gfx12_fp8_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/swmmac_gfx12_fp8_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/swmmac_gfx12_fp8_test.cpp")
     fpsan_add_hip_test(fpsan_swmmac_gfx12_fp8_mixed_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/swmmac_gfx12_fp8_mixed_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/swmmac_gfx12_fp8_mixed_test.cpp")
 
     fpsan_add_hip_test(fpsan_swmmac_gfx12_w64_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/swmmac_gfx12_w64_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/swmmac_gfx12_w64_test.cpp")
     target_compile_definitions(fpsan_swmmac_gfx12_w64_test
         PRIVATE FPSAN_TEST_FORCE_WAVE_SIZE=64)
     fpsan_enable_wave64(fpsan_swmmac_gfx12_w64_test)
 
     fpsan_add_hip_test(fpsan_swmmac_gfx12_w64_16_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/swmmac_gfx12_w64_16_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/swmmac_gfx12_w64_16_test.cpp")
     fpsan_enable_wave64(fpsan_swmmac_gfx12_w64_16_test)
 
     fpsan_add_hip_test(fpsan_swmmac_gfx12_w64_fp8_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/swmmac_gfx12_w64_fp8_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/swmmac_gfx12_w64_fp8_test.cpp")
     fpsan_enable_wave64(fpsan_swmmac_gfx12_w64_fp8_test)
 
     fpsan_add_hip_test(fpsan_swmmac_gfx12_w64_fp8_bf8_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/swmmac_gfx12_w64_fp8_bf8_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/swmmac_gfx12_w64_fp8_bf8_test.cpp")
     fpsan_enable_wave64(fpsan_swmmac_gfx12_w64_fp8_bf8_test)
 
     fpsan_add_hip_test(fpsan_swmmac_gfx12_w64_fp8_mixed_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/swmmac_gfx12_w64_fp8_mixed_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/swmmac_gfx12_w64_fp8_mixed_test.cpp")
     fpsan_enable_wave64(fpsan_swmmac_gfx12_w64_fp8_mixed_test)
 
     fpsan_add_hip_test(fpsan_swmmac_gfx12_w64_fp8_bf8bf8_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/swmmac_gfx12_w64_fp8_bf8bf8_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/swmmac_gfx12_w64_fp8_bf8bf8_test.cpp")
     fpsan_enable_wave64(fpsan_swmmac_gfx12_w64_fp8_bf8bf8_test)
 
     fpsan_add_hip_test(fpsan_xlane_gfx12_w64_test
-        "${FPSAN_TEST_CASES_DIR}/general/xlane_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/fpsan/xlane_test.cpp")
     target_compile_definitions(fpsan_xlane_gfx12_w64_test
         PRIVATE FPSAN_TEST_FORCE_WAVE_SIZE=64)
     fpsan_enable_wave64(fpsan_xlane_gfx12_w64_test)
 
     fpsan_add_hip_test(fpsan_classify_gfx12_w64_test
-        "${FPSAN_TEST_CASES_DIR}/general/classify_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/fpsan/classify_test.cpp")
     target_compile_definitions(fpsan_classify_gfx12_w64_test
         PRIVATE FPSAN_TEST_FORCE_WAVE_SIZE=64)
     fpsan_enable_wave64(fpsan_classify_gfx12_w64_test)
 
     fpsan_add_hip_test(fpsan_wave_gfx12_w64_test
-        "${FPSAN_TEST_CASES_DIR}/general/wave_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/fpsan/wave_test.cpp")
     target_compile_definitions(fpsan_wave_gfx12_w64_test
         PRIVATE
             FPSAN_TEST_ENABLE_WAVE_F64=1
@@ -587,5 +612,69 @@ if(FPSAN_TESTS_HAS_RDNA4)
     fpsan_enable_wave64(fpsan_wave_gfx12_w64_test)
 
     fpsan_add_hip_codegen_test(fpsan_algebraic_device_test
-        "${FPSAN_TEST_CASES_DIR}/rdna4/algebraic_device_test.cpp")
+        "${CTS_TEST_CASES_DIR}/rdna4/fpsan/algebraic_device_test.cpp")
+endif()
+
+if(CTS_HAS_RDNA4)
+    function(cts_add_rdna4_wave_mode_tests family source)
+        set(wave32_target "int_isa_rdna4_${family}_test")
+        set(wave64_target "int_isa_rdna4_${family}_w64_test")
+
+        cts_add_hip_test(${wave32_target} "${source}")
+        cts_add_hip_test(${wave64_target} "${source}")
+        target_compile_definitions(${wave64_target} PRIVATE
+            INT_ISA_TEST_WAVE64=1)
+        cts_enable_wave64(${wave64_target})
+    endfunction()
+
+    cts_add_hip_test(int_isa_rdna4_bitfield_test
+        "${CTS_TEST_CASES_DIR}/general/int_isa/bitfield_test.cpp")
+    cts_add_hip_test(int_isa_rdna4_lerp_test
+        "${CTS_TEST_CASES_DIR}/general/int_isa/lerp_test.cpp")
+    cts_add_hip_test(int_isa_rdna4_packed_sad_test
+        "${CTS_TEST_CASES_DIR}/general/int_isa/packed_sad_test.cpp")
+    cts_add_hip_test(int_isa_rdna4_bit_permute_test
+        "${CTS_TEST_CASES_DIR}/general/int_isa/bit_permute_test.cpp")
+    cts_add_hip_test(int_isa_rdna4_integer_dot_test
+        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/integer_dot_test.cpp")
+    cts_add_hip_test(int_isa_rdna4_packed_convert_test
+        "${CTS_TEST_CASES_DIR}/general/int_isa/packed_convert_test.cpp")
+
+    cts_add_rdna4_wave_mode_tests(lane_read
+        "${CTS_TEST_CASES_DIR}/general/int_isa/lane_read_test.cpp")
+    cts_add_rdna4_wave_mode_tests(mbcnt
+        "${CTS_TEST_CASES_DIR}/general/int_isa/mbcnt_test.cpp")
+    cts_add_rdna4_wave_mode_tests(ds_permute
+        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/ds_permute_test.cpp")
+    # Fetch-invalid semantics require the per-lane source value to remain in a
+    # VGPR across an EXEC-divergent region. At -O0 clang outlines the trait and
+    # reloads that value from scratch only for active lanes, defeating the ISA
+    # condition the test is intended to construct.
+    target_compile_options(int_isa_rdna4_ds_permute_test PRIVATE -O2)
+    target_compile_options(int_isa_rdna4_ds_permute_w64_test PRIVATE -O2)
+    cts_add_rdna4_wave_mode_tests(ds_swizzle
+        "${CTS_TEST_CASES_DIR}/general/int_isa/ds_swizzle_test.cpp")
+    cts_add_rdna4_wave_mode_tests(dpp
+        "${CTS_TEST_CASES_DIR}/general/int_isa/dpp_test.cpp")
+    cts_add_rdna4_wave_mode_tests(permlane
+        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/permlane_test.cpp")
+    cts_add_rdna4_wave_mode_tests(ballot
+        "${CTS_TEST_CASES_DIR}/general/int_isa/ballot_test.cpp")
+    cts_add_rdna4_wave_mode_tests(compare
+        "${CTS_TEST_CASES_DIR}/general/int_isa/compare_test.cpp")
+    cts_add_rdna4_wave_mode_tests(reduction
+        "${CTS_TEST_CASES_DIR}/general/int_isa/reduction_test.cpp")
+
+    cts_add_rdna4_wave_mode_tests(wmma_i32_16x16x16_iu8
+        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/wmma_i32_16x16x16_iu8_test.cpp")
+    cts_add_rdna4_wave_mode_tests(wmma_i32_16x16x16_iu4
+        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/wmma_i32_16x16x16_iu4_test.cpp")
+    cts_add_rdna4_wave_mode_tests(wmma_i32_16x16x32_iu4
+        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/wmma_i32_16x16x32_iu4_test.cpp")
+    cts_add_rdna4_wave_mode_tests(swmmac_i32_16x16x32_iu8
+        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/swmmac_i32_16x16x32_iu8_test.cpp")
+    cts_add_rdna4_wave_mode_tests(swmmac_i32_16x16x32_iu4
+        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/swmmac_i32_16x16x32_iu4_test.cpp")
+    cts_add_rdna4_wave_mode_tests(swmmac_i32_16x16x64_iu4
+        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/swmmac_i32_16x16x64_iu4_test.cpp")
 endif()
