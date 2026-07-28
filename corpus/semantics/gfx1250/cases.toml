@@ -1,0 +1,234 @@
+[corpus]
+schema = 1
+target = "gfx1250"
+
+# Each case names a source instruction shape exercised by one independently
+# runnable HIP program. Tool-specific coverage maps can refer to these stable
+# IDs without coupling this corpus to a particular launch mechanism.
+
+[[case]]
+id = "s-clause"
+test = "s_clause_test"
+source_patterns = ['\bs_clause\b']
+
+[[case]]
+id = "cluster-load-off"
+test = "cluster_load_test"
+source_patterns = [
+  '\bcluster_load_b32\b[^\n]*\boff\b',
+  '\bcluster_load_b64\b[^\n]*\boff\b',
+  '\bcluster_load_b128\b[^\n]*\boff\b',
+  '\bcluster_load_async_to_lds_b8\b[^\n]*\boff\b',
+  '\bcluster_load_async_to_lds_b32\b[^\n]*\boff\b',
+  '\bcluster_load_async_to_lds_b64\b[^\n]*\boff\b',
+  '\bcluster_load_async_to_lds_b128\b[^\n]*\boff\b',
+]
+
+[[case]]
+id = "cluster-load-saddr"
+test = "cluster_load_test"
+source_patterns = [
+  '\bcluster_load_b32\b[^\n]*\bs\[',
+  '\bcluster_load_b64\b[^\n]*\bs\[',
+  '\bcluster_load_b128\b[^\n]*\bs\[',
+  '\bcluster_load_async_to_lds_b8\b[^\n]*\bs\[',
+  '\bcluster_load_async_to_lds_b32\b[^\n]*\bs\[',
+  '\bcluster_load_async_to_lds_b64\b[^\n]*\bs\[',
+  '\bcluster_load_async_to_lds_b128\b[^\n]*\bs\[',
+]
+
+[[case]]
+id = "barrier-signal-isfirst"
+test = "barrier_signal_isfirst_test"
+source_patterns = ['\bs_barrier_signal_isfirst\b']
+
+[[case]]
+id = "ds-two-address-load-store"
+test = "ds_2addr_test"
+source_patterns = [
+  '\bds_load_2addr_b32\b',
+  '\bds_load_2addr_b64\b',
+  '\bds_load_2addr_stride64_b32\b',
+  '\bds_load_2addr_stride64_b64\b',
+  '\bds_store_2addr_b32\b',
+  '\bds_store_2addr_b64\b',
+  '\bds_store_2addr_stride64_b32\b',
+  '\bds_store_2addr_stride64_b64\b',
+]
+
+[[case]]
+id = "ds-two-address-returning-exchange"
+test = "ds_storexchg_2addr_test"
+source_patterns = [
+  '\bds_storexchg_2addr_rtn_b32\b',
+  '\bds_storexchg_2addr_rtn_b64\b',
+  '\bds_storexchg_2addr_stride64_rtn_b32\b',
+  '\bds_storexchg_2addr_stride64_rtn_b64\b',
+]
+
+[[case]]
+id = "tensor-load-multicast-mask"
+test = "tensor_load_to_lds_test"
+source_patterns = ['\btensor_load_to_lds\b']
+
+[[case]]
+id = "ds-addtid"
+test = "ds_addtid_test"
+source_patterns = ['\bds_load_addtid_b32\b', '\bds_store_addtid_b32\b']
+
+[[case]]
+id = "fp8-e5m3-unpack"
+test = "fp8_e5m3_unpack_test"
+source_patterns = [
+  '\bv_cvt_f32_fp8\b[^\n]*\bbyte_sel:0\b[^\n]*\bclamp\b',
+  '\bv_cvt_f32_fp8\b[^\n]*\bbyte_sel:1\b[^\n]*\bclamp\b',
+  '\bv_cvt_f32_fp8\b[^\n]*\bbyte_sel:2\b[^\n]*\bclamp\b',
+  '\bv_cvt_f32_fp8\b[^\n]*\bbyte_sel:3\b[^\n]*\bclamp\b',
+]
+
+[[case]]
+id = "fp8-e5m3-pack"
+test = "fp8_e5m3_pack_test"
+source_patterns = [
+  '\bv_cvt_pk_fp8_f32\b[^\n]*\bop_sel:\[0,0,0\][^\n]*\bclamp\b',
+  '\bv_cvt_pk_fp8_f32\b[^\n]*\bop_sel:\[0,0,1\][^\n]*\bclamp\b',
+  '\bv_cvt_sr_fp8_f32\b[^\n]*\bbyte_sel:3\b[^\n]*\bclamp\b',
+  '\bv_cvt_pk_fp8_f32\b[^\n]*-\|[^\n]*\|[^\n]*\bclamp\b',
+]
+
+[[case]]
+id = "integer-wmma-spacing"
+test = "integer_wmma_hazard_test"
+source_patterns = [
+  '\bv_wmma_i32_16x16x64_iu8\b',
+  '\bv_swmmac_i32_16x16x128_iu8\b',
+]
+
+[[case]]
+id = "wmma-k128-f32"
+test = "wmma_split_f32_test"
+source_patterns = [
+  '\bv_wmma_f32_16x16x128_fp8_fp8\b',
+  '\bv_wmma_f32_16x16x128_fp8_bf8\b',
+  '\bv_wmma_f32_16x16x128_bf8_fp8\b',
+  '\bv_wmma_f32_16x16x128_bf8_bf8\b',
+]
+
+[[case]]
+id = "wmma-k128-f16"
+test = "wmma_split_f16_test"
+source_patterns = [
+  '\bv_wmma_f16_16x16x128_fp8_fp8\b',
+  '\bv_wmma_f16_16x16x128_fp8_bf8\b',
+  '\bv_wmma_f16_16x16x128_bf8_fp8\b',
+  '\bv_wmma_f16_16x16x128_bf8_bf8\b',
+]
+
+[[case]]
+id = "wmma-m32-fp4"
+test = "wmma_split_fp4_test"
+source_patterns = ['\bv_wmma_f32_32x16x128_f4\b']
+
+[[case]]
+id = "wmma-regular-scale"
+test = "wmma_scale_regular_test"
+source_patterns = [
+  '\bv_wmma_scale_f32_16x16x128_f8f6f4\b',
+  '\bv_wmma_scale_f32_32x16x128_f4\b',
+]
+
+[[case]]
+id = "wmma-bare-f8f6f4"
+test = "wmma_scale_regular_test"
+source_patterns = ['\bv_wmma_f32_16x16x128_f8f6f4\b']
+
+[[case]]
+id = "wmma-scale16-m16"
+test = "wmma_scale16_m16_test"
+source_patterns = ['\bv_wmma_scale16_f32_16x16x128_f8f6f4\b']
+
+[[case]]
+id = "wmma-scale16-m32"
+test = "wmma_scale16_m32_test"
+source_patterns = ['\bv_wmma_scale16_f32_32x16x128_f4\b']
+
+[results.barrier_signal_isfirst_test]
+records = [{ case = "two-wave feature mix", variants = 1 }]
+
+[results.cluster_load_test]
+records = [
+  { case = "cluster activation stream", variants = 14 },
+  { case = "cluster M0 preservation", variants = 14 },
+]
+
+[results.ds_2addr_test]
+records = [{ case = "two-field LDS tile", variants = 8 }]
+
+[results.ds_addtid_test]
+records = [{ case = "addtid activation stage", variants = 1 }]
+
+[results.ds_storexchg_2addr_test]
+records = [{ case = "LDS queue handoff", variants = 4 }]
+
+[results.fp8_e5m3_pack_test]
+records = [
+  { case = "UE5M3 packed low half", variants = 2 },
+  { case = "UE5M3 packed high half", variants = 2 },
+  { case = "UE5M3 stochastic byte selection", variants = 2 },
+  { case = "UE5M3 source modifiers", variants = 2 },
+]
+
+[results.fp8_e5m3_unpack_test]
+records = [{ case = "UE5M3 unpack byte selection", variants = 4 }]
+
+[results.integer_wmma_hazard_test]
+records = [
+  { case = "dense quantized GEMM+bias", variants = 1 },
+  { case = "sparse quantized GEMM+bias", variants = 1 },
+]
+
+[results.s_clause_test]
+records = [{ case = "hard-clause global loads", variants = 1 }]
+
+[results.tensor_load_to_lds_test]
+records = [
+  { case = "tensor-DMA live-descriptor fallback", variants = 1 },
+  { case = "tensor descriptor preserved", variants = 1 },
+  { case = "tensor-DMA definition-time mask", variants = 1 },
+]
+
+[results.wmma_scale_regular_test]
+records = [
+  { case = "regular-scale GEMM tile", variants = 3 },
+  { case = "regular-scale nonuniform tile", variants = 3 },
+]
+
+[results.wmma_scale16_m16_test]
+records = [
+  { case = "Scale16 M16 GEMM tile", variants = 3 },
+  { case = "Scale16 M16 nonuniform tile", variants = 3 },
+]
+
+[results.wmma_scale16_m32_test]
+records = [
+  { case = "Scale16 M32 GEMM tile", variants = 1 },
+  { case = "Scale16 M32 nonuniform tile", variants = 1 },
+]
+
+[results.wmma_split_f16_test]
+records = [
+  { case = "K128 f16 WMMA tile", variants = 4 },
+  { case = "K128 f16 nonuniform tile", variants = 4 },
+]
+
+[results.wmma_split_f32_test]
+records = [
+  { case = "K128 f32 WMMA tile", variants = 4 },
+  { case = "K128 f32 nonuniform tile", variants = 4 },
+]
+
+[results.wmma_split_fp4_test]
+records = [
+  { case = "M32 FP4 WMMA tile", variants = 1 },
+  { case = "M32 FP4 nonuniform tile", variants = 1 },
+]

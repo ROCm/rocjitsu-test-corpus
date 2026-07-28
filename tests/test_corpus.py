@@ -17,8 +17,7 @@ from support.prepare_inputs import (
     parse_csv_values,
     resolve_repo_path,
 )
-from test_suites import cts, dbt, iree, kernels
-
+from test_suites import cts, dbt, iree, kernels, semantics
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SUITE_MODULES = {
@@ -26,6 +25,7 @@ SUITE_MODULES = {
     "kernels": kernels,
     "cts": cts,
     "dbt": dbt,
+    "semantics": semantics,
 }
 DEFAULT_TARGET = "gfx1201"
 DEFAULT_SUITES = ("iree", "kernels", "cts")
@@ -85,9 +85,7 @@ def pytest_generate_tests(metafunc):
                             ),
                             package_lock_path=config.getoption("dbt_package_lock"),
                             timeout_seconds=config.getoption("dbt_timeout"),
-                            memory_limit_mib=config.getoption(
-                                "dbt_memory_limit_mib"
-                            ),
+                            memory_limit_mib=config.getoption("dbt_memory_limit_mib"),
                             allow_incomplete=config.getoption(
                                 "dbt_allow_incomplete_corpus"
                             ),
