@@ -30,6 +30,10 @@ from support.prepare_inputs import load_suite_target_configs, supports_target
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIGS_ROOT = REPO_ROOT / "corpus" / "dbt" / "configs"
+DATA_ONLY_NOOP_WARNING = (
+    "warning: data-only: code object has no executable sections, segments, "
+    "or callable symbols; leaving unchanged"
+)
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 SHA256SUM_RE = re.compile(
     r"(?P<digest>[0-9a-f]{64})  "
@@ -488,7 +492,17 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
             _validate_code_object(b"", digest)
         stdout_file.seek(0)
         with mmap.mmap(stdout_file.fileno(), 0, access=mmap.ACCESS_READ) as output:
-            _validate_code_object(output, digest)
+            data_only_noop = DATA_ONLY_NOOP_WARNING in stderr.splitlines()
+            if data_only_noop and output[:] != source:
+                raise RuntimeError(
+                    f"DBT translation for {digest} reported a data-only no-op "
+                    "but changed the code object"
+                )
+            _validate_code_object(
+                output,
+                digest,
+                allow_data_only=data_only_noop,
+            )
         _validate_with_llvm_objdump(
             Path(stdout_file.name),
             Path(case.build["llvm_objdump"]),
@@ -1273,7 +1287,12 @@ def _expected_description(expected_failure: dict | None) -> str:
     return expected_failure["kind"]
 
 
-def _validate_code_object(output: bytes, digest: str) -> None:
+def _validate_code_object(
+    output: bytes,
+    digest: str,
+    *,
+    allow_data_only: bool = False,
+) -> None:
     if len(output) < 64 or output[:4] != b"\x7fELF":
         raise RuntimeError(
             f"DBT translation for {digest} did not emit a complete ELF code object"
@@ -1361,7 +1380,14 @@ def _validate_code_object(output: bytes, digest: str) -> None:
         if section_type == 1 and section_flags & 0x6 == 0x6 and file_size:
             has_executable_section = True
 
-    if not has_executable_load or not has_executable_section:
+    if allow_data_only and (has_executable_load or has_executable_section):
+        raise RuntimeError(
+            f"DBT translation for {digest} reported a data-only no-op for an "
+            "object with executable loadable content"
+        )
+    if not allow_data_only and (
+        not has_executable_load or not has_executable_section
+    ):
         raise RuntimeError(
             f"DBT translation for {digest} emitted no executable loadable content"
         )
