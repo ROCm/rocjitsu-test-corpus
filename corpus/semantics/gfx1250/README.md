@@ -24,6 +24,8 @@ cmake -S corpus/semantics/gfx1250 \
   -DHIPCC=/path/to/hipcc
 cmake --build build/gfx1250-semantics
 cmake --build build/gfx1250-semantics --target check-source-coverage
+cmake --build build/gfx1250-semantics \
+  --target check-semantic-ds_addtid_test
 ```
 
 The build produces:
@@ -70,6 +72,12 @@ python corpus/semantics/gfx1250/scripts/compare_runs.py \
 
 The reports must use the same target, manifest revision, selected tests, and
 typed result records. Labels, metadata, and executable hashes may differ.
+Comparison is deliberately exact after record normalization; no numeric
+tolerance is applied. Floating-point bytes compare exactly except that `near`
+records canonicalize all NaNs before serialization. The `comparison` field
+describes the program's built-in oracle and does not otherwise relax cross-run
+equality. These fixtures use deterministic inputs so any differing observation
+remains visible.
 This permits comparisons between:
 
 - two simulator configurations;

@@ -50,11 +50,11 @@ int main() {
       packed.host[i] = word;
       expected[i] = corpus::decode_ue5m3((word >> (8 * byte_sel)) & 0xffu);
     }
-    packed.upload();
+    packed.host_to_target();
     output.clear();
     hipLaunchKernelGGL(e5m3_unpack, dim3(1), dim3(64), 0, 0, output.device,
                        packed.device, byte_sel, n);
-    output.download();
+    output.target_to_host();
     if (!corpus::expect_near("UE5M3 unpack byte selection", output.host,
                              expected, 0.0, byte_sel))
       return 1;

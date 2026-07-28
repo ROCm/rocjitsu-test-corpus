@@ -29,12 +29,12 @@ int main() {
   corpus::DeviceBuffer<float> output(lanes * 16);
   std::fill(a.host.begin(), a.host.end(), 0x22222222);
   std::fill(b.host.begin(), b.host.end(), 0x22222222);
-  a.upload();
-  b.upload();
+  a.host_to_target();
+  b.host_to_target();
   output.clear();
   hipLaunchKernelGGL(wmma_m32_fp4, dim3(1), dim3(lanes), 0, 0, output.device,
                      a.device, b.device);
-  output.download();
+  output.target_to_host();
   std::vector<float> expected(lanes * 16);
   for (int i = 0; i < lanes * 16; ++i)
     expected[i] = 128.0f + static_cast<float>(i);
@@ -44,12 +44,12 @@ int main() {
     a.host[i] = (i % 3) ? 0x22222222 : 0;
     b.host[i] = (i % 5) ? 0x22222222 : 0;
   }
-  a.upload();
-  b.upload();
+  a.host_to_target();
+  b.host_to_target();
   output.clear();
   hipLaunchKernelGGL(wmma_m32_fp4, dim3(1), dim3(lanes), 0, 0, output.device,
                      a.device, b.device);
-  output.download();
+  output.target_to_host();
   return corpus::expect_nonconstant_observation("M32 FP4 nonuniform tile",
                                                  output.host)
              ? 0

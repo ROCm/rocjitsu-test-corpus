@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare two semantic run reports without interpreting how they were launched."""
+"""Compare two semantic run reports byte-for-byte, independent of their launchers."""
 
 from __future__ import annotations
 
@@ -84,9 +84,9 @@ def compare_reports(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("reference", type=Path)
-    parser.add_argument("candidate", type=Path)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("reference", type=Path, help="reference run report")
+    parser.add_argument("candidate", type=Path, help="candidate run report")
     args = parser.parse_args()
     try:
         compare_reports(args.reference, args.candidate)

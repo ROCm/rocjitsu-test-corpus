@@ -29,11 +29,11 @@ int main() {
     input.host[i] = static_cast<float>(i % 19) - 4.0f;
   for (int i = 0; i < count; ++i)
     expected[i] = input.host[2 * i] + input.host[2 * i + 1];
-  input.upload();
+  input.host_to_target();
   output.clear();
   hipLaunchKernelGGL(hard_clause_loads, dim3(1), dim3(count), 0, 0,
                      output.device, input.device);
-  output.download();
+  output.target_to_host();
   return corpus::expect_near("hard-clause global loads", output.host, expected)
              ? 0
              : 1;

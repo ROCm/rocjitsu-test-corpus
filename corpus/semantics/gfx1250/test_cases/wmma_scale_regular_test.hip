@@ -61,12 +61,12 @@ int main() {
     const int one = variant == 0 ? 0x38383838 : 0x22222222;
     std::fill(a.host.begin(), a.host.end(), one);
     std::fill(b.host.begin(), b.host.end(), one);
-    a.upload();
-    b.upload();
+    a.host_to_target();
+    b.host_to_target();
     output.clear();
     hipLaunchKernelGGL(regular_scaled_gemm, dim3(1), dim3(lanes), 0, 0,
                        output.device, a.device, b.device, variant, false);
-    output.download();
+    output.target_to_host();
     const size_t count = lanes * (variant == 1 ? 16 : 8);
     std::vector<float> actual(output.host.begin(), output.host.begin() + count);
     std::vector<float> expected(count);
@@ -80,12 +80,12 @@ int main() {
       a.host[i] = (i % 3) ? one : 0;
       b.host[i] = (i % 5) ? one : 0;
     }
-    a.upload();
-    b.upload();
+    a.host_to_target();
+    b.host_to_target();
     output.clear();
     hipLaunchKernelGGL(regular_scaled_gemm, dim3(1), dim3(lanes), 0, 0,
                        output.device, a.device, b.device, variant, true);
-    output.download();
+    output.target_to_host();
     std::vector<float> observed(output.host.begin(),
                                 output.host.begin() + count);
     if (!corpus::expect_nonconstant_observation(

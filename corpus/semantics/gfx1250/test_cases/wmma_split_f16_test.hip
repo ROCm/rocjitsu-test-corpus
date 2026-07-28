@@ -65,12 +65,12 @@ int main() {
     const int b_word = (variant & 1) ? 0x3c3c3c3c : 0x38383838;
     std::fill(a.host.begin(), a.host.end(), a_word);
     std::fill(b.host.begin(), b.host.end(), b_word);
-    a.upload();
-    b.upload();
+    a.host_to_target();
+    b.host_to_target();
     output.clear();
     hipLaunchKernelGGL(wmma_k128_f16, dim3(1), dim3(lanes), 0, 0,
                        output.device, a.device, b.device, variant);
-    output.download();
+    output.target_to_host();
     if (!corpus::expect_equal("K128 f16 WMMA tile", output.host, expected,
                               variant))
       return 1;
@@ -81,12 +81,12 @@ int main() {
       a.host[i] = ((i + variant) % 3) ? a_one : 0;
       b.host[i] = ((2 * i + variant) % 5) ? b_one : 0;
     }
-    a.upload();
-    b.upload();
+    a.host_to_target();
+    b.host_to_target();
     output.clear();
     hipLaunchKernelGGL(wmma_k128_f16, dim3(1), dim3(lanes), 0, 0,
                        output.device, a.device, b.device, variant);
-    output.download();
+    output.target_to_host();
     if (!corpus::expect_nonconstant_observation(
             "K128 f16 nonuniform tile", output.host, variant))
       return 1;

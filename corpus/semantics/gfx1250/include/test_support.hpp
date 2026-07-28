@@ -99,11 +99,11 @@ public:
 
   size_t bytes() const { return count_ * sizeof(T); }
   size_t size() const { return count_; }
-  void upload() {
+  void host_to_target() {
     HIP_CHECK(hipMemcpy(device, host.data(), count_ * sizeof(T), hipMemcpyHostToDevice));
   }
   void clear() { HIP_CHECK(hipMemset(device, 0, count_ * sizeof(T))); }
-  void download() {
+  void target_to_host() {
     HIP_CHECK(hipGetLastError());
     HIP_CHECK(hipDeviceSynchronize());
     HIP_CHECK(hipMemcpy(host.data(), device, count_ * sizeof(T), hipMemcpyDeviceToHost));

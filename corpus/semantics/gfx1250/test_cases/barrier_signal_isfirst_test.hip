@@ -22,10 +22,10 @@ int main() {
   for (int i = 0; i < lanes; ++i)
     expected[i] = (2.0f * input.host[i] + 1.0f) +
                   (2.0f * input.host[(i + 32) & 63] + 1.0f);
-  input.upload();
+  input.host_to_target();
   output.clear();
   hipLaunchKernelGGL(cooperative_feature_mix, dim3(1), dim3(lanes), 0, 0,
                      output.device, input.device);
-  output.download();
+  output.target_to_host();
   return corpus::expect_near("two-wave feature mix", output.host, expected) ? 0 : 1;
 }

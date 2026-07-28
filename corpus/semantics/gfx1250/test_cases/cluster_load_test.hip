@@ -1,5 +1,6 @@
 #include "test_support.hpp"
 
+#include <bit>
 #include <cstdint>
 
 using i32x2 = int __attribute__((ext_vector_type(2)));
@@ -120,9 +121,12 @@ int main() {
   corpus::DeviceBuffer<float> input(n * 4);
   corpus::DeviceBuffer<float> output(n);
   corpus::DeviceBuffer<unsigned> m0_after(n);
-  for (int i = 0; i < n * 4; ++i)
-    input.host[i] = static_cast<float>((i % 23) + 1);
-  input.upload();
+  for (int i = 0; i < n * 4; ++i) {
+    const unsigned bits =
+        0x3f000000u | ((static_cast<unsigned>(i) + 1u) * 0x101u);
+    input.host[i] = std::bit_cast<float>(bits);
+  }
+  input.host_to_target();
 
   hipLaunchConfig_t config{};
   config.gridDim = dim3(blocks);
@@ -140,8 +144,8 @@ int main() {
     m0_after.clear();
     HIP_CHECK(hipLaunchKernelEx(&config, cluster_activation_stream, output.device,
                                 m0_after.device, input.device, variant));
-    output.download();
-    m0_after.download();
+    output.target_to_host();
+    m0_after.target_to_host();
     std::vector<float> expected(n);
     std::vector<unsigned> expected_m0(
         n, 0x12000000u | (static_cast<unsigned>(variant) << 16));

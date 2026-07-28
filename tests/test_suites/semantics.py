@@ -94,6 +94,7 @@ def build(
     build_dir = build_root / "build"
     logs_dir = build_root / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
+    test = case.metadata["test"]
 
     if build_dir not in build_state.configured_build_dirs:
         _run_command(
@@ -121,10 +122,10 @@ def build(
             "--build",
             str(build_dir),
             "--target",
-            "check-gfx1250-semantics",
+            f"check-semantic-{test}",
         ],
         cwd=REPO_ROOT,
-        log_path=logs_dir / "build.log",
+        log_path=logs_dir / f"{test}.build.log",
         phase="build",
     )
     return BuildResult(

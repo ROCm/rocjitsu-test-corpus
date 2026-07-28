@@ -59,7 +59,7 @@ int main() {
   corpus::DeviceBuffer<unsigned> descriptor_after(1);
   for (unsigned i = 0; i < elements; ++i)
     input.host[i] = static_cast<int>(3 * i + 7);
-  input.upload();
+  input.host_to_target();
   fallback_output.clear();
   definition_output.clear();
   descriptor_after.clear();
@@ -78,8 +78,8 @@ int main() {
                      elements * sizeof(int), 0,
                      fallback_output.device, descriptor_after.device,
                      tensor_desc, group_desc);
-  fallback_output.download();
-  descriptor_after.download();
+  fallback_output.target_to_host();
+  descriptor_after.target_to_host();
   if (!corpus::expect_equal("tensor-DMA live-descriptor fallback",
                             fallback_output.host, input.host))
     return 1;
@@ -91,7 +91,7 @@ int main() {
   hipLaunchKernelGGL(tensor_tile_prefetch_definition, dim3(1), dim3(32),
                      elements * sizeof(int), 0, definition_output.device,
                      tensor_desc, group_desc, multicast_mask);
-  definition_output.download();
+  definition_output.target_to_host();
   return corpus::expect_equal("tensor-DMA definition-time mask",
                               definition_output.host, input.host)
              ? 0

@@ -36,7 +36,7 @@ int main() {
     output.clear();
     hipLaunchKernelGGL(quantized_gemm_bias, dim3(1), dim3(32), 0, 0,
                        output.device, sparse);
-    output.download();
+    output.target_to_host();
     if (!corpus::expect_equal(sparse ? "sparse quantized GEMM+bias"
                                      : "dense quantized GEMM+bias",
                               output.host, expected))

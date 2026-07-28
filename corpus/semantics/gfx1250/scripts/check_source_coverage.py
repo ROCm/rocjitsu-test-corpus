@@ -190,11 +190,20 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--assembly-dir", type=Path, required=True)
+    parser.add_argument(
+        "--test",
+        help="check generated assembly only for the selected test executable",
+    )
     args = parser.parse_args()
 
     with args.manifest.open("rb") as stream:
         manifest = tomllib.load(stream)
     cases, failed = validate_manifest(manifest, args.manifest.resolve())
+    if args.test:
+        cases = [case for case in cases if case["test"] == args.test]
+        if not cases:
+            print(f"MISS cases: unknown test {args.test}")
+            failed = True
     failed |= check_source_assembly(cases, args.assembly_dir)
     return 1 if failed else 0
 

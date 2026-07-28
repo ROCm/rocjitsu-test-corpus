@@ -183,9 +183,9 @@ int main() {
     seeds.host[i] = seed_values[i % 16];
   }
 
-  input.upload();
-  stochastic_input.upload();
-  seeds.upload();
+  input.host_to_target();
+  stochastic_input.host_to_target();
+  seeds.host_to_target();
   bool ok = true;
   for (int fp16_ovfl = 0; fp16_ovfl < 2; ++fp16_ovfl) {
     for (int i = 0; i < n; ++i) {
@@ -214,10 +214,10 @@ int main() {
                        high.device, stochastic.device, modified.device,
                        input.device, stochastic_input.device, seeds.device, n,
                        fp16_ovfl);
-    low.download();
-    high.download();
-    stochastic.download();
-    modified.download();
+    low.target_to_host();
+    high.target_to_host();
+    stochastic.target_to_host();
+    modified.target_to_host();
     ok &= corpus::expect_equal("UE5M3 packed low half", low.host, expected_low,
                                fp16_ovfl);
     ok &= corpus::expect_equal("UE5M3 packed high half", high.host,

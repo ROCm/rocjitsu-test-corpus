@@ -58,6 +58,17 @@ foreach(test_name IN LISTS SEMANTIC_TESTS)
     DEPENDS "${source}" "${CMAKE_CURRENT_SOURCE_DIR}/include/test_support.hpp"
     VERBATIM)
   list(APPEND SEMANTIC_ASSEMBLY "${assembly}")
+
+  add_custom_target(
+    "check-semantic-${test_name}"
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_source_coverage.py"
+      --manifest "${CMAKE_CURRENT_SOURCE_DIR}/cases.toml"
+      --assembly-dir "${CMAKE_CURRENT_BINARY_DIR}/assembly"
+      --test "${test_name}"
+    DEPENDS "${binary}" "${assembly}"
+    VERBATIM)
 endforeach()
 
 add_custom_target(semantic-binaries ALL DEPENDS ${SEMANTIC_BINARIES})
