@@ -10,6 +10,7 @@ corpus/
   iree/       IREE run-module cases and target configs.
   kernels/    HIP kernel reproducers, CMake runners, and vendored sources.
   dbt/        Offline DBT translation profiles.
+  semantics/  Standalone target-specific HIP semantic programs.
   tensile/    gfx1250 TensileLite configs and generated artifacts.
 
 tests/
@@ -33,13 +34,16 @@ requirements.txt       Python packages for pytest and corpus helpers.
   `hip-stream-k`, `hip-matmul`, `hipkittens`, and `llama.cpp`.
 - `corpus/cts/`: HIP semantic tests organized by target family, including
   FPSan-derived floating-point cases and standalone integer ISA cases.
+- `corpus/semantics/`: standalone HIP programs with deterministic inputs,
+  source-ISA coverage, and typed results that can be captured under any
+  externally selected launch configuration.
 - `corpus/tensile/`: gfx1250 TensileLite YAML configs, manifests, numeric smoke
   lists, and generated HSACO/code-object artifacts. This corpus is run by the
   Tensile scripts, not by `tests/test_corpus.py`.
 
-`tests/test_corpus.py` discovers and runs the `iree`, `kernels`, `cts`, and
-`dbt` suites. By default it uses target `gfx1201` and selects the first three;
-the offline `dbt` suite is opt-in because it consumes a generated extraction.
+`tests/test_corpus.py` discovers and runs the `iree`, `kernels`, `cts`, `dbt`,
+and `semantics` suites. By default it uses target `gfx1201` and selects the
+first three; `dbt` and `semantics` are opt-in.
 
 ## Prerequisites
 
@@ -121,7 +125,7 @@ Useful selectors:
 
 - `--target <gfx target>`: target to run, for example `gfx942`, `gfx950`,
   `gfx1201`, or `gfx1250`.
-- `--suite <iree|kernels|cts|dbt>`: include a suite. Repeat or pass
+- `--suite <iree|kernels|cts|dbt|semantics>`: include a suite. Repeat or pass
   comma-separated values.
 - `--exclude-suite <suite>`: exclude a suite.
 - `--backend <backend>`: include a kernel backend such as `hipkittens`.
@@ -130,8 +134,8 @@ Useful selectors:
 - `--exclude-case <selector>`: exclude a case.
 - `--artifact-directory <path>`: write build artifacts, logs, and generated
   outputs somewhere other than `.pytest-artifacts`.
-- `--run-wrapper <command>`: prepend a shell-style command prefix to IREE,
-  kernels, and CTS runtime commands.
+- `--run-wrapper <command>`: prepend a shell-style command prefix to supported
+  suite runtime commands.
 - `--timeout <seconds>`: fail an individual pytest case if it exceeds this
   runtime. This is provided by `pytest-timeout` and is not a timeout for the
   entire script; use `--session-timeout <seconds>` for a whole-session limit.
@@ -156,6 +160,26 @@ Useful selectors:
   resident-memory limit.
 - `--dbt-allow-incomplete-corpus`: explicitly consume an extraction that
   records `"complete": false` solely because CCOB materialization was skipped.
+
+## gfx1250 semantic run capture
+
+The opt-in `semantics` suite builds standalone gfx1250 HIP programs, verifies
+their declared source instructions, and runs them directly or through the
+repository-wide wrapper:
+
+```bash
+ROCM_PATH=/path/to/rocm-sdk \
+pytest tests/test_corpus.py \
+  --target gfx1250 \
+  --suite semantics \
+  --run-wrapper "/path/to/launcher --config /path/to/config.json --"
+```
+
+The package also provides generic capture and comparison utilities. External
+workflows choose simulator or physical hardware, original or prepared
+binaries, environment variables, and provenance checks. See
+[`corpus/semantics/gfx1250/README.md`](corpus/semantics/gfx1250/README.md) for
+the build, capture, comparison, and hardware-golden flow.
 
 ## Packaged gfx1250 HSACO extraction
 
