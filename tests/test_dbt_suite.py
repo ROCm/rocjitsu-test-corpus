@@ -220,6 +220,97 @@ def test_successful_translation_emits_valid_code_object(tmp_path: Path):
     assert not context.artifact_directory.exists()
 
 
+def test_data_only_noop_accepts_unchanged_non_executable_code_object(
+    tmp_path: Path,
+):
+    source = minimal_data_only_code_object()
+    corpus, config, translator, digest = _make_inputs(
+        tmp_path,
+        source=source,
+        translator_body=(
+            "import pathlib\n"
+            "import sys\n"
+            "sys.stdout.buffer.write(pathlib.Path(sys.argv[1]).read_bytes())\n"
+            f"print({dbt.DATA_ONLY_NOOP_WARNING!r}, file=sys.stderr)\n"
+        ),
+    )
+    case = dbt.discover(
+        TargetSpec("gfx1250"),
+        [config],
+        corpus_directory=corpus,
+        translator=translator,
+        timeout_seconds=1,
+        allow_incomplete=False,
+    )[0]
+    case.metadata["expected_rewrite"] = None
+    context = _run_context(tmp_path)
+    result = dbt.build(case, context, None)
+
+    dbt.run(case, result, context)
+
+    assert case.metadata["sha256"] == digest
+    assert not context.artifact_directory.exists()
+
+
+def test_data_only_noop_rejects_changed_code_object(tmp_path: Path):
+    source = minimal_data_only_code_object()
+    corpus, config, translator, _digest = _make_inputs(
+        tmp_path,
+        source=source,
+        translator_body=(
+            "import pathlib\n"
+            "import sys\n"
+            "sys.stdout.buffer.write(pathlib.Path(sys.argv[1]).read_bytes() + b'X')\n"
+            f"print({dbt.DATA_ONLY_NOOP_WARNING!r}, file=sys.stderr)\n"
+        ),
+    )
+    case = dbt.discover(
+        TargetSpec("gfx1250"),
+        [config],
+        corpus_directory=corpus,
+        translator=translator,
+        timeout_seconds=1,
+        allow_incomplete=False,
+    )[0]
+    case.metadata["expected_rewrite"] = None
+    context = _run_context(tmp_path)
+    result = dbt.build(case, context, None)
+
+    with pytest.raises(RuntimeError, match="reported a data-only no-op but changed"):
+        dbt.run(case, result, context)
+
+
+def test_data_only_noop_rejects_executable_code_object(tmp_path: Path):
+    source = minimal_code_object()
+    corpus, config, translator, _digest = _make_inputs(
+        tmp_path,
+        source=source,
+        translator_body=(
+            "import pathlib\n"
+            "import sys\n"
+            "sys.stdout.buffer.write(pathlib.Path(sys.argv[1]).read_bytes())\n"
+            f"print({dbt.DATA_ONLY_NOOP_WARNING!r}, file=sys.stderr)\n"
+        ),
+    )
+    case = dbt.discover(
+        TargetSpec("gfx1250"),
+        [config],
+        corpus_directory=corpus,
+        translator=translator,
+        timeout_seconds=1,
+        allow_incomplete=False,
+    )[0]
+    case.metadata["expected_rewrite"] = None
+    context = _run_context(tmp_path)
+    result = dbt.build(case, context, None)
+
+    with pytest.raises(
+        RuntimeError,
+        match="reported a data-only no-op for an object with executable",
+    ):
+        dbt.run(case, result, context)
+
+
 def test_translation_rejects_identity_rewrite_evidence(tmp_path: Path):
     code_object = minimal_code_object()
     corpus, config, translator, _digest = _make_inputs(
@@ -624,6 +715,7 @@ def _make_inputs(
     *,
     complete: bool = True,
     expected_failure: dict | None = None,
+    source: bytes | None = None,
     translator_body: str | None = None,
 ) -> tuple[Path, dict, Path, str]:
     corpus = tmp_path / "extraction"
@@ -632,7 +724,8 @@ def _make_inputs(
     objects.mkdir(parents=True)
     manifests.mkdir()
 
-    source = b"packaged gfx1250 code object"
+    if source is None:
+        source = b"packaged gfx1250 code object"
     digest = hashlib.sha256(source).hexdigest()
     (objects / f"{digest}.hsaco").write_bytes(source)
     (manifests / "SHA256SUMS").write_text(
@@ -834,6 +927,15 @@ def minimal_code_object() -> bytes:
         4,
         0,
     )
+    return bytes(result)
+
+
+def minimal_data_only_code_object() -> bytes:
+    result = bytearray(minimal_code_object())
+    program_offset = struct.unpack_from("<Q", result, 32)[0]
+    struct.pack_into("<I", result, program_offset + 4, 4)
+    section_offset = struct.unpack_from("<Q", result, 40)[0]
+    struct.pack_into("<Q", result, section_offset + 2 * 64 + 8, 2)
     return bytes(result)
 
 
