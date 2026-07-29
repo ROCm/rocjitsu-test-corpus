@@ -9,19 +9,28 @@ set(SEMANTIC_GPU_TARGET "gfx1250" CACHE STRING
 set(HIPCC "hipcc" CACHE FILEPATH "Path to the HIP compiler driver")
 
 set(SEMANTIC_TESTS
+    barrier_state_sgpr_pressure_test
     barrier_signal_isfirst_test
+    cluster_load_sgpr_pressure_test
     cluster_load_test
     ds_2addr_test
     ds_addtid_test
+    ds_addtid_vgpr_pressure_test
     ds_storexchg_2addr_test
+    flat_scratch_base_sgpr_pressure_test
     fp8_e5m3_pack_test
+    fp8_e5m3_unpack_pressure_test
+    fp8_e5m3_unpack_sgpr_pressure_test
     fp8_e5m3_unpack_test
     integer_wmma_hazard_test
     s_clause_test
+    tensor_load_sgpr_pressure_test
     tensor_load_to_lds_test
     wmma_scale_regular_test
     wmma_scale16_m16_test
     wmma_scale16_m32_test
+    wmma_scale16_sgpr_pressure_test
+    wmma_scale16_spill_pressure_test
     wmma_split_f16_test
     wmma_split_f32_test
     wmma_split_fp4_test)
@@ -41,7 +50,10 @@ foreach(test_name IN LISTS SEMANTIC_TESTS)
             --offload-arch=${SEMANTIC_GPU_TARGET}
             "-I${CMAKE_CURRENT_SOURCE_DIR}/include"
             "${source}" -o "${binary}"
-    DEPENDS "${source}" "${CMAKE_CURRENT_SOURCE_DIR}/include/test_support.hpp"
+    DEPENDS
+            "${source}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/resource_pressure.hpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/test_support.hpp"
     VERBATIM)
   add_custom_target("${test_name}" DEPENDS "${binary}")
   list(APPEND SEMANTIC_BINARIES "${binary}")
@@ -55,7 +67,10 @@ foreach(test_name IN LISTS SEMANTIC_TESTS)
             --cuda-device-only -S
             "-I${CMAKE_CURRENT_SOURCE_DIR}/include"
             "${source}" -o "${assembly}"
-    DEPENDS "${source}" "${CMAKE_CURRENT_SOURCE_DIR}/include/test_support.hpp"
+    DEPENDS
+            "${source}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/resource_pressure.hpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/test_support.hpp"
     VERBATIM)
   list(APPEND SEMANTIC_ASSEMBLY "${assembly}")
 
