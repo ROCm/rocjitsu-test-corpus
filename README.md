@@ -136,6 +136,12 @@ Useful selectors:
   outputs somewhere other than `.pytest-artifacts`.
 - `--run-wrapper <command>`: prepend a shell-style command prefix to supported
   suite runtime commands.
+- `--comparison-run-wrapper <command>`: run each selected semantic program
+  through a second wrapper and compare its typed results exactly with the
+  self-checking `--run-wrapper` results. This option requires selecting only
+  the `semantics` suite.
+- `--comparison-required-stderr <text>`: require text in each comparison
+  run's stderr; repeat for multiple external activation checks.
 - `--timeout <seconds>`: fail an individual pytest case if it exceeds this
   runtime. This is provided by `pytest-timeout` and is not a timeout for the
   entire script; use `--session-timeout <seconds>` for a whole-session limit.

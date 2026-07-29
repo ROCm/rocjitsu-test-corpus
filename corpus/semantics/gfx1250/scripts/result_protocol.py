@@ -144,6 +144,45 @@ def parse_records(
     return records
 
 
+def compare_records(
+    *,
+    test: str,
+    reference_records: list[dict[str, Any]],
+    candidate_records: list[dict[str, Any]],
+) -> None:
+    if reference_records == candidate_records:
+        return
+    mismatch_index = next(
+        (
+            index
+            for index, rows in enumerate(
+                zip(reference_records, candidate_records, strict=False)
+            )
+            if rows[0] != rows[1]
+        ),
+        min(len(reference_records), len(candidate_records)),
+    )
+    reference_record = (
+        reference_records[mismatch_index]
+        if mismatch_index < len(reference_records)
+        else "<missing>"
+    )
+    candidate_record = (
+        candidate_records[mismatch_index]
+        if mismatch_index < len(candidate_records)
+        else "<missing>"
+    )
+    raise ResultError(
+        "\n".join(
+            [
+                f"{test}: semantic result mismatch at record {mismatch_index}",
+                "reference: " + json.dumps(reference_record, sort_keys=True),
+                "candidate: " + json.dumps(candidate_record, sort_keys=True),
+            ]
+        )
+    )
+
+
 def validate_record(
     record: Any,
     *,

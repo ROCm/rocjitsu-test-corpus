@@ -48,6 +48,8 @@ class RunContext:
     artifact_directory: Path
     skip_all_runs: bool
     run_wrapper: str | None = None
+    comparison_run_wrapper: str | None = None
+    comparison_required_stderr: tuple[str, ...] = ()
 
 
 @dataclass

@@ -2,9 +2,13 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 TESTS_DIR = Path(__file__).resolve().parent / "tests"
 if str(TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(TESTS_DIR))
+
+from support.prepare_inputs import parse_csv_values  # noqa: E402
 
 
 def pytest_addoption(parser):
@@ -89,6 +93,24 @@ def pytest_addoption(parser):
         ),
     )
     parser.addoption(
+        "--comparison-run-wrapper",
+        action="store",
+        default=None,
+        help=(
+            "Second shell-style command prefix for exact semantic-result "
+            "comparison against --run-wrapper."
+        ),
+    )
+    parser.addoption(
+        "--comparison-required-stderr",
+        action="append",
+        default=[],
+        help=(
+            "Text that must occur in each comparison run's stderr. Repeat for "
+            "multiple required fragments."
+        ),
+    )
+    parser.addoption(
         "--run-tests-config",
         action="store",
         default=None,
@@ -102,6 +124,7 @@ def pytest_addoption(parser):
 
 # Pytest hook: called during configuration before collection starts.
 def pytest_configure(config):
+    _validate_comparison_options(config)
     _configure_xdist_loadgroup(config)
 
 
@@ -130,6 +153,28 @@ def _configure_xdist_loadgroup(config) -> None:
         return
     if getattr(config.option, "dist", None) in (None, "", "no", "load"):
         config.option.dist = "loadgroup"
+
+
+def _validate_comparison_options(config) -> None:
+    comparison_wrapper = config.getoption("comparison_run_wrapper")
+    required_stderr = config.getoption("comparison_required_stderr")
+
+    if comparison_wrapper is not None and not comparison_wrapper.strip():
+        raise pytest.UsageError("--comparison-run-wrapper must not be empty")
+    if any(not fragment for fragment in required_stderr):
+        raise pytest.UsageError("--comparison-required-stderr must not be empty")
+    if required_stderr and comparison_wrapper is None:
+        raise pytest.UsageError(
+            "--comparison-required-stderr requires --comparison-run-wrapper"
+        )
+    if comparison_wrapper is None:
+        return
+
+    selected_suites = parse_csv_values(config.getoption("suite"))
+    if selected_suites != ("semantics",):
+        raise pytest.UsageError(
+            "--comparison-run-wrapper requires selecting only --suite semantics"
+        )
 
 
 def _requested_numprocesses(config) -> int:
