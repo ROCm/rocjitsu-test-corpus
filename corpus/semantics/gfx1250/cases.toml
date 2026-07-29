@@ -63,6 +63,14 @@ test = "barrier_signal_isfirst_test"
 source_patterns = ['\bs_barrier_signal_isfirst\b']
 
 [[case]]
+id = "barrier-state-fields"
+test = "barrier_state_test"
+source_patterns = [
+  '\bs_get_barrier_state\s+s[0-9]+,\s+-1\b',
+  '\bs_get_barrier_state\s+s[0-9]+,\s+-2\b',
+]
+
+[[case]]
 id = "ds-two-address-load-store"
 test = "ds_2addr_test"
 source_patterns = [
@@ -103,6 +111,15 @@ source_patterns = [
   '\bds_store_addtid_b32\s+v8\b[^\n]*\boffset:64\b',
   '\.amdhsa_next_free_vgpr\s+256\b',
   '\.amdhsa_private_segment_fixed_size\s+0\b',
+]
+
+[[case]]
+id = "flat-scratch-base-64bit-sources"
+test = "flat_scratch_base_test"
+source_patterns = [
+  '\bs_mov_b64\b[^\n]*\bsrc_flat_scratch_base_hi\b',
+  '\bs_lshl_b64\b[^\n]*\bsrc_flat_scratch_base_hi\b',
+  '\bv_add_nc_u64_e64\b[^\n]*\bsrc_flat_scratch_base_hi\b',
 ]
 
 [[case]]
@@ -160,6 +177,20 @@ source_patterns = [
   '\.amdhsa_next_free_sgpr\s+102\b',
   '\.amdhsa_next_free_vgpr\s+156\b',
   '\.amdhsa_private_segment_fixed_size\s+0\b',
+]
+
+[[case]]
+id = "monitor-sleep-unbounded"
+test = "monitor_sleep_test"
+source_patterns = ['\bs_monitor_sleep\s+0x8000\b']
+
+[[case]]
+id = "permute-pk16-empty-exec"
+test = "permute_pk16_test"
+source_patterns = [
+  '\bv_perm_pk16_b4_u4\b',
+  '\bv_perm_pk16_b6_u4\b',
+  '\bv_perm_pk16_b8_u4\b',
 ]
 
 [[case]]
@@ -254,6 +285,9 @@ records = [
   { case = "cluster full-SGPR and M0 preservation", variants = 1 },
 ]
 
+[results.barrier_state_test]
+records = [{ case = "barrier-state fields and SCC", variants = 1 }]
+
 [results.cluster_load_test]
 records = [
   { case = "cluster activation stream", variants = 14 },
@@ -274,6 +308,9 @@ records = [
 
 [results.ds_storexchg_2addr_test]
 records = [{ case = "LDS queue handoff", variants = 4 }]
+
+[results.flat_scratch_base_test]
+records = [{ case = "skipped 64-bit flat-scratch-base sources", variants = 1 }]
 
 [results.fp8_e5m3_pack_test]
 records = [
@@ -305,6 +342,16 @@ records = [{ case = "flat-scratch full-SGPR preservation", variants = 1 }]
 records = [
   { case = "dense quantized GEMM+bias", variants = 1 },
   { case = "sparse quantized GEMM+bias", variants = 1 },
+]
+
+[results.monitor_sleep_test]
+records = [
+  { case = "unbounded monitor-sleep continuation", variants = 1 },
+]
+
+[results.permute_pk16_test]
+records = [
+  { case = "empty EXEC preserves permute destinations", variants = 1 },
 ]
 
 [results.s_clause_test]
