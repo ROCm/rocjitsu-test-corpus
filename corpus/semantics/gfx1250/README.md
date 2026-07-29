@@ -100,3 +100,21 @@ pytest tests/test_corpus.py \
   --suite semantics \
   --run-wrapper "/path/to/launcher --config /path/to/config.json --"
 ```
+
+To compare two launch configurations in one pytest run, add a comparison
+wrapper. The reference leg retains its built-in oracle, the comparison leg
+runs in record-only mode, and each pytest case compares their validated typed
+records exactly:
+
+```sh
+pytest tests/test_corpus.py \
+  --target gfx1250 \
+  --suite semantics \
+  --run-wrapper "/path/to/reference-launcher --" \
+  --comparison-run-wrapper "/path/to/candidate-launcher --" \
+  --comparison-required-stderr "candidate activation record"
+```
+
+`--comparison-required-stderr` is optional and repeatable. It lets an external
+workflow verify that its candidate launch mechanism was active without making
+the corpus aware of that mechanism.

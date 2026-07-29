@@ -4,12 +4,11 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 import sys
 from typing import Any
 
-from result_protocol import ResultError, load_report
+from result_protocol import ResultError, compare_records, load_report
 
 
 def indexed_tests(report: dict[str, Any], path: Path) -> dict[str, dict[str, Any]]:
@@ -49,38 +48,12 @@ def compare_reports(
     for test in reference_tests:
         reference_records = reference_tests[test]["records"]
         candidate_records = candidate_tests[test]["records"]
-        if reference_records == candidate_records:
-            print(f"PASS: {test}")
-            continue
-        mismatch_index = next(
-            (
-                index
-                for index, rows in enumerate(
-                    zip(reference_records, candidate_records, strict=False)
-                )
-                if rows[0] != rows[1]
-            ),
-            min(len(reference_records), len(candidate_records)),
+        compare_records(
+            test=test,
+            reference_records=reference_records,
+            candidate_records=candidate_records,
         )
-        reference_record = (
-            reference_records[mismatch_index]
-            if mismatch_index < len(reference_records)
-            else "<missing>"
-        )
-        candidate_record = (
-            candidate_records[mismatch_index]
-            if mismatch_index < len(candidate_records)
-            else "<missing>"
-        )
-        raise ResultError(
-            "\n".join(
-                [
-                    f"{test}: semantic result mismatch at record {mismatch_index}",
-                    "reference: " + json.dumps(reference_record, sort_keys=True),
-                    "candidate: " + json.dumps(candidate_record, sort_keys=True),
-                ]
-            )
-        )
+        print(f"PASS: {test}")
 
 
 def main() -> int:

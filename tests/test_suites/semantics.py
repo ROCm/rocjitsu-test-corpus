@@ -28,6 +28,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
 from result_protocol import (  # noqa: E402
     ResultError,
     case_tests,
+    compare_records,
     expected_records,
     load_manifest,
     parse_records,
@@ -143,11 +144,66 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     if test in case.metadata["target_config"].get("skip_run_tests", []):
         return
 
-    binary = build_result.build_dir / "bin" / test
-    command = [*_run_wrapper(context.run_wrapper), str(binary.resolve())]
     logs_dir = Path(build_result.metadata["logs_dir"])
-    log_path = logs_dir / f"{test}.run.log"
+    binary = build_result.build_dir / "bin" / test
+    if context.comparison_run_wrapper is None:
+        _run_semantic_binary(
+            case=case,
+            binary=binary,
+            wrapper=context.run_wrapper,
+            log_path=logs_dir / f"{test}.run.log",
+            label=f"semantics suite: {test}",
+            record_only=False,
+        )
+        return
+
+    reference_log = logs_dir / f"{test}.reference.run.log"
+    comparison_log = logs_dir / f"{test}.comparison.run.log"
+    reference_records = _run_semantic_binary(
+        case=case,
+        binary=binary,
+        wrapper=context.run_wrapper,
+        log_path=reference_log,
+        label=f"semantics reference: {test}",
+        record_only=False,
+    )
+    candidate_records = _run_semantic_binary(
+        case=case,
+        binary=binary,
+        wrapper=context.comparison_run_wrapper,
+        log_path=comparison_log,
+        label=f"semantics comparison: {test}",
+        record_only=True,
+        required_stderr=context.comparison_required_stderr,
+    )
+    try:
+        compare_records(
+            test=test,
+            reference_records=reference_records,
+            candidate_records=candidate_records,
+        )
+    except ResultError as error:
+        raise RuntimeError(
+            f"{error}; logs: {reference_log}, {comparison_log}"
+        ) from error
+
+
+def _run_semantic_binary(
+    *,
+    case: CorpusCase,
+    binary: Path,
+    wrapper: str | None,
+    log_path: Path,
+    label: str,
+    record_only: bool,
+    required_stderr: tuple[str, ...] = (),
+) -> list[dict]:
+    test = case.metadata["test"]
+    command = [*_run_wrapper(wrapper), str(binary.resolve())]
     resolved = _resolve_command(command)
+    environment = os.environ.copy()
+    if record_only:
+        environment["CORPUS_RECORD_ONLY"] = "1"
     process = subprocess.run(
         resolved,
         cwd=str(REPO_ROOT),
@@ -156,7 +212,7 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
         text=True,
         errors="replace",
         check=False,
-        env=os.environ.copy(),
+        env=environment,
     )
     log_path.write_text(
         "\n".join(
@@ -174,10 +230,17 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
         encoding="utf-8",
     )
     if process.returncode:
-        raise RuntimeError(f"semantics suite run failed for {test}; log: {log_path}")
+        raise RuntimeError(f"{label} failed; log: {log_path}")
+    missing_stderr = [
+        fragment for fragment in required_stderr if fragment not in process.stderr
+    ]
+    if missing_stderr:
+        raise RuntimeError(
+            f"{label} stderr is missing {missing_stderr!r}; log: {log_path}"
+        )
     try:
-        parse_records(
-            label=f"semantics suite: {test}",
+        return parse_records(
+            label=label,
             stdout=process.stdout,
             test=test,
             expected_keys=case.metadata["expected_records"],

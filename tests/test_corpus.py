@@ -139,6 +139,10 @@ def run_context(pytestconfig) -> RunContext:
         artifact_directory=artifact_directory,
         skip_all_runs=pytestconfig.getoption("skip_all_runs"),
         run_wrapper=pytestconfig.getoption("run_wrapper"),
+        comparison_run_wrapper=pytestconfig.getoption("comparison_run_wrapper"),
+        comparison_required_stderr=tuple(
+            pytestconfig.getoption("comparison_required_stderr")
+        ),
     )
 
 
