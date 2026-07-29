@@ -1,6 +1,9 @@
 results-*/
 gfx1250-regression-*/
 .pytest-artifacts/
+.build/
+build*/
+corpus/llama/build/
 .venv/
 .cursor/
 __pycache__/

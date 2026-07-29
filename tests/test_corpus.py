@@ -17,7 +17,7 @@ from support.prepare_inputs import (
     parse_csv_values,
     resolve_repo_path,
 )
-from test_suites import cts, dbt, iree, kernels, semantics
+from test_suites import cts, dbt, iree, kernels, llama, semantics
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SUITE_MODULES = {
@@ -26,6 +26,7 @@ SUITE_MODULES = {
     "cts": cts,
     "dbt": dbt,
     "semantics": semantics,
+    "llama": llama,
 }
 DEFAULT_TARGET = "gfx1201"
 DEFAULT_SUITES = ("iree", "kernels", "cts")
@@ -64,16 +65,16 @@ def pytest_generate_tests(metafunc):
         target_cases = []
         for suite in selected_suites:
             suite_module = SUITE_MODULES[suite]
-            if suite not in suite_config_cache:
-                suite_config_cache[suite] = suite_module.load_target_configs(
-                    tuple(str(path) for path in suite_module.default_config_files())
-                )
             try:
+                suite_configs = _load_suite_configs(
+                    suite, suite_module, suite_config_cache
+                )
+
                 if suite == "dbt":
                     target_cases.extend(
                         suite_module.discover(
                             target,
-                            suite_config_cache[suite],
+                            suite_configs,
                             corpus_directory=config.getoption("dbt_corpus"),
                             translator=config.getoption("dbt_translator"),
                             llvm_objdump=config.getoption("dbt_llvm_objdump"),
@@ -91,10 +92,11 @@ def pytest_generate_tests(metafunc):
                             ),
                         )
                     )
-                else:
-                    target_cases.extend(
-                        suite_module.discover(target, suite_config_cache[suite])
-                    )
+                    continue
+
+                target_cases.extend(
+                    suite_module.discover(target, suite_configs)
+                )
             except (OSError, TypeError, ValueError) as exc:
                 raise pytest.UsageError(f"{suite} suite: {exc}") from exc
         discovered.extend(filter_cases(target_cases, selection))
@@ -179,6 +181,19 @@ def _validate_selected_suites(selected_suites) -> None:
             raise pytest.UsageError(
                 f"Unknown suite '{suite}'. Allowed suites: {allowed}"
             )
+
+
+def _load_suite_configs(
+    suite: str,
+    suite_module,
+    cache: dict[str, list],
+) -> list:
+    if suite not in cache:
+        config_files = tuple(
+            str(path) for path in suite_module.default_config_files()
+        )
+        cache[suite] = suite_module.load_target_configs(config_files)
+    return cache[suite]
 
 
 def _load_skip_tests_config(path_value: str | None) -> dict[str, tuple[str, ...]]:

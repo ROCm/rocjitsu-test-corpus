@@ -9,8 +9,10 @@ for RocJITsu regression coverage. The main pytest entrypoint is `tests/test_corp
 corpus/
   iree/       IREE run-module cases and target configs.
   kernels/    HIP kernel reproducers, CMake runners, and vendored sources.
+  cts/        HIP semantic tests organized by target family.
   dbt/        Offline DBT translation profiles.
   semantics/  Standalone target-specific HIP semantic programs.
+  llama/      llama.cpp test-backend-ops cases and vendored GGML sources.
   tensile/    gfx1250 TensileLite configs and generated artifacts.
 
 tests/
@@ -31,19 +33,21 @@ requirements.txt       Python packages for pytest and corpus helpers.
 - `corpus/iree/`: IREE HIP e2e and matmul cases described by JSON files. The
   suite compiles with `iree-compile` and runs with `iree-run-module`.
 - `corpus/kernels/`: standalone HIP kernel reproducers. Current backends include
-  `hip-stream-k`, `hip-matmul`, `hipkittens`, and `llama.cpp`.
+  `hip-stream-k`, `hip-matmul`, `hipkittens`, and `rocblas`.
 - `corpus/cts/`: HIP semantic tests organized by target family, including
   FPSan-derived floating-point cases and standalone integer ISA cases.
 - `corpus/semantics/`: standalone HIP programs with deterministic inputs,
   source-ISA coverage, and typed results that can be captured under any
   externally selected launch configuration.
+- `corpus/llama/`: selected `llama.cpp` `test-backend-ops` cases with the pinned
+  GGML sources they were measured against. See `corpus/llama/README.md`.
 - `corpus/tensile/`: gfx1250 TensileLite YAML configs, manifests, numeric smoke
   lists, and generated HSACO/code-object artifacts. This corpus is run by the
   Tensile scripts, not by `tests/test_corpus.py`.
 
 `tests/test_corpus.py` discovers and runs the `iree`, `kernels`, `cts`, `dbt`,
-and `semantics` suites. By default it uses target `gfx1201` and selects the
-first three; `dbt` and `semantics` are opt-in.
+`semantics`, and `llama` suites. By default it uses target `gfx1201` and selects
+the first three; `dbt`, `semantics`, and `llama` are opt-in.
 
 ## Prerequisites
 
@@ -125,8 +129,8 @@ Useful selectors:
 
 - `--target <gfx target>`: target to run, for example `gfx942`, `gfx950`,
   `gfx1201`, or `gfx1250`.
-- `--suite <iree|kernels|cts|dbt|semantics>`: include a suite. Repeat or pass
-  comma-separated values.
+- `--suite <iree|kernels|cts|dbt|semantics|llama>`: include a suite. Repeat or
+  pass comma-separated values.
 - `--exclude-suite <suite>`: exclude a suite.
 - `--backend <backend>`: include a kernel backend such as `hipkittens`.
 - `--exclude-backend <backend>`: exclude a kernel backend.
@@ -186,6 +190,62 @@ workflows choose simulator or physical hardware, original or prepared
 binaries, environment variables, and provenance checks. See
 [`corpus/semantics/gfx1250/README.md`](corpus/semantics/gfx1250/README.md) for
 the build, capture, comparison, and hardware-golden flow.
+
+## llama.cpp backend operator coverage
+
+The opt-in `llama` suite runs 1070 selected `test-backend-ops` cases that
+compare the GGML HIP backend against its CPU reference. `corpus/llama/README.md`
+covers how the inventory was selected and what the vendored sources contain.
+
+The suite invokes `corpus/llama/build.sh` once per target and then runs one
+process per case. It needs a ROCm SDK root providing
+`lib/cmake/hip/hip-config.cmake`, hipBLAS, and rocBLAS. The first run compiles
+the whole GGML HIP backend, so expect a long build before the first case
+executes:
+
+```bash
+export ROCM_PATH="$(rocm-sdk path --root)"
+
+pytest tests/test_corpus.py \
+  --target gfx1201 \
+  --suite llama \
+  --timeout 15
+```
+
+Run the same cases through RocJITsu. The run wrapper applies to each harness
+process, while pytest remains responsible for test timeouts:
+
+```bash
+pytest tests/test_corpus.py \
+  --target gfx1201 \
+  --suite llama \
+  --run-wrapper "rocjitsu --config /path/to/gfx1201.json --" \
+  --timeout 15 \
+  -n 8
+```
+
+The llama adapter has no internal timeout. Use the `pytest-timeout` option
+`--timeout <seconds>` when a limit is needed. Every completed case writes
+`<artifact-directory>/llama/<target>/cases/<op>.<digest>.log` with the
+command, outcome, and captured output, plus a matching `*.outcome.json` record.
+
+The slowest `gfx1201` case under RocJITsu needs about 14 seconds
+serially, so eight workers contending for one GPU can push it over the limit and
+report a timeout that a serial run does not reproduce. Re-run a lone unexpected
+timeout without `-n` to confirm it, or raise pytest's `--timeout`.
+
+Select cases by operator name, by case digest, or by the exact case string:
+
+```bash
+# Every MUL_MAT case.
+pytest tests/test_corpus.py --suite llama --case MUL_MAT
+
+# One case, by the digest that appears in its test id.
+pytest tests/test_corpus.py --suite llama --case 67c2b413a2ab
+```
+
+`--case` splits on commas, so exact `OP(params)` strings only work through the
+JSON lists of `--run-tests-config` and `--skip-tests-config`.
 
 ## Packaged gfx1250 HSACO extraction
 
