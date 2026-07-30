@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -11,6 +12,12 @@ constexpr int lanes = 32;
 constexpr int matrix_regs = 16;
 constexpr int columns = 16;
 constexpr int neutral_scale_word = 0x7f7f7f7f;
+inline constexpr std::array<int, 4> regular_scale_k = {0, 4, 64, 68};
+inline constexpr std::array<int, 8> scale16_scale_k = {0, 32, 4, 36, 64, 96, 68, 100};
+inline constexpr std::array<uint32_t, 8> scale_probe_fp4 = {
+    0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x9};
+inline constexpr std::array<float, 8> scale_probe_values = {
+    0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f, 6.0f, -0.5f};
 
 __host__ __device__ inline int dbt_row(int lane, int reg) {
   return (reg / 8) * 16 + (lane / 16) * 8 + reg % 8;
@@ -48,22 +55,28 @@ inline void make_row_fingerprint_inputs(std::vector<int> &a,
                                         std::vector<int> &b) {
   std::fill(a.begin(), a.end(), 0);
   std::fill(b.begin(), b.end(), 0);
-  for (int row = 0; row < 32; ++row)
-    for (int k = 0; k <= row; ++k)
-      set_a(a, row, k, 0x2); // FP4 1.0
-  for (int col = 0; col < columns; ++col)
-    for (int k = 0; k < 32; ++k)
-      set_b(b, col, k, 0x2); // FP4 1.0
+  for (int block = 0; block < 4; ++block) {
+    const int base_k = 32 * block;
+    for (int row = 0; row < 32; ++row)
+      for (int offset = 0; offset <= row; ++offset)
+        set_a(a, row, base_k + offset, 0x2); // FP4 1.0
+    for (int col = 0; col < columns; ++col)
+      for (int offset = 0; offset < 2 * (col + 1); ++offset)
+        set_b(b, col, base_k + offset, 0x2); // FP4 1.0
+  }
 }
 
-inline void make_scale_probe_inputs(std::vector<int> &a,
-                                    std::vector<int> &b) {
+template <std::size_t N>
+inline void make_scale_probe_inputs(std::vector<int> &a, std::vector<int> &b,
+                                    const std::array<int, N> &probe_k) {
   std::fill(a.begin(), a.end(), 0);
   std::fill(b.begin(), b.end(), 0);
   for (int row = 0; row < 32; ++row)
-    set_a(a, row, 0, 0x2);
+    for (std::size_t byte = 0; byte < N; ++byte)
+      set_a(a, row, probe_k[byte], scale_probe_fp4[byte]);
   for (int col = 0; col < columns; ++col)
-    set_b(b, col, 0, 0x2);
+    for (int k : probe_k)
+      set_b(b, col, k, 0x2); // FP4 1.0
 }
 
 inline std::vector<float> row_fingerprint_expected() {
@@ -72,25 +85,39 @@ inline std::vector<float> row_fingerprint_expected() {
     for (int reg = 0; reg < matrix_regs; ++reg) {
       const int row = dbt_row(lane, reg);
       const int col = lane % columns;
+      const int products_per_block = std::min(row + 1, 2 * (col + 1));
       expected[lane * matrix_regs + reg] =
-          static_cast<float>(1024 + 32 * row + col + row + 1);
+          static_cast<float>(4096 + 256 * row + 4 * products_per_block);
     }
   }
   return expected;
 }
 
-inline std::vector<float> scale_probe_expected() {
+inline std::vector<float> scale_probe_expected(int scale_bytes, bool matrix_a) {
   std::vector<float> expected(lanes * matrix_regs);
-  for (int lane = 0; lane < lanes; ++lane)
-    for (int reg = 0; reg < matrix_regs; ++reg)
-      expected[lane * matrix_regs + reg] =
-          std::ldexp(1.0f, dbt_row(lane, reg) - 16);
+  float byte_sum = 0.0f;
+  for (int byte = 0; byte < scale_bytes; ++byte)
+    byte_sum += std::ldexp(scale_probe_values[byte], byte);
+  for (int lane = 0; lane < lanes; ++lane) {
+    for (int reg = 0; reg < matrix_regs; ++reg) {
+      const int row = dbt_row(lane, reg);
+      const int col = lane % columns;
+      const int exponent = matrix_a ? row - 16 : col - 8;
+      expected[lane * matrix_regs + reg] = std::ldexp(byte_sum, exponent);
+    }
+  }
   return expected;
 }
 
-__host__ __device__ inline int scale_word_for_lane(int lane) {
-  const uint32_t raw = static_cast<uint32_t>(0x7f + lane - 16);
-  return static_cast<int>(UINT32_C(0x7f7f7f00) | raw);
+__host__ __device__ inline int scale_word_for_lane(int lane, int exponent_bias,
+                                                   int first_byte = 0) {
+  uint32_t word = 0;
+  for (int byte = 0; byte < 4; ++byte) {
+    const uint32_t raw =
+        static_cast<uint32_t>(0x7f + lane + exponent_bias + first_byte + byte);
+    word |= raw << (8 * byte);
+  }
+  return static_cast<int>(word);
 }
 
 } // namespace wmma_m32_fp4
