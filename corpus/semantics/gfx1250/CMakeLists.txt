@@ -26,7 +26,8 @@ set(SEMANTIC_TESTS
     fp8_e5m3_unpack_sgpr_pressure_test
     fp8_e5m3_unpack_test
     integer_wmma_hazard_test
-    monitor_sleep_test
+    monitor_sleep_bounded_test
+    monitor_sleep_unbounded_test
     permute_pk16_test
     s_clause_test
     tensor_load_sgpr_pressure_test

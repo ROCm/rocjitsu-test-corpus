@@ -182,8 +182,13 @@ source_patterns = [
 ]
 
 [[case]]
+id = "monitor-sleep-bounded"
+test = "monitor_sleep_bounded_test"
+source_patterns = ['\bs_monitor_sleep\s+1\b']
+
+[[case]]
 id = "monitor-sleep-unbounded"
-test = "monitor_sleep_test"
+test = "monitor_sleep_unbounded_test"
 source_patterns = ['\bs_monitor_sleep\s+0x8000\b']
 
 [[case]]
@@ -349,7 +354,10 @@ records = [
   { case = "sparse quantized GEMM+bias", variants = 1 },
 ]
 
-[results.monitor_sleep_test]
+[results.monitor_sleep_bounded_test]
+records = [{ case = "bounded monitor-sleep continuation", variants = 1 }]
+
+[results.monitor_sleep_unbounded_test]
 records = [
   { case = "unbounded monitor-sleep translation fixture", variants = 1 },
 ]
