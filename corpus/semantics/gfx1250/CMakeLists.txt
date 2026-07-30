@@ -9,9 +9,10 @@ set(SEMANTIC_GPU_TARGET "gfx1250" CACHE STRING
 set(HIPCC "hipcc" CACHE FILEPATH "Path to the HIP compiler driver")
 
 set(SEMANTIC_TESTS
-    barrier_state_sgpr_pressure_test
+    barrier_id_minus1_scc_test
+    barrier_id_minus2_scc_test
     barrier_signal_isfirst_test
-    barrier_state_test
+    barrier_state_sgpr_pressure_test
     cluster_load_sgpr_pressure_test
     cluster_load_test
     ds_2addr_test

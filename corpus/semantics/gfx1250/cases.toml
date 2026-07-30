@@ -63,12 +63,14 @@ test = "barrier_signal_isfirst_test"
 source_patterns = ['\bs_barrier_signal_isfirst\b']
 
 [[case]]
-id = "barrier-state-fields"
-test = "barrier_state_test"
-source_patterns = [
-  '\bs_get_barrier_state\s+s[0-9]+,\s+-1\b',
-  '\bs_get_barrier_state\s+s[0-9]+,\s+-2\b',
-]
+id = "barrier-id-minus1-scc"
+test = "barrier_id_minus1_scc_test"
+source_patterns = ['\bs_get_barrier_state\s+s[0-9]+,\s+-1\b']
+
+[[case]]
+id = "barrier-id-minus2-scc"
+test = "barrier_id_minus2_scc_test"
+source_patterns = ['\bs_get_barrier_state\s+s[0-9]+,\s+-2\b']
 
 [[case]]
 id = "ds-two-address-load-store"
@@ -285,8 +287,11 @@ records = [
   { case = "cluster full-SGPR and M0 preservation", variants = 1 },
 ]
 
-[results.barrier_state_test]
-records = [{ case = "barrier-state fields and SCC", variants = 1 }]
+[results.barrier_id_minus1_scc_test]
+records = [{ case = "barrier ID -1 SCC preservation", variants = 2 }]
+
+[results.barrier_id_minus2_scc_test]
+records = [{ case = "barrier ID -2 SCC preservation", variants = 2 }]
 
 [results.cluster_load_test]
 records = [
