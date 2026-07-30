@@ -20,8 +20,10 @@ set(SEMANTIC_TESTS
     s_clause_test
     tensor_load_to_lds_test
     wmma_scale_regular_test
+    wmma_scale_m32_fp4_differential_test
     wmma_scale16_m16_test
     wmma_scale16_m32_test
+    wmma_scale16_m32_fp4_differential_test
     wmma_split_f16_test
     wmma_split_f32_test
     wmma_split_fp4_test)
@@ -41,7 +43,10 @@ foreach(test_name IN LISTS SEMANTIC_TESTS)
             --offload-arch=${SEMANTIC_GPU_TARGET}
             "-I${CMAKE_CURRENT_SOURCE_DIR}/include"
             "${source}" -o "${binary}"
-    DEPENDS "${source}" "${CMAKE_CURRENT_SOURCE_DIR}/include/test_support.hpp"
+    DEPENDS
+            "${source}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/test_support.hpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/wmma_m32_fp4_differential.hpp"
     VERBATIM)
   add_custom_target("${test_name}" DEPENDS "${binary}")
   list(APPEND SEMANTIC_BINARIES "${binary}")
@@ -55,7 +60,10 @@ foreach(test_name IN LISTS SEMANTIC_TESTS)
             --cuda-device-only -S
             "-I${CMAKE_CURRENT_SOURCE_DIR}/include"
             "${source}" -o "${assembly}"
-    DEPENDS "${source}" "${CMAKE_CURRENT_SOURCE_DIR}/include/test_support.hpp"
+    DEPENDS
+            "${source}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/test_support.hpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/wmma_m32_fp4_differential.hpp"
     VERBATIM)
   list(APPEND SEMANTIC_ASSEMBLY "${assembly}")
 
