@@ -15,7 +15,7 @@ source_patterns = ['\bs_clause\b']
 id = "barrier-state-sgpr-pressure"
 test = "barrier_state_sgpr_pressure_test"
 source_patterns = [
-  '\.long\s+0xbe9450c1\b',
+  '\bs_get_barrier_state\s+s20,\s+-1\b',
   '\.amdhsa_next_free_sgpr\s+102\b',
   '\.amdhsa_next_free_vgpr\s+156\b',
   '\.amdhsa_private_segment_fixed_size\s+0\b',
@@ -116,8 +116,8 @@ source_patterns = [
 ]
 
 [[case]]
-id = "fp8-e5m3-unpack-pressure"
-test = "fp8_e5m3_unpack_pressure_test"
+id = "fp8-e5m3-unpack-vgpr-pressure"
+test = "fp8_e5m3_unpack_vgpr_pressure_test"
 source_patterns = [
   '\bv_cvt_f32_fp8\b[^\n]*\bbyte_sel:2\b[^\n]*\bclamp\b',
   '\.amdhsa_next_free_vgpr\s+256\b',
@@ -231,8 +231,8 @@ source_patterns = [
 ]
 
 [[case]]
-id = "wmma-scale16-spill-pressure"
-test = "wmma_scale16_spill_pressure_test"
+id = "wmma-scale16-vgpr-pressure"
+test = "wmma_scale16_vgpr_pressure_test"
 source_patterns = [
   '\bv_wmma_scale16_f32_16x16x128_f8f6f4\b',
   '\.amdhsa_next_free_vgpr\s+256\b',
@@ -286,10 +286,10 @@ records = [
 [results.fp8_e5m3_unpack_test]
 records = [{ case = "UE5M3 unpack byte selection", variants = 4 }]
 
-[results.fp8_e5m3_unpack_pressure_test]
+[results.fp8_e5m3_unpack_vgpr_pressure_test]
 records = [
   { case = "UE5M3 full-VGPR conversion", variants = 1 },
-  { case = "UE5M3 full-VGPR spill preservation", variants = 1 },
+  { case = "UE5M3 full-VGPR preservation", variants = 1 },
 ]
 
 [results.fp8_e5m3_unpack_sgpr_pressure_test]
@@ -347,8 +347,11 @@ records = [
   { case = "Scale16 full-SGPR preservation", variants = 1 },
 ]
 
-[results.wmma_scale16_spill_pressure_test]
-records = [{ case = "Scale16 full-VGPR spill preservation", variants = 1 }]
+[results.wmma_scale16_vgpr_pressure_test]
+records = [
+  { case = "Scale16 full-VGPR GEMM", variants = 1 },
+  { case = "Scale16 full-VGPR preservation", variants = 1 },
+]
 
 [results.wmma_split_f16_test]
 records = [

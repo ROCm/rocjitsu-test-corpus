@@ -1,8 +1,11 @@
 #include "resource_pressure.hpp"
 #include "test_support.hpp"
 
+#include <algorithm>
 #include <cstdint>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Winline-asm"
 extern "C" __global__ void flat_scratch_base_sgpr_pressure(uint32_t *status) {
   uint32_t lane;
   uint32_t mismatch;
@@ -35,8 +38,10 @@ extern "C" __global__ void flat_scratch_base_sgpr_pressure(uint32_t *status) {
 
 int main() {
   constexpr size_t lanes = 32;
+  constexpr uint32_t poison = 0xa5a5a5a5u;
   corpus::DeviceBuffer<uint32_t> status(lanes);
-  status.clear();
+  std::fill(status.host.begin(), status.host.end(), poison);
+  status.host_to_target();
   hipLaunchKernelGGL(flat_scratch_base_sgpr_pressure, dim3(1), dim3(lanes), 0,
                      0, status.device);
   status.target_to_host();

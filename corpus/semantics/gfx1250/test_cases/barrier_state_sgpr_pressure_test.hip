@@ -1,8 +1,11 @@
 #include "resource_pressure.hpp"
 #include "test_support.hpp"
 
+#include <algorithm>
 #include <cstdint>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Winline-asm"
 extern "C" __global__ void barrier_state_sgpr_pressure(
     uint32_t *states, uint32_t *status) {
   uint32_t lane;
@@ -11,7 +14,7 @@ extern "C" __global__ void barrier_state_sgpr_pressure(
   asm volatile(CORPUS_SGPR_PRESSURE_SAVE
                CORPUS_SGPR_PRESSURE_INIT
 
-               ".long 0xbe9450c1\n\t"
+               "s_get_barrier_state s20, -1\n\t"
                "s_wait_kmcnt 0\n\t"
 
                CORPUS_SGPR_PRESSURE_BEGIN_CHECK
@@ -32,10 +35,13 @@ extern "C" __global__ void barrier_state_sgpr_pressure(
 
 int main() {
   constexpr size_t lanes = 32;
+  constexpr uint32_t poison = 0xa5a5a5a5u;
   corpus::DeviceBuffer<uint32_t> states(lanes);
   corpus::DeviceBuffer<uint32_t> status(lanes);
-  states.clear();
-  status.clear();
+  std::fill(states.host.begin(), states.host.end(), poison);
+  std::fill(status.host.begin(), status.host.end(), poison);
+  states.host_to_target();
+  status.host_to_target();
   hipLaunchKernelGGL(barrier_state_sgpr_pressure, dim3(1), dim3(lanes), 0, 0,
                      states.device, status.device);
   states.target_to_host();

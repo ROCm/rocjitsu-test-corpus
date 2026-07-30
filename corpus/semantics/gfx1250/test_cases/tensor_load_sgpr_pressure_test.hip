@@ -3,6 +3,8 @@
 
 #include <cstdint>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Winline-asm"
 extern "C" __global__ void tensor_load_sgpr_pressure(
     uint32_t *values, uint32_t *status, const uint32_t *input) {
   const uint64_t address = reinterpret_cast<uint64_t>(input);
@@ -38,14 +40,31 @@ extern "C" __global__ void tensor_load_sgpr_pressure(
                "v_or_b32 v103, v103, v104\n\t"
                "v_mov_b32 v104, s65\n\t"
                "v_or_b32 v103, v103, v104\n\t"
+               "v_mov_b32 v104, s66\n\t"
+               "v_xor_b32 v104, v112, v104\n\t"
+               "v_or_b32 v103, v103, v104\n\t"
+               "v_or_b32 v116, 0x80000000, v113\n\t"
+               "v_mov_b32 v104, s67\n\t"
+               "v_xor_b32 v104, v116, v104\n\t"
+               "v_or_b32 v103, v103, v104\n\t"
                "v_mov_b32 v104, s72\n\t"
                "v_xor_b32 v104, 0x00020000, v104\n\t"
                "v_or_b32 v103, v103, v104\n\t"
                "v_mov_b32 v104, s73\n\t"
                "v_xor_b32 v104, 0x00200000, v104\n\t"
                "v_or_b32 v103, v103, v104\n\t"
+               "v_mov_b32 v104, s74\n\t"
+               "v_or_b32 v103, v103, v104\n\t"
                "v_mov_b32 v104, s75\n\t"
                "v_xor_b32 v104, 0x00200000, v104\n\t"
+               "v_or_b32 v103, v103, v104\n\t"
+               "v_mov_b32 v104, s76\n\t"
+               "v_or_b32 v103, v103, v104\n\t"
+               "v_mov_b32 v104, s77\n\t"
+               "v_or_b32 v103, v103, v104\n\t"
+               "v_mov_b32 v104, s78\n\t"
+               "v_or_b32 v103, v103, v104\n\t"
+               "v_mov_b32 v104, s79\n\t"
                "v_or_b32 v103, v103, v104\n\t"
                ".set descriptor_sgpr, 64\n\t"
                ".rept 4\n\t"
@@ -64,7 +83,8 @@ extern "C" __global__ void tensor_load_sgpr_pressure(
                "v_mov_b32 %2, v115"
                : "=&v"(lane), "=&v"(mismatch), "=&v"(value)
                : "v"(address)
-               : "s101", "v155", "memory");
+               : "s101", "v112", "v113", "v114", "v115", "v116", "v155",
+                 "memory");
   values[lane] = value;
   status[lane] = mismatch;
 }

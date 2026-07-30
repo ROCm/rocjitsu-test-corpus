@@ -3,6 +3,8 @@
 
 #include <cstdint>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Winline-asm"
 extern "C" __global__ void scale16_sgpr_pressure(float *values,
                                                  uint32_t *status) {
   uint32_t lane;

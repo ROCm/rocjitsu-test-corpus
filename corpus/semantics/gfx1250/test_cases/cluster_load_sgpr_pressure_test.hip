@@ -4,6 +4,8 @@
 #include <bit>
 #include <cstdint>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Winline-asm"
 extern "C" __global__ void cluster_load_sgpr_pressure(
     float *values, uint32_t *status, const float *input) {
   const uint32_t tid =
@@ -32,7 +34,8 @@ extern "C" __global__ void cluster_load_sgpr_pressure(
                "v_mov_b32 %2, v114"
                : "=&v"(output_tid), "=&v"(mismatch), "=&v"(value)
                : "v"(address), "v"(tid)
-               : "s101", "v155", "memory");
+               : "s101", "v112", "v113", "v114", "v115", "v155",
+                 "memory");
   values[output_tid] = value;
   status[output_tid] = mismatch;
 }

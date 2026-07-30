@@ -19,7 +19,7 @@ set(SEMANTIC_TESTS
     ds_storexchg_2addr_test
     flat_scratch_base_sgpr_pressure_test
     fp8_e5m3_pack_test
-    fp8_e5m3_unpack_pressure_test
+    fp8_e5m3_unpack_vgpr_pressure_test
     fp8_e5m3_unpack_sgpr_pressure_test
     fp8_e5m3_unpack_test
     integer_wmma_hazard_test
@@ -30,7 +30,7 @@ set(SEMANTIC_TESTS
     wmma_scale16_m16_test
     wmma_scale16_m32_test
     wmma_scale16_sgpr_pressure_test
-    wmma_scale16_spill_pressure_test
+    wmma_scale16_vgpr_pressure_test
     wmma_split_f16_test
     wmma_split_f32_test
     wmma_split_fp4_test)
