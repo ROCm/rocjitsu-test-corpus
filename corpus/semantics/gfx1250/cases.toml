@@ -346,7 +346,7 @@ records = [
 
 [results.monitor_sleep_test]
 records = [
-  { case = "unbounded monitor-sleep continuation", variants = 1 },
+  { case = "unbounded monitor-sleep translation fixture", variants = 1 },
 ]
 
 [results.permute_pk16_test]

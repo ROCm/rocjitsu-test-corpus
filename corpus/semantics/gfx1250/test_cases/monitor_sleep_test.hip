@@ -1,11 +1,15 @@
 #include "test_support.hpp"
 
-extern "C" __global__ void run_unbounded_monitor_sleep(unsigned *out,
-                                                       const unsigned *in) {
-  const unsigned lane = threadIdx.x;
-  // RocJITsu's simulator treats monitor-sleep as an immediate operation. The
-  // B0-to-A0 runtime path must still prepend the required s_wait_xcnt guard.
+// This kernel is compiled but never launched.
+// It keeps the affected instruction in the code object for source-coverage and
+// translation checks without risking an indefinite sleep.
+extern "C" __global__ void unbounded_monitor_sleep_fixture() {
   asm volatile("s_monitor_sleep 0x8000" ::: "memory");
+}
+
+extern "C" __global__ void
+run_monitor_sleep_translation_test(unsigned *out, const unsigned *in) {
+  const unsigned lane = threadIdx.x;
   out[lane] = (in[lane] * 17u) ^ (0x9e3779b9u + lane);
 }
 
@@ -21,10 +25,10 @@ int main() {
 
   input.host_to_target();
   output.clear();
-  hipLaunchKernelGGL(run_unbounded_monitor_sleep, dim3(1), dim3(lanes), 0, 0,
-                     output.device, input.device);
+  hipLaunchKernelGGL(run_monitor_sleep_translation_test, dim3(1), dim3(lanes),
+                     0, 0, output.device, input.device);
   output.target_to_host();
-  return corpus::expect_equal("unbounded monitor-sleep continuation",
+  return corpus::expect_equal("unbounded monitor-sleep translation fixture",
                               output.host, expected)
              ? 0
              : 1;
