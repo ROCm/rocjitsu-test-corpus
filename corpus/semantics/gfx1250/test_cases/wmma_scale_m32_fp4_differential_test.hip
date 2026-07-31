@@ -53,8 +53,8 @@ int main() {
           wmma_m32_fp4::row_fingerprint_expected()))
     return 1;
 
-  wmma_m32_fp4::make_scale_probe_inputs(
-      a.host, b.host, wmma_m32_fp4::regular_scale_k);
+  wmma_m32_fp4::make_scale_probe_inputs(a.host, b.host,
+                                         /*scale_bytes=*/4);
   a.host_to_target();
   b.host_to_target();
   output.clear();

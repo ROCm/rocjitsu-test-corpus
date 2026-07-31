@@ -12,12 +12,10 @@ constexpr int lanes = 32;
 constexpr int matrix_regs = 16;
 constexpr int columns = 16;
 constexpr int neutral_scale_word = 0x7f7f7f7f;
-inline constexpr std::array<int, 4> regular_scale_k = {0, 4, 64, 68};
-inline constexpr std::array<int, 8> scale16_scale_k = {0, 32, 4, 36, 64, 96, 68, 100};
 inline constexpr std::array<uint32_t, 8> scale_probe_fp4 = {
-    0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x9};
+    0x1, 0x3, 0x9, 0x2, 0x4, 0x5, 0x6, 0x7};
 inline constexpr std::array<float, 8> scale_probe_values = {
-    0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f, 6.0f, -0.5f};
+    0.5f, 1.5f, -0.5f, 1.0f, 2.0f, 3.0f, 4.0f, 6.0f};
 
 __host__ __device__ inline int dbt_row(int lane, int reg) {
   return (reg / 8) * 16 + (lane / 16) * 8 + reg % 8;
@@ -66,17 +64,23 @@ inline void make_row_fingerprint_inputs(std::vector<int> &a,
   }
 }
 
-template <std::size_t N>
-inline void make_scale_probe_inputs(std::vector<int> &a, std::vector<int> &b,
-                                    const std::array<int, N> &probe_k) {
+inline int scale_byte_for_k(int k, int scale_bytes) {
+  if (scale_bytes == 4)
+    return 2 * (k >> 6) + ((k >> 2) & 1);
+  return 4 * (k >> 6) + 2 * ((k >> 2) & 1) + ((k >> 5) & 1);
+}
+
+inline void make_scale_probe_inputs(std::vector<int> &a,
+                                    std::vector<int> &b, int scale_bytes) {
   std::fill(a.begin(), a.end(), 0);
   std::fill(b.begin(), b.end(), 0);
-  for (int row = 0; row < 32; ++row)
-    for (std::size_t byte = 0; byte < N; ++byte)
-      set_a(a, row, probe_k[byte], scale_probe_fp4[byte]);
-  for (int col = 0; col < columns; ++col)
-    for (int k : probe_k)
+  for (int k = 0; k < 128; ++k) {
+    const int byte = scale_byte_for_k(k, scale_bytes);
+    for (int row = 0; row < 32; ++row)
+      set_a(a, row, k, scale_probe_fp4[byte]);
+    for (int col = 0; col < columns; ++col)
       set_b(b, col, k, 0x2); // FP4 1.0
+  }
 }
 
 inline std::vector<float> row_fingerprint_expected() {
@@ -98,6 +102,7 @@ inline std::vector<float> scale_probe_expected(int scale_bytes, bool matrix_a) {
   float byte_sum = 0.0f;
   for (int byte = 0; byte < scale_bytes; ++byte)
     byte_sum += std::ldexp(scale_probe_values[byte], byte);
+  byte_sum *= 128 / scale_bytes;
   for (int lane = 0; lane < lanes; ++lane) {
     for (int reg = 0; reg < matrix_regs; ++reg) {
       const int row = dbt_row(lane, reg);
