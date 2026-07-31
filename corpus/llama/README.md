@@ -15,7 +15,7 @@ selected_llama_backend_ops_tests.txt
 third_party/          Vendored upstream sources.
 ```
 
-`selected_llama_backend_ops_tests.json` holds 1070 exact `OP(params)` strings
+`selected_llama_backend_ops_tests.json` holds 535 exact `OP(params)` strings
 covering 117 GGML operators. The list was selected from the ROCm-supported
 `test-backend-ops` set to reach the kernels and parameter shapes implicated by
 merged `llama.cpp` bug-fix pull requests, then pruned so that near-duplicate
@@ -23,6 +23,16 @@ producers of the same trigger do not repeat while operator and parameter
 variety stays broad. Every selected case passes on native `gfx1201`, so a
 non-pass result is a property of the environment under test rather than of the
 case.
+
+The final half-size tier retains every observed failure, segfault, and timeout,
+plus all class and boundary anchors. Passing cases are selected to preserve all
+117 operations and every observed dtype, control, and size coverage token, then
+to maximize kernel-symbol coverage with smaller producers preferred. This keeps
+566 of 880 profiled non-runtime kernel symbols.
+
+Cases that initially time out are removed only after a 60-second, `-n 16`
+recheck passes on every probed gfx target. Any failure, segfault, or remaining
+timeout is retained.
 
 `selected_llama_backend_ops_tests.txt` contains the same exact names joined by
 commas for `test-backend-ops -o`.

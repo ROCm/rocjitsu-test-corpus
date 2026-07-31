@@ -193,7 +193,7 @@ the build, capture, comparison, and hardware-golden flow.
 
 ## llama.cpp backend operator coverage
 
-The opt-in `llama` suite runs 1070 selected `test-backend-ops` cases that
+The opt-in `llama` suite runs 535 selected `test-backend-ops` cases that
 compare the GGML HIP backend against its CPU reference. `corpus/llama/README.md`
 covers how the inventory was selected and what the vendored sources contain.
 
