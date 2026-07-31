@@ -116,19 +116,40 @@ source_patterns = [
 ]
 
 [[case]]
-id = "flat-scratch-base-lo-scalar"
-test = "flat_scratch_base_lo_test"
+id = "flat-scratch-scalar-lo"
+test = "flat_scratch_scalar_lo_test"
 source_patterns = [
+  '\bs_mov_b32\b[^\n]*\bsrc_flat_scratch_base_lo\b',
+  '\bs_mov_b32\b[^\n]*\bsrc_flat_scratch_base_hi\b',
   '\bs_mov_b64\b[^\n]*\bsrc_flat_scratch_base_lo\b',
-  '\bs_lshl_b64\b[^\n]*\bsrc_flat_scratch_base_lo\b',
+  '\bs_lshl_b64\b[^\n]*\bsrc_flat_scratch_base_lo\b[^\n]*,\s*1\b',
 ]
 
 [[case]]
-id = "flat-scratch-base-hi-64bit-sources"
-test = "flat_scratch_base_hi_test"
+id = "flat-scratch-scalar-hi"
+test = "flat_scratch_scalar_hi_test"
 source_patterns = [
+  '\bs_mov_b32\b[^\n]*\bsrc_flat_scratch_base_lo\b',
+  '\bs_mov_b32\b[^\n]*\bsrc_flat_scratch_base_hi\b',
   '\bs_mov_b64\b[^\n]*\bsrc_flat_scratch_base_hi\b',
-  '\bs_lshl_b64\b[^\n]*\bsrc_flat_scratch_base_hi\b',
+  '\bs_lshl_b64\b[^\n]*\bsrc_flat_scratch_base_hi\b[^\n]*,\s*1\b',
+]
+
+[[case]]
+id = "flat-scratch-vector-lo"
+test = "flat_scratch_vector_lo_test"
+source_patterns = [
+  '\bs_mov_b32\b[^\n]*\bsrc_flat_scratch_base_lo\b',
+  '\bs_mov_b32\b[^\n]*\bsrc_flat_scratch_base_hi\b',
+  '\bv_add_nc_u64_e64\b[^\n]*\bsrc_flat_scratch_base_lo\b',
+]
+
+[[case]]
+id = "flat-scratch-vector-hi"
+test = "flat_scratch_vector_hi_test"
+source_patterns = [
+  '\bs_mov_b32\b[^\n]*\bsrc_flat_scratch_base_lo\b',
+  '\bs_mov_b32\b[^\n]*\bsrc_flat_scratch_base_hi\b',
   '\bv_add_nc_u64_e64\b[^\n]*\bsrc_flat_scratch_base_hi\b',
 ]
 
@@ -327,15 +348,17 @@ records = [
 [results.ds_storexchg_2addr_test]
 records = [{ case = "LDS queue handoff", variants = 4 }]
 
-[results.flat_scratch_base_lo_test]
-records = [
-  { case = "scalar flat-scratch-base low selector", variants = 1 },
-]
+[results.flat_scratch_scalar_lo_test]
+records = [{ case = "scalar flat-scratch-base LO semantics", variants = 1 }]
 
-[results.flat_scratch_base_hi_test]
-records = [
-  { case = "64-bit flat-scratch-base high-selector sources", variants = 1 },
-]
+[results.flat_scratch_scalar_hi_test]
+records = [{ case = "scalar flat-scratch-base HI semantics", variants = 1 }]
+
+[results.flat_scratch_vector_lo_test]
+records = [{ case = "vector flat-scratch-base LO semantics", variants = 1 }]
+
+[results.flat_scratch_vector_hi_test]
+records = [{ case = "vector flat-scratch-base HI semantics", variants = 1 }]
 
 [results.fp8_e5m3_pack_test]
 records = [

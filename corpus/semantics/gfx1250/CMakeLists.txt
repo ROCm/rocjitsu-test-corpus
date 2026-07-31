@@ -20,8 +20,10 @@ set(SEMANTIC_TESTS
     ds_addtid_vgpr_pressure_test
     ds_storexchg_2addr_test
     flat_scratch_base_sgpr_pressure_test
-    flat_scratch_base_hi_test
-    flat_scratch_base_lo_test
+    flat_scratch_scalar_hi_test
+    flat_scratch_scalar_lo_test
+    flat_scratch_vector_hi_test
+    flat_scratch_vector_lo_test
     fp8_e5m3_pack_test
     fp8_e5m3_unpack_vgpr_pressure_test
     fp8_e5m3_unpack_sgpr_pressure_test

@@ -52,17 +52,28 @@ observe_masked_permute_destinations(unsigned *out, uint64_t exec_mask) {
 int main() {
   constexpr unsigned lanes = 32;
   corpus::DeviceBuffer<unsigned> output(lanes * 9);
-  std::vector<unsigned> expected(lanes * 9);
+  std::vector<unsigned> masked_expected(lanes * 9);
+  std::vector<unsigned> permuted_expected(lanes * 9);
   for (unsigned lane = 0; lane < lanes; ++lane) {
-    expected[lane * 9] = 0x10400000u + lane;
-    expected[lane * 9 + 1] = 0x10410000u + lane;
-    expected[lane * 9 + 2] = 0x10600000u + lane;
-    expected[lane * 9 + 3] = 0x10610000u + lane;
-    expected[lane * 9 + 4] = 0x10620000u + lane;
-    expected[lane * 9 + 5] = 0x10800000u + lane;
-    expected[lane * 9 + 6] = 0x10810000u + lane;
-    expected[lane * 9 + 7] = 0x10820000u + lane;
-    expected[lane * 9 + 8] = 0x10830000u + lane;
+    masked_expected[lane * 9] = 0x10400000u + lane;
+    masked_expected[lane * 9 + 1] = 0x10410000u + lane;
+    masked_expected[lane * 9 + 2] = 0x10600000u + lane;
+    masked_expected[lane * 9 + 3] = 0x10610000u + lane;
+    masked_expected[lane * 9 + 4] = 0x10620000u + lane;
+    masked_expected[lane * 9 + 5] = 0x10800000u + lane;
+    masked_expected[lane * 9 + 6] = 0x10810000u + lane;
+    masked_expected[lane * 9 + 7] = 0x10820000u + lane;
+    masked_expected[lane * 9 + 8] = 0x10830000u + lane;
+
+    permuted_expected[lane * 9] = 0x01234567u ^ lane;
+    permuted_expected[lane * 9 + 1] = 0x89abcdefu ^ lane;
+    permuted_expected[lane * 9 + 2] = 0x01234567u ^ lane;
+    permuted_expected[lane * 9 + 3] = 0x89abcdefu ^ lane;
+    permuted_expected[lane * 9 + 4] = 0x01234567u;
+    permuted_expected[lane * 9 + 5] = 0x89abcdefu ^ lane;
+    permuted_expected[lane * 9 + 6] = 0x01234567u;
+    permuted_expected[lane * 9 + 7] = 0x76543210u ^ lane;
+    permuted_expected[lane * 9 + 8] = 0xfedcba98u;
   }
 
   bool ok = true;
@@ -74,10 +85,10 @@ int main() {
     output.target_to_host();
     if (variant == 0) {
       ok &= corpus::expect_equal("permute EXEC-mask behavior", output.host,
-                                 expected, variant);
+                                 masked_expected, variant);
     } else {
-      ok &= corpus::expect_nonconstant_observation("permute EXEC-mask behavior",
-                                                   output.host, variant);
+      ok &= corpus::expect_equal("permute EXEC-mask behavior", output.host,
+                                 permuted_expected, variant);
     }
   }
   return ok ? 0 : 1;
