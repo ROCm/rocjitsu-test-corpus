@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 KERNELS_ROOT = REPO_ROOT / "corpus" / "kernels"
 KERNEL_CORPUS_ROOT = KERNELS_ROOT
 DEFAULT_CONFIGS = tuple(sorted((KERNEL_CORPUS_ROOT / "configs").glob("*.json")))
-SUPPORTED_PROJECTS = {"hip-matmul", "hip-stream-k", "hipkittens", "llama.cpp", "rocblas"}
+SUPPORTED_PROJECTS = {"hip-matmul", "hip-stream-k", "hipkittens", "rocblas"}
 SUPPORTED_CASE_KINDS = {"cmake_executable"}
 SUPPORTED_VALIDATION_KINDS = {"exit_code"}
 SUPPORTED_INPUT_FORMATS = {"raw"}
@@ -30,7 +30,6 @@ SUPPORTED_INPUT_GENERATORS = {"repeat_affine", "identity_diagonal", "affine_indi
 KERNEL_CORPUS_ENABLE_CACHE_VARIABLES = (
     "KERNEL_CORPUS_ENABLE_ALL",
     "KERNEL_CORPUS_ENABLE_HIP_STREAMK",
-    "KERNEL_CORPUS_ENABLE_LLAMA_HIP",
     "KERNEL_CORPUS_ENABLE_HIP_MATMUL",
     "KERNEL_CORPUS_ENABLE_HIPKITTENS",
     "KERNEL_CORPUS_ENABLE_ROCBLAS",
@@ -483,18 +482,6 @@ def run_executable(
     *,
     run_wrapper=None,
 ):
-    if case["project"] == "llama.cpp":
-        run_llama_output_comparison(
-            case,
-            target_config,
-            build_dir,
-            executable_path,
-            run_dir,
-            materialized_inputs,
-            run_wrapper=run_wrapper,
-        )
-        return
-
     command = run_wrapper_command(run_wrapper, target_config) + [str(executable_path)]
     for input_name, input_path in materialized_inputs:
         command.extend(["--input", f"{input_name}={input_path}"])
@@ -510,69 +497,6 @@ def run_executable(
     )
 
 
-def run_llama_output_comparison(
-    case,
-    target_config,
-    build_dir,
-    executable_path,
-    run_dir,
-    materialized_inputs,
-    *,
-    run_wrapper=None,
-):
-    gpu_output_path = run_dir / "gpu_output.f32.raw"
-    reference_output_path = run_dir / "reference_output.f32.raw"
-    run_args = _command_args(case["run"].get("args", []))
-    base_args = _without_validate_args(run_args)
-    env = command_environment(target_config, case["run"].get("env", {}))
-
-    gpu_command = run_wrapper_command(run_wrapper, target_config) + _runner_command(
-        executable_path,
-        materialized_inputs,
-        base_args,
-        gpu_output_path,
-    )
-    _run_command(
-        gpu_command,
-        cwd=build_dir,
-        log_path=run_dir / "run.log",
-        phase="run",
-        env=env,
-        expected_returncode=0,
-    )
-
-    reference_command = _runner_command(
-        executable_path,
-        materialized_inputs,
-        [*base_args, "--validate"],
-        reference_output_path,
-    )
-    _run_command(
-        reference_command,
-        cwd=build_dir,
-        log_path=run_dir / "validate.log",
-        phase="validate",
-        env=env,
-        expected_returncode=int(case["validation"]["pass_exit_code"]),
-    )
-
-    if int(case["validation"]["pass_exit_code"]) == 0:
-        compare_f32_outputs(
-            gpu_output_path,
-            reference_output_path,
-            abs_tolerance=float(case["validation"].get("abs_tolerance", 0.0)),
-        )
-
-
-def _runner_command(executable_path, materialized_inputs, args, output_path):
-    command = [str(executable_path)]
-    for input_name, input_path in materialized_inputs:
-        command.extend(["--input", f"{input_name}={input_path}"])
-    command.extend(_command_args(args))
-    command.extend(["--output", str(output_path)])
-    return command
-
-
 def run_wrapper_command(run_wrapper, target_config):
     if run_wrapper is None:
         wrapper = target_config.get("run_wrapper", [])
@@ -585,46 +509,6 @@ def run_wrapper_command(run_wrapper, target_config):
 
 def _command_args(args):
     return [str(arg) for arg in args]
-
-
-def _without_validate_args(args):
-    filtered = []
-    for arg in args:
-        if arg in {"--validate", "--validate=true"} or arg.startswith("--validate="):
-            continue
-        filtered.append(arg)
-    return filtered
-
-
-def compare_f32_outputs(gpu_output_path, reference_output_path, *, abs_tolerance):
-    gpu_data = Path(gpu_output_path).read_bytes()
-    reference_data = Path(reference_output_path).read_bytes()
-    if len(gpu_data) != len(reference_data):
-        raise KernelCaseError(
-            f"output size mismatch: gpu={gpu_output_path} has {len(gpu_data)} bytes, "
-            f"reference={reference_output_path} has {len(reference_data)} bytes"
-        )
-    if len(gpu_data) % 4 != 0:
-        raise KernelCaseError(f"output is not f32-sized: {gpu_output_path}")
-
-    count = len(gpu_data) // 4
-    if count == 0:
-        raise KernelCaseError(f"output is empty: {gpu_output_path}")
-    gpu_values = struct.unpack(f"<{count}f", gpu_data)
-    reference_values = struct.unpack(f"<{count}f", reference_data)
-    max_abs_diff = 0.0
-    max_abs_diff_index = 0
-    for index, (gpu_value, reference_value) in enumerate(zip(gpu_values, reference_values)):
-        abs_diff = abs(gpu_value - reference_value)
-        if abs_diff > max_abs_diff:
-            max_abs_diff = abs_diff
-            max_abs_diff_index = index
-    if max_abs_diff > abs_tolerance:
-        raise KernelCaseError(
-            f"output mismatch: max_abs_diff={max_abs_diff} at index {max_abs_diff_index}, "
-            f"tolerance={abs_tolerance}, gpu={gpu_values[max_abs_diff_index]}, "
-            f"reference={reference_values[max_abs_diff_index]}"
-        )
 
 
 def _cmake_cache_variables(target_config):

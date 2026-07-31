@@ -32,11 +32,6 @@ Collected kernel cases:
   - `gemm_mxfp8_4wave`
 - `rocblas/`:
   - `sgemm`
-- `llama.cpp/`:
-  - `mul_mat_vec_q`
-  - `noncont_batched_matmul`
-  - `noncont_batched_matmul_hazard`
-  - `rms_norm`
 
 | Case | Target Arch | Check |
 | --- | --- | --- |
@@ -50,10 +45,6 @@ Collected kernel cases:
 | `hipkittens/gemm_fp8fp32_4wave` | `gfx950` | - |
 | `hipkittens/gemm_mxfp8_4wave` | `gfx950` | - |
 | `rocblas/sgemm` | `gfx950`/`gfx942` | - |
-| `llama.cpp/mul_mat_vec_q` | CDNA3/RDNA4 | Pass |
-| `llama.cpp/noncont_batched_matmul` | CDNA3/RDNA4 | Pass |
-| `llama.cpp/noncont_batched_matmul_hazard` | CDNA3/RDNA4 | Pass/Bug |
-| `llama.cpp/rms_norm` | CDNA3/RDNA4 | Pass |
 
 ## CMake Presets
 
@@ -103,11 +94,6 @@ cmake --build --preset local-hip
 
 ## Third-Party Sources
 
-The llama.cpp GGML sources used by the llama cases are vendored in
-`third_party/llama.cpp/ggml`. See `third_party/llama.cpp/NOTICE.md` and
-`third_party/llama.cpp/LICENSE` for the upstream source revision and MIT license
-terms.
-
 The ROCm hip-stream-k sources used by the Stream-K runner come from the
 extracted source tree in `third_party/hip-stream-k`. See
 `third_party/hip-stream-k/NOTICE.md` for the upstream source reference.
@@ -135,18 +121,6 @@ cases/
       overrides/<relative/source/path>
       cmake/*.cmake
 ```
-
-Most current llama.cpp cases link against the unmodified GGML source in
-`third_party/llama.cpp/ggml`.
-The non-contiguous batched matmul cases share one runner with a
-`--src1-layout` selector. The fixed `noncont_batched_matmul` case embeds its
-contiguous F32 src1 input directly in `case.json`, matching the other ordinary
-kernel cases. The hazard backend keeps `input_sets/normal.json` and
-`input_sets/trigger.json` because it intentionally exercises a known-bug kernel:
-the normal input set passes and the non-contiguous triggering input set fails.
-The hazard build creates a CMake-only symlink overlay from vendored GGML, copies
-`ggml-cuda.cu`, and overrides it with a case-local file that restores the PR
-#13155 pre-fix behavior.
 
 The current Stream-K cases compile against extracted hip-stream-k sources in
 `third_party/hip-stream-k`.
@@ -184,7 +158,6 @@ corpus: HIP runtime, rocPRIM/rocThrust, rocBLAS, and hipBLAS.
 `OFF` when configuring a smaller build and enable individual backends with the
 options below.
 
-`KERNEL_CORPUS_ENABLE_LLAMA_HIP=ON` needs `hip`, `rocBLAS`, and `hipBLAS`.
 `KERNEL_CORPUS_ENABLE_HIP_STREAMK=ON` needs `hip`, `rocThrust`/`rocPRIM`, and
 `rocBLAS` for validation.
 `KERNEL_CORPUS_ENABLE_HIP_MATMUL=ON` needs `hip`.
@@ -200,54 +173,15 @@ or includes rocWMMA.
 
 ## Targets
 
-The CMake project builds the HIP Stream-K runner by default. It also builds
-llama.cpp HIP harnesses when `KERNEL_CORPUS_ENABLE_LLAMA_HIP` is enabled and
-`CMAKE_HIP_ARCHITECTURES` is set.
+The CMake project builds the HIP Stream-K runner by default.
 
 Useful run targets:
 
 ```sh
 cmake --build --preset local-hip --target run_hip_streamk_simple
 cmake --build --preset local-hip --target run_hip_streamk_two_tile
-cmake --build --preset local-hip --target run_llama_mul_mat_vec_q
-cmake --build --preset local-hip --target run_llama_rms_norm
 cmake --build --preset local-hip --target run_hip_matmul_matvec
 ```
-
-Useful llama.cpp build targets:
-
-```sh
-cmake --build --preset local-hip --target llama_cpp_mul_mat_vec_q
-cmake --build --preset local-hip --target llama_cpp_noncont_batched_matmul
-cmake --build --preset local-hip --target llama_cpp_noncont_batched_matmul_hazard
-cmake --build --preset local-hip --target llama_cpp_rms_norm
-```
-
-The llama.cpp harnesses also support correctness checks that compare the GPU
-result against the GGML CPU backend. Pytest configures and builds the requested
-CMake targets, materializes declared inputs from `case.json` and
-`input_sets/*.json`, runs each llama.cpp binary once without `--validate` to
-capture GPU output, runs it again with `--validate` to capture CPU reference
-output, and compares the two outputs with the case tolerance.
-For manual smoke checks of cases without declared input files, build the
-harnesses, then run the binaries with `--validate`:
-
-```sh
-cmake --build --preset local-hip --target llama_cpp_kernels
-./build/local-hip/cases/llama.cpp/llama_cpp_mul_mat_vec_q --validate
-./build/local-hip/cases/llama.cpp/llama_cpp_rms_norm --validate
-```
-
-The RMS norm validator uses a fixed absolute tolerance of `1.0e-5f`.
-The non-contiguous batched matmul validator uses a fixed absolute tolerance of
-`1.0e-3f`. The fixed case uses a contiguous `src1` tensor with 17 columns. The
-hazard triggering input set uses a non-contiguous `src1` view with 17 columns so
-latest `gfx1201` GGML dispatch does not select `ggml_cuda_mul_mat_f` and instead
-reaches the overridden batched cuBLAS path.
-The quantized matvec validator uses a fixed absolute tolerance of `1.0e-2f`
-because the Q4_0 CPU and GPU matvec kernels use different quantized execution
-paths. This is a smoke correctness check for obviously wrong GPU output, not a
-proof that every value below the tolerance is correct.
 
 The hip-matmul runners inherit the upstream environment-variable interface.
 Useful variables include `M`, `N`, `K`, `FILTER`, `SKIP_CHECK`,
