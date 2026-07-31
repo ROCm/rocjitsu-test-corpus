@@ -55,7 +55,7 @@ extern "C" __global__ void scale16_vgpr_pressure(float *values,
                "v_mov_b32 %2, v96"
                : "=&v"(lane), "=&v"(mismatch), "=&v"(value)
                :
-               : "s20", "s21", "v254", "v255", "memory");
+               : CORPUS_VGPR_PRESSURE_CLOBBERS, "v96", "memory");
   values[lane] = value;
   status[lane] = mismatch;
 }

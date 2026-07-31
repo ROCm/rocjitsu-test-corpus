@@ -31,7 +31,7 @@ extern "C" __global__ void flat_scratch_base_sgpr_pressure(uint32_t *status) {
                "v_mov_b32 %1, v103"
                : "=&v"(lane), "=&v"(mismatch)
                :
-               : "s101", "v155", "memory");
+               : CORPUS_SGPR_PRESSURE_CLOBBERS, "memory");
   status[lane] = mismatch;
 }
 #pragma clang diagnostic pop

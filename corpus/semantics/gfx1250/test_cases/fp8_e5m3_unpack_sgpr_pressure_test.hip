@@ -24,7 +24,7 @@ extern "C" __global__ void e5m3_unpack_sgpr_pressure(float *values,
                "v_mov_b32 %2, v113"
                : "=&v"(lane), "=&v"(mismatch), "=&v"(value)
                :
-               : "s101", "v155", "memory");
+               : CORPUS_SGPR_PRESSURE_CLOBBERS, "v113", "memory");
   values[lane] = value;
   status[lane] = mismatch;
 }

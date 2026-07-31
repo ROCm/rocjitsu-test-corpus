@@ -40,7 +40,7 @@ extern "C" __global__ void scale16_sgpr_pressure(float *values,
                "v_mov_b32 %2, v144"
                : "=&v"(lane), "=&v"(mismatch), "=&v"(value)
                :
-               : "s101", "v155", "memory");
+               : CORPUS_SGPR_PRESSURE_CLOBBERS, "v144", "memory");
   values[lane] = value;
   status[lane] = mismatch;
 }

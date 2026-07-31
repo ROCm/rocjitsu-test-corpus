@@ -38,7 +38,7 @@ extern "C" __global__ void ds_addtid_vgpr_pressure(uint32_t *values,
                "v_mov_b32 %2, v251"
                : "=&v"(lane), "=&v"(mismatch), "=&v"(value)
                :
-               : "s20", "s21", "v254", "v255", "memory");
+               : CORPUS_VGPR_PRESSURE_CLOBBERS, "v251", "memory");
   values[lane] = value;
   status[lane] = mismatch;
 }

@@ -28,7 +28,7 @@ extern "C" __global__ void e5m3_unpack_vgpr_pressure(float *values,
                "v_mov_b32 %2, v30"
                : "=&v"(lane), "=&v"(mismatch), "=&v"(value)
                :
-               : "s20", "s21", "v254", "v255", "memory");
+               : CORPUS_VGPR_PRESSURE_CLOBBERS, "v30", "memory");
   values[lane] = value;
   status[lane] = mismatch;
 }

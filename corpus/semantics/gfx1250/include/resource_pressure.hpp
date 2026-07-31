@@ -3,12 +3,18 @@
 #define CORPUS_DETAIL_STRINGIFY_IMPL(value) #value
 #define CORPUS_DETAIL_STRINGIFY(value) CORPUS_DETAIL_STRINGIFY_IMPL(value)
 
-// SGPR: SAVE preserves incoming s0:s101 and the lane ID; then INIT, target,
-// BEGIN_CHECK, restore intentional outputs to sentinels, ACCUMULATE_ALL,
-// RESTORE. Owns v0:v104. VGPR: INIT saves the lane ID in v254; after the target,
-// account for v0:v253 and v255 exactly once, then CHECK_AND_RESTORE_LANE. Owns
-// s20:s21, v250, and v254:v255.
-// Callers must clobber any fixed registers used to stage compiler inputs.
+// VGPR preconditions: launch one fully active wave32, do not diverge through
+// the asm, and keep no compiler-managed VGPR value live across the block.
+// SGPR: SAVE, INIT, target, BEGIN_CHECK, restore intentional outputs to
+// sentinels, ACCUMULATE_ALL, RESTORE. VGPR: INIT saves v0's work-item ID; after
+// the target, account for v0:v253 and v255, then CHECK_AND_RESTORE_LANE compares
+// it with the mbcnt lane ID. Use the clobber fragments below and add fixed input
+// staging or late-read output registers. Local -Winline-asm suppression permits
+// the high clobbers that force .amdhsa_next_free_vgpr checks in cases.toml.
+
+#define CORPUS_SGPR_PRESSURE_CLOBBERS "s101", "v103", "v155"
+#define CORPUS_VGPR_PRESSURE_CLOBBERS                                        \
+  "s20", "s21", "v250", "v254", "v255"
 
 #define CORPUS_SGPR_PRESSURE_SAVE                                               \
   "v_mov_b32 v102, v0\n\t"                                                      \

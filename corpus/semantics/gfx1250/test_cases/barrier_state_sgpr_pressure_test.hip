@@ -27,7 +27,7 @@ extern "C" __global__ void barrier_state_sgpr_pressure(
                "v_mov_b32 %2, v112"
                : "=&v"(lane), "=&v"(mismatch), "=&v"(state)
                :
-               : "s101", "v155", "memory");
+               : CORPUS_SGPR_PRESSURE_CLOBBERS, "v112", "memory");
   states[lane] = state;
   status[lane] = mismatch;
 }

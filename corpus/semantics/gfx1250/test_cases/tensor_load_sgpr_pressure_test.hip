@@ -83,8 +83,8 @@ extern "C" __global__ void tensor_load_sgpr_pressure(
                "v_mov_b32 %2, v115"
                : "=&v"(lane), "=&v"(mismatch), "=&v"(value)
                : "v"(address)
-               : "s101", "v112", "v113", "v114", "v115", "v116", "v155",
-                 "memory");
+               : CORPUS_SGPR_PRESSURE_CLOBBERS, "v112", "v113", "v114",
+                 "v115", "v116", "memory");
   values[lane] = value;
   status[lane] = mismatch;
 }
