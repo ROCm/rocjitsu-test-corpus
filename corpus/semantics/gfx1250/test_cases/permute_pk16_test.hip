@@ -7,7 +7,7 @@ using u32x3 = unsigned __attribute__((ext_vector_type(3)));
 using u32x4 = unsigned __attribute__((ext_vector_type(4)));
 
 extern "C" __global__ void
-preserve_masked_permute_destinations(unsigned *out, unsigned enable) {
+observe_masked_permute_destinations(unsigned *out, uint64_t exec_mask) {
   const unsigned lane = threadIdx.x;
   u32x2 result_b4 = {0x10400000u + lane, 0x10410000u + lane};
   u32x3 result_b6 = {
@@ -28,20 +28,17 @@ preserve_masked_permute_destinations(unsigned *out, unsigned enable) {
   const u32x2 selectors = {0x76543210u, 0xfedcba98u};
   uint64_t saved_exec;
 
-  asm volatile("s_cmp_eq_u32 %9, 0\n\t"
-               "s_cbranch_scc1 1f\n\t"
-               "s_mov_b64 %0, exec\n\t"
-               "s_mov_b64 exec, 0\n\t"
+  asm volatile("s_mov_b64 %0, exec\n\t"
+               "s_mov_b64 exec, %9\n\t"
                "v_perm_pk16_b4_u4 %1, %4, %5, %8\n\t"
                "v_perm_pk16_b6_u4 %2, %4, %6, %8\n\t"
                "v_perm_pk16_b8_u4 %3, %6, %7, %8\n\t"
-               "s_mov_b64 exec, %0\n\t"
-               "1:"
-               : "=&s"(saved_exec), "+v"(result_b4), "+v"(result_b6),
-                 "+v"(result_b8)
+               "s_mov_b64 exec, %0"
+               : "=&s"(saved_exec), "+&v"(result_b4), "+&v"(result_b6),
+                 "+&v"(result_b8)
                : "v"(source32_a), "v"(source32_b), "v"(source64_a),
-                 "v"(source64_b), "v"(selectors), "s"(enable)
-               : "scc", "memory");
+                 "v"(source64_b), "v"(selectors), "s"(exec_mask)
+               : "memory");
 
   unsigned *lane_out = out + lane * 9;
   for (int i = 0; i < 2; ++i)
@@ -68,12 +65,20 @@ int main() {
     expected[lane * 9 + 8] = 0x10830000u + lane;
   }
 
-  output.clear();
-  hipLaunchKernelGGL(preserve_masked_permute_destinations, dim3(1), dim3(lanes),
-                     0, 0, output.device, 0);
-  output.target_to_host();
-  return corpus::expect_equal("empty EXEC preserves permute destinations",
-                              output.host, expected)
-             ? 0
-             : 1;
+  bool ok = true;
+  for (unsigned variant = 0; variant < 2; ++variant) {
+    const uint64_t exec_mask = variant == 0 ? 0 : UINT64_MAX;
+    output.clear();
+    hipLaunchKernelGGL(observe_masked_permute_destinations, dim3(1),
+                       dim3(lanes), 0, 0, output.device, exec_mask);
+    output.target_to_host();
+    if (variant == 0) {
+      ok &= corpus::expect_equal("permute EXEC-mask behavior", output.host,
+                                 expected, variant);
+    } else {
+      ok &= corpus::expect_nonconstant_observation("permute EXEC-mask behavior",
+                                                   output.host, variant);
+    }
+  }
+  return ok ? 0 : 1;
 }

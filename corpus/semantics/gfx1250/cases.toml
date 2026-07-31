@@ -363,9 +363,7 @@ records = [
 ]
 
 [results.permute_pk16_test]
-records = [
-  { case = "empty EXEC preserves permute destinations", variants = 1 },
-]
+records = [{ case = "permute EXEC-mask behavior", variants = 2 }]
 
 [results.s_clause_test]
 records = [{ case = "hard-clause global loads", variants = 1 }]
