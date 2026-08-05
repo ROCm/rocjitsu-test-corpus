@@ -22,6 +22,9 @@ extern "C" __global__ void wmma_scale_m32_fp4_differential(
   const int scale_a =
       probe == 1 ? wmma_m32_fp4::scale_word_for_lane(lane, -16)
                  : wmma_m32_fp4::neutral_scale_word;
+  // Keep the upper-lane B-scale copy 16 exponents higher. B scaling is
+  // column-based, so outputs must source lanes 0-15; using the full lane here
+  // detects implementations that incorrectly source the upper copy.
   const int scale_b =
       probe == 2 ? wmma_m32_fp4::scale_word_for_lane(lane, -8)
                  : wmma_m32_fp4::neutral_scale_word;
