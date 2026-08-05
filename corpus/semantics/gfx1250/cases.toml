@@ -342,8 +342,8 @@ records = [
 [results.wmma_scale_m32_fp4_differential_test]
 records = [
   { case = "regular-Scale M32 FP4 packed row and column layout", variants = 1 },
-  { case = "regular-Scale M32 FP4 A-scale bytes and lanes", variants = 1 },
-  { case = "regular-Scale M32 FP4 B-scale bytes and lanes", variants = 1 },
+  { case = "regular-Scale M32 FP4 aggregate A-scale byte groups and lanes", variants = 1 },
+  { case = "regular-Scale M32 FP4 aggregate B-scale byte groups and lanes", variants = 1 },
 ]
 
 [results.wmma_scale16_m16_test]
@@ -361,8 +361,8 @@ records = [
 [results.wmma_scale16_m32_fp4_differential_test]
 records = [
   { case = "Scale16 M32 FP4 packed row and column layout", variants = 1 },
-  { case = "Scale16 M32 FP4 A-scale bytes and lanes", variants = 1 },
-  { case = "Scale16 M32 FP4 B-scale bytes and lanes", variants = 1 },
+  { case = "Scale16 M32 FP4 aggregate A-scale byte groups and lanes", variants = 1 },
+  { case = "Scale16 M32 FP4 aggregate B-scale byte groups and lanes", variants = 1 },
 ]
 
 [results.wmma_scale16_sgpr_pressure_test]

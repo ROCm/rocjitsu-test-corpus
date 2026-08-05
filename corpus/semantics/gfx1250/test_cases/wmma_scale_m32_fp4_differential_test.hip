@@ -63,7 +63,8 @@ int main() {
                      b.device, 1);
   output.target_to_host();
   if (!corpus::expect_near(
-          "regular-Scale M32 FP4 A-scale bytes and lanes", output.host,
+          "regular-Scale M32 FP4 aggregate A-scale byte groups and lanes",
+          output.host,
           wmma_m32_fp4::scale_probe_expected(/*scale_bytes=*/4,
                                               /*matrix_a=*/true)))
     return 1;
@@ -74,7 +75,8 @@ int main() {
                      b.device, 2);
   output.target_to_host();
   return corpus::expect_near(
-             "regular-Scale M32 FP4 B-scale bytes and lanes", output.host,
+             "regular-Scale M32 FP4 aggregate B-scale byte groups and lanes",
+             output.host,
              wmma_m32_fp4::scale_probe_expected(/*scale_bytes=*/4,
                                                  /*matrix_a=*/false))
              ? 0

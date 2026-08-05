@@ -33,6 +33,22 @@ The build produces:
 - `bin/`: independently runnable HIP programs;
 - `assembly/`: compiler output used to verify the declared source forms.
 
+## M32 FP4 differential coverage
+
+The regular-Scale and Scale16 M32 FP4 differential cases deliberately make
+different claims about layout. Their row-and-column probes validate how packed
+fragments contribute to output rows and columns. Because both operands use the
+same `packed_slot(k)` mapping, those probes do not distinguish a common
+permutation of packed K positions.
+
+The scale probes make all 128 K positions contribute and use an injective
+fingerprint for scale-byte ordering. They validate aggregate scale-byte-group
+behavior and lane-dependent application for both A and B scales. They do not
+establish the exact position-level K-to-byte mapping: compensating remaps can
+leave the aggregate checksum unchanged, and permutations within one scale
+group remain invisible. Exact packed K ordering requires independent K-coded
+probes and is outside these cases' coverage.
+
 ## Capture a run
 
 `capture_run.py` accepts an arbitrary command prefix and otherwise treats the

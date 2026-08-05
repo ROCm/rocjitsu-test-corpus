@@ -70,6 +70,10 @@ inline int scale_byte_for_k(int k, int scale_bytes) {
   return 4 * (k >> 6) + 2 * ((k >> 2) & 1) + ((k >> 5) & 1);
 }
 
+// This dense probe exercises every K position and fingerprints aggregate
+// scale-byte-group behavior. Positions in the same expected byte group share
+// a value, so compensating position-level remaps and common A/B permutations
+// within a group are intentionally outside this oracle's coverage.
 inline void make_scale_probe_inputs(std::vector<int> &a,
                                     std::vector<int> &b, int scale_bytes) {
   std::fill(a.begin(), a.end(), 0);
