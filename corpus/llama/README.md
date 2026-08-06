@@ -6,7 +6,7 @@ HIP backend against its CPU reference on ROCm targets.
 ## At a Glance
 
 ```text
-build.sh              Standalone configure/build entrypoint.
+setup_llama_tests.py  Standalone build and smoke-check entrypoint.
 CMakeLists.txt        Defines test-backend-ops from the vendored sources.
 selected_llama_backend_ops_tests.json
                       Checked-in backend-op case inventory.
@@ -61,11 +61,13 @@ with kernel changes. Update the vendored subtree and inventory in one change.
 
 ## Run
 
-Use the unified corpus pytest entrypoint. It builds the harness once and creates
-one pytest parameter for each selected backend-op case:
+Build the harness once, then use the unified corpus pytest entrypoint. Pytest
+checks that executable and creates one parameter for each selected backend-op
+case:
 
 ```bash
 export ROCM_PATH="$(rocm-sdk path --root)"
+python corpus/llama/setup_llama_tests.py --targets gfx1201
 python -m pytest tests/test_corpus.py \
   --suite llama \
   --target gfx1201 \
@@ -75,30 +77,34 @@ python -m pytest tests/test_corpus.py \
 Run all selected cases in one harness process:
 
 ```bash
-/tmp/llama-corpus-gfx1201/test-backend-ops test \
+corpus/llama/build/test-backend-ops test \
   -o "$(< corpus/llama/selected_llama_backend_ops_tests.txt)" \
   -b ROCm0 --output csv
 ```
 
 ## Build
 
-The suite invokes `build.sh` once per target to configure and build
-`test-backend-ops` in the pytest artifact directory. It needs a ROCm SDK root
-that provides `lib/cmake/hip/hip-config.cmake`, hipBLAS, and rocBLAS; the CMake
-project takes it from `-DROCM_PATH`, `$ROCM_PATH`, or `rocm-sdk path --root`.
-By default the script builds `third_party/llama.cpp`.
+Run `setup_llama_tests.py` before pytest to build `test-backend-ops` in
+`corpus/llama/build`. The setup then invokes the executable in `support` mode
+with `selected_llama_backend_ops_tests.txt` as its filter and requires a
+successful exit. This checks the built harness without running numerical
+correctness tests. Pytest does not compile it.
 
-With no arguments, `build.sh` builds
-`gfx942;gfx950;gfx1100;gfx1201;gfx1250` into `corpus/llama/build`. Pass a target
-list and build directory to override both defaults.
+The build needs a ROCm SDK root that provides
+`lib/cmake/hip/hip-config.cmake`, hipBLAS, and rocBLAS; the CMake project takes
+it from `-DROCM_PATH`, `$ROCM_PATH`, or the `rocm-sdk path --root` command. By
+default the script builds `third_party/llama.cpp`.
 
-Set `LLAMACPP_CHECKOUT_HASH` to build another upstream revision. The script
-sparse-checks out only `ggml/` and `tests/test-backend-ops.cpp` under the build
-directory, leaving the vendored source unchanged:
+With no arguments, `setup_llama_tests.py` builds `gfx1201`. Use `--targets` to
+build one or more other targets and `--build-dir` to override the default
+`corpus/llama/build` directory. Use `--jobs` to control build parallelism; it
+defaults to half the available CPUs.
+
+Pass multiple space-separated targets to build several gfx architectures at
+once:
 
 ```bash
-LLAMACPP_CHECKOUT_HASH=c588c4f47683e73ad2d69f50480bec6cc85fd0f7 \
-  bash corpus/llama/build.sh gfx1201 /tmp/llama-corpus-gfx1201
+python corpus/llama/setup_llama_tests.py --targets gfx1201 gfx942
 ```
 
 To build the harness by hand, for example to reproduce a single case outside
@@ -106,7 +112,9 @@ pytest:
 
 ```bash
 export ROCM_PATH="$(rocm-sdk path --root)"
-bash corpus/llama/build.sh gfx1201 /tmp/llama-corpus-gfx1201
+python corpus/llama/setup_llama_tests.py \
+  --targets gfx1201 \
+  --build-dir /tmp/llama-corpus-gfx1201
 /tmp/llama-corpus-gfx1201/test-backend-ops test \
   -o 'ABS(type=f16,ne_a=[128,2,2,2],v=0)' \
   -b ROCm0 -j 1 --output csv

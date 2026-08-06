@@ -197,14 +197,11 @@ The opt-in `llama` suite runs 535 selected `test-backend-ops` cases that
 compare the GGML HIP backend against its CPU reference. `corpus/llama/README.md`
 covers how the inventory was selected and what the vendored sources contain.
 
-The suite invokes `corpus/llama/build.sh` once per target and then runs one
-process per case. It needs a ROCm SDK root providing
-`lib/cmake/hip/hip-config.cmake`, hipBLAS, and rocBLAS. The first run compiles
-the whole GGML HIP backend, so expect a long build before the first case
-executes:
+Build `test-backend-ops` once before pytest:
 
 ```bash
 export ROCM_PATH="$(rocm-sdk path --root)"
+python corpus/llama/setup_llama_tests.py --targets gfx1201
 
 pytest tests/test_corpus.py \
   --target gfx1201 \
@@ -212,9 +209,7 @@ pytest tests/test_corpus.py \
   --timeout 15
 ```
 
-Run the same cases through RocJITsu. The run wrapper applies to each harness
-process, while pytest remains responsible for test timeouts:
-
+Run llama tests for one gfx at a time:
 ```bash
 pytest tests/test_corpus.py \
   --target gfx1201 \
@@ -224,28 +219,17 @@ pytest tests/test_corpus.py \
   -n 8
 ```
 
-The llama adapter has no internal timeout. Use the `pytest-timeout` option
-`--timeout <seconds>` when a limit is needed. Every completed case writes
-`<artifact-directory>/llama/<target>/cases/<op>.<digest>.log` with the
-command, outcome, and captured output, plus a matching `*.outcome.json` record.
-
-The slowest `gfx1201` case under RocJITsu needs about 14 seconds
-serially, so eight workers contending for one GPU can push it over the limit and
-report a timeout that a serial run does not reproduce. Re-run a lone unexpected
-timeout without `-n` to confirm it, or raise pytest's `--timeout`.
-
-Select cases by operator name, by case digest, or by the exact case string:
+Run a specific llama case directly with the executable in the default build
+directory instead of using pytest's `--case <test_name>` option:
 
 ```bash
-# Every MUL_MAT case.
-pytest tests/test_corpus.py --suite llama --case MUL_MAT
-
-# One case, by the digest that appears in its test id.
-pytest tests/test_corpus.py --suite llama --case 67c2b413a2ab
+corpus/llama/build/test-backend-ops test \
+  -o 'ABS(type=f16,ne_a=[128,2,2,2],v=0)' \
+  -b ROCm0 -j 1 --output csv
 ```
 
-`--case` splits on commas, so exact `OP(params)` strings only work through the
-JSON lists of `--run-tests-config` and `--skip-tests-config`.
+Pytest's `--case` splits on commas, so exact `OP(params)` strings only work
+through the JSON lists of `--run-tests-config` and `--skip-tests-config`.
 
 ## Packaged gfx1250 HSACO extraction
 

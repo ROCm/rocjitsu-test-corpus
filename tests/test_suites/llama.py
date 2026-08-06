@@ -1,8 +1,8 @@
 """llama.cpp `test-backend-ops` coverage for RocJITsu backend regressions.
 
-The suite builds the vendored `test-backend-ops` harness once per target and
-then runs one subprocess per selected `OP(params)` case so that a crash or hang
-in one operator cannot hide the results of the others.
+The suite uses a prebuilt `test-backend-ops` harness and runs one subprocess per
+selected `OP(params)` case so that a crash or hang in one operator cannot hide
+the results of the others.
 """
 
 from __future__ import annotations
@@ -10,13 +10,11 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
-import os
 import re
 import shlex
 import shutil
 import signal
 import subprocess
-import time
 from pathlib import Path
 
 from support.define_contracts import (
@@ -32,7 +30,7 @@ from support.prepare_inputs import load_json
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CORPUS_ROOT = REPO_ROOT / "corpus" / "llama"
 INVENTORY_PATH = CORPUS_ROOT / "selected_llama_backend_ops_tests.json"
-BUILD_SCRIPT = CORPUS_ROOT / "build.sh"
+BUILD_DIR = CORPUS_ROOT / "build"
 EXECUTABLE_NAME = "test-backend-ops"
 BACKEND = "ROCm0"
 CASE_PATTERN = re.compile(r"[A-Z][A-Z0-9_]*\(.*\)")
@@ -63,10 +61,7 @@ def discover(
             short_digest = digest[:12]
             discovered.append(
                 CorpusCase(
-                    id=(
-                        f"llama.{target.target}.{collection}.{operator}."
-                        f"{short_digest}"
-                    ),
+                    id=f"llama.{target.target}.{collection}.{case_name}",
                     suite="llama",
                     target=target.target,
                     collection=collection,
@@ -97,43 +92,24 @@ def discover(
 
 
 def build(
-    case: CorpusCase,
-    context: RunContext,
+    _case: CorpusCase,
+    _context: RunContext,
     _build_state: BuildState,
-) -> BuildResult:
-    build_root = context.artifact_directory / "llama" / _suite_shard(case) / case.target
-    build_dir = build_root / "build"
-    logs_dir = build_root / "logs"
-    _run_command(
-        [
-            "bash",
-            str(BUILD_SCRIPT),
-            case.target,
-            str(build_dir),
-        ],
-        log_path=logs_dir / "build.log",
-        phase="build",
-    )
-
-    executable_path = build_dir / EXECUTABLE_NAME
-    if not executable_path.is_file() or not os.access(executable_path, os.X_OK):
-        raise RuntimeError(
-            f"llama build did not produce an executable {executable_path}"
-        )
-    return BuildResult(
-        build_dir=build_dir,
-        executable_path=executable_path,
-        metadata={},
-    )
+) -> None:
+    pass
 
 
-def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> None:
+def run(
+    case: CorpusCase,
+    _build_result: BuildResult,
+    context: RunContext,
+) -> None:
     if context.skip_all_runs:
         return
 
     case_name = case.metadata["name"]
     command = _run_wrapper_command(context.run_wrapper) + [
-        str(build_result.executable_path),
+        str(BUILD_DIR / EXECUTABLE_NAME),
         "test",
         "-o",
         case_name,
@@ -256,7 +232,6 @@ def _run_command(command: list[str], *, log_path: Path, phase: str) -> None:
 
 
 def _run_case(command: list[str]) -> dict:
-    started = time.monotonic()
     process = subprocess.run(
         command,
         cwd=str(REPO_ROOT),
@@ -268,7 +243,6 @@ def _run_case(command: list[str]) -> dict:
     )
     return {
         "returncode": process.returncode,
-        "duration_seconds": time.monotonic() - started,
         "stdout": process.stdout,
         "stderr": process.stderr,
     }
@@ -355,7 +329,6 @@ def _write_case_artifacts(
                 f"case: {case.metadata['name']}",
                 f"outcome: {outcome}",
                 f"returncode: {completed['returncode']}",
-                f"duration_seconds: {completed['duration_seconds']:.3f}",
                 "",
                 "stdout:",
                 completed["stdout"] or "<empty>",
@@ -374,7 +347,6 @@ def _write_case_artifacts(
                 "case": case.metadata["name"],
                 "outcome": outcome,
                 "returncode": completed["returncode"],
-                "duration_seconds": round(completed["duration_seconds"], 3),
             },
             indent=2,
         )
@@ -390,7 +362,3 @@ def _run_wrapper_command(run_wrapper: str | list[str] | None) -> list[str]:
     if isinstance(run_wrapper, str):
         return shlex.split(run_wrapper)
     return [str(part) for part in run_wrapper]
-
-
-def _suite_shard(case: CorpusCase) -> str:
-    return str(case.build.get("suite_shard", "llama_shard_0"))
