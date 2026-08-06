@@ -12,6 +12,9 @@ constexpr int lanes = 32;
 constexpr int matrix_regs = 16;
 constexpr int columns = 16;
 constexpr int neutral_scale_word = 0x7f7f7f7f;
+// Preserve this ordering: each FP4 encoding matches its value, and the
+// intended weighted sum has no collision among permutations of the first four
+// entries (regular Scale) or all eight entries (Scale16).
 inline constexpr std::array<uint32_t, 8> scale_probe_fp4 = {
     0x1, 0x3, 0x9, 0x2, 0x4, 0x5, 0x6, 0x7};
 inline constexpr std::array<float, 8> scale_probe_values = {
