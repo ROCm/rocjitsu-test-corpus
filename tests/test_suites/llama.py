@@ -61,7 +61,10 @@ def discover(
             short_digest = digest[:12]
             discovered.append(
                 CorpusCase(
-                    id=f"llama.{target.target}.{collection}.{case_name}",
+                    id=(
+                        f"llama.{target.target}.{collection}.{operator}."
+                        f"{short_digest}"
+                    ),
                     suite="llama",
                     target=target.target,
                     collection=collection,
