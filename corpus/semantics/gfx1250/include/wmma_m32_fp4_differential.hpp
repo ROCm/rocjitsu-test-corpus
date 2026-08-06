@@ -59,7 +59,7 @@ inline void make_row_fingerprint_inputs(std::vector<int> &a,
       for (int offset = 0; offset <= row; ++offset)
         set_a(a, row, base_k + offset, 0x2); // FP4 1.0
     for (int col = 0; col < columns; ++col)
-      for (int offset = 0; offset < 2 * (col + 1); ++offset)
+      for (int offset = 0; offset <= col; ++offset)
         set_b(b, col, base_k + offset, 0x2); // FP4 1.0
   }
 }
@@ -93,7 +93,7 @@ inline std::vector<float> row_fingerprint_expected() {
     for (int reg = 0; reg < matrix_regs; ++reg) {
       const int row = dbt_row(lane, reg);
       const int col = lane % columns;
-      const int products_per_block = std::min(row + 1, 2 * (col + 1));
+      const int products_per_block = std::min(row + 1, col + 1);
       expected[lane * matrix_regs + reg] =
           static_cast<float>(4096 + 256 * row + 4 * products_per_block);
     }
