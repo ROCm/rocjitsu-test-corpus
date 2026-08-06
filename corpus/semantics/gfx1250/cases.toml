@@ -263,6 +263,11 @@ source_patterns = [
 ]
 
 [[case]]
+id = "wmma-regular-scale-m32-fp4-differential"
+test = "wmma_scale_m32_fp4_differential_test"
+source_patterns = ['\bv_wmma_scale_f32_32x16x128_f4\b']
+
+[[case]]
 id = "wmma-bare-f8f6f4"
 test = "wmma_scale_regular_test"
 source_patterns = ['\bv_wmma_f32_16x16x128_f8f6f4\b']
@@ -275,6 +280,11 @@ source_patterns = ['\bv_wmma_scale16_f32_16x16x128_f8f6f4\b']
 [[case]]
 id = "wmma-scale16-m32"
 test = "wmma_scale16_m32_test"
+source_patterns = ['\bv_wmma_scale16_f32_32x16x128_f4\b']
+
+[[case]]
+id = "wmma-scale16-m32-fp4-differential"
+test = "wmma_scale16_m32_fp4_differential_test"
 source_patterns = ['\bv_wmma_scale16_f32_32x16x128_f4\b']
 
 [[case]]
@@ -425,6 +435,13 @@ records = [
   { case = "regular-scale nonuniform tile", variants = 3 },
 ]
 
+[results.wmma_scale_m32_fp4_differential_test]
+records = [
+  { case = "regular-Scale M32 FP4 packed row and column layout", variants = 1 },
+  { case = "regular-Scale M32 FP4 aggregate A-scale byte groups and lanes", variants = 1 },
+  { case = "regular-Scale M32 FP4 aggregate B-scale byte groups and lanes", variants = 1 },
+]
+
 [results.wmma_scale16_m16_test]
 records = [
   { case = "Scale16 M16 GEMM tile", variants = 3 },
@@ -435,6 +452,13 @@ records = [
 records = [
   { case = "Scale16 M32 GEMM tile", variants = 1 },
   { case = "Scale16 M32 nonuniform tile", variants = 1 },
+]
+
+[results.wmma_scale16_m32_fp4_differential_test]
+records = [
+  { case = "Scale16 M32 FP4 packed row and column layout", variants = 1 },
+  { case = "Scale16 M32 FP4 aggregate A-scale byte groups and lanes", variants = 1 },
+  { case = "Scale16 M32 FP4 aggregate B-scale byte groups and lanes", variants = 1 },
 ]
 
 [results.wmma_scale16_sgpr_pressure_test]
