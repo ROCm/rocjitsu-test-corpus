@@ -37,9 +37,9 @@ timeout is retained.
 `selected_llama_backend_ops_tests.txt` contains the same exact names joined by
 commas for `test-backend-ops -o`.
 
-The inventory supports `gfx942`, `gfx950`, `gfx1100`, `gfx1201`, and `gfx1250`.
-Pytest creates one parameter for every exact case string when one of those
-targets is requested.
+The inventory supports `gfx942`, `gfx950`, `gfx1100`, and `gfx1201`. Pytest
+creates one parameter for every exact case string when one of those targets is
+requested.
 
 The suite runs one `test-backend-ops` process per case. Operators such as
 `MUL_MAT` and `FLASH_ATTN_EXT` can crash or hang a simulated device, and one
