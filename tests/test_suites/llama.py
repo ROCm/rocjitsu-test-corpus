@@ -19,6 +19,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from filelock import FileLock
+
 from support.define_contracts import (
     BuildResult,
     BuildState,
@@ -32,11 +34,11 @@ from support.prepare_inputs import load_json
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CORPUS_ROOT = REPO_ROOT / "corpus" / "llama"
 INVENTORY_PATH = CORPUS_ROOT / "selected_llama_backend_ops_tests.json"
-BUILD_SCRIPT = CORPUS_ROOT / "build.sh"
 EXECUTABLE_NAME = "test-backend-ops"
 BACKEND = "ROCm0"
 CASE_PATTERN = re.compile(r"[A-Z][A-Z0-9_]*\(.*\)")
 CSV_HEADER_PREFIX = '"backend_name"'
+XDIST_RUN_UID_ENV = "PYTEST_XDIST_TESTRUNUID"
 
 
 def default_config_files() -> tuple[Path, ...]:
@@ -101,21 +103,52 @@ def build(
     context: RunContext,
     _build_state: BuildState,
 ) -> BuildResult:
-    build_root = context.artifact_directory / "llama" / _suite_shard(case) / case.target
+    build_root = context.artifact_directory / "llama" / case.target
     build_dir = build_root / "build"
     logs_dir = build_root / "logs"
-    _run_command(
-        [
-            "bash",
-            str(BUILD_SCRIPT),
-            case.target,
-            str(build_dir),
-        ],
-        log_path=logs_dir / "build.log",
-        phase="build",
-    )
-
+    run_uid = os.getenv(XDIST_RUN_UID_ENV, f"pid-{os.getpid()}")
+    completion_stamp = build_root / f"{run_uid}.complete"
+    lock_path = build_root / "build.lock"
     executable_path = build_dir / EXECUTABLE_NAME
+    build_root.mkdir(parents=True, exist_ok=True)
+
+    with FileLock(lock_path):
+        if not completion_stamp.exists():
+            rocm_path = _resolve_rocm_path()
+            _run_command(
+                [
+                    "cmake",
+                    "-S",
+                    str(CORPUS_ROOT),
+                    "-B",
+                    str(build_dir),
+                    f"-DROCM_PATH={rocm_path}",
+                    f"-DCMAKE_HIP_ARCHITECTURES={case.target}",
+                ],
+                log_path=logs_dir / "configure.log",
+                phase="configure",
+            )
+            _run_command(
+                [
+                    "cmake",
+                    "--build",
+                    str(build_dir),
+                    "--target",
+                    EXECUTABLE_NAME,
+                    "-j",
+                    str(context.worker_count),
+                ],
+                log_path=logs_dir / "build.log",
+                phase="build",
+            )
+            if not executable_path.is_file() or not os.access(
+                executable_path, os.X_OK
+            ):
+                raise RuntimeError(
+                    f"llama build did not produce an executable {executable_path}"
+                )
+            completion_stamp.touch()
+
     if not executable_path.is_file() or not os.access(executable_path, os.X_OK):
         raise RuntimeError(
             f"llama build did not produce an executable {executable_path}"
@@ -123,8 +156,43 @@ def build(
     return BuildResult(
         build_dir=build_dir,
         executable_path=executable_path,
-        metadata={},
+        metadata={"completion_stamp": str(completion_stamp)},
     )
+
+
+def _resolve_rocm_path() -> Path:
+    configured_path = os.getenv("ROCM_PATH")
+    if configured_path:
+        rocm_path = Path(configured_path).resolve()
+    else:
+        rocm_path = Path(_run_rocm_sdk("path", "--root")).resolve()
+    hip_config = rocm_path / "lib" / "cmake" / "hip" / "hip-config.cmake"
+    if not hip_config.is_file():
+        raise RuntimeError(
+            f"ROCm SDK root {rocm_path} does not contain {hip_config}"
+        )
+    return rocm_path
+
+
+def _run_rocm_sdk(*arguments: str) -> str:
+    executable = shutil.which("rocm-sdk")
+    if executable is None:
+        raise RuntimeError("Missing required tool 'rocm-sdk' in PATH")
+    completed = subprocess.run(
+        [executable, *arguments],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        errors="replace",
+        check=False,
+    )
+    output = completed.stdout.strip()
+    if completed.returncode != 0 or not output:
+        raise RuntimeError(
+            f"rocm-sdk {' '.join(arguments)} failed with return code "
+            f"{completed.returncode}: {completed.stderr.strip() or '<empty>'}"
+        )
+    return output
 
 
 def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> None:
@@ -139,8 +207,6 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
         case_name,
         "-b",
         case.backend,
-        "-j",
-        "1",
         "--output",
         "csv",
     ]
@@ -390,7 +456,3 @@ def _run_wrapper_command(run_wrapper: str | list[str] | None) -> list[str]:
     if isinstance(run_wrapper, str):
         return shlex.split(run_wrapper)
     return [str(part) for part in run_wrapper]
-
-
-def _suite_shard(case: CorpusCase) -> str:
-    return str(case.build.get("suite_shard", "llama_shard_0"))

@@ -50,6 +50,7 @@ class RunContext:
     run_wrapper: str | None = None
     comparison_run_wrapper: str | None = None
     comparison_required_stderr: tuple[str, ...] = ()
+    worker_count: int = 1
 
 
 @dataclass

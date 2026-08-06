@@ -197,11 +197,13 @@ The opt-in `llama` suite runs 535 selected `test-backend-ops` cases that
 compare the GGML HIP backend against its CPU reference. `corpus/llama/README.md`
 covers how the inventory was selected and what the vendored sources contain.
 
-The suite invokes `corpus/llama/build.sh` once per target and then runs one
-process per case. It needs a ROCm SDK root providing
-`lib/cmake/hip/hip-config.cmake`, hipBLAS, and rocBLAS. The first run compiles
-the whole GGML HIP backend, so expect a long build before the first case
-executes:
+Pytest builds `test-backend-ops` once for the selected target and then runs one
+process per case. Under xdist, one worker holds a cross-worker build lock while
+the other workers wait and reuse the completed executable. The CMake job count
+matches the pytest worker count.
+
+The build needs a ROCm SDK root providing `lib/cmake/hip/hip-config.cmake`,
+hipBLAS, and rocBLAS:
 
 ```bash
 export ROCM_PATH="$(rocm-sdk path --root)"
@@ -209,7 +211,8 @@ export ROCM_PATH="$(rocm-sdk path --root)"
 pytest tests/test_corpus.py \
   --target gfx1201 \
   --suite llama \
-  --timeout 15
+  --timeout 15 \
+  -n 8
 ```
 
 Run the same cases through RocJITsu. The run wrapper applies to each harness
