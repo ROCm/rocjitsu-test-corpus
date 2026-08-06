@@ -4,5 +4,7 @@
 rocm[devel,libraries]==7.14.0a20260624
 
 # ROCm device target packages required by the rocBLAS tests.
-rocm-sdk-device-gfx950==7.14.0a20260624
 rocm-sdk-device-gfx942==7.14.0a20260624
+rocm-sdk-device-gfx950==7.14.0a20260624
+rocm-sdk-device-gfx1100==7.14.0a20260624
+rocm-sdk-device-gfx1201==7.14.0a20260624
