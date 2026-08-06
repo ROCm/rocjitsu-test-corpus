@@ -145,6 +145,7 @@ def run_context(pytestconfig) -> RunContext:
         comparison_required_stderr=tuple(
             pytestconfig.getoption("comparison_required_stderr")
         ),
+        worker_count=_requested_worker_groups(pytestconfig),
     )
 
 
@@ -310,11 +311,12 @@ def _suite_shard_index(case: CorpusCase, worker_groups: int) -> int:
 
 
 def _requested_worker_groups(config) -> int:
-    worker_count = os.getenv("PYTEST_XDIST_WORKER_COUNT")
-    if worker_count:
+    worker_input = getattr(config, "workerinput", None)
+    if worker_input is not None:
+        worker_count = worker_input.get("workercount")
         try:
             return max(1, int(worker_count))
-        except ValueError:
+        except (TypeError, ValueError):
             pass
     numprocesses = getattr(config.option, "numprocesses", None)
     if numprocesses in (None, 0, "0"):
