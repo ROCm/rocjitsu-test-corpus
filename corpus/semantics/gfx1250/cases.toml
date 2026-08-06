@@ -63,6 +63,16 @@ test = "barrier_signal_isfirst_test"
 source_patterns = ['\bs_barrier_signal_isfirst\b']
 
 [[case]]
+id = "barrier-id-minus1-scc"
+test = "barrier_id_minus1_scc_test"
+source_patterns = ['\bs_get_barrier_state\s+s[0-9]+,\s+-1\b']
+
+[[case]]
+id = "barrier-id-minus2-scc"
+test = "barrier_id_minus2_scc_test"
+source_patterns = ['\bs_get_barrier_state\s+s[0-9]+,\s+-2\b']
+
+[[case]]
 id = "ds-two-address-load-store"
 test = "ds_2addr_test"
 source_patterns = [
@@ -103,6 +113,44 @@ source_patterns = [
   '\bds_store_addtid_b32\s+v8\b[^\n]*\boffset:64\b',
   '\.amdhsa_next_free_vgpr\s+256\b',
   '\.amdhsa_private_segment_fixed_size\s+0\b',
+]
+
+[[case]]
+id = "flat-scratch-scalar-lo"
+test = "flat_scratch_scalar_lo_test"
+source_patterns = [
+  '\bs_mov_b32\b[^\n]*\bsrc_flat_scratch_base_lo\b',
+  '\bs_mov_b32\b[^\n]*\bsrc_flat_scratch_base_hi\b',
+  '\bs_mov_b64\b[^\n]*\bsrc_flat_scratch_base_lo\b',
+  '\bs_lshl_b64\b[^\n]*\bsrc_flat_scratch_base_lo\b[^\n]*,\s*1\b',
+]
+
+[[case]]
+id = "flat-scratch-scalar-hi"
+test = "flat_scratch_scalar_hi_test"
+source_patterns = [
+  '\bs_mov_b32\b[^\n]*\bsrc_flat_scratch_base_lo\b',
+  '\bs_mov_b32\b[^\n]*\bsrc_flat_scratch_base_hi\b',
+  '\bs_mov_b64\b[^\n]*\bsrc_flat_scratch_base_hi\b',
+  '\bs_lshl_b64\b[^\n]*\bsrc_flat_scratch_base_hi\b[^\n]*,\s*1\b',
+]
+
+[[case]]
+id = "flat-scratch-vector-lo"
+test = "flat_scratch_vector_lo_test"
+source_patterns = [
+  '\bs_mov_b32\b[^\n]*\bsrc_flat_scratch_base_lo\b',
+  '\bs_mov_b32\b[^\n]*\bsrc_flat_scratch_base_hi\b',
+  '\bv_add_nc_u64_e64\b[^\n]*\bsrc_flat_scratch_base_lo\b',
+]
+
+[[case]]
+id = "flat-scratch-vector-hi"
+test = "flat_scratch_vector_hi_test"
+source_patterns = [
+  '\bs_mov_b32\b[^\n]*\bsrc_flat_scratch_base_lo\b',
+  '\bs_mov_b32\b[^\n]*\bsrc_flat_scratch_base_hi\b',
+  '\bv_add_nc_u64_e64\b[^\n]*\bsrc_flat_scratch_base_hi\b',
 ]
 
 [[case]]
@@ -160,6 +208,25 @@ source_patterns = [
   '\.amdhsa_next_free_sgpr\s+102\b',
   '\.amdhsa_next_free_vgpr\s+156\b',
   '\.amdhsa_private_segment_fixed_size\s+0\b',
+]
+
+[[case]]
+id = "monitor-sleep-bounded"
+test = "monitor_sleep_bounded_test"
+source_patterns = ['\bs_monitor_sleep\s+1\b']
+
+[[case]]
+id = "monitor-sleep-unbounded"
+test = "monitor_sleep_unbounded_test"
+source_patterns = ['\bs_monitor_sleep\s+0x8000\b']
+
+[[case]]
+id = "permute-pk16-empty-exec"
+test = "permute_pk16_test"
+source_patterns = [
+  '\bv_perm_pk16_b4_u4\b',
+  '\bv_perm_pk16_b6_u4\b',
+  '\bv_perm_pk16_b8_u4\b',
 ]
 
 [[case]]
@@ -254,6 +321,12 @@ records = [
   { case = "cluster full-SGPR and M0 preservation", variants = 1 },
 ]
 
+[results.barrier_id_minus1_scc_test]
+records = [{ case = "barrier ID -1 SCC preservation", variants = 2 }]
+
+[results.barrier_id_minus2_scc_test]
+records = [{ case = "barrier ID -2 SCC preservation", variants = 2 }]
+
 [results.cluster_load_test]
 records = [
   { case = "cluster activation stream", variants = 14 },
@@ -274,6 +347,18 @@ records = [
 
 [results.ds_storexchg_2addr_test]
 records = [{ case = "LDS queue handoff", variants = 4 }]
+
+[results.flat_scratch_scalar_lo_test]
+records = [{ case = "scalar flat-scratch-base LO semantics", variants = 1 }]
+
+[results.flat_scratch_scalar_hi_test]
+records = [{ case = "scalar flat-scratch-base HI semantics", variants = 1 }]
+
+[results.flat_scratch_vector_lo_test]
+records = [{ case = "vector flat-scratch-base LO semantics", variants = 1 }]
+
+[results.flat_scratch_vector_hi_test]
+records = [{ case = "vector flat-scratch-base HI semantics", variants = 1 }]
 
 [results.fp8_e5m3_pack_test]
 records = [
@@ -306,6 +391,17 @@ records = [
   { case = "dense quantized GEMM+bias", variants = 1 },
   { case = "sparse quantized GEMM+bias", variants = 1 },
 ]
+
+[results.monitor_sleep_bounded_test]
+records = [{ case = "bounded monitor-sleep continuation", variants = 1 }]
+
+[results.monitor_sleep_unbounded_test]
+records = [
+  { case = "unbounded monitor-sleep translation fixture", variants = 1 },
+]
+
+[results.permute_pk16_test]
+records = [{ case = "permute EXEC-mask behavior", variants = 2 }]
 
 [results.s_clause_test]
 records = [{ case = "hard-clause global loads", variants = 1 }]

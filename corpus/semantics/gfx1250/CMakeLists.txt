@@ -9,8 +9,10 @@ set(SEMANTIC_GPU_TARGET "gfx1250" CACHE STRING
 set(HIPCC "hipcc" CACHE FILEPATH "Path to the HIP compiler driver")
 
 set(SEMANTIC_TESTS
-    barrier_state_sgpr_pressure_test
+    barrier_id_minus1_scc_test
+    barrier_id_minus2_scc_test
     barrier_signal_isfirst_test
+    barrier_state_sgpr_pressure_test
     cluster_load_sgpr_pressure_test
     cluster_load_test
     ds_2addr_test
@@ -18,11 +20,18 @@ set(SEMANTIC_TESTS
     ds_addtid_vgpr_pressure_test
     ds_storexchg_2addr_test
     flat_scratch_base_sgpr_pressure_test
+    flat_scratch_scalar_hi_test
+    flat_scratch_scalar_lo_test
+    flat_scratch_vector_hi_test
+    flat_scratch_vector_lo_test
     fp8_e5m3_pack_test
     fp8_e5m3_unpack_vgpr_pressure_test
     fp8_e5m3_unpack_sgpr_pressure_test
     fp8_e5m3_unpack_test
     integer_wmma_hazard_test
+    monitor_sleep_bounded_test
+    monitor_sleep_unbounded_test
+    permute_pk16_test
     s_clause_test
     tensor_load_sgpr_pressure_test
     tensor_load_to_lds_test
