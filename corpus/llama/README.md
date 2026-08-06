@@ -6,7 +6,7 @@ HIP backend against its CPU reference on ROCm targets.
 ## At a Glance
 
 ```text
-setup_llama_tests.py  Standalone build and smoke-check entrypoint.
+build_llama_tests.sh  Standalone build entrypoint.
 CMakeLists.txt        Defines test-backend-ops from the vendored sources.
 selected_llama_backend_ops_tests.json
                       Checked-in backend-op case inventory.
@@ -67,7 +67,7 @@ case:
 
 ```bash
 export ROCM_PATH="$(rocm-sdk path --root)"
-python corpus/llama/setup_llama_tests.py --targets gfx1201
+./corpus/llama/build_llama_tests.sh --targets gfx1201
 python -m pytest tests/test_corpus.py \
   --suite llama \
   --target gfx1201 \
@@ -84,18 +84,15 @@ corpus/llama/build/test-backend-ops test \
 
 ## Build
 
-Run `setup_llama_tests.py` before pytest to build `test-backend-ops` in
-`corpus/llama/build`. The setup then invokes the executable in `support` mode
-with `selected_llama_backend_ops_tests.txt` as its filter and requires a
-successful exit. This checks the built harness without running numerical
-correctness tests. Pytest does not compile it.
+Run `build_llama_tests.sh` before pytest to build `test-backend-ops` in
+`corpus/llama/build`. Pytest does not compile it.
 
 The build needs a ROCm SDK root that provides
 `lib/cmake/hip/hip-config.cmake`, hipBLAS, and rocBLAS; the CMake project takes
 it from `-DROCM_PATH`, `$ROCM_PATH`, or the `rocm-sdk path --root` command. By
 default the script builds `third_party/llama.cpp`.
 
-With no arguments, `setup_llama_tests.py` builds `gfx1201`. Use `--targets` to
+With no arguments, `build_llama_tests.sh` builds `gfx1201`. Use `--targets` to
 build one or more other targets and `--build-dir` to override the default
 `corpus/llama/build` directory. Use `--jobs` to control build parallelism; it
 defaults to half the available CPUs.
@@ -104,7 +101,7 @@ Pass multiple space-separated targets to build several gfx architectures at
 once:
 
 ```bash
-python corpus/llama/setup_llama_tests.py --targets gfx1201 gfx942
+./corpus/llama/build_llama_tests.sh --targets gfx1201 gfx942
 ```
 
 To build the harness by hand, for example to reproduce a single case outside
@@ -112,7 +109,7 @@ pytest:
 
 ```bash
 export ROCM_PATH="$(rocm-sdk path --root)"
-python corpus/llama/setup_llama_tests.py \
+./corpus/llama/build_llama_tests.sh \
   --targets gfx1201 \
   --build-dir /tmp/llama-corpus-gfx1201
 /tmp/llama-corpus-gfx1201/test-backend-ops test \

@@ -201,7 +201,7 @@ Build `test-backend-ops` once before pytest:
 
 ```bash
 export ROCM_PATH="$(rocm-sdk path --root)"
-python corpus/llama/setup_llama_tests.py --targets gfx1201
+./corpus/llama/build_llama_tests.sh --targets gfx1201
 
 pytest tests/test_corpus.py \
   --target gfx1201 \
