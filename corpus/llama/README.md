@@ -62,8 +62,7 @@ with kernel changes. Update the vendored subtree and inventory in one change.
 ## Run
 
 Build the harness once, then use the unified corpus pytest entrypoint. Pytest
-checks that executable and creates one parameter for each selected backend-op
-case:
+creates one parameter for each selected case:
 
 ```bash
 export ROCM_PATH="$(rocm-sdk path --root)"
@@ -85,7 +84,9 @@ corpus/llama/build/test-backend-ops test \
 ## Build
 
 Run `build_llama_tests.sh` before pytest to build `test-backend-ops` in
-`corpus/llama/build`. Pytest does not compile it.
+`corpus/llama/build`. The llama pytest build hook is intentionally empty: it
+does not compile or validate the executable. Each case invokes the prebuilt
+executable during its run phase.
 
 The build needs a ROCm SDK root that provides
 `lib/cmake/hip/hip-config.cmake`, hipBLAS, and rocBLAS; the CMake project takes
