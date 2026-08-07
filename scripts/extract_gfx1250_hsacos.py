@@ -1206,6 +1206,21 @@ def selected_roots(
     return roots, torch_root
 
 
+def resolve_additional_roots(values: list[Path]) -> list[Path]:
+    """Resolve and validate caller-supplied distribution roots."""
+    roots: list[Path] = []
+    for value in values:
+        root = value.resolve()
+        if not root.is_dir():
+            raise RuntimeError(
+                f"additional extraction root is not a directory: {root}"
+            )
+        if root in roots:
+            raise RuntimeError(f"additional extraction root is repeated: {root}")
+        roots.append(root)
+    return roots
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -1232,6 +1247,16 @@ def parse_arguments() -> argparse.Namespace:
         action="append",
         choices=("rocm", "torch"),
         help="source family to scan; repeatable (default: rocm and torch)",
+    )
+    parser.add_argument(
+        "--additional-root",
+        action="append",
+        type=Path,
+        default=[],
+        help=(
+            "additional unpacked distribution root to scan; repeatable and "
+            "combined with the selected venv package roots"
+        ),
     )
     parser.add_argument(
         "--materialize-ccob",
@@ -1285,8 +1310,10 @@ def main() -> int:
     sources = set(args.source or ("rocm", "torch"))
     try:
         roots, torch_root = selected_roots(site_packages, sources)
+        additional_roots = resolve_additional_roots(args.additional_root)
     except RuntimeError as error:
         raise SystemExit(f"error: {error}") from error
+    roots.extend(additional_roots)
 
     ccob_device_ordinal = None
     visible_devices: list[tuple[int, str]] = []
@@ -1328,6 +1355,8 @@ def main() -> int:
     print(f"environment: {environment}")
     print(f"site-packages: {site_packages}")
     print(f"sources: {', '.join(sorted(sources))}")
+    for root in additional_roots:
+        print(f"additional root: {root}")
     print(f"target: {args.target}")
     print(f"destination: {destination}")
 
@@ -1495,6 +1524,9 @@ def main() -> int:
             "environment": str(environment),
             "site_packages": str(site_packages),
             "sources": sorted(sources),
+            "additional_roots": [
+                source_path(root, environment) for root in additional_roots
+            ],
             "files_scanned": len(inventory.files),
             "kpack_containers": len(inventory.kpack),
             "kpack_source_records": kpack_source_records,

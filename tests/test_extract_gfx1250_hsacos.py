@@ -506,6 +506,44 @@ def test_corpus_deduplicates_bytes_but_preserves_provenance(tmp_path):
     }
 
 
+def test_additional_roots_are_resolved_in_caller_order(tmp_path):
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+
+    assert extractor.resolve_additional_roots([second, first]) == [
+        second.resolve(),
+        first.resolve(),
+    ]
+
+
+def test_additional_roots_reject_missing_and_repeated_paths(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+
+    with pytest.raises(RuntimeError, match="not a directory"):
+        extractor.resolve_additional_roots([tmp_path / "missing"])
+    with pytest.raises(RuntimeError, match="repeated"):
+        extractor.resolve_additional_roots([root, root])
+
+
+def test_inventory_deduplicates_hardlinks_across_roots(tmp_path):
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    image = make_amdgpu_elf_with_metadata_target("gfx1250")
+    source = first / "kernel.hsaco"
+    source.write_bytes(image)
+    (second / "kernel.hsaco").hardlink_to(source)
+
+    inventory = extractor.inventory_files([first, second])
+
+    assert inventory.files == [source]
+    assert inventory.loose_amdgpu == [source]
+
+
 def test_corpus_manifests_are_deterministic_across_insertion_order(tmp_path):
     image_a = make_amdgpu_elf() + b"a"
     image_b = make_amdgpu_elf() + b"b"
