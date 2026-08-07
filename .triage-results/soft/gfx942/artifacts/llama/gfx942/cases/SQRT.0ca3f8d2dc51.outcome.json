@@ -1,0 +1,5 @@
+{
+  "case": "SQRT(type=f32,ne=[7,1,5,3])",
+  "outcome": "pass",
+  "returncode": 0
+}

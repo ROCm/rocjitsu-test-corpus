@@ -1,0 +1,420 @@
+{
+  "variant": "plain",
+  "total": 51,
+  "now_pass": 0,
+  "changed": 1,
+  "by_outcome": {
+    "segfault": 50,
+    "timeout": 1
+  },
+  "results": [
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.0bfa3a774759",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.12d6ef2eb102",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.1430f54270e4",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.1c37272d4207",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.21597cf05866",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.2740bcfad2c3",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.2bb9de5014b7",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.2f847bd0f72c",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.3b9e72804d6c",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.3e329e5b475c",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.3f2054def40b",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.427bd256bceb",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.4292d4689b42",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.4468e13bf5f3",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.4529cc72e450",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.4791e7191823",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.56a3ebecef08",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.5a2e0296c82c",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.67a24d655c21",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.67c2b413a2ab",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.68fbfd9c3ec5",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.757a865e7da5",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.7fe4bfa5cc2f",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.965b6be4d678",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.9a612f547630",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "timeout",
+      "returncode": -9
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.9c792f73463d",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.a78a57b1b164",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.adeb0e6159c1",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.af983043c5ee",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.b4ed18f10c28",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.be4d79581943",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.c58ade49b398",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.ccf3f0be1c60",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.d8793c3beaab",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.d8d5f3069b98",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.da65cf942bdb",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.dae71e0e75e6",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.e52b5d823289",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.e5d32efbe803",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.eb1434025ead",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.f678c43ff6f4",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.f8941f74071b",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.faa09334a5c1",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.fbddae989c1d",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT_ID.297df3b5f822",
+      "target": "gfx1201",
+      "operator": "MUL_MAT_ID",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT_ID.4d3788c41bef",
+      "target": "gfx1201",
+      "operator": "MUL_MAT_ID",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT_ID.5bba4e9ee5fa",
+      "target": "gfx1201",
+      "operator": "MUL_MAT_ID",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT_ID.6c5a0824e9d0",
+      "target": "gfx1201",
+      "operator": "MUL_MAT_ID",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT_ID.ce7f91ceb634",
+      "target": "gfx1201",
+      "operator": "MUL_MAT_ID",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT_ID.debb5fffb653",
+      "target": "gfx1201",
+      "operator": "MUL_MAT_ID",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT_ID.ef8683b758e2",
+      "target": "gfx1201",
+      "operator": "MUL_MAT_ID",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    }
+  ]
+}

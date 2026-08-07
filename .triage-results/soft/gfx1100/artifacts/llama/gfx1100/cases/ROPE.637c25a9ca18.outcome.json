@@ -1,0 +1,5 @@
+{
+  "case": "ROPE(type=f16,ne_a=[128,32,2,1],n_dims=128,mode=40,n_ctx=512,fs=1.424500,ef=0.746500,af=1.424500,ff=1,v=1,inplace=1)",
+  "outcome": "pass",
+  "returncode": 0
+}

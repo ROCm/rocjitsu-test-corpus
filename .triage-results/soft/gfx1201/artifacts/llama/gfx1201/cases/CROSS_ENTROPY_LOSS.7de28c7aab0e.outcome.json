@@ -1,0 +1,5 @@
+{
+  "case": "CROSS_ENTROPY_LOSS(type=f32,ne=[10,5,4,3])",
+  "outcome": "pass",
+  "returncode": 0
+}

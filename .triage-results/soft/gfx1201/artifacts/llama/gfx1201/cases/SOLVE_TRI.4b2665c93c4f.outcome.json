@@ -1,0 +1,5 @@
+{
+  "case": "SOLVE_TRI(type=f32,ne_lhs=[128,128,4,1],ne_rhs=[32,128,4,1])",
+  "outcome": "segfault",
+  "returncode": -11
+}

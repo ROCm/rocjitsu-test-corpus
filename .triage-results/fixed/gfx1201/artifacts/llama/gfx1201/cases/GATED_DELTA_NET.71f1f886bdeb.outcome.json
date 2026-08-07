@@ -1,0 +1,5 @@
+{
+  "case": "GATED_DELTA_NET(type=f32,head_count=8,head_size=32,n_seq_tokens=4,n_seqs=2,v_repeat=2,permuted=0,kda=0,K=1)",
+  "outcome": "test-failure",
+  "returncode": 1
+}

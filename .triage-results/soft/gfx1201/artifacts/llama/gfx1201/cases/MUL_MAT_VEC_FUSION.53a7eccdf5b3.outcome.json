@@ -1,0 +1,5 @@
+{
+  "case": "MUL_MAT_VEC_FUSION(type=q8_0,glu_op=1,m=1,n=32,k=256,use_id=0,n_mats=16,n_used=8,b=0,with_bias=0,with_gate=1,with_lane_scale=0,batch_dims=[1,1])",
+  "outcome": "pass",
+  "returncode": 0
+}

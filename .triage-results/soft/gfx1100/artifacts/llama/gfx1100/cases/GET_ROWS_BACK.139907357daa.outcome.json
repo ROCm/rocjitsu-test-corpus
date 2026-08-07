@@ -1,0 +1,5 @@
+{
+  "case": "GET_ROWS_BACK(type=f32,n=1,m=8,r=2,b=1,v=0)",
+  "outcome": "pass",
+  "returncode": 0
+}

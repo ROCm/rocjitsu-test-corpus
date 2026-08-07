@@ -1,0 +1,5 @@
+{
+  "case": "SOFT_MAX(type=f32,ne=[15,15,1,1],mask=1,sinks=0,m_prec=f16,nr23=[1,1],scale=0.100000,max_bias=0.000000,inplace=0)",
+  "outcome": "pass",
+  "returncode": 0
+}

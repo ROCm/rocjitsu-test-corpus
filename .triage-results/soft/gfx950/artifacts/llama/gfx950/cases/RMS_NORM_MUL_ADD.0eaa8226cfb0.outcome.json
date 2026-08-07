@@ -1,0 +1,5 @@
+{
+  "case": "RMS_NORM_MUL_ADD(type=f32,ne=[1025,1,1,1],eps=0.000001,broadcast=0,multi_add=1)",
+  "outcome": "pass",
+  "returncode": 0
+}

@@ -1,0 +1,5 @@
+{
+  "case": "UPSCALE(type=f32,ne=[2,5,7,11],ne_tgt=[5,7,11,13],mode=bilinear|antialias)",
+  "outcome": "pass",
+  "returncode": 0
+}

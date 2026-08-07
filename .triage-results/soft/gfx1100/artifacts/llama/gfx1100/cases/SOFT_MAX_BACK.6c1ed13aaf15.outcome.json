@@ -1,0 +1,5 @@
+{
+  "case": "SOFT_MAX_BACK(type=f32,ne=[15,15,1,1],scale=0.100000,max_bias=0.000000)",
+  "outcome": "pass",
+  "returncode": 0
+}

@@ -1,0 +1,13 @@
+diff --git a/emulation/rocjitsu/lib/rocjitsu/src/rocjitsu/isa/arch/amdgpu/rdna4/addr_calc.cpp b/emulation/rocjitsu/lib/rocjitsu/src/rocjitsu/isa/arch/amdgpu/rdna4/addr_calc.cpp
+index 8d96a37af7..8d961b8953 100644
+--- a/emulation/rocjitsu/lib/rocjitsu/src/rocjitsu/isa/arch/amdgpu/rdna4/addr_calc.cpp
++++ b/emulation/rocjitsu/lib/rocjitsu/src/rocjitsu/isa/arch/amdgpu/rdna4/addr_calc.cpp
+@@ -62,7 +62,7 @@ uint64_t smem_calculate_address(const SmemMachineInst &inst, amdgpu::Wavefront &
+                   amdgpu::RegisterAccess(cu).read_sgpr(sbase);
+   int64_t off = static_cast<int64_t>(static_cast<int32_t>(inst.ioffset << 8) >> 8);
+   off += read_smem_offset(inst.soffset, wf);
+-  return (base + off) & ~0x3ULL;
++  return base + off;
+ }
+ 
+ void flat_calculate_addresses(const VflatMachineInst &inst, amdgpu::Wavefront &wf,

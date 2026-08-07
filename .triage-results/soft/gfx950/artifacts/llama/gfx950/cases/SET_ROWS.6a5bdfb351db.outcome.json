@@ -1,0 +1,5 @@
+{
+  "case": "SET_ROWS(type_src=f32,type_dst=q4_0,type_idx=i64,ne=[96,3,1,1],nr23=[2,3],r=2,v=0)",
+  "outcome": "pass",
+  "returncode": 0
+}

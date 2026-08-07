@@ -1,0 +1,133 @@
+# ROCjitsu llama GFX triage
+
+## Scope
+
+- Corpus commit: `a6640a2139bf8e39e27125ad7e14c0b04746dedf`
+- ROCjitsu baseline: `63a89f8f5cf0f25b98a76057bc00e4a98f88425d`
+- Suite: `llama` only
+- Supported targets: `gfx942`, `gfx950`, `gfx1100`, `gfx1201`
+- Collected cases: 535 per supported target, 2,140 total
+- `gfx1250`: one expected empty-parameter skip because the llama inventory does
+  not support that target
+- First pass: eight workers and a 30-second per-case timeout
+- Confirmation pass: only first-pass failures, with a 60-second timeout
+
+## Results
+
+First pass:
+
+- gfx942: 37 failed, 498 passed
+- gfx950: 22 failed, 513 passed
+- gfx1100: 41 failed, 494 passed
+- gfx1201: 93 failed, 442 passed
+
+The 60-second pass recovered 12 cases and left 181 persistent failures:
+
+- 82 segfaults
+- 84 numerical or sentinel-check failures
+- 15 timeouts
+
+Every exact ID and case string is in `root-cause-groups.json`.
+
+## Cross-cutting SIGSEGV mechanism
+
+The unsafe raw-address fallback is a confirmed crash mechanism, but the
+comparison run disproves it as the initiating corpus root cause.
+
+Representative GDB reproductions from both affected architecture families
+fault in the same ROCjitsu path:
+
+- gfx1100 `FLASH_ATTN_EXT`
+- gfx1201 `MUL_MAT`
+
+The simulator takes a VMID page-table miss and, when passthrough is enabled,
+casts the GPU virtual address to a host pointer. `GpuMemory::read_mapped()`
+then passes that pointer to `memcpy()`. The captured source address was absent
+from `/proc/<pid>/maps`, while the destination was writable.
+
+The baseline fallback is in:
+
+`lib/rocjitsu/src/rocjitsu/vm/amdgpu/gpu_memory.h:493-507`
+
+The pending local-memory fix in rocm-systems PR 9003 adds a backing resolver,
+but still falls through to the same raw pointer when no backing range matches:
+
+`lib/rocjitsu/src/rocjitsu/vm/amdgpu/gpu_memory.h:593-617`
+
+All 181 persistent IDs remained failures under PR 9003, including all 82
+segfault IDs. The fix worktree's 2,362 non-hardware tests pass. Therefore the
+fallback explains how a simulator-generated bad address becomes a host
+SIGSEGV, but not which earlier ISA, coordinate, or address calculation
+generated that address.
+
+Evidence:
+
+- `debug/gfx1100-flash-attn-gdb-aslr.log`
+- `debug/gfx1201-mul-mat-gdb-aslr.log`
+- `debug/gfx1201-mul-mat-fixed-gdb-aslr.log`
+- `debug/gfx1201-mul-mat-fixed-mappings.log`
+
+## Refined architecture and kernel-path groups
+
+The exclusive groups in `root-cause-groups.json` preserve every persistent ID.
+The strongest grouped findings are:
+
+- gfx1100 `FLASH_ATTN_EXT`: five generic D=72 tile cases and 29 optimized
+  MMA/WMMA cases. Sink and geometry changes turn deterministic numerical
+  errors into invalid accesses.
+- gfx1201 packed work-item-Y surface: 24 non-timeout cases spanning
+  `GATED_DELTA_NET`, `TOPK_MOE`, and fused ROPE. Their kernels depend heavily
+  on `threadIdx.y`; the repeated sentinel and downstream view corruption is
+  consistent with packed Y/prologue decoding.
+- gfx1201 RMS reduction: two `RMS_NORM_BACK` cases localize the failure
+  transition to the multi-wave LDS/barrier reduction.
+- gfx1201 `WAVE_SCHED_MODE`: five matmul cases are the only group repeatedly
+  warning that HWREG ID 26 is unsupported. RDNA4 omits this ID while gfx1250
+  implements it, which is a proven ROCjitsu semantic gap.
+- Remaining gfx1201 matrix crash surfaces: 44 `MUL_MAT`, seven `MUL_MAT_ID`,
+  two `OUT_PROD`, and two `SOLVE_TRI` cases. These are retained as separate
+  route groups because one initiating ISA defect is not established.
+- Shared CDNA groups: MMF f32, ROPE propagation, SSM scan, XIELU, and rocBLAS
+  surfaces. The 14 gfx942-only NVFP4 cases form a distinct quantized route.
+- `OPT_STEP_ADAMW` and `UPSCALE` remain unmerged target-specific cases.
+
+Two broad candidates were excluded:
+
+- PR 9003 resolves none of the 181 persistent IDs.
+- `RJ_FORCE_SCALAR=1` leaves all 84 numerical IDs failing, excluding the SIMD
+  executor fast paths as their cause.
+
+## Persistent timeout groups
+
+The 15 persistent timeout IDs are grouped by shared operator path:
+
+- `LIGHTNING_INDEXER`: 4
+- `MUL_MAT`: 2
+- `MUL_MAT_ID`: 2
+- `MUL_MAT_ID_FUSION`: 6
+- `RMS_NORM_MUL_ROPE`: 1
+
+A 20-second isolated `LIGHTNING_INDEXER` sample consumed 39.90 user seconds
+and 200% CPU. This is active simulator execution, not a blocked host wait.
+Finite kernel structure and cross-target timing classify 14 cases as
+simulator-throughput limits, not deadlock or livelock.
+
+The lone gfx1201 `RMS_NORM_MUL_ROPE.92e31eecab55` timeout is separated as a
+contention candidate: it returns a normal numerical failure in the soft and
+PR-9003 runs and times out only during the eight-worker hard run alongside
+three long fusion simulations. There is no positive livelock evidence.
+
+Evidence: `debug/gfx1201-lightning-20s-time.log`
+
+## Artifacts
+
+- `github-report.md`: publishable issue or gist version of this triage,
+  generated by `render_github_report.py` and checked by
+  `validate_github_report.py`
+- `summary.json`: soft, hard, PR-9003, and scalar-executor results
+- `root-cause-groups.json`: complete grouped ID and case lists
+- `soft/`: full 30-second run logs and artifacts
+- `hard/`: 60-second failed-case rerun logs and artifacts
+- `fixed/`: PR-9003 comparison logs and artifacts
+- `scalar/`: forced-scalar correctness comparison
+- `debug/`: GDB, mapping, runtime, and timeout evidence

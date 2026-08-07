@@ -1,0 +1,5 @@
+{
+  "case": "RMS_NORM_MUL_ROPE(ne=[128,4,2,1],eps=0.000001,multi_add=0,set_rows=0,mode=2)",
+  "outcome": "pass",
+  "returncode": 0
+}

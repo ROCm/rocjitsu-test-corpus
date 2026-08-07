@@ -1,0 +1,5 @@
+{
+  "case": "MUL_MAT_ID(type_a=iq2_xxs,type_b=f32,n_mats=4,n_used=1,b=0,m=512,n=4,k=256)",
+  "outcome": "pass",
+  "returncode": 0
+}

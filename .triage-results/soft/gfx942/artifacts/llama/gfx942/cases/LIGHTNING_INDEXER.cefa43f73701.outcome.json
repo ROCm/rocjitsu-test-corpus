@@ -1,0 +1,5 @@
+{
+  "case": "LIGHTNING_INDEXER(hsk=128,nh=32,kv=256,nb=1,ns=1,nm=1,type_K=q4_1)",
+  "outcome": "pass",
+  "returncode": 0
+}

@@ -1,0 +1,5 @@
+{
+  "case": "TOPK_MOE(ne=[8,22,1,1],n_expert_used=4,with_norm=0,bias_probs=0,gating_func=2,scale_w=2.000000)",
+  "outcome": "pass",
+  "returncode": 0
+}

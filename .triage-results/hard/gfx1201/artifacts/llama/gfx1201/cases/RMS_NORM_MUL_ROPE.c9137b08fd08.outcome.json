@@ -1,0 +1,5 @@
+{
+  "case": "RMS_NORM_MUL_ROPE(ne=[8192,2,2,1],eps=0.000001,multi_add=0,set_rows=1,mode=2)",
+  "outcome": "test-failure",
+  "returncode": 1
+}

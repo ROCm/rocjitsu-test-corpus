@@ -1,0 +1,5 @@
+{
+  "case": "POOL_2D(pool_type=avg,type_input=f32,ne_input=[10,10,3,1],k0=1,k1=1,s0=1,s1=1,p0=0,p1=0)",
+  "outcome": "pass",
+  "returncode": 0
+}

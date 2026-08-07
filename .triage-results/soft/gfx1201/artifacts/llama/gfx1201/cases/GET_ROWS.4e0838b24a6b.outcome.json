@@ -1,0 +1,5 @@
+{
+  "case": "GET_ROWS(type=iq3_s,n=256,m=5,r=4,be1=1,be2=1,v=0)",
+  "outcome": "pass",
+  "returncode": 0
+}

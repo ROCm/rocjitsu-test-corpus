@@ -1,0 +1,17 @@
+{
+  "llama": [
+    "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.0ffa0a7d7dc5",
+    "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.128bf0f8e11b",
+    "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.199f26f43bd8",
+    "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.2b8c93acdf59",
+    "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.3011acacd940",
+    "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.308462dc53da",
+    "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.3cb3400551f5",
+    "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.3f4c31a640cf",
+    "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.413b9f5893c3",
+    "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.56b8d3aa98d7",
+    "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.6db37d5b0bbd",
+    "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.da5c646e799e",
+    "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.eb5de146e0b8"
+  ]
+}

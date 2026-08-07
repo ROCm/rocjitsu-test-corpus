@@ -1,0 +1,44 @@
+diff --git a/emulation/rocjitsu/lib/rocjitsu/src/rocjitsu/isa/arch/amdgpu/rdna4/addr_calc.cpp b/emulation/rocjitsu/lib/rocjitsu/src/rocjitsu/isa/arch/amdgpu/rdna4/addr_calc.cpp
+index 8d96a37af7..14d253da03 100644
+--- a/emulation/rocjitsu/lib/rocjitsu/src/rocjitsu/isa/arch/amdgpu/rdna4/addr_calc.cpp
++++ b/emulation/rocjitsu/lib/rocjitsu/src/rocjitsu/isa/arch/amdgpu/rdna4/addr_calc.cpp
+@@ -167,9 +167,14 @@ void mubuf_calculate_addresses(const VbufferMachineInst &inst, amdgpu::Wavefront
+   d.lane_mask = exec;
+   d.exec_mask = exec;
+   uint32_t sb = wf.sgpr_alloc().base + inst.rsrc;
+-  uint64_t base_addr =
+-      (static_cast<uint64_t>(amdgpu::RegisterAccess(cu).read_sgpr(sb + 1) & 0xFFFF) << 32) |
+-      amdgpu::RegisterAccess(cu).read_sgpr(sb);
++  uint32_t srd1 = amdgpu::RegisterAccess(cu).read_sgpr(sb + 1);
++  uint32_t srd2 = amdgpu::RegisterAccess(cu).read_sgpr(sb + 2);
++  uint32_t srd3 = amdgpu::RegisterAccess(cu).read_sgpr(sb + 3);
++  uint64_t base_addr = (static_cast<uint64_t>(srd1 & 0xFFFF) << 32) |
++                       amdgpu::RegisterAccess(cu).read_sgpr(sb);
++  uint32_t num_records = srd2;
++  uint32_t stride = (srd1 >> 16) & 0x3FFF;
++  bool oob_raw = (srd3 >> 31) & 1;
+   uint32_t soffset_val = read_optional_sreg_m0(inst.soffset, wf);
+   int64_t ioff = static_cast<int64_t>(static_cast<int32_t>(inst.ioffset << 8) >> 8);
+   assert(!inst.idxen && "Vbuffer idxen not yet supported");
+@@ -185,7 +190,20 @@ void mubuf_calculate_addresses(const VbufferMachineInst &inst, amdgpu::Wavefront
+       voffset = voffset_region->lane(0, lane);
+     }
+     uint32_t offset_part = amdgpu::addr_calc::buffer_offset_part(voffset, ioff);
+-    d.per_lane_addr[lane] = base_addr + offset_part + soffset_val;
++    uint64_t total_offset =
++        amdgpu::addr_calc::buffer_total_offset(0, stride, offset_part, soffset_val);
++    bool oob;
++    if (!oob_raw && stride > 0) {
++      oob = false;
++    } else {
++      oob = offset_part >= num_records;
++    }
++    if (oob) {
++      d.lane_mask &= ~(1ULL << lane);
++      d.per_lane_addr[lane] = 0;
++    } else {
++      d.per_lane_addr[lane] = (base_addr + total_offset) & 0xFFFFFFFFFFFFULL;
++    }
+   }
+ }
+ 

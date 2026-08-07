@@ -1,0 +1,5 @@
+{
+  "case": "CONCAT(type=i8,ne_a=[11,12,13,14],ne_b_d=7,dim=3,v=2)",
+  "outcome": "pass",
+  "returncode": 0
+}

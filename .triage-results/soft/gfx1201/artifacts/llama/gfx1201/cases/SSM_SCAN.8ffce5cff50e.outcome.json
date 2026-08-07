@@ -1,0 +1,5 @@
+{
+  "case": "SSM_SCAN(type=f32,d_state=256,head_dim=64,n_head=8,n_group=2,n_seq_tokens=32,n_seqs=4,xbc_overlap=0)",
+  "outcome": "pass",
+  "returncode": 0
+}

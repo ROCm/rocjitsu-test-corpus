@@ -1,0 +1,5 @@
+{
+  "case": "CONV_2D_DW(ne_input=[17,34,9,1],ne_kernel=[3,3,1,9],type_kernel=f32,stride=1,padding=0,dilation=1,cwhn=0)",
+  "outcome": "pass",
+  "returncode": 0
+}

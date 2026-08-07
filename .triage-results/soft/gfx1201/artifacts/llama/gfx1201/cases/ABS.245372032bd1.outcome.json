@@ -1,0 +1,5 @@
+{
+  "case": "ABS(type=f16,ne_a=[128,2,2,2],v=0)",
+  "outcome": "pass",
+  "returncode": 0
+}

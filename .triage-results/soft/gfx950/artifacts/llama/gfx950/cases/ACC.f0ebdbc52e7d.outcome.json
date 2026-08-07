@@ -1,0 +1,5 @@
+{
+  "case": "ACC(type=f32,ne_a=[256,17,1,1],ne_b=[256,16,1,1],stride_dim=-1)",
+  "outcome": "pass",
+  "returncode": 0
+}

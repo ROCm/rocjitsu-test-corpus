@@ -1,0 +1,5 @@
+{
+  "case": "SOFTCAP(type=f32,ne=[10,10,10,10],softcap=50.000000)",
+  "outcome": "pass",
+  "returncode": 0
+}

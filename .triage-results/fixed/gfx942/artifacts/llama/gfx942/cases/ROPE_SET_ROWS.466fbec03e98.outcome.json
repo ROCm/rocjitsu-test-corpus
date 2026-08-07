@@ -1,0 +1,5 @@
+{
+  "case": "ROPE_SET_ROWS(type=f32,type_idx=i64,ne_a=[128,32,1,1],mode=8)",
+  "outcome": "test-failure",
+  "returncode": 1
+}

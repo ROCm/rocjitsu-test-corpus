@@ -1,0 +1,5 @@
+{
+  "case": "SSM_CONV_BIAS_SILU(type=f32,ne_a=[3,1024,1,1],ne_b=[3,1024,1,1],fuse_bias=0)",
+  "outcome": "pass",
+  "returncode": 0
+}

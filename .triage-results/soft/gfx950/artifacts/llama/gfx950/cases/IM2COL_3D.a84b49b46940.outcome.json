@@ -1,0 +1,5 @@
+{
+  "case": "IM2COL_3D(type_input=f32,type_kernel=f32,dst_type=f32,ne_input=[20,20,10,3],ne_kernel=[3,3,3,3],IC=3,s0=3,s1=3,s2=3,p0=3,p1=3,p2=3,d0=3,d1=3,d2=3,v=1)",
+  "outcome": "pass",
+  "returncode": 0
+}

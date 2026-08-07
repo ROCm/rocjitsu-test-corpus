@@ -1,0 +1,5 @@
+{
+  "case": "TOP_K(type=f32,ne=[1,1,1,1],k=1,ties=0)",
+  "outcome": "pass",
+  "returncode": 0
+}

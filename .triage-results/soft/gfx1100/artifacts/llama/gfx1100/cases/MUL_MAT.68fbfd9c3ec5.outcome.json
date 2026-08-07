@@ -1,0 +1,5 @@
+{
+  "case": "MUL_MAT(type_a=iq1_m,type_b=f32,m=16,n=9,k=256,bs=[1,1],nr=[1,1],per=[0,1,2,3],k_v=0,o=1)",
+  "outcome": "pass",
+  "returncode": 0
+}

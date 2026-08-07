@@ -1,0 +1,5 @@
+{
+  "case": "REPEAT_BACK(type=f32,ne=[8,6,4,2],nr=[1,1,1,1],v=0)",
+  "outcome": "pass",
+  "returncode": 0
+}

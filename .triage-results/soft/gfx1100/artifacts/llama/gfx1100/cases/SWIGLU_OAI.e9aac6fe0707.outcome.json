@@ -1,0 +1,5 @@
+{
+  "case": "SWIGLU_OAI(type=f32,ne_a=[128,2,2,2],v=0,alpha=0.500000,limit=2.000000)",
+  "outcome": "pass",
+  "returncode": 0
+}

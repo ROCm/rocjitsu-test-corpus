@@ -1,0 +1,5 @@
+{
+  "case": "DIAG_MASK_INF(type=f32,ne=[10,10,1,1],n_past=5)",
+  "outcome": "pass",
+  "returncode": 0
+}

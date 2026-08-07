@@ -1,0 +1,5 @@
+{
+  "case": "GATED_LINEAR_ATTN(type=f32,head_count=32,head_size=64,n_seq_tokens=1,n_seqs=1)",
+  "outcome": "pass",
+  "returncode": 0
+}

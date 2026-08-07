@@ -1,0 +1,5 @@
+{
+  "case": "GROUP_NORM_MUL_ADD(type=f32,ne=[9,9,1280,1],num_groups=4,eps=0.000010)",
+  "outcome": "pass",
+  "returncode": 0
+}

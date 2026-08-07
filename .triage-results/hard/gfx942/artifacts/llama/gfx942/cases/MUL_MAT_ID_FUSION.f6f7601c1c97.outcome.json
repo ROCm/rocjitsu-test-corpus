@@ -1,0 +1,5 @@
+{
+  "case": "MUL_MAT_ID_FUSION(type_a=f16,type_b=f32,n_mats=128,n_used=8,b=0,m=768,n=512,k=2048,o=1,mul=1)",
+  "outcome": "pass",
+  "returncode": 0
+}

@@ -1,0 +1,5 @@
+{
+  "case": "DSV4_HC_POST(n_embd=1,n_tokens=1)",
+  "outcome": "pass",
+  "returncode": 0
+}

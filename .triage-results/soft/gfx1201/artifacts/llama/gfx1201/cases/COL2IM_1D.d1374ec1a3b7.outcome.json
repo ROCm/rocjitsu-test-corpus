@@ -1,0 +1,5 @@
+{
+  "case": "COL2IM_1D(type=bf16,K=4,OC=3,T_in=1,s0=2,p0=0)",
+  "outcome": "pass",
+  "returncode": 0
+}

@@ -1,0 +1,5 @@
+{
+  "case": "TRI(type=f32,ne=[10,10,4,3],tri_type=3)",
+  "outcome": "pass",
+  "returncode": 0
+}

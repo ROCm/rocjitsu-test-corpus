@@ -1,0 +1,5 @@
+{
+  "case": "RELU_SQR(type=f16,ne=[128,2,2,2])",
+  "outcome": "pass",
+  "returncode": 0
+}

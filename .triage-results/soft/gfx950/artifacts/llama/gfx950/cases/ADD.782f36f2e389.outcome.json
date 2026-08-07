@@ -1,0 +1,5 @@
+{
+  "case": "ADD(type=f32,ne=[10,5,4,3],nr=[1,2,2,2],nf=7,perm1=0,src_overlap=0)",
+  "outcome": "pass",
+  "returncode": 0
+}

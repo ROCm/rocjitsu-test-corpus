@@ -1,0 +1,5 @@
+{
+  "case": "CPY(type_src=bf16,type_dst=f16,ne_src=[256,4,4,4],permute_src=[0,0,0,0],permute_dst=[0,0,0,0],_src_transpose=0)",
+  "outcome": "pass",
+  "returncode": 0
+}

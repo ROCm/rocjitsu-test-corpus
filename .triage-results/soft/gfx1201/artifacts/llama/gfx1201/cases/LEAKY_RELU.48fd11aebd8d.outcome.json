@@ -1,0 +1,5 @@
+{
+  "case": "LEAKY_RELU(type=f32,ne_a=[7,1,5,3],negative_slope=0.100000)",
+  "outcome": "pass",
+  "returncode": 0
+}

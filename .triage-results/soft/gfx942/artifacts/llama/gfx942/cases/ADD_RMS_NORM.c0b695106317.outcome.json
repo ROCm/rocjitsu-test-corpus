@@ -1,0 +1,5 @@
+{
+  "case": "ADD_RMS_NORM(type=f32,ne=[8192,1,1,1],eps=0.000001,broadcast=0)",
+  "outcome": "pass",
+  "returncode": 0
+}

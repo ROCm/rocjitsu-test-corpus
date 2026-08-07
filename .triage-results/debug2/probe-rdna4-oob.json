@@ -1,0 +1,1462 @@
+{
+  "variant": "plain",
+  "total": 181,
+  "now_pass": 60,
+  "changed": 61,
+  "by_outcome": {
+    "segfault": 22,
+    "test-failure": 85,
+    "timeout": 14,
+    "pass": 60
+  },
+  "results": [
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.0839462e9aa3",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.09f30cac3778",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.0ffa0a7d7dc5",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.128bf0f8e11b",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.199f26f43bd8",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.1d03df547de7",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.27a842fb2b89",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.2b8c93acdf59",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.2dce6045f861",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.3011acacd940",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.308462dc53da",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.3cb3400551f5",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.3e3b001724ad",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.3f4c31a640cf",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.413b9f5893c3",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.42d8b5a9a8e6",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.56b8d3aa98d7",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.5e2b94d34560",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.6db37d5b0bbd",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.74edc47aa39a",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.78086d5cc78b",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.7fc0eebb6b21",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.8722d0937d99",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.926dbedf6cda",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.a12f4ee82c79",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.a845b89cd4f0",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.afceae33b0b7",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.b951a29db5dd",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.c94907bea454",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.da5c646e799e",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.e024795e26c2",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.e397786c8f00",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.e5e7712c889c",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.FLASH_ATTN_EXT.eb5de146e0b8",
+      "target": "gfx1100",
+      "operator": "FLASH_ATTN_EXT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.LIGHTNING_INDEXER.28d7def07117",
+      "target": "gfx1100",
+      "operator": "LIGHTNING_INDEXER",
+      "baseline": "timeout",
+      "outcome": "timeout",
+      "returncode": -9
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.MUL_MAT_ID.4c6f0c369254",
+      "target": "gfx1100",
+      "operator": "MUL_MAT_ID",
+      "baseline": "timeout",
+      "outcome": "timeout",
+      "returncode": -9
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.MUL_MAT_ID.dbedbadd142a",
+      "target": "gfx1100",
+      "operator": "MUL_MAT_ID",
+      "baseline": "timeout",
+      "outcome": "timeout",
+      "returncode": -9
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.MUL_MAT_ID_FUSION.b3d0befaa714",
+      "target": "gfx1100",
+      "operator": "MUL_MAT_ID_FUSION",
+      "baseline": "timeout",
+      "outcome": "timeout",
+      "returncode": -9
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.MUL_MAT_ID_FUSION.dfb1ed5ca4e9",
+      "target": "gfx1100",
+      "operator": "MUL_MAT_ID_FUSION",
+      "baseline": "timeout",
+      "outcome": "timeout",
+      "returncode": -9
+    },
+    {
+      "id": "llama.gfx1100.backend_ops.MUL_MAT_ID_FUSION.f6f7601c1c97",
+      "target": "gfx1100",
+      "operator": "MUL_MAT_ID_FUSION",
+      "baseline": "timeout",
+      "outcome": "timeout",
+      "returncode": -9
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.GATED_DELTA_NET.05b63a4322c6",
+      "target": "gfx1201",
+      "operator": "GATED_DELTA_NET",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.GATED_DELTA_NET.5615f586b1ca",
+      "target": "gfx1201",
+      "operator": "GATED_DELTA_NET",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.GATED_DELTA_NET.5a41ca1b14ff",
+      "target": "gfx1201",
+      "operator": "GATED_DELTA_NET",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.GATED_DELTA_NET.6f2073224190",
+      "target": "gfx1201",
+      "operator": "GATED_DELTA_NET",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.GATED_DELTA_NET.71f1f886bdeb",
+      "target": "gfx1201",
+      "operator": "GATED_DELTA_NET",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.GATED_DELTA_NET.7bad0bbc2812",
+      "target": "gfx1201",
+      "operator": "GATED_DELTA_NET",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.GATED_DELTA_NET.7cb9b00606cb",
+      "target": "gfx1201",
+      "operator": "GATED_DELTA_NET",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.GATED_DELTA_NET.bafb44a169ef",
+      "target": "gfx1201",
+      "operator": "GATED_DELTA_NET",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.GATED_DELTA_NET.bbcb01f66416",
+      "target": "gfx1201",
+      "operator": "GATED_DELTA_NET",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.GATED_DELTA_NET.bdcf60346537",
+      "target": "gfx1201",
+      "operator": "GATED_DELTA_NET",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.GATED_DELTA_NET.d35f9c8ff08d",
+      "target": "gfx1201",
+      "operator": "GATED_DELTA_NET",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.GATED_DELTA_NET.f029d1f5b7d0",
+      "target": "gfx1201",
+      "operator": "GATED_DELTA_NET",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.GATED_DELTA_NET.f1ead0d94ad7",
+      "target": "gfx1201",
+      "operator": "GATED_DELTA_NET",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.LIGHTNING_INDEXER.28d7def07117",
+      "target": "gfx1201",
+      "operator": "LIGHTNING_INDEXER",
+      "baseline": "timeout",
+      "outcome": "timeout",
+      "returncode": -9
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.0bfa3a774759",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.12d6ef2eb102",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.1430f54270e4",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.1c37272d4207",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.21597cf05866",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.2740bcfad2c3",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.2bb9de5014b7",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.2f847bd0f72c",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.3b9e72804d6c",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.3e329e5b475c",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.3f2054def40b",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.427bd256bceb",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.4292d4689b42",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.4468e13bf5f3",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.4529cc72e450",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.462ccb738b08",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.4791e7191823",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.56a3ebecef08",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.5a2e0296c82c",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.67a24d655c21",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.67c2b413a2ab",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.68fbfd9c3ec5",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.720ff672c8f0",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.757a865e7da5",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.7bcc11c86355",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.7fe4bfa5cc2f",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.965b6be4d678",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.9a612f547630",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.9c792f73463d",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.a78a57b1b164",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.adeb0e6159c1",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.af983043c5ee",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.b4ed18f10c28",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.bc1240d0e862",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.be4d79581943",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.c58ade49b398",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.ccf3f0be1c60",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.d5d0d2415b9b",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.d8793c3beaab",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.d8d5f3069b98",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.da65cf942bdb",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.dae71e0e75e6",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.e52b5d823289",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.e5d32efbe803",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.eb1434025ead",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.f678c43ff6f4",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.f8941f74071b",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.faa09334a5c1",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT.fbddae989c1d",
+      "target": "gfx1201",
+      "operator": "MUL_MAT",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT_ID.297df3b5f822",
+      "target": "gfx1201",
+      "operator": "MUL_MAT_ID",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT_ID.4d3788c41bef",
+      "target": "gfx1201",
+      "operator": "MUL_MAT_ID",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT_ID.5bba4e9ee5fa",
+      "target": "gfx1201",
+      "operator": "MUL_MAT_ID",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT_ID.6c5a0824e9d0",
+      "target": "gfx1201",
+      "operator": "MUL_MAT_ID",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT_ID.ce7f91ceb634",
+      "target": "gfx1201",
+      "operator": "MUL_MAT_ID",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT_ID.debb5fffb653",
+      "target": "gfx1201",
+      "operator": "MUL_MAT_ID",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT_ID.ef8683b758e2",
+      "target": "gfx1201",
+      "operator": "MUL_MAT_ID",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT_ID_FUSION.b3d0befaa714",
+      "target": "gfx1201",
+      "operator": "MUL_MAT_ID_FUSION",
+      "baseline": "timeout",
+      "outcome": "timeout",
+      "returncode": -9
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT_ID_FUSION.dfb1ed5ca4e9",
+      "target": "gfx1201",
+      "operator": "MUL_MAT_ID_FUSION",
+      "baseline": "timeout",
+      "outcome": "timeout",
+      "returncode": -9
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.MUL_MAT_ID_FUSION.f6f7601c1c97",
+      "target": "gfx1201",
+      "operator": "MUL_MAT_ID_FUSION",
+      "baseline": "timeout",
+      "outcome": "timeout",
+      "returncode": -9
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.OUT_PROD.7eb05239af23",
+      "target": "gfx1201",
+      "operator": "OUT_PROD",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.OUT_PROD.f35a3e5a1843",
+      "target": "gfx1201",
+      "operator": "OUT_PROD",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.RMS_NORM_BACK.738357150297",
+      "target": "gfx1201",
+      "operator": "RMS_NORM_BACK",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.RMS_NORM_BACK.b0eca1729a88",
+      "target": "gfx1201",
+      "operator": "RMS_NORM_BACK",
+      "baseline": "segfault",
+      "outcome": "segfault",
+      "returncode": -11
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.RMS_NORM_MUL_ROPE.92e31eecab55",
+      "target": "gfx1201",
+      "operator": "RMS_NORM_MUL_ROPE",
+      "baseline": "timeout",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.RMS_NORM_MUL_ROPE.a61604d8ebe1",
+      "target": "gfx1201",
+      "operator": "RMS_NORM_MUL_ROPE",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.RMS_NORM_MUL_ROPE.c9137b08fd08",
+      "target": "gfx1201",
+      "operator": "RMS_NORM_MUL_ROPE",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.SOLVE_TRI.4b2665c93c4f",
+      "target": "gfx1201",
+      "operator": "SOLVE_TRI",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.SOLVE_TRI.efce0cf0e0d3",
+      "target": "gfx1201",
+      "operator": "SOLVE_TRI",
+      "baseline": "segfault",
+      "outcome": "pass",
+      "returncode": 0
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.TOPK_MOE.0e270f70f362",
+      "target": "gfx1201",
+      "operator": "TOPK_MOE",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.TOPK_MOE.2a02b005d62f",
+      "target": "gfx1201",
+      "operator": "TOPK_MOE",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.TOPK_MOE.2e7ea640edeb",
+      "target": "gfx1201",
+      "operator": "TOPK_MOE",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.TOPK_MOE.5cb8fc0cd986",
+      "target": "gfx1201",
+      "operator": "TOPK_MOE",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.TOPK_MOE.6ec8af8002fa",
+      "target": "gfx1201",
+      "operator": "TOPK_MOE",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.TOPK_MOE.898147839f3e",
+      "target": "gfx1201",
+      "operator": "TOPK_MOE",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.TOPK_MOE.91b601cce199",
+      "target": "gfx1201",
+      "operator": "TOPK_MOE",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.TOPK_MOE.ba01fa21e49a",
+      "target": "gfx1201",
+      "operator": "TOPK_MOE",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx1201.backend_ops.TOPK_MOE.fa7a6e1ee615",
+      "target": "gfx1201",
+      "operator": "TOPK_MOE",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.LIGHTNING_INDEXER.28d7def07117",
+      "target": "gfx942",
+      "operator": "LIGHTNING_INDEXER",
+      "baseline": "timeout",
+      "outcome": "timeout",
+      "returncode": -9
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT.017115bdd15b",
+      "target": "gfx942",
+      "operator": "MUL_MAT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT.38225d8678d3",
+      "target": "gfx942",
+      "operator": "MUL_MAT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT.462ccb738b08",
+      "target": "gfx942",
+      "operator": "MUL_MAT",
+      "baseline": "timeout",
+      "outcome": "timeout",
+      "returncode": -9
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT.48f89386e558",
+      "target": "gfx942",
+      "operator": "MUL_MAT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT.5a436936375c",
+      "target": "gfx942",
+      "operator": "MUL_MAT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT.65b2027ab982",
+      "target": "gfx942",
+      "operator": "MUL_MAT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT.9e9ba8458bfc",
+      "target": "gfx942",
+      "operator": "MUL_MAT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT.9f4865116d4b",
+      "target": "gfx942",
+      "operator": "MUL_MAT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT.a8125e58a34b",
+      "target": "gfx942",
+      "operator": "MUL_MAT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT.b3d523cee895",
+      "target": "gfx942",
+      "operator": "MUL_MAT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT.ce78b3dca900",
+      "target": "gfx942",
+      "operator": "MUL_MAT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT.fe08e494b3c4",
+      "target": "gfx942",
+      "operator": "MUL_MAT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT_ID.2c2d40514bc8",
+      "target": "gfx942",
+      "operator": "MUL_MAT_ID",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT_ID.3cdbbdcd11b4",
+      "target": "gfx942",
+      "operator": "MUL_MAT_ID",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT_ID.87069c59f324",
+      "target": "gfx942",
+      "operator": "MUL_MAT_ID",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT_ID.965309d54fb6",
+      "target": "gfx942",
+      "operator": "MUL_MAT_ID",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT_ID.c9c4af69fd12",
+      "target": "gfx942",
+      "operator": "MUL_MAT_ID",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.MUL_MAT_VEC_FUSION.64a84ca8e243",
+      "target": "gfx942",
+      "operator": "MUL_MAT_VEC_FUSION",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.OPT_STEP_ADAMW.53563ed7ba67",
+      "target": "gfx942",
+      "operator": "OPT_STEP_ADAMW",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.OUT_PROD.7eb05239af23",
+      "target": "gfx942",
+      "operator": "OUT_PROD",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.ROPE.637c25a9ca18",
+      "target": "gfx942",
+      "operator": "ROPE",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.ROPE_SET_ROWS.466fbec03e98",
+      "target": "gfx942",
+      "operator": "ROPE_SET_ROWS",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.ROPE_SET_ROWS.9fab018c060b",
+      "target": "gfx942",
+      "operator": "ROPE_SET_ROWS",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.SOLVE_TRI.4b2665c93c4f",
+      "target": "gfx942",
+      "operator": "SOLVE_TRI",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.SOLVE_TRI.efce0cf0e0d3",
+      "target": "gfx942",
+      "operator": "SOLVE_TRI",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.SSM_SCAN.83b46ddc1f72",
+      "target": "gfx942",
+      "operator": "SSM_SCAN",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.SSM_SCAN.8ffce5cff50e",
+      "target": "gfx942",
+      "operator": "SSM_SCAN",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.SSM_SCAN.b63c27fe2feb",
+      "target": "gfx942",
+      "operator": "SSM_SCAN",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.UPSCALE.f4497e2354a8",
+      "target": "gfx942",
+      "operator": "UPSCALE",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.XIELU.925694f8c916",
+      "target": "gfx942",
+      "operator": "XIELU",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx942.backend_ops.XIELU.dc6e5386ba70",
+      "target": "gfx942",
+      "operator": "XIELU",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx950.backend_ops.LIGHTNING_INDEXER.28d7def07117",
+      "target": "gfx950",
+      "operator": "LIGHTNING_INDEXER",
+      "baseline": "timeout",
+      "outcome": "timeout",
+      "returncode": -9
+    },
+    {
+      "id": "llama.gfx950.backend_ops.MUL_MAT.462ccb738b08",
+      "target": "gfx950",
+      "operator": "MUL_MAT",
+      "baseline": "timeout",
+      "outcome": "timeout",
+      "returncode": -9
+    },
+    {
+      "id": "llama.gfx950.backend_ops.MUL_MAT.5a436936375c",
+      "target": "gfx950",
+      "operator": "MUL_MAT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx950.backend_ops.MUL_MAT.9f4865116d4b",
+      "target": "gfx950",
+      "operator": "MUL_MAT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx950.backend_ops.MUL_MAT.b3d523cee895",
+      "target": "gfx950",
+      "operator": "MUL_MAT",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx950.backend_ops.OPT_STEP_ADAMW.53563ed7ba67",
+      "target": "gfx950",
+      "operator": "OPT_STEP_ADAMW",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx950.backend_ops.OUT_PROD.7eb05239af23",
+      "target": "gfx950",
+      "operator": "OUT_PROD",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx950.backend_ops.ROPE.637c25a9ca18",
+      "target": "gfx950",
+      "operator": "ROPE",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx950.backend_ops.ROPE_SET_ROWS.466fbec03e98",
+      "target": "gfx950",
+      "operator": "ROPE_SET_ROWS",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx950.backend_ops.ROPE_SET_ROWS.9fab018c060b",
+      "target": "gfx950",
+      "operator": "ROPE_SET_ROWS",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx950.backend_ops.SOLVE_TRI.4b2665c93c4f",
+      "target": "gfx950",
+      "operator": "SOLVE_TRI",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx950.backend_ops.SOLVE_TRI.efce0cf0e0d3",
+      "target": "gfx950",
+      "operator": "SOLVE_TRI",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx950.backend_ops.SSM_SCAN.83b46ddc1f72",
+      "target": "gfx950",
+      "operator": "SSM_SCAN",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx950.backend_ops.SSM_SCAN.8ffce5cff50e",
+      "target": "gfx950",
+      "operator": "SSM_SCAN",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx950.backend_ops.SSM_SCAN.b63c27fe2feb",
+      "target": "gfx950",
+      "operator": "SSM_SCAN",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx950.backend_ops.UPSCALE.f4497e2354a8",
+      "target": "gfx950",
+      "operator": "UPSCALE",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx950.backend_ops.XIELU.925694f8c916",
+      "target": "gfx950",
+      "operator": "XIELU",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    },
+    {
+      "id": "llama.gfx950.backend_ops.XIELU.dc6e5386ba70",
+      "target": "gfx950",
+      "operator": "XIELU",
+      "baseline": "test-failure",
+      "outcome": "test-failure",
+      "returncode": 1
+    }
+  ]
+}

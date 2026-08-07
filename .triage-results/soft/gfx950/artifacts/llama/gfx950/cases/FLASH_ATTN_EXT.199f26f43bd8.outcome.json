@@ -1,0 +1,5 @@
+{
+  "case": "FLASH_ATTN_EXT(hsk=64,hsv=64,nh=4,nr23=[4,1],kv=512,nb=32,mask=1,sinks=1,max_bias=0.000000,logit_softcap=0.000000,prec=f32,type_K=bf16,type_V=bf16,permute=[0,1,2,3])",
+  "outcome": "pass",
+  "returncode": 0
+}

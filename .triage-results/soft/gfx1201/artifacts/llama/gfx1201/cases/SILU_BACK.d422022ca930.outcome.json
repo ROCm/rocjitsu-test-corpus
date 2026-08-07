@@ -1,0 +1,5 @@
+{
+  "case": "SILU_BACK(type=f32,ne=[64,5,4,3],eps=0.000001)",
+  "outcome": "pass",
+  "returncode": 0
+}

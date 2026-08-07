@@ -1,0 +1,5 @@
+{
+  "case": "CONT(type=f32,ne=[2,1,1,1],use_view_slice=1)",
+  "outcome": "pass",
+  "returncode": 0
+}

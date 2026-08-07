@@ -1,0 +1,5 @@
+{
+  "case": "SCALE(type=f32,ne=[10,10,10,10],scale=2.000000,bias=0.000000,inplace=0)",
+  "outcome": "pass",
+  "returncode": 0
+}

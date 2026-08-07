@@ -1,0 +1,5 @@
+{
+  "case": "DSV4_HC_COMB(n_tokens=1,n_iter=1,eps=0.000001)",
+  "outcome": "pass",
+  "returncode": 0
+}

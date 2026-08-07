@@ -1,0 +1,29 @@
+{
+  "llama": [
+    "llama.gfx1201.backend_ops.GATED_DELTA_NET.05b63a4322c6",
+    "llama.gfx1201.backend_ops.GATED_DELTA_NET.5615f586b1ca",
+    "llama.gfx1201.backend_ops.GATED_DELTA_NET.5a41ca1b14ff",
+    "llama.gfx1201.backend_ops.GATED_DELTA_NET.6f2073224190",
+    "llama.gfx1201.backend_ops.GATED_DELTA_NET.71f1f886bdeb",
+    "llama.gfx1201.backend_ops.GATED_DELTA_NET.7bad0bbc2812",
+    "llama.gfx1201.backend_ops.GATED_DELTA_NET.7cb9b00606cb",
+    "llama.gfx1201.backend_ops.GATED_DELTA_NET.bafb44a169ef",
+    "llama.gfx1201.backend_ops.GATED_DELTA_NET.bbcb01f66416",
+    "llama.gfx1201.backend_ops.GATED_DELTA_NET.bdcf60346537",
+    "llama.gfx1201.backend_ops.GATED_DELTA_NET.d35f9c8ff08d",
+    "llama.gfx1201.backend_ops.GATED_DELTA_NET.f029d1f5b7d0",
+    "llama.gfx1201.backend_ops.GATED_DELTA_NET.f1ead0d94ad7",
+    "llama.gfx1201.backend_ops.RMS_NORM_BACK.738357150297",
+    "llama.gfx1201.backend_ops.RMS_NORM_MUL_ROPE.a61604d8ebe1",
+    "llama.gfx1201.backend_ops.RMS_NORM_MUL_ROPE.c9137b08fd08",
+    "llama.gfx1201.backend_ops.TOPK_MOE.0e270f70f362",
+    "llama.gfx1201.backend_ops.TOPK_MOE.2a02b005d62f",
+    "llama.gfx1201.backend_ops.TOPK_MOE.2e7ea640edeb",
+    "llama.gfx1201.backend_ops.TOPK_MOE.5cb8fc0cd986",
+    "llama.gfx1201.backend_ops.TOPK_MOE.6ec8af8002fa",
+    "llama.gfx1201.backend_ops.TOPK_MOE.898147839f3e",
+    "llama.gfx1201.backend_ops.TOPK_MOE.91b601cce199",
+    "llama.gfx1201.backend_ops.TOPK_MOE.ba01fa21e49a",
+    "llama.gfx1201.backend_ops.TOPK_MOE.fa7a6e1ee615"
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "case": "OPT_STEP_ADAMW(type=f32,ne=[10,5,4,3])",
+  "outcome": "test-failure",
+  "returncode": 1
+}
