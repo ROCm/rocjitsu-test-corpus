@@ -39,6 +39,7 @@ BACKEND = "ROCm0"
 CASE_PATTERN = re.compile(r"[A-Z][A-Z0-9_]*\(.*\)")
 CSV_HEADER_PREFIX = '"backend_name"'
 XDIST_RUN_UID_ENV = "PYTEST_XDIST_TESTRUNUID"
+BUILD_WORKERS_ENV = "LLAMA_CORPUS_BUILD_WORKERS"
 
 
 def default_config_files() -> tuple[Path, ...]:
@@ -136,7 +137,7 @@ def build(
                     "--target",
                     EXECUTABLE_NAME,
                     "-j",
-                    str(context.worker_count),
+                    str(_build_worker_count(context)),
                 ],
                 log_path=logs_dir / "build.log",
                 phase="build",
@@ -158,6 +159,20 @@ def build(
         executable_path=executable_path,
         metadata={"completion_stamp": str(completion_stamp)},
     )
+
+
+def _build_worker_count(context: RunContext) -> int:
+    configured_count = os.getenv(BUILD_WORKERS_ENV)
+    if configured_count is None:
+        return context.worker_count
+
+    try:
+        worker_count = int(configured_count)
+    except ValueError as exc:
+        raise ValueError(f"{BUILD_WORKERS_ENV} must be an integer") from exc
+    if worker_count < 1:
+        raise ValueError(f"{BUILD_WORKERS_ENV} must be at least 1")
+    return worker_count
 
 
 def _resolve_rocm_path() -> Path:
