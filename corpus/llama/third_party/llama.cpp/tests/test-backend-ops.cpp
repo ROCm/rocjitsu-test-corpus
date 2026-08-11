@@ -45,10 +45,12 @@
 #include <vector>
 #include <unordered_map>
 
-#ifdef __EMSCRIPTEN__
-#   define N_THREADS 1
-#else
-#   define N_THREADS std::thread::hardware_concurrency()
+#ifndef N_THREADS
+#   ifdef __EMSCRIPTEN__
+#       define N_THREADS 1
+#   else
+#       define N_THREADS std::thread::hardware_concurrency()
+#   endif
 #endif
 
 static void init_tensor_uniform(ggml_tensor * tensor, float min = -1.0f, float max = 1.0f) {
