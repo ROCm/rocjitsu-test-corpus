@@ -86,4 +86,7 @@ add_subdirectory("${LLAMA_CORPUS_SOURCE_DIR}/ggml" ggml)
 add_executable(test-backend-ops
     "${LLAMA_CORPUS_SOURCE_DIR}/tests/test-backend-ops.cpp")
 target_compile_features(test-backend-ops PRIVATE cxx_std_17)
+# Keep each backend-op process single-threaded; pytest-xdist provides
+# test-level concurrency.
+target_compile_definitions(test-backend-ops PRIVATE N_THREADS=1)
 target_link_libraries(test-backend-ops PRIVATE ggml)

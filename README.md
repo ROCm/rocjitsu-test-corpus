@@ -200,7 +200,8 @@ covers how the inventory was selected and what the vendored sources contain.
 Pytest builds `test-backend-ops` once for the selected target and then runs one
 process per case. Under xdist, one worker holds a cross-worker build lock while
 the other workers wait and reuse the completed executable. The CMake job count
-matches the pytest worker count.
+matches the pytest worker count by default. Set `LLAMA_CORPUS_BUILD_WORKERS` on
+the pytest command to override only the CMake `-j` value.
 
 The build needs a ROCm SDK root providing `lib/cmake/hip/hip-config.cmake`,
 hipBLAS, and rocBLAS:
@@ -208,6 +209,7 @@ hipBLAS, and rocBLAS:
 ```bash
 export ROCM_PATH="$(rocm-sdk path --root)"
 
+LLAMA_CORPUS_BUILD_WORKERS=16 \
 pytest tests/test_corpus.py \
   --target gfx1201 \
   --suite llama \
@@ -219,6 +221,7 @@ Run the same cases through RocJITsu. The run wrapper applies to each harness
 process, while pytest remains responsible for test timeouts:
 
 ```bash
+LLAMA_CORPUS_BUILD_WORKERS=16 \
 pytest tests/test_corpus.py \
   --target gfx1201 \
   --suite llama \

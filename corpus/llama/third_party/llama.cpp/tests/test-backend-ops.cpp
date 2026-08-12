@@ -18,6 +18,7 @@
 #include "ggml.h"
 #include "ggml-alloc.h"
 #include "ggml-backend.h"
+#include "ggml-cpu.h"
 #include "ggml-cpp.h"
 
 #include <algorithm>
@@ -45,10 +46,12 @@
 #include <vector>
 #include <unordered_map>
 
-#ifdef __EMSCRIPTEN__
-#   define N_THREADS 1
-#else
-#   define N_THREADS std::thread::hardware_concurrency()
+#ifndef N_THREADS
+#   ifdef __EMSCRIPTEN__
+#       define N_THREADS 1
+#   else
+#       define N_THREADS std::thread::hardware_concurrency()
+#   endif
 #endif
 
 static void init_tensor_uniform(ggml_tensor * tensor, float min = -1.0f, float max = 1.0f) {
@@ -10126,6 +10129,7 @@ static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mo
             output_printer->print_operation(info);
             return false;
         }
+        ggml_backend_cpu_set_n_threads(backend_cpu.get(), N_THREADS);
         // Use reference implementation on the CPU backend for comparison
         using ggml_backend_cpu_set_use_ref_t = void (*)(ggml_backend_t, bool);
         auto * reg = ggml_backend_dev_backend_reg(ggml_backend_get_device(backend_cpu.get()));
@@ -10192,6 +10196,7 @@ static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mo
                 if (b_cpu == NULL) {
                     return;
                 }
+                ggml_backend_cpu_set_n_threads(b_cpu.get(), N_THREADS);
 
                 if (set_use_ref) {
                     set_use_ref(b_cpu.get(), true);
