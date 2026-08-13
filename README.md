@@ -302,18 +302,19 @@ curl --fail --location \
 printf '%s  %s\n' \
   0842af33a89376555df161b6a8d122dc32083fc2f4867ee7236b2258b479c567 \
   "$TEST_DIST_ARCHIVE" | sha256sum --check --strict
-mkdir -p "$TEST_DIST_ROOT"
+mkdir "$TEST_DIST_ROOT"
 tar -xzf "$TEST_DIST_ARCHIVE" -C "$TEST_DIST_ROOT"
 
 "$ROCM_VENV/bin/python" scripts/extract_gfx1250_hsacos.py \
   --environment "$ROCM_VENV" \
   --additional-root "$TEST_DIST_ROOT" \
-  --destination results-gfx1250-packaged
+  --destination results-gfx1250-packaged \
+  --materialize-ccob
 ```
 
-`--additional-root` is repeatable. Keeping additional roots beneath the venv
-makes their paths in `manifests/provenance.jsonl` independent of the checkout
-or CI workspace location.
+`--additional-root` is repeatable and each root must be beneath the selected
+venv. This makes paths in `manifests/provenance.jsonl` independent of the
+checkout or CI workspace location. Additional roots must not overlap.
 
 The extractor covers:
 

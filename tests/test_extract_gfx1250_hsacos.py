@@ -518,6 +518,30 @@ def test_additional_roots_are_resolved_in_caller_order(tmp_path):
     ]
 
 
+def test_cli_parses_repeated_additional_roots(tmp_path, monkeypatch):
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    destination = tmp_path / "corpus"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "extract_gfx1250_hsacos.py",
+            "--destination",
+            str(destination),
+            "--additional-root",
+            str(first),
+            "--additional-root",
+            str(second),
+        ],
+    )
+
+    args = extractor.parse_arguments()
+
+    assert args.destination == destination
+    assert args.additional_root == [first, second]
+
+
 def test_additional_roots_reject_missing_and_repeated_paths(tmp_path):
     root = tmp_path / "root"
     root.mkdir()
@@ -528,7 +552,7 @@ def test_additional_roots_reject_missing_and_repeated_paths(tmp_path):
         extractor.resolve_additional_roots([root, root])
 
 
-def test_inventory_deduplicates_hardlinks_across_roots(tmp_path):
+def test_inventory_preserves_hardlink_provenance_across_roots(tmp_path):
     first = tmp_path / "first"
     second = tmp_path / "second"
     first.mkdir()
@@ -540,8 +564,93 @@ def test_inventory_deduplicates_hardlinks_across_roots(tmp_path):
 
     inventory = extractor.inventory_files([first, second])
 
-    assert inventory.files == [source]
-    assert inventory.loose_amdgpu == [source]
+    assert inventory.files == [source, second / "kernel.hsaco"]
+    assert inventory.loose_amdgpu == [source, second / "kernel.hsaco"]
+    corpus = extractor.Corpus(tmp_path / "corpus", "gfx1250")
+    assert extractor.extract_loose(
+        inventory.loose_amdgpu, corpus, tmp_path, "gfx1250"
+    ) == 2
+    summary = corpus.finish({})
+    assert summary["source_records"] == 2
+    assert summary["unique_code_objects"] == 1
+
+
+def test_additional_roots_reject_overlap(tmp_path):
+    root = tmp_path / "root"
+    child = root / "child"
+    child.mkdir(parents=True)
+
+    with pytest.raises(RuntimeError, match="overlap"):
+        extractor.resolve_additional_roots([root, child])
+
+    with pytest.raises(RuntimeError, match="overlap"):
+        extractor.resolve_additional_roots([child], selected=[root])
+
+
+def test_additional_roots_reject_paths_outside_environment(tmp_path):
+    environment = tmp_path / "environment"
+    external = tmp_path / "external"
+    environment.mkdir()
+    external.mkdir()
+
+    with pytest.raises(RuntimeError, match="below the selected environment"):
+        extractor.resolve_additional_roots([external], environment)
+
+
+def test_inventory_surfaces_file_access_failure(tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    path = root / "kernel.hsaco"
+    root.mkdir()
+    path.write_bytes(make_amdgpu_elf())
+    original_open = Path.open
+
+    def failing_open(self, *args, **kwargs):
+        if self == path:
+            raise PermissionError("denied for test")
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", failing_open)
+    with pytest.raises(PermissionError, match="denied for test"):
+        extractor.inventory_files([root])
+
+
+def test_additional_root_stats_report_files_and_source_records(tmp_path):
+    environment = tmp_path / "environment"
+    root = environment / "distribution"
+    root.mkdir(parents=True)
+    first = root / "first.hsaco"
+    second = root / "second.so"
+    first.touch()
+    second.touch()
+    records = [
+        {"path": "distribution/first.hsaco"},
+        {"archive": "distribution/images/kernels.zip"},
+        {"path": "lib/package.hsaco"},
+    ]
+    assert extractor.additional_root_stats(
+        [root], [first, second], records, environment
+    ) == [
+        {
+            "root": "distribution",
+            "files_scanned": 2,
+            "source_records": 2,
+        }
+    ]
+
+
+def test_aotriton_stores_are_discovered_under_every_root(tmp_path):
+    torch = tmp_path / "torch"
+    distribution = tmp_path / "distribution"
+    expected = [
+        root / "lib" / "aotriton.images" / "amd-gfx1250"
+        for root in (torch, distribution)
+    ]
+    for root in expected:
+        root.mkdir(parents=True)
+
+    assert extractor.aotriton_image_roots(
+        [torch, distribution], "gfx1250"
+    ) == expected
 
 
 def test_corpus_manifests_are_deterministic_across_insertion_order(tmp_path):

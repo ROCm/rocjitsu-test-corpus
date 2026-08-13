@@ -440,38 +440,32 @@ class Inventory:
     host_elf: list[Path]
 
 
-def walk_unique_files(roots: list[Path]):
-    seen: set[tuple[int, int]] = set()
+def walk_files(roots: list[Path]):
     for root in roots:
-        for directory, directory_names, file_names in os.walk(root):
+        def raise_walk_error(error: OSError) -> None:
+            raise error
+
+        for directory, directory_names, file_names in os.walk(
+            root, onerror=raise_walk_error
+        ):
             directory_names.sort()
             file_names.sort()
             for name in file_names:
                 path = Path(directory) / name
-                try:
-                    stat_result = path.stat()
-                except OSError:
-                    continue
-                inode = (stat_result.st_dev, stat_result.st_ino)
-                if inode in seen:
-                    continue
-                seen.add(inode)
+                path.stat()
                 yield path
 
 
 def inventory_files(roots: list[Path]) -> Inventory:
-    files = list(walk_unique_files(roots))
+    files = list(walk_files(roots))
     kpack = []
     ccob = []
     loose_amdgpu = []
     host_elf = []
 
     for path in files:
-        try:
-            with path.open("rb") as source:
-                header = source.read(64)
-        except OSError:
-            continue
+        with path.open("rb") as source:
+            header = source.read(64)
         if header.startswith(b"KPAK"):
             kpack.append(path)
             continue
@@ -496,10 +490,7 @@ def extract_loose(
 ) -> int:
     count = 0
     for path in paths:
-        try:
-            data = path.read_bytes()
-        except OSError:
-            continue
+        data = path.read_bytes()
         if not is_loadable_amdgpu_elf(data):
             continue
         try:
@@ -1206,7 +1197,11 @@ def selected_roots(
     return roots, torch_root
 
 
-def resolve_additional_roots(values: list[Path]) -> list[Path]:
+def resolve_additional_roots(
+    values: list[Path],
+    environment: Path | None = None,
+    selected: list[Path] | None = None,
+) -> list[Path]:
     """Resolve and validate caller-supplied distribution roots."""
     roots: list[Path] = []
     for value in values:
@@ -1217,8 +1212,59 @@ def resolve_additional_roots(values: list[Path]) -> list[Path]:
             )
         if root in roots:
             raise RuntimeError(f"additional extraction root is repeated: {root}")
+        if environment is not None:
+            try:
+                root.relative_to(environment)
+            except ValueError as error:
+                raise RuntimeError(
+                    "additional extraction root must be below the selected "
+                    f"environment: {root}"
+                ) from error
+        overlaps = any(
+            root.is_relative_to(other) or other.is_relative_to(root)
+            for other in [*(selected or []), *roots]
+        )
+        if overlaps:
+            raise RuntimeError(f"additional extraction roots overlap: {root}")
         roots.append(root)
     return roots
+
+
+def additional_root_stats(
+    roots: list[Path],
+    files: list[Path],
+    records: list[dict[str, object]],
+    environment: Path,
+) -> list[dict[str, object]]:
+    """Report inventory and provenance contributions for requested roots."""
+    stats = []
+    for root in roots:
+        relative_root = source_path(root, environment)
+        prefix = f"{relative_root}/"
+        source_records = sum(
+            1
+            for record in records
+            if any(
+                str(record.get(field, "")).startswith(prefix)
+                for field in ("path", "archive")
+            )
+        )
+        stats.append(
+            {
+                "root": relative_root,
+                "files_scanned": sum(path.is_relative_to(root) for path in files),
+                "source_records": source_records,
+            }
+        )
+    return stats
+
+
+def aotriton_image_roots(roots: list[Path], target: str) -> list[Path]:
+    """Find AOTriton image stores below every selected scan root."""
+    candidates = [
+        root / "lib" / "aotriton.images" / f"amd-{target}" for root in roots
+    ]
+    return [candidate for candidate in candidates if candidate.is_dir()]
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -1309,8 +1355,10 @@ def main() -> int:
     site_packages = Path(sysconfig.get_paths()["purelib"]).resolve()
     sources = set(args.source or ("rocm", "torch"))
     try:
-        roots, torch_root = selected_roots(site_packages, sources)
-        additional_roots = resolve_additional_roots(args.additional_root)
+        roots, _torch_root = selected_roots(site_packages, sources)
+        additional_roots = resolve_additional_roots(
+            args.additional_root, environment, roots
+        )
     except RuntimeError as error:
         raise SystemExit(f"error: {error}") from error
     roots.extend(additional_roots)
@@ -1360,8 +1408,13 @@ def main() -> int:
     print(f"target: {args.target}")
     print(f"destination: {destination}")
 
-    inventory = inventory_files(roots)
-    print(f"inventory: {len(inventory.files)} unique files")
+    try:
+        inventory = inventory_files(roots)
+    except OSError as error:
+        raise SystemExit(
+            f"error: cannot inventory extraction roots: {error}"
+        ) from error
+    print(f"inventory: {len(inventory.files)} files")
     print(f"KPACK containers: {len(inventory.kpack)}")
     print(f"CCOB containers: {len(inventory.ccob)}")
 
@@ -1485,22 +1538,16 @@ def main() -> int:
     aotriton_entries = 0
     aotriton_source_records = 0
     aotriton_archives = 0
-    if torch_root is not None:
-        aotriton_root = torch_root / "lib" / "aotriton.images" / f"amd-{args.target}"
-        if aotriton_root.is_dir():
-            aotriton_archives = len(list(aotriton_root.rglob("*.zip")))
-            try:
-                (
-                    aotriton_entries,
-                    aotriton_source_records,
-                ) = extract_aotriton(
-                    aotriton_root,
-                    corpus,
-                    environment,
-                    args.target,
-                )
-            except (OSError, ValueError, zipfile.BadZipFile) as error:
-                failures.append({"category": "aotriton-aks2", "error": str(error)})
+    for aotriton_root in aotriton_image_roots(roots, args.target):
+        try:
+            aotriton_archives += len(list(aotriton_root.rglob("*.zip")))
+            entries, records = extract_aotriton(
+                aotriton_root, corpus, environment, args.target
+            )
+            aotriton_entries += entries
+            aotriton_source_records += records
+        except (OSError, ValueError, zipfile.BadZipFile) as error:
+            failures.append({"category": "aotriton-aks2", "error": str(error)})
     print(
         "AOTriton records: "
         f"{aotriton_source_records} from {aotriton_entries} AKS2 entries",
@@ -1527,6 +1574,12 @@ def main() -> int:
             "additional_roots": [
                 source_path(root, environment) for root in additional_roots
             ],
+            "additional_root_stats": additional_root_stats(
+                additional_roots,
+                inventory.files,
+                corpus.records,
+                environment,
+            ),
             "files_scanned": len(inventory.files),
             "kpack_containers": len(inventory.kpack),
             "kpack_source_records": kpack_source_records,
