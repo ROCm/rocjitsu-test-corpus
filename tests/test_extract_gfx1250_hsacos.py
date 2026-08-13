@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import lzma
 import struct
@@ -540,6 +541,65 @@ def test_cli_parses_repeated_additional_roots(tmp_path, monkeypatch):
 
     assert args.destination == destination
     assert args.additional_root == [first, second]
+
+
+def test_main_extracts_and_records_additional_root(tmp_path, monkeypatch):
+    environment = tmp_path / "environment"
+    site_packages = environment / "lib" / "python3.12" / "site-packages"
+    package_root = site_packages / "_rocm_sdk_core"
+    additional_root = environment / "distribution"
+    destination = tmp_path / "corpus"
+    package_root.mkdir(parents=True)
+    additional_root.mkdir(parents=True)
+    (environment / "pyvenv.cfg").touch()
+    source = additional_root / "kernel-gfx1250.hsaco"
+    source.write_bytes(make_amdgpu_elf_with_metadata_target("gfx1250"))
+    args = argparse.Namespace(
+        additional_root=[additional_root],
+        destination=destination,
+        dump_ccob=None,
+        environment=environment,
+        materialize_ccob=False,
+        progress_every=0,
+        source=["rocm"],
+        target="gfx1250",
+    )
+
+    monkeypatch.setattr(extractor, "parse_arguments", lambda: args)
+    monkeypatch.setattr(extractor.sys, "prefix", str(environment))
+    monkeypatch.setattr(
+        extractor.sysconfig,
+        "get_paths",
+        lambda: {"purelib": str(site_packages)},
+    )
+    monkeypatch.setattr(
+        extractor,
+        "selected_roots",
+        lambda _site_packages, _sources: ([package_root], None),
+    )
+    monkeypatch.setattr(extractor, "locate_file", lambda *_args: tmp_path / "tool")
+    monkeypatch.setattr(extractor, "extract_bundles", lambda *_args: (0, []))
+    monkeypatch.setattr(extractor, "extract_raw_embedded", lambda *_args: (0, []))
+    monkeypatch.setattr(extractor, "package_snapshot", lambda: [])
+
+    assert extractor.main() == 0
+
+    summary = extractor.json.loads((destination / "summary.json").read_text())
+    assert summary["additional_roots"] == ["distribution"]
+    assert summary["additional_root_stats"] == [
+        {
+            "root": "distribution",
+            "files_scanned": 1,
+            "source_records": 1,
+        }
+    ]
+    records = [
+        extractor.json.loads(line)
+        for line in (destination / "manifests" / "provenance.jsonl")
+        .read_text()
+        .splitlines()
+    ]
+    assert records[0]["path"] == "distribution/kernel-gfx1250.hsaco"
 
 
 def test_additional_roots_reject_missing_and_repeated_paths(tmp_path):
