@@ -288,6 +288,37 @@ Extract the packaged code objects:
   --materialize-ccob
 ```
 
+Additional unpacked ROCm distributions can be scanned into the same corpus.
+The extractor combines these files with the selected venv package roots and
+deduplicates identical code objects by their complete-HSACO SHA-256. For
+example, the gfx1250 DBT corpus currently uses the July 26 multi-architecture
+test distribution:
+
+```bash
+export TEST_DIST_VERSION=7.15.0a20260726
+export TEST_DIST_ARCHIVE="$ROCM_VENV/therock-dist-linux-multiarch-tests-${TEST_DIST_VERSION}.tar.gz"
+export TEST_DIST_ROOT="$ROCM_VENV/test-distribution-${TEST_DIST_VERSION}"
+
+curl --fail --location \
+  --output "$TEST_DIST_ARCHIVE" \
+  "https://rocm.nightlies.amd.com/tarball-multi-arch/therock-dist-linux-multiarch-tests-${TEST_DIST_VERSION}.tar.gz"
+printf '%s  %s\n' \
+  0842af33a89376555df161b6a8d122dc32083fc2f4867ee7236b2258b479c567 \
+  "$TEST_DIST_ARCHIVE" | sha256sum --check --strict
+mkdir "$TEST_DIST_ROOT"
+tar -xzf "$TEST_DIST_ARCHIVE" -C "$TEST_DIST_ROOT"
+
+"$ROCM_VENV/bin/python" scripts/extract_gfx1250_hsacos.py \
+  --environment "$ROCM_VENV" \
+  --additional-root "$TEST_DIST_ROOT" \
+  --destination results-gfx1250-packaged \
+  --materialize-ccob
+```
+
+`--additional-root` is repeatable and each root must be beneath the selected
+venv. This makes paths in `manifests/provenance.jsonl` independent of the
+checkout or CI workspace location. Additional roots must not overlap.
+
 The extractor covers:
 
 - TheRock and PyTorch KPACK archives;
