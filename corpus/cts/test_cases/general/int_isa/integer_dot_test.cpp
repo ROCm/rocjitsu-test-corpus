@@ -164,7 +164,7 @@ std::vector<DotSignedInput> dot_iu4_inputs()
 }
 } // namespace
 
-TEST(Rdna4IntIsaIntegerDot, U8MatchesOracle)
+TEST(IntIsaIntegerDot, U8MatchesOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";
@@ -172,7 +172,7 @@ TEST(Rdna4IntIsaIntegerDot, U8MatchesOracle)
     int_isa_test::run_value_test_cases<DotU8Trait<true>>(dot_u8_inputs());
 }
 
-TEST(Rdna4IntIsaIntegerDot, Iu8SignModesMatchOracle)
+TEST(IntIsaIntegerDot, Iu8SignModesMatchOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";
@@ -182,7 +182,7 @@ TEST(Rdna4IntIsaIntegerDot, Iu8SignModesMatchOracle)
     int_isa_test::run_value_test_cases<DotIu8Trait<false, false, false>>(dot_iu8_inputs());
 }
 
-TEST(Rdna4IntIsaIntegerDot, Iu8ClampModesMatchOracle)
+TEST(IntIsaIntegerDot, Iu8ClampModesMatchOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";
@@ -192,7 +192,7 @@ TEST(Rdna4IntIsaIntegerDot, Iu8ClampModesMatchOracle)
     int_isa_test::run_value_test_cases<DotIu8Trait<false, false, true>>(dot_iu8_inputs());
 }
 
-TEST(Rdna4IntIsaIntegerDot, U4MatchesOracle)
+TEST(IntIsaIntegerDot, U4MatchesOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";
@@ -200,7 +200,7 @@ TEST(Rdna4IntIsaIntegerDot, U4MatchesOracle)
     int_isa_test::run_value_test_cases<DotU4Trait<true>>(dot_u4_inputs());
 }
 
-TEST(Rdna4IntIsaIntegerDot, Iu4SignAndClampModesMatchOracle)
+TEST(IntIsaIntegerDot, Iu4SignAndClampModesMatchOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";

@@ -1,0 +1,158 @@
+{
+  "schema_version": 2,
+  "target": "gfx1250",
+  "scope": "RDNA4-parity integer semantic families that compile for gfx1250, both gfx1250 integer matrix instructions, and selected gfx1250-specific integer instructions. Expected opcodes are checked in the linked runtime images.",
+  "tests": [
+    {
+      "name": "int_isa_gfx1250_bitfield_test",
+      "source": "general/int_isa/bitfield_test.cpp",
+      "expected_opcodes": ["v_bfe_i32", "v_bfe_u32"]
+    },
+    {
+      "name": "int_isa_gfx1250_lerp_test",
+      "source": "general/int_isa/lerp_test.cpp",
+      "expected_opcodes": ["v_lerp_u8"]
+    },
+    {
+      "name": "int_isa_gfx1250_packed_sad_test",
+      "source": "general/int_isa/packed_sad_test.cpp",
+      "expected_opcodes": [
+        "v_sad_u8",
+        "v_sad_hi_u8",
+        "v_sad_u16",
+        "v_msad_u8",
+        "v_qsad_pk_u16_u8",
+        "v_mqsad_pk_u16_u8",
+        "v_mqsad_u32_u8"
+      ]
+    },
+    {
+      "name": "int_isa_gfx1250_bit_permute_test",
+      "source": "general/int_isa/bit_permute_test.cpp",
+      "expected_opcodes": ["v_alignbit_b32", "v_alignbyte_b32", "v_perm_b32"]
+    },
+    {
+      "name": "int_isa_gfx1250_integer_dot_test",
+      "source": "general/int_isa/integer_dot_test.cpp",
+      "expected_opcodes": [
+        "v_dot4_i32_iu8",
+        "v_dot4_u32_u8",
+        "v_dot8_i32_iu4",
+        "v_dot8_u32_u4"
+      ]
+    },
+    {
+      "name": "int_isa_gfx1250_packed_convert_test",
+      "source": "general/int_isa/packed_convert_test.cpp",
+      "expected_opcodes": [
+        "v_cvt_pk_i16_i32",
+        "v_cvt_pk_u16_u32",
+        "v_cvt_pk_norm_i16_f32",
+        "v_cvt_pk_norm_u16_f32",
+        "v_cvt_pk_u8_f32"
+      ]
+    },
+    {
+      "name": "int_isa_gfx1250_saturating_pack_test",
+      "source": "gfx1250/int_isa/saturating_pack_test.cpp",
+      "expected_opcodes": ["v_sat_pk_u8_i16", "v_sat_pk4_i4_i8", "v_sat_pk4_u4_u8"]
+    },
+    {
+      "name": "int_isa_gfx1250_packed_add_minmax_test",
+      "source": "gfx1250/int_isa/packed_add_minmax_test.cpp",
+      "expected_opcodes": [
+        "v_pk_add_max_i16",
+        "v_pk_add_max_u16",
+        "v_pk_add_min_i16",
+        "v_pk_add_min_u16"
+      ]
+    },
+    {
+      "name": "int_isa_gfx1250_packed_permute_test",
+      "source": "gfx1250/int_isa/packed_permute_test.cpp",
+      "expected_opcodes": ["v_perm_pk16_b4_u4", "v_perm_pk16_b6_u4", "v_perm_pk16_b8_u4"]
+    },
+    {
+      "name": "int_isa_gfx1250_relative_move_test",
+      "source": "gfx1250/int_isa/relative_move_test.cpp",
+      "expected_opcodes": ["v_movrelsd_b32", "v_movrelsd_2_b32", "v_swaprel_b32"]
+    },
+    {
+      "name": "int_isa_gfx1250_wmma_i32_16x16x64_iu8_test",
+      "source": "gfx1250/int_isa/wmma_i32_16x16x64_iu8_test.cpp",
+      "expected_opcodes": ["v_wmma_i32_16x16x64_iu8"]
+    },
+    {
+      "name": "int_isa_gfx1250_swmmac_i32_16x16x128_iu8_test",
+      "source": "gfx1250/int_isa/swmmac_i32_16x16x128_iu8_test.cpp",
+      "expected_opcodes": ["v_swmmac_i32_16x16x128_iu8"]
+    },
+    {
+      "name": "int_isa_gfx1250_lane_read_test",
+      "source": "general/int_isa/lane_read_test.cpp",
+      "expected_opcodes": ["v_readfirstlane_b32", "v_readlane_b32"]
+    },
+    {
+      "name": "int_isa_gfx1250_mbcnt_test",
+      "source": "general/int_isa/mbcnt_test.cpp",
+      "expected_opcodes": ["v_mbcnt_lo_u32_b32"]
+    },
+    {
+      "name": "int_isa_gfx1250_ds_permute_test",
+      "source": "general/int_isa/ds_permute_test.cpp",
+      "expected_opcodes": ["ds_bpermute_b32", "ds_bpermute_fi_b32", "ds_permute_b32"]
+    },
+    {
+      "name": "int_isa_gfx1250_ds_swizzle_test",
+      "source": "general/int_isa/ds_swizzle_test.cpp",
+      "expected_opcodes": ["ds_swizzle_b32"]
+    },
+    {
+      "name": "int_isa_gfx1250_dpp_test",
+      "source": "general/int_isa/dpp_test.cpp",
+      "expected_opcodes": ["v_mov_b32_dpp"]
+    },
+    {
+      "name": "int_isa_gfx1250_permlane_test",
+      "source": "general/int_isa/permlane_test.cpp",
+      "expected_opcodes": [
+        "v_permlane16_b32",
+        "v_permlane16_var_b32",
+        "v_permlane64_b32",
+        "v_permlanex16_b32",
+        "v_permlanex16_var_b32"
+      ]
+    },
+    {
+      "name": "int_isa_gfx1250_ballot_test",
+      "source": "general/int_isa/ballot_test.cpp",
+      "semantic_only": true,
+      "reason": "The target lowers ballot builtins to EXEC and compare operations rather than a dedicated ballot opcode."
+    },
+    {
+      "name": "int_isa_gfx1250_compare_test",
+      "source": "general/int_isa/compare_test.cpp",
+      "expected_opcodes": [
+        "v_cmp_eq_u32",
+        "v_cmp_lt_i32",
+        "v_cmp_lt_u32",
+        "v_cmp_ge_i64",
+        "v_cmp_ge_u64"
+      ]
+    },
+    {
+      "name": "int_isa_gfx1250_reduction_test",
+      "source": "general/int_isa/reduction_test.cpp",
+      "expected_opcodes": [
+        "v_add_nc_u32_dpp",
+        "v_min_i32_dpp",
+        "v_max_i32_dpp",
+        "v_min_u32_dpp",
+        "v_max_u32_dpp",
+        "v_and_b32_dpp",
+        "v_or_b32_dpp",
+        "v_xor_b32_dpp"
+      ]
+    }
+  ]
+}

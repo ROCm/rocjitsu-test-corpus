@@ -35,7 +35,12 @@ requirements.txt       Python packages for pytest and corpus helpers.
 - `corpus/kernels/`: standalone HIP kernel reproducers. Current backends include
   `hip-stream-k`, `hip-matmul`, `hipkittens`, and `rocblas`.
 - `corpus/cts/`: HIP semantic tests organized by target family, including
-  FPSan-derived floating-point cases and standalone integer ISA cases.
+  FPSan-derived floating-point cases and standalone integer ISA cases. The
+  gfx1250 integer suite covers the portable RDNA4 integer families, both
+  gfx1250 integer matrix forms, and selected gfx1250-specific instructions. Its
+  build-time coverage gate extracts the gfx1250 image from each linked test
+  executable and verifies that every expected opcode is present in the code
+  that the runtime test executes.
 - `corpus/semantics/`: standalone HIP programs with deterministic inputs,
   source-ISA coverage, and typed results that can be captured under any
   externally selected launch configuration.

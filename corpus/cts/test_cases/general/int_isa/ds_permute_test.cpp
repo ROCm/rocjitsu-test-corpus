@@ -49,7 +49,7 @@ struct DsCrossLaneTrait
                    kInactiveSentinel};
 
         // Even lanes gather from inactive odd lanes. The ordinary form returns
-        // zero; the gfx12 FI form fetches the source VGPR despite its EXEC bit.
+        // zero; the FI form fetches the source VGPR despite its EXEC bit.
         if((lane & 1u) == 0)
         {
             out.bpermute_inactive = static_cast<std::uint32_t>(
@@ -94,7 +94,7 @@ struct DsCrossLaneTrait
 };
 } // namespace
 
-TEST(Rdna4IntIsaDsPermute, BuiltinsMatchOracles)
+TEST(IntIsaDsPermute, BuiltinsMatchOracles)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";

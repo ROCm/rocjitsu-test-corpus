@@ -89,14 +89,14 @@ struct PermlaneFixedTrait
 };
 } // namespace
 
-TEST(Rdna4IntIsaPermlane, VariableBuiltinsMatchOracle)
+TEST(IntIsaPermlane, VariableBuiltinsMatchOracle)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";
     int_isa_test::run_wave_lane_test<PermlaneVarTrait>();
 }
 
-TEST(Rdna4IntIsaPermlane, FixedBuiltinsMatchOracles)
+TEST(IntIsaPermlane, FixedBuiltinsMatchOracles)
 {
     if(!have_device())
         GTEST_SKIP() << "no HIP device available";

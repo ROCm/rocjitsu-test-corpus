@@ -35,6 +35,7 @@ constexpr int kCValuesPerLane = 8;
 using v2i32 = int __attribute__((ext_vector_type(2)));
 using v4i32 = int __attribute__((ext_vector_type(4)));
 using v8i32 = int __attribute__((ext_vector_type(8)));
+using v16i32 = int __attribute__((ext_vector_type(16)));
 
 #if defined(INT_ISA_TEST_WAVE64)
 using cfrag_t = v4i32;
@@ -363,7 +364,7 @@ SparseData<Trait> make_sparse_inputs(int seed)
     data.A.assign(kM * Trait::K, 0);
     data.B.resize(Trait::K * kN);
     data.C.resize(kM * kN);
-    data.idx.assign(kWaveLanes, 0);
+    data.idx.assign(kWaveLanes * Trait::IndexWords, 0);
     data.p0.resize(kM * Trait::Groups);
     data.p1.resize(kM * Trait::Groups);
 
@@ -373,11 +374,14 @@ SparseData<Trait> make_sparse_inputs(int seed)
     for(int m = 0; m < kM; ++m)
         for(int n = 0; n < kN; ++n)
             data.C[m * kN + n] = ((m * 3 + n * 5 + seed) % 13) - 6;
+    constexpr int selector_pairs[6][2] = {
+        {0, 1}, {0, 2}, {0, 3}, {1, 2}, {1, 3}, {2, 3}};
     for(int m = 0; m < kM; ++m)
         for(int g = 0; g < Trait::Groups; ++g)
         {
-            const int first  = (m + g + seed) & 3;
-            const int second = (first + 1 + ((m + 2 * g + seed) & 1)) & 3;
+            const int pair   = (m * 5 + g * 3 + seed) % 6;
+            const int first  = selector_pairs[pair][0];
+            const int second = selector_pairs[pair][1];
             data.p0[m * Trait::Groups + g] = first;
             data.p1[m * Trait::Groups + g] = second;
             data.A[m * Trait::K + 4 * g + first] =
@@ -393,7 +397,6 @@ SparseData<Trait> make_sparse_inputs(int seed)
         const int row  = lane & 15;
         const int block =
             lane_k_block(lane, Trait::Groups / Trait::GroupsPerLane);
-        std::uint32_t idx = 0;
         if(block >= 0)
         {
             for(int local_g = 0; local_g < Trait::GroupsPerLane; ++local_g)
@@ -401,10 +404,11 @@ SparseData<Trait> make_sparse_inputs(int seed)
                 const int g     = block * Trait::GroupsPerLane + local_g;
                 const int field = (data.p0[row * Trait::Groups + g] & 3)
                                   | ((data.p1[row * Trait::Groups + g] & 3) << 2);
-                idx |= static_cast<std::uint32_t>(field) << (4 * local_g);
+                const int bit = 4 * local_g;
+                data.idx[lane * Trait::IndexWords + bit / 32] |=
+                    static_cast<std::uint32_t>(field) << (bit % 32);
             }
         }
-        data.idx[lane] = idx;
     }
     return data;
 }
@@ -493,6 +497,15 @@ __device__ typename Trait::BFrag load_sparse_b_frag(const std::int32_t* B, int l
 }
 
 template <class Trait>
+__device__ typename Trait::IndexFrag load_sparse_index(const std::uint32_t* idx, int lane)
+{
+    typename Trait::IndexFrag frag = make_zero_frag<typename Trait::IndexFrag>();
+    for(int word = 0; word < Trait::IndexWords; ++word)
+        set_frag_word(frag, word, idx[lane * Trait::IndexWords + word]);
+    return frag;
+}
+
+template <class Trait>
 __global__ void sparse_matrix_kernel(const std::int32_t*  A,
                                      const std::int32_t*  B,
                                      const std::int32_t*  C,
@@ -505,7 +518,8 @@ __global__ void sparse_matrix_kernel(const std::int32_t*  A,
     auto      a    = load_sparse_a_frag<Trait>(A, p0, p1, lane);
     auto      b    = load_sparse_b_frag<Trait>(B, lane);
     auto      c    = load_c_frag<Trait>(C, lane);
-    store_d_frag<Trait>(Trait::call(a, b, c, static_cast<int>(idx[lane])), D, lane);
+    auto      index = load_sparse_index<Trait>(idx, lane);
+    store_d_frag<Trait>(Trait::call(a, b, c, index), D, lane);
 }
 
 template <class Trait>

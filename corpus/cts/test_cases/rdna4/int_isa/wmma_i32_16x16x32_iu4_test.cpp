@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
-#include "matrix_test_parts.hpp"
+#include "../../general/int_isa/matrix_test_parts.hpp"
 
 namespace
 {
