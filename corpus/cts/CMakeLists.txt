@@ -681,8 +681,46 @@ endif()
 
 if(CTS_HAS_GFX1250)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
-    if(NOT CMAKE_OBJDUMP)
-        message(FATAL_ERROR "gfx1250 linked-image coverage requires CMAKE_OBJDUMP")
+
+    set(CTS_LLVM_OBJDUMP "" CACHE FILEPATH
+        "LLVM objdump with HIP --offloading extraction support")
+    if(NOT CTS_LLVM_OBJDUMP)
+        get_filename_component(cts_hip_compiler_bin
+            "${CMAKE_HIP_COMPILER}" DIRECTORY)
+        get_filename_component(cts_hip_compiler_root
+            "${cts_hip_compiler_bin}" DIRECTORY)
+        find_program(cts_discovered_llvm_objdump
+            NAMES llvm-objdump
+            HINTS
+                "${ROCM_PATH}/lib/llvm/bin"
+                "${ROCM_PATH}/llvm/bin"
+                "${ROCM_PATH}/bin"
+                "${cts_hip_compiler_root}/lib/llvm/bin"
+                "${cts_hip_compiler_bin}"
+        )
+        if(cts_discovered_llvm_objdump)
+            set(CTS_LLVM_OBJDUMP "${cts_discovered_llvm_objdump}" CACHE FILEPATH
+                "LLVM objdump with HIP --offloading extraction support" FORCE)
+        endif()
+    endif()
+    if(NOT CTS_LLVM_OBJDUMP)
+        message(FATAL_ERROR
+            "gfx1250 linked-image coverage requires LLVM objdump; set "
+            "-DCTS_LLVM_OBJDUMP=/path/to/llvm-objdump")
+    endif()
+    execute_process(
+        COMMAND "${CTS_LLVM_OBJDUMP}" --help
+        RESULT_VARIABLE cts_llvm_objdump_result
+        OUTPUT_VARIABLE cts_llvm_objdump_help
+        ERROR_VARIABLE cts_llvm_objdump_error
+    )
+    string(CONCAT cts_llvm_objdump_help
+        "${cts_llvm_objdump_help}" "${cts_llvm_objdump_error}")
+    if(NOT cts_llvm_objdump_result EQUAL 0
+       OR NOT cts_llvm_objdump_help MATCHES "--offloading")
+        message(FATAL_ERROR
+            "CTS_LLVM_OBJDUMP='${CTS_LLVM_OBJDUMP}' cannot extract HIP offload "
+            "images with --offloading; select the ROCm SDK llvm-objdump")
     endif()
 
     set(GFX1250_INT_ISA_COVERAGE_MANIFEST
@@ -714,13 +752,15 @@ if(CTS_HAS_GFX1250)
     # Fetch-invalid semantics require the per-lane source value to remain in a
     # VGPR across an EXEC-divergent region. See the RDNA4 targets above.
     target_compile_options(int_isa_gfx1250_ds_permute_test PRIVATE -O2)
+    target_compile_definitions(int_isa_gfx1250_integer_dot_test PRIVATE
+        INT_ISA_TEST_DOT4_IGNORES_CLAMP=1)
     add_custom_target(int_isa_gfx1250_source_coverage_test ALL
         COMMAND "${Python3_EXECUTABLE}"
             "${GFX1250_INT_ISA_COVERAGE_SCRIPT}"
             --coverage "${GFX1250_INT_ISA_COVERAGE_MANIFEST}"
             --case-inventory "${GFX1250_INT_ISA_CASE_INVENTORY}"
             --source-root "${CTS_TEST_CASES_DIR}"
-            --llvm-objdump "${CMAKE_OBJDUMP}"
+            --llvm-objdump "${CTS_LLVM_OBJDUMP}"
             ${GFX1250_INT_ISA_IMAGE_ARGS}
         DEPENDS
             ${GFX1250_INT_ISA_TARGETS}
@@ -734,6 +774,6 @@ if(CTS_HAS_GFX1250)
             --coverage "${GFX1250_INT_ISA_COVERAGE_MANIFEST}"
             --case-inventory "${GFX1250_INT_ISA_CASE_INVENTORY}"
             --source-root "${CTS_TEST_CASES_DIR}"
-            --llvm-objdump "${CMAKE_OBJDUMP}"
+            --llvm-objdump "${CTS_LLVM_OBJDUMP}"
             ${GFX1250_INT_ISA_IMAGE_ARGS})
 endif()

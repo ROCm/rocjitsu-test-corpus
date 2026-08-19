@@ -47,7 +47,7 @@ def _inputs(tmp_path: Path):
             },
         ],
     }
-    disassembly = {NAME: "\tv_gap_op_e64 v0, v1\n"}
+    disassembly = {NAME: "\tv_gap_op_e32 v0, v1\n"}
     return coverage, inventory, disassembly, source_root
 
 
@@ -63,7 +63,42 @@ def test_validate_accepts_complete_linked_coverage(tmp_path: Path):
 
 
 def test_validate_normalizes_encoding_suffixes(tmp_path: Path):
-    assert _validate(tmp_path) == []
+    def mutate(coverage, inventory, disassembly, source_root):
+        disassembly[NAME] = "\tv_gap_op_e64 v0, v1\n"
+
+    assert _validate(tmp_path, mutate) == []
+
+
+def test_validate_recognizes_global_memory_opcodes(tmp_path: Path):
+    def mutate(coverage, inventory, disassembly, source_root):
+        coverage["tests"][0]["expected_opcodes"] = ["global_load_tr8_b64"]
+        disassembly[NAME] = "\tglobal_load_tr8_b64 v[0:1], v[2:3], off\n"
+
+    assert _validate(tmp_path, mutate) == []
+
+
+@pytest.mark.parametrize("opcode", ["v_cmp_lt_i32", "v_cmp_gt_i32"])
+def test_validate_accepts_opcode_alternatives(tmp_path: Path, opcode: str):
+    def mutate(coverage, inventory, disassembly, source_root):
+        coverage["tests"][0]["expected_opcodes"] = []
+        coverage["tests"][0]["expected_opcode_alternatives"] = [
+            ["v_cmp_lt_i32", "v_cmp_gt_i32"]
+        ]
+        disassembly[NAME] = f"\t{opcode} v0, v1\n"
+
+    assert _validate(tmp_path, mutate) == []
+
+
+def test_validate_rejects_missing_opcode_alternatives(tmp_path: Path):
+    def mutate(coverage, inventory, disassembly, source_root):
+        coverage["tests"][0]["expected_opcodes"] = []
+        coverage["tests"][0]["expected_opcode_alternatives"] = [
+            ["v_cmp_lt_i32", "v_cmp_gt_i32"]
+        ]
+        disassembly[NAME] = "\tv_cmp_eq_i32 v0, v1\n"
+
+    errors = _validate(tmp_path, mutate)
+    assert any("missing opcode alternatives" in error for error in errors), errors
 
 
 @pytest.mark.parametrize(
@@ -91,9 +126,15 @@ def test_validate_normalizes_encoding_suffixes(tmp_path: Path):
         ),
         (
             lambda coverage, *_: coverage["tests"][0].update(
+                expected_opcode_alternatives=[["v_gap_op"], []]
+            ),
+            "expected_opcode_alternatives must be a list",
+        ),
+        (
+            lambda coverage, *_: coverage["tests"][0].update(
                 expected_opcodes=[], semantic_only=False
             ),
-            "requires expected_opcodes or semantic_only",
+            "requires expected_opcodes, expected_opcode_alternatives, or semantic_only",
         ),
         (
             lambda coverage, *_: coverage["tests"][0].update(

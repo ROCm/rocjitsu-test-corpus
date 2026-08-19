@@ -15,7 +15,9 @@ import tempfile
 
 COVERAGE_TEST_NAME = "int_isa_gfx1250_source_coverage_test"
 ENCODING_SUFFIX = re.compile(r"_(?:e32|e64)$")
-OPCODE = re.compile(r"^[ \t]+((?:ds|s|v)_[a-z0-9_]+)\b", re.IGNORECASE | re.MULTILINE)
+OPCODE = re.compile(
+    r"^[ \t]+([a-z][a-z0-9]*_[a-z0-9_]+)\b", re.IGNORECASE | re.MULTILINE
+)
 
 
 def _load_json(path: Path) -> tuple[object | None, list[str]]:
@@ -38,6 +40,12 @@ def _string_list(value: object, *, nonempty: bool = False) -> bool:
         isinstance(value, list)
         and (bool(value) or not nonempty)
         and all(isinstance(item, str) and bool(item) for item in value)
+    )
+
+
+def _string_groups(value: object) -> bool:
+    return isinstance(value, list) and all(
+        _string_list(group, nonempty=True) for group in value
     )
 
 
@@ -123,6 +131,7 @@ def validate_documents(
         name = entry.get("name")
         source = entry.get("source")
         expected = entry.get("expected_opcodes", [])
+        alternatives = entry.get("expected_opcode_alternatives", [])
         semantic_only = entry.get("semantic_only", False)
         if not isinstance(name, str) or not name:
             errors.append(f"coverage test entry {index} has an invalid name")
@@ -134,11 +143,20 @@ def validate_documents(
         if not _string_list(expected):
             errors.append(f"{name}: expected_opcodes must be a string list")
             continue
+        if not _string_groups(alternatives):
+            errors.append(
+                f"{name}: expected_opcode_alternatives must be a list of "
+                "non-empty string lists"
+            )
+            continue
         if not isinstance(semantic_only, bool):
             errors.append(f"{name}: semantic_only must be a boolean")
             continue
-        if not expected and not semantic_only:
-            errors.append(f"{name}: requires expected_opcodes or semantic_only")
+        if not expected and not alternatives and not semantic_only:
+            errors.append(
+                f"{name}: requires expected_opcodes, "
+                "expected_opcode_alternatives, or semantic_only"
+            )
         reason = entry.get("reason")
         if semantic_only and (not isinstance(reason, str) or not reason.strip()):
             errors.append(f"{name}: semantic_only entries require a non-empty reason")
@@ -151,6 +169,15 @@ def validate_documents(
             errors.append(
                 f"{name}: linked image is missing opcodes: {', '.join(missing_opcodes)}"
             )
+        for group in alternatives:
+            normalized_group = {
+                ENCODING_SUFFIX.sub("", opcode.lower()) for opcode in group
+            }
+            if normalized_group.isdisjoint(emitted):
+                errors.append(
+                    f"{name}: linked image is missing opcode alternatives: "
+                    f"{' | '.join(sorted(normalized_group))}"
+                )
 
     return errors
 

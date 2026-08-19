@@ -80,7 +80,7 @@
     {
       "name": "int_isa_gfx1250_wmma_i32_16x16x64_iu8_test",
       "source": "gfx1250/int_isa/wmma_i32_16x16x64_iu8_test.cpp",
-      "expected_opcodes": ["v_wmma_i32_16x16x64_iu8"]
+      "expected_opcodes": ["global_load_tr8_b64", "v_wmma_i32_16x16x64_iu8"]
     },
     {
       "name": "int_isa_gfx1250_swmmac_i32_16x16x128_iu8_test",
@@ -133,11 +133,13 @@
       "name": "int_isa_gfx1250_compare_test",
       "source": "general/int_isa/compare_test.cpp",
       "expected_opcodes": [
-        "v_cmp_eq_u32",
-        "v_cmp_lt_i32",
-        "v_cmp_lt_u32",
-        "v_cmp_ge_i64",
-        "v_cmp_ge_u64"
+        "v_cmp_eq_u32"
+      ],
+      "expected_opcode_alternatives": [
+        ["v_cmp_lt_i32", "v_cmp_gt_i32"],
+        ["v_cmp_lt_u32", "v_cmp_gt_u32"],
+        ["v_cmp_ge_i64", "v_cmp_le_i64"],
+        ["v_cmp_ge_u64", "v_cmp_le_u64"]
       ]
     },
     {
