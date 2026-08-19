@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+a.out
+build/
+candidates/
+output/
+validation-output/
+logs/
