@@ -106,7 +106,7 @@ set(CTS_HAS_RDNA3 OFF)
 set(CTS_HAS_GFX12 OFF)
 
 foreach(hip_arch IN LISTS CMAKE_HIP_ARCHITECTURES)
-    if(hip_arch MATCHES "^gfx125")
+    if(hip_arch STREQUAL "gfx1250")
         set(CTS_HAS_GFX1250 ON)
     endif()
     if(hip_arch MATCHES "^gfx11")
@@ -636,7 +636,7 @@ if(CTS_HAS_RDNA4)
     cts_add_hip_test(int_isa_rdna4_bit_permute_test
         "${CTS_TEST_CASES_DIR}/general/int_isa/bit_permute_test.cpp")
     cts_add_hip_test(int_isa_rdna4_integer_dot_test
-        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/integer_dot_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/int_isa/integer_dot_test.cpp")
     cts_add_hip_test(int_isa_rdna4_packed_convert_test
         "${CTS_TEST_CASES_DIR}/general/int_isa/packed_convert_test.cpp")
 
@@ -645,7 +645,7 @@ if(CTS_HAS_RDNA4)
     cts_add_rdna4_wave_mode_tests(mbcnt
         "${CTS_TEST_CASES_DIR}/general/int_isa/mbcnt_test.cpp")
     cts_add_rdna4_wave_mode_tests(ds_permute
-        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/ds_permute_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/int_isa/ds_permute_test.cpp")
     # Fetch-invalid semantics require the per-lane source value to remain in a
     # VGPR across an EXEC-divergent region. At -O0 clang outlines the trait and
     # reloads that value from scratch only for active lanes, defeating the ISA
@@ -657,7 +657,7 @@ if(CTS_HAS_RDNA4)
     cts_add_rdna4_wave_mode_tests(dpp
         "${CTS_TEST_CASES_DIR}/general/int_isa/dpp_test.cpp")
     cts_add_rdna4_wave_mode_tests(permlane
-        "${CTS_TEST_CASES_DIR}/rdna4/int_isa/permlane_test.cpp")
+        "${CTS_TEST_CASES_DIR}/general/int_isa/permlane_test.cpp")
     cts_add_rdna4_wave_mode_tests(ballot
         "${CTS_TEST_CASES_DIR}/general/int_isa/ballot_test.cpp")
     cts_add_rdna4_wave_mode_tests(compare
@@ -677,4 +677,103 @@ if(CTS_HAS_RDNA4)
         "${CTS_TEST_CASES_DIR}/rdna4/int_isa/swmmac_i32_16x16x32_iu4_test.cpp")
     cts_add_rdna4_wave_mode_tests(swmmac_i32_16x16x64_iu4
         "${CTS_TEST_CASES_DIR}/rdna4/int_isa/swmmac_i32_16x16x64_iu4_test.cpp")
+endif()
+
+if(CTS_HAS_GFX1250)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+    set(CTS_LLVM_OBJDUMP "" CACHE FILEPATH
+        "LLVM objdump with HIP --offloading extraction support")
+    if(NOT CTS_LLVM_OBJDUMP)
+        get_filename_component(cts_hip_compiler_bin
+            "${CMAKE_HIP_COMPILER}" DIRECTORY)
+        get_filename_component(cts_hip_compiler_root
+            "${cts_hip_compiler_bin}" DIRECTORY)
+        find_program(cts_discovered_llvm_objdump
+            NAMES llvm-objdump
+            HINTS
+                "${ROCM_PATH}/lib/llvm/bin"
+                "${ROCM_PATH}/llvm/bin"
+                "${ROCM_PATH}/bin"
+                "${cts_hip_compiler_root}/lib/llvm/bin"
+                "${cts_hip_compiler_bin}"
+        )
+        if(cts_discovered_llvm_objdump)
+            set(CTS_LLVM_OBJDUMP "${cts_discovered_llvm_objdump}" CACHE FILEPATH
+                "LLVM objdump with HIP --offloading extraction support" FORCE)
+        endif()
+    endif()
+    if(NOT CTS_LLVM_OBJDUMP)
+        message(FATAL_ERROR
+            "gfx1250 linked-image coverage requires LLVM objdump; set "
+            "-DCTS_LLVM_OBJDUMP=/path/to/llvm-objdump")
+    endif()
+    execute_process(
+        COMMAND "${CTS_LLVM_OBJDUMP}" --help
+        RESULT_VARIABLE cts_llvm_objdump_result
+        OUTPUT_VARIABLE cts_llvm_objdump_help
+        ERROR_VARIABLE cts_llvm_objdump_error
+    )
+    string(CONCAT cts_llvm_objdump_help
+        "${cts_llvm_objdump_help}" "${cts_llvm_objdump_error}")
+    if(NOT cts_llvm_objdump_result EQUAL 0
+       OR NOT cts_llvm_objdump_help MATCHES "--offloading")
+        message(FATAL_ERROR
+            "CTS_LLVM_OBJDUMP='${CTS_LLVM_OBJDUMP}' cannot extract HIP offload "
+            "images with --offloading; select the ROCm SDK llvm-objdump")
+    endif()
+
+    set(GFX1250_INT_ISA_COVERAGE_MANIFEST
+        "${CMAKE_CURRENT_LIST_DIR}/int_isa_gfx1250_coverage.json")
+    set(GFX1250_INT_ISA_COVERAGE_SCRIPT
+        "${CMAKE_CURRENT_LIST_DIR}/scripts/check_int_isa_coverage.py")
+    set(GFX1250_INT_ISA_CASE_INVENTORY
+        "${CTS_TEST_CASES_DIR}/int_isa_test_cases.json")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${GFX1250_INT_ISA_COVERAGE_MANIFEST}")
+    file(READ "${GFX1250_INT_ISA_COVERAGE_MANIFEST}"
+        GFX1250_INT_ISA_COVERAGE_JSON)
+    string(JSON GFX1250_INT_ISA_TEST_COUNT LENGTH
+        "${GFX1250_INT_ISA_COVERAGE_JSON}" tests)
+    math(EXPR GFX1250_INT_ISA_LAST_TEST "${GFX1250_INT_ISA_TEST_COUNT} - 1")
+    set(GFX1250_INT_ISA_TARGETS)
+    set(GFX1250_INT_ISA_IMAGE_ARGS)
+    foreach(test_index RANGE ${GFX1250_INT_ISA_LAST_TEST})
+        string(JSON target_name GET "${GFX1250_INT_ISA_COVERAGE_JSON}"
+            tests ${test_index} name)
+        string(JSON source GET "${GFX1250_INT_ISA_COVERAGE_JSON}"
+            tests ${test_index} source)
+        cts_add_hip_test(${target_name} "${CTS_TEST_CASES_DIR}/${source}")
+        list(APPEND GFX1250_INT_ISA_TARGETS ${target_name})
+        list(APPEND GFX1250_INT_ISA_IMAGE_ARGS
+            --image "${target_name}=$<TARGET_FILE:${target_name}>")
+    endforeach()
+
+    # Fetch-invalid semantics require the per-lane source value to remain in a
+    # VGPR across an EXEC-divergent region. See the RDNA4 targets above.
+    target_compile_options(int_isa_gfx1250_ds_permute_test PRIVATE -O2)
+    target_compile_definitions(int_isa_gfx1250_integer_dot_test PRIVATE
+        INT_ISA_TEST_DOT4_IGNORES_CLAMP=1)
+    add_custom_target(int_isa_gfx1250_source_coverage_test ALL
+        COMMAND "${Python3_EXECUTABLE}"
+            "${GFX1250_INT_ISA_COVERAGE_SCRIPT}"
+            --coverage "${GFX1250_INT_ISA_COVERAGE_MANIFEST}"
+            --case-inventory "${GFX1250_INT_ISA_CASE_INVENTORY}"
+            --source-root "${CTS_TEST_CASES_DIR}"
+            --llvm-objdump "${CTS_LLVM_OBJDUMP}"
+            ${GFX1250_INT_ISA_IMAGE_ARGS}
+        DEPENDS
+            ${GFX1250_INT_ISA_TARGETS}
+            "${GFX1250_INT_ISA_COVERAGE_MANIFEST}"
+            "${GFX1250_INT_ISA_CASE_INVENTORY}"
+            "${GFX1250_INT_ISA_COVERAGE_SCRIPT}"
+        VERBATIM)
+    add_test(NAME int_isa_gfx1250_source_coverage_test
+        COMMAND "${Python3_EXECUTABLE}"
+            "${GFX1250_INT_ISA_COVERAGE_SCRIPT}"
+            --coverage "${GFX1250_INT_ISA_COVERAGE_MANIFEST}"
+            --case-inventory "${GFX1250_INT_ISA_CASE_INVENTORY}"
+            --source-root "${CTS_TEST_CASES_DIR}"
+            --llvm-objdump "${CTS_LLVM_OBJDUMP}"
+            ${GFX1250_INT_ISA_IMAGE_ARGS})
 endif()

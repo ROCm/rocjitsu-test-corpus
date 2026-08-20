@@ -38,6 +38,30 @@
     {"name": "int_isa_rdna4_swmmac_i32_16x16x32_iu4_test", "supported_targets": ["gfx1201"]},
     {"name": "int_isa_rdna4_swmmac_i32_16x16x32_iu4_w64_test", "supported_targets": ["gfx1201"]},
     {"name": "int_isa_rdna4_swmmac_i32_16x16x64_iu4_test", "supported_targets": ["gfx1201"]},
-    {"name": "int_isa_rdna4_swmmac_i32_16x16x64_iu4_w64_test", "supported_targets": ["gfx1201"]}
+    {"name": "int_isa_rdna4_swmmac_i32_16x16x64_iu4_w64_test", "supported_targets": ["gfx1201"]},
+
+    {"name": "int_isa_gfx1250_bitfield_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_lerp_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_packed_sad_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_bit_permute_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_integer_dot_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_packed_convert_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_saturating_pack_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_packed_add_minmax_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_packed_permute_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_relative_move_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_wmma_i32_16x16x64_iu8_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_swmmac_i32_16x16x128_iu8_test", "supported_targets": ["gfx1250"]},
+
+    {"name": "int_isa_gfx1250_lane_read_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_mbcnt_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_ds_permute_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_ds_swizzle_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_dpp_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_permlane_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_ballot_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_compare_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_reduction_test", "supported_targets": ["gfx1250"]},
+    {"name": "int_isa_gfx1250_source_coverage_test", "supported_targets": ["gfx1250"]}
   ]
 }

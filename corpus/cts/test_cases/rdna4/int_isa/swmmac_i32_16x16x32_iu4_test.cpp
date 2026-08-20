@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
-#include "matrix_test_parts.hpp"
+#include "../../general/int_isa/matrix_test_parts.hpp"
 
 namespace
 {
@@ -14,6 +14,7 @@ struct SwmmacI32Iu4K32
     static constexpr int         ValuesPerWord   = 8;
     static constexpr int         SparseGroupBits = 8;
     static constexpr int         Groups          = K / 4;
+    static constexpr int         IndexWords       = 1;
     static constexpr int         GroupsPerLane   = 4;
 #if defined(INT_ISA_TEST_WAVE64)
     static constexpr int BValuesPerLane = 8;
@@ -33,6 +34,7 @@ struct SwmmacI32Iu4K32
     static constexpr bool BSigned        = BSign;
     static constexpr bool Clamp          = Saturate;
     using CFrag                          = cfrag_t;
+    using IndexFrag                      = int;
 
     __device__ static CFrag call(AFrag a, BFrag b, CFrag c, int idx)
     {
