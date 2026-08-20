@@ -54,6 +54,50 @@ requirements.txt       Python packages for pytest and corpus helpers.
 `semantics`, and `llama` suites. By default it uses target `gfx1201` and selects
 the first three; `dbt`, `semantics`, and `llama` are opt-in.
 
+### gfx1250 memory CTS
+
+The gfx1250-only memory CTS contains selected deterministic representatives for
+scalar, S_BUFFER, global/FLAT, buffer, scratch, LDS, atomic, block,
+asynchronous, transpose, and tensor-memory behavior. Its buffer coverage
+executes stride-scale, swizzle-enable, and OOB-select descriptor modes with
+host-side address and bounds oracles. Run an individual case through the normal
+CTS entrypoint and an appropriate gfx1250 runtime or simulator wrapper:
+
+```bash
+rocjitsu --config /path/to/gfx1250.json -- \
+  pytest tests/test_corpus.py \
+  --target gfx1250 \
+  --suite cts \
+  --case memory_isa_gfx1250_tensor_test \
+  --timeout 30
+```
+
+The default CMake build for `corpus/cts` runs
+`memory_isa_gfx1250_source_coverage_test`. That gate extracts the linked
+gfx1250 offload image with the selected SDK `llvm-objdump` and verifies the
+manifest's required opcodes and material modifiers. It establishes instruction
+presence, not functional correctness; the runtime GTests provide the semantic
+oracles. After configuring a CTS build directly, build the linked-image gates
+and run the complete memory collection with:
+
+```bash
+cmake --build <cts-build-directory>
+rocjitsu --config /path/to/gfx1250.json -- \
+  ctest --test-dir <cts-build-directory> \
+    --output-on-failure \
+    -R '^memory_isa_gfx1250_'
+```
+
+Coverage is representative rather than exhaustive. The current suite excludes
+the exhaustive cross-product of S_BUFFER and VBUFFER widths, address modifiers,
+and descriptor modes; FLAT aperture routing; the full atomic type/address-space
+matrix; cluster operations; cache and prefetch controls; MWAIT; fault delivery;
+and timing fidelity. The manifest records the same boundary for
+machine-readable audits. The scratch misalignment case targets
+`SH_MEM_CONFIG.alignment_mode=UNALIGNED`: its base-plus-immediate address is byte
+offset 157, and its byte-exact oracle is not the expected result for modes that
+automatically align DWORD accesses.
+
 ## Prerequisites
 
 ```bash

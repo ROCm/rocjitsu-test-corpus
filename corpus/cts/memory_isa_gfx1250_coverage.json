@@ -1,0 +1,80 @@
+{
+  "schema_version": 2,
+  "target": "gfx1250",
+  "scope": "Selected deterministic CDNA5 functional memory representatives, including S_BUFFER and executed VBUFFER descriptor modes. Linked runtime images pin exact opcodes and material modifiers; runtime tests pin the documented behavior named by each case.",
+  "excluded_scope": [
+    "the exhaustive cross-product of S_BUFFER and VBUFFER widths, address modifiers, and descriptor modes",
+    "FLAT aperture routing",
+    "the exhaustive atomic type and address-space matrix",
+    "cluster, cache, prefetch, MWAIT, fault-delivery, and timing behavior"
+  ],
+  "tests": [
+    {
+      "name": "memory_isa_gfx1250_scalar_test",
+      "source": "gfx1250/memory_isa/scalar_memory_test.cpp",
+      "expected_opcodes": ["s_load_b32", "s_load_b64", "s_load_b96", "s_load_b128", "s_load_b256", "s_load_b512", "s_load_i8", "s_load_u8", "s_load_i16", "s_load_u16", "s_wait_kmcnt"],
+      "expected_disassembly_patterns": ["s_load_b512.*0x48", "s_load_i16.*0x8a"]
+    },
+    {
+      "name": "memory_isa_gfx1250_s_buffer_test",
+      "source": "gfx1250/memory_isa/s_buffer_memory_test.cpp",
+      "expected_opcodes": ["s_buffer_load_b32", "s_buffer_load_b64", "s_buffer_load_b96", "s_buffer_load_b128", "s_buffer_load_b256", "s_buffer_load_b512", "s_buffer_load_i8", "s_buffer_load_u8", "s_buffer_load_i16", "s_buffer_load_u16", "s_wait_kmcnt"],
+      "expected_disassembly_patterns": ["s_buffer_load_b512.*0x48", "s_buffer_load_b32.*offset:0xc", "s_buffer_load_b128.*0x18"]
+    },
+    {
+      "name": "memory_isa_gfx1250_global_flat_test",
+      "source": "gfx1250/memory_isa/global_flat_memory_test.cpp",
+      "expected_opcodes": ["global_load_b32", "global_load_b64", "global_load_b96", "global_load_b128", "global_store_b32", "global_store_b64", "global_store_b96", "global_store_b128", "flat_load_b32", "flat_store_b32"],
+      "expected_disassembly_patterns": ["global_load_b128.*offset:24", "flat_store_b32.*offset:136"]
+    },
+    {
+      "name": "memory_isa_gfx1250_buffer_test",
+      "source": "gfx1250/memory_isa/buffer_memory_test.cpp",
+      "expected_opcodes": ["buffer_load_u8", "buffer_load_i8", "buffer_load_u16", "buffer_load_i16", "buffer_load_b32", "buffer_load_b64", "buffer_load_b96", "buffer_load_b128", "buffer_store_b8", "buffer_store_b16", "buffer_store_b32", "buffer_store_b64", "buffer_store_b96", "buffer_store_b128"],
+      "expected_disassembly_patterns": ["buffer_load_b128.*offen.*offset:32", "buffer_store_b128.*offen.*offset:168"]
+    },
+    {
+      "name": "memory_isa_gfx1250_buffer_modes_test",
+      "source": "gfx1250/memory_isa/buffer_descriptor_modes_test.cpp",
+      "expected_opcodes": ["buffer_load_b32", "buffer_store_b32", "buffer_load_b128", "buffer_store_b128", "s_wait_loadcnt", "s_wait_storecnt"],
+      "expected_disassembly_patterns": ["buffer_load_b32.*idxen.*offset:4", "buffer_store_b32.*idxen.*offset:8", "buffer_load_b32.*idxen.*offen.*offset:4", "buffer_store_b32.*idxen.*offen.*offset:4", "buffer_load_b128.*idxen.*offen.*offset:12", "buffer_store_b128.*idxen.*offen.*offset:12"]
+    },
+    {
+      "name": "memory_isa_gfx1250_scratch_test",
+      "source": "gfx1250/memory_isa/scratch_memory_test.cpp",
+      "expected_opcodes": ["scratch_load_u8", "scratch_load_b32", "scratch_load_b64", "scratch_load_b128", "scratch_store_b8", "scratch_store_b32", "scratch_store_b64", "scratch_store_b128"],
+      "expected_disassembly_patterns": ["scratch_load_b32.*offset:61", "scratch_store_b32.*offset:61"]
+    },
+    {
+      "name": "memory_isa_gfx1250_lds_test",
+      "source": "gfx1250/memory_isa/lds_memory_test.cpp",
+      "expected_opcodes": ["ds_load_u8", "ds_load_i8", "ds_load_u16", "ds_load_i16", "ds_load_b32", "ds_load_b64", "ds_load_b96", "ds_load_b128", "ds_store_b8", "ds_store_b16", "ds_store_b32", "ds_store_b64", "ds_store_b96", "ds_store_b128", "s_wait_dscnt"]
+    },
+    {
+      "name": "memory_isa_gfx1250_atomic_test",
+      "source": "gfx1250/memory_isa/memory_atomic_test.cpp",
+      "expected_opcodes": ["global_atomic_add_u32", "global_atomic_cmpswap_b32", "global_atomic_add_f32", "global_atomic_min_num_f32", "global_atomic_max_num_f32", "ds_add_rtn_u32", "ds_add_rtn_f32", "ds_min_num_rtn_f32", "ds_max_num_rtn_f32"],
+      "expected_disassembly_patterns": ["global_atomic_cmpswap_b32.*th:TH_ATOMIC_RETURN", "global_atomic_max_num_f32.*offset:20.*th:TH_ATOMIC_RETURN"]
+    },
+    {
+      "name": "memory_isa_gfx1250_block_test",
+      "source": "gfx1250/memory_isa/block_memory_test.cpp",
+      "expected_opcodes": ["global_load_block", "global_store_block", "scratch_load_block", "scratch_store_block"]
+    },
+    {
+      "name": "memory_isa_gfx1250_async_test",
+      "source": "gfx1250/memory_isa/async_memory_test.cpp",
+      "expected_opcodes": ["global_load_async_to_lds_b8", "global_load_async_to_lds_b32", "global_load_async_to_lds_b64", "global_load_async_to_lds_b128", "global_store_async_from_lds_b8", "global_store_async_from_lds_b32", "global_store_async_from_lds_b64", "global_store_async_from_lds_b128", "s_wait_asynccnt"]
+    },
+    {
+      "name": "memory_isa_gfx1250_transpose_test",
+      "source": "gfx1250/memory_isa/transpose_memory_test.cpp",
+      "expected_opcodes": ["global_load_tr4_b64", "global_load_tr6_b96", "global_load_tr8_b64", "global_load_tr16_b128", "ds_load_tr4_b64", "ds_load_tr6_b96", "ds_load_tr8_b64", "ds_load_tr16_b128"]
+    },
+    {
+      "name": "memory_isa_gfx1250_tensor_test",
+      "source": "gfx1250/memory_isa/tensor_memory_test.cpp",
+      "expected_opcodes": ["tensor_load_to_lds", "tensor_store_from_lds", "s_wait_tensorcnt", "s_wait_asynccnt"]
+    }
+  ]
+}

@@ -776,4 +776,58 @@ if(CTS_HAS_GFX1250)
             --source-root "${CTS_TEST_CASES_DIR}"
             --llvm-objdump "${CTS_LLVM_OBJDUMP}"
             ${GFX1250_INT_ISA_IMAGE_ARGS})
+
+    set(GFX1250_MEMORY_ISA_COVERAGE_MANIFEST
+        "${CMAKE_CURRENT_LIST_DIR}/memory_isa_gfx1250_coverage.json")
+    set(GFX1250_MEMORY_ISA_CASE_INVENTORY
+        "${CTS_TEST_CASES_DIR}/memory_isa_test_cases.json")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${GFX1250_MEMORY_ISA_COVERAGE_MANIFEST}")
+    file(READ "${GFX1250_MEMORY_ISA_COVERAGE_MANIFEST}"
+        GFX1250_MEMORY_ISA_COVERAGE_JSON)
+    string(JSON GFX1250_MEMORY_ISA_TEST_COUNT LENGTH
+        "${GFX1250_MEMORY_ISA_COVERAGE_JSON}" tests)
+    math(EXPR GFX1250_MEMORY_ISA_LAST_TEST
+        "${GFX1250_MEMORY_ISA_TEST_COUNT} - 1")
+    set(GFX1250_MEMORY_ISA_TARGETS)
+    set(GFX1250_MEMORY_ISA_IMAGE_ARGS)
+    foreach(test_index RANGE ${GFX1250_MEMORY_ISA_LAST_TEST})
+        string(JSON target_name GET "${GFX1250_MEMORY_ISA_COVERAGE_JSON}"
+            tests ${test_index} name)
+        string(JSON source GET "${GFX1250_MEMORY_ISA_COVERAGE_JSON}"
+            tests ${test_index} source)
+        cts_add_hip_test(${target_name} "${CTS_TEST_CASES_DIR}/${source}")
+        target_compile_options(${target_name} PRIVATE -O2)
+        list(APPEND GFX1250_MEMORY_ISA_TARGETS ${target_name})
+        list(APPEND GFX1250_MEMORY_ISA_IMAGE_ARGS
+            --image "${target_name}=$<TARGET_FILE:${target_name}>")
+    endforeach()
+    add_custom_target(memory_isa_gfx1250_source_coverage_test ALL
+        COMMAND "${Python3_EXECUTABLE}"
+            "${GFX1250_INT_ISA_COVERAGE_SCRIPT}"
+            --coverage "${GFX1250_MEMORY_ISA_COVERAGE_MANIFEST}"
+            --case-inventory "${GFX1250_MEMORY_ISA_CASE_INVENTORY}"
+            --source-root "${CTS_TEST_CASES_DIR}"
+            --llvm-objdump "${CTS_LLVM_OBJDUMP}"
+            --test-prefix "memory_isa_gfx1250_"
+            --coverage-test-name "memory_isa_gfx1250_source_coverage_test"
+            --success-label "gfx1250 memory CTS"
+            ${GFX1250_MEMORY_ISA_IMAGE_ARGS}
+        DEPENDS
+            ${GFX1250_MEMORY_ISA_TARGETS}
+            "${GFX1250_MEMORY_ISA_COVERAGE_MANIFEST}"
+            "${GFX1250_MEMORY_ISA_CASE_INVENTORY}"
+            "${GFX1250_INT_ISA_COVERAGE_SCRIPT}"
+        VERBATIM)
+    add_test(NAME memory_isa_gfx1250_source_coverage_test
+        COMMAND "${Python3_EXECUTABLE}"
+            "${GFX1250_INT_ISA_COVERAGE_SCRIPT}"
+            --coverage "${GFX1250_MEMORY_ISA_COVERAGE_MANIFEST}"
+            --case-inventory "${GFX1250_MEMORY_ISA_CASE_INVENTORY}"
+            --source-root "${CTS_TEST_CASES_DIR}"
+            --llvm-objdump "${CTS_LLVM_OBJDUMP}"
+            --test-prefix "memory_isa_gfx1250_"
+            --coverage-test-name "memory_isa_gfx1250_source_coverage_test"
+            --success-label "gfx1250 memory CTS"
+            ${GFX1250_MEMORY_ISA_IMAGE_ARGS})
 endif()
