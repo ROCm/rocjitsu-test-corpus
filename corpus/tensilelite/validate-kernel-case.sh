@@ -8,7 +8,8 @@
 #   1. Check that CASE_DIR contains a harness-ready ClientParameters.ini.
 #   2. Run tensilelite-client for that case.
 #   3. Print one CSV row to stdout: test_name,elapsed_seconds,status
-#      Client output is kept in CASE_DIR/validation.log
+#      Client output is kept in CASE_DIR/validation.log. When --solution-index
+#      is used, output is kept in CASE_DIR/validation.solution-INDEX.log.
 #
 # Example:
 #   ./validate-kernel-case.sh \
@@ -17,6 +18,10 @@
 #   ./validate-kernel-case.sh \
 #     --test-name custom-name \
 #     candidates/gfx1250-all/fp16_gfx1250/gemms/Cijk_Ailk_Bjlk_HHS_BH_Bias_HA_S_SAV_UserArgs_00/00_Final/3c0993c997ef
+#
+#   ./validate-kernel-case.sh \
+#     --solution-index 0 \
+#     candidates/gfx1250-all/1024_vgpr_gfx1250/gemms/Cijk_Ailk_Bjlk_BBS_BH_Bias_HA_S_SAV_UserArgs_00/00_Final/946b38881b42
 
 set -euo pipefail
 
@@ -24,7 +29,7 @@ root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 client="$root_dir/build/client/client/tensilelite-client"
 
 usage() {
-  echo "usage: $0 [--test-name NAME] CASE_DIR" >&2
+  echo "usage: $0 [--test-name NAME] [--solution-index INDEX] CASE_DIR" >&2
 }
 
 default_test_name() {
@@ -38,6 +43,7 @@ default_test_name() {
 }
 
 test_name=
+solution_index=
 case_dir=
 
 while (( $# > 0 )); do
@@ -49,6 +55,16 @@ while (( $# > 0 )); do
         exit 2
       fi
       test_name=$2
+      shift 2
+      continue
+      ;;
+    --solution-index)
+      if (( $# < 2 )); then
+        echo "error: --solution-index requires a value" >&2
+        usage
+        exit 2
+      fi
+      solution_index=$2
       shift 2
       continue
       ;;
@@ -75,6 +91,10 @@ done
 
 if [[ -z "$case_dir" ]]; then
   usage
+  exit 2
+fi
+if [[ -n "$solution_index" && ! "$solution_index" =~ ^[0-9]+$ ]]; then
+  echo "error: --solution-index must be a non-negative integer: $solution_index" >&2
   exit 2
 fi
 if [[ ! -d "$case_dir" ]]; then
@@ -144,13 +164,57 @@ fi
 
 echo "Validating: $test_name" >&2
 start_epoch=$(date +%s)
-validation_log="$case_dir/validation.log"
+client_options=(--config-file ClientParameters.ini)
+temporary_parameters=
+cleanup() {
+  if [[ -n "$temporary_parameters" ]]; then
+    rm -f -- "$temporary_parameters"
+  fi
+}
+trap cleanup EXIT
+
+if [[ -n "$solution_index" ]]; then
+  validation_log="$case_dir/validation.solution-$solution_index.log"
+  temporary_parameters=$(mktemp \
+    "$case_dir/.ClientParameters.solution-$solution_index.XXXXXX.ini")
+  saw_solution_start=0
+  saw_solution_count=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    key=${line%%=*}
+    case "$key" in
+      results-file)
+        printf 'results-file=results.solution-%s.csv\n' "$solution_index"
+        ;;
+      solution-start-idx)
+        printf 'solution-start-idx=%s\n' "$solution_index"
+        saw_solution_start=1
+        ;;
+      num-solutions)
+        printf 'num-solutions=1\n'
+        saw_solution_count=1
+        ;;
+      *)
+        printf '%s\n' "$line"
+        ;;
+    esac
+  done <"$parameter_file" >"$temporary_parameters"
+  if (( ! saw_solution_start )); then
+    printf 'solution-start-idx=%s\n' "$solution_index" \
+      >>"$temporary_parameters"
+  fi
+  if (( ! saw_solution_count )); then
+    printf 'num-solutions=1\n' >>"$temporary_parameters"
+  fi
+  client_options=(--config-file "$(basename "$temporary_parameters")")
+else
+  validation_log="$case_dir/validation.log"
+fi
 return_code=0
 status=ERROR
 
 if (
     cd "$case_dir"
-    "$client" --config-file ClientParameters.ini
+    "$client" "${client_options[@]}"
   ) >"$validation_log" 2>&1; then
   if grep -q ',PASSED,' "$validation_log"; then
     status=PASS
