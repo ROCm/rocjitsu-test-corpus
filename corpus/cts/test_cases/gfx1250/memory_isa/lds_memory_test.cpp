@@ -85,8 +85,9 @@ __global__ void lds_width_kernel(LdsResult *load_output, std::uint8_t *store_out
                "ds_load_b96 %6, %8 offset:16\n\t"
                "ds_load_b128 %7, %8 offset:32\n\t"
                "s_wait_dscnt 0"
-               : "=v"(result.u8), "=v"(result.i8), "=v"(result.u16), "=v"(result.i16),
-                 "=v"(result.b32), "=v"(result.b64), "=v"(result.b96), "=v"(result.b128)
+               : "=&v"(result.u8), "=&v"(result.i8), "=&v"(result.u16), "=&v"(result.i16),
+                 "=&v"(result.b32), "=&v"(result.b64), "=&v"(result.b96),
+                 "=&v"(result.b128)
                : "v"(load_address)
                : "memory");
   load_output[lane] = result;

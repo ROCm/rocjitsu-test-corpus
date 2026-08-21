@@ -38,7 +38,7 @@ __global__ void global_transpose_kernel(const std::uint8_t *tr4, const std::uint
                "global_load_tr8_b64 %2, %6, off\n\t"
                "global_load_tr16_b128 %3, %7, off\n\t"
                "s_wait_loadcnt 0"
-               : "=v"(r4), "=v"(r6), "=v"(r8), "=v"(r16)
+               : "=&v"(r4), "=&v"(r6), "=&v"(r8), "=&v"(r16)
                : "v"(reinterpret_cast<std::uint64_t>(tr4 + lane * 8)),
                  "v"(reinterpret_cast<std::uint64_t>(tr6 + column6 * 12)),
                  "v"(reinterpret_cast<std::uint64_t>(tr8 + column16 * 16 + row_half * 8)),

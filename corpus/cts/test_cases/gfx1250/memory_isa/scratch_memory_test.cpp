@@ -86,7 +86,8 @@ __global__ void scratch_width_kernel(ScratchResult *load_output, std::uint8_t *s
                "scratch_load_b128 %2, %4, off offset:72\n\t"
                "scratch_load_b32 %3, %5, off offset:61\n\t"
                "s_wait_loadcnt 0"
-               : "=v"(result.b32), "=v"(result.b64), "=v"(result.b128), "=v"(result.misaligned)
+               : "=&v"(result.b32), "=&v"(result.b64), "=&v"(result.b128),
+                 "=&v"(result.misaligned)
                : "v"(base), "v"(misaligned_base)
                : "memory");
   load_output[lane] = result;

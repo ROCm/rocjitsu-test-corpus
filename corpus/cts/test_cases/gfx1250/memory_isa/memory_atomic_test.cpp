@@ -33,7 +33,10 @@ __global__ void global_atomic_kernel(std::uint32_t *values, GlobalAtomicResult *
                : "v"(values), "v"(one)
                : "memory");
 
-  const std::uint64_t compare_and_swap = (std::uint64_t{0x76543210u} << 32) | 0x12345679u;
+  constexpr std::uint32_t cas_replacement = 0x76543210u;
+  constexpr std::uint32_t cas_comparison = 0x12345679u;
+  const std::uint64_t compare_and_swap =
+      (std::uint64_t{cas_comparison} << 32) | cas_replacement;
   std::uint32_t cas_old;
   asm volatile("global_atomic_cmpswap_b32 %0, %1, %2, off th:TH_ATOMIC_RETURN\n\t"
                "s_wait_loadcnt 0"
@@ -154,7 +157,8 @@ __global__ void lds_atomic_kernel(LdsAtomicResult *result) {
                "ds_min_num_rtn_f32 %2, %6, %10\n\t"
                "ds_max_num_rtn_f32 %3, %7, %11\n\t"
                "s_wait_dscnt 0"
-               : "=v"(integer_old), "=v"(add_nan_old), "=v"(min_zero_old), "=v"(max_zero_old)
+               : "=&v"(integer_old), "=&v"(add_nan_old), "=&v"(min_zero_old),
+                 "=&v"(max_zero_old)
                : "v"(std::uint32_t{0}), "v"(std::uint32_t{4}), "v"(std::uint32_t{8}),
                  "v"(std::uint32_t{12}), "v"(one), "v"(quiet_nan), "v"(positive_zero),
                  "v"(negative_zero)

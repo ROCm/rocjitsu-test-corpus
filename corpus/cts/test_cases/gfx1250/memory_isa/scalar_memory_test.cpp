@@ -37,9 +37,9 @@ __global__ void scalar_load_kernel(const std::uint8_t *input, ScalarResults *res
                "s_load_i16 %8, %10, 138\n\t"
                "s_load_u16 %9, %10, 140\n\t"
                "s_wait_kmcnt 0"
-               : "=s"(values.b32), "=s"(values.b64), "=s"(values.b96), "=s"(values.b128),
-                 "=s"(values.b256), "=s"(values.b512), "=s"(values.i8), "=s"(values.u8),
-                 "=s"(values.i16), "=s"(values.u16)
+               : "=&s"(values.b32), "=&s"(values.b64), "=&s"(values.b96), "=&s"(values.b128),
+                 "=&s"(values.b256), "=&s"(values.b512), "=&s"(values.i8), "=&s"(values.u8),
+                 "=&s"(values.i16), "=&s"(values.u16)
                : "s"(address)
                : "memory");
   if (threadIdx.x == 0)

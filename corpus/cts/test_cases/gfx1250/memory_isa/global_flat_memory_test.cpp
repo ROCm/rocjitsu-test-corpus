@@ -39,8 +39,8 @@ __global__ void global_flat_kernel(const std::uint8_t *input, std::uint8_t *outp
                "flat_load_b32 %4, %5 offset:40\n\t"
                "s_wait_loadcnt 0\n\t"
                "s_wait_dscnt 0"
-               : "=v"(values.b32), "=v"(values.b64), "=v"(values.b96), "=v"(values.b128),
-                 "=v"(values.flat)
+               : "=&v"(values.b32), "=&v"(values.b64), "=&v"(values.b96), "=&v"(values.b128),
+                 "=&v"(values.flat)
                : "v"(input_address)
                : "memory");
   load_results[lane] = values;

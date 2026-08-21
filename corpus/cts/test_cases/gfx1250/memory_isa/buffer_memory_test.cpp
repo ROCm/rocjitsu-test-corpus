@@ -41,8 +41,9 @@ __global__ void buffer_width_kernel(u32x4 input_resource, u32x4 output_resource,
                "buffer_load_b96 %6, %8, %9, null offen offset:20\n\t"
                "buffer_load_b128 %7, %8, %9, null offen offset:32\n\t"
                "s_wait_loadcnt 0"
-               : "=v"(values.u8), "=v"(values.i8), "=v"(values.u16), "=v"(values.i16),
-                 "=v"(values.b32), "=v"(values.b64), "=v"(values.b96), "=v"(values.b128)
+               : "=&v"(values.u8), "=&v"(values.i8), "=&v"(values.u16), "=&v"(values.i16),
+                 "=&v"(values.b32), "=&v"(values.b64), "=&v"(values.b96),
+                 "=&v"(values.b128)
                : "v"(input_offset), "s"(input_resource)
                : "memory");
   load_results[threadIdx.x] = values;
