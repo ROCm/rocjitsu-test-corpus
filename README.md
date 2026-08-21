@@ -90,10 +90,13 @@ rocjitsu --config /path/to/gfx1250.json -- \
 
 Coverage is representative rather than exhaustive. The current suite excludes
 the exhaustive cross-product of S_BUFFER and VBUFFER widths, address modifiers,
-and descriptor modes; FLAT aperture routing; the full atomic type/address-space
-matrix; cluster operations; cache and prefetch controls; MWAIT; fault delivery;
-and timing fidelity. The manifest records the same boundary for
-machine-readable audits. The scratch misalignment case targets
+and descriptor modes; the exhaustive FLAT width, atomic, and modifier matrix
+across address spaces; the full atomic type/address-space matrix; exhaustive
+cluster masks, request coalescing, and timeout behavior; cache and prefetch
+controls; MWAIT; fault delivery; and timing fidelity. Representative FLAT B32
+routing across global, LDS, and scratch addresses and focused clustered B32
+load/async-to-LDS behavior are covered. The manifest records the same boundary
+for machine-readable audits. The scratch misalignment case targets
 `SH_MEM_CONFIG.alignment_mode=UNALIGNED`: its base-plus-immediate address is byte
 offset 157, and its byte-exact oracle is not the expected result for modes that
 automatically align DWORD accesses.

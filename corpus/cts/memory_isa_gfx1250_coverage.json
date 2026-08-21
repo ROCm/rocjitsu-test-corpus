@@ -1,12 +1,12 @@
 {
   "schema_version": 2,
   "target": "gfx1250",
-  "scope": "Selected deterministic CDNA5 functional memory representatives, including S_BUFFER and executed VBUFFER descriptor modes. Linked runtime images pin exact opcodes and material modifiers; runtime tests pin the documented behavior named by each case.",
+  "scope": "Selected deterministic CDNA5 functional memory representatives, including S_BUFFER and executed VBUFFER descriptor modes, FLAT aperture routing, and focused clustered loads. Linked runtime images pin exact opcodes and material modifiers; runtime tests pin the documented behavior named by each case.",
   "excluded_scope": [
     "the exhaustive cross-product of S_BUFFER and VBUFFER widths, address modifiers, and descriptor modes",
-    "FLAT aperture routing",
+    "the exhaustive FLAT width, atomic, and modifier matrix across address spaces",
     "the exhaustive atomic type and address-space matrix",
-    "cluster, cache, prefetch, MWAIT, fault-delivery, and timing behavior"
+    "exhaustive cluster masks, request coalescing, timeout behavior, cache, prefetch, MWAIT, fault-delivery, and timing behavior"
   ],
   "tests": [
     {
@@ -26,6 +26,11 @@
       "source": "gfx1250/memory_isa/global_flat_memory_test.cpp",
       "expected_opcodes": ["global_load_b32", "global_load_b64", "global_load_b96", "global_load_b128", "global_store_b32", "global_store_b64", "global_store_b96", "global_store_b128", "flat_load_b32", "flat_store_b32"],
       "expected_disassembly_patterns": ["global_load_b128.*offset:24", "flat_store_b32.*offset:136"]
+    },
+    {
+      "name": "memory_isa_gfx1250_flat_aperture_test",
+      "source": "gfx1250/memory_isa/flat_aperture_memory_test.cpp",
+      "expected_opcodes": ["flat_load_b32", "flat_store_b32", "s_wait_loadcnt", "s_wait_storecnt", "s_wait_dscnt"]
     },
     {
       "name": "memory_isa_gfx1250_buffer_test",
@@ -75,6 +80,16 @@
       "name": "memory_isa_gfx1250_tensor_test",
       "source": "gfx1250/memory_isa/tensor_memory_test.cpp",
       "expected_opcodes": ["tensor_load_to_lds", "tensor_store_from_lds", "s_wait_tensorcnt", "s_wait_asynccnt"]
+    },
+    {
+      "name": "memory_isa_gfx1250_cluster_test",
+      "source": "gfx1250/memory_isa/cluster_memory_test.cpp",
+      "expected_opcodes": ["cluster_load_b32", "cluster_load_async_to_lds_b32", "s_wait_loadcnt", "s_wait_asynccnt", "s_barrier_signal_isfirst", "s_barrier_signal", "s_barrier_wait"],
+      "expected_disassembly_patterns": [
+        "s_mov_b32\\s+m0,\\s*3\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*cluster_load_b32\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*(?:s_mov_b32\\s+m0,\\s*3\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*)*cluster_load_async_to_lds_b32\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*s_mov_b32\\s+m0,\\s*1\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*cluster_load_async_to_lds_b32\\b",
+        "s_barrier_signal -3",
+        "s_barrier_wait 0xfffd"
+      ]
     }
   ]
 }
