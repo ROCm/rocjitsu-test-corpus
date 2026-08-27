@@ -62,6 +62,9 @@ __global__ void lds_transpose_kernel(const std::uint8_t *tr4, const std::uint8_t
   const unsigned column16 = (lane & 7u) + 8u * (lane >> 4);
   const unsigned pass6 = (lane >> 2) & 1u;
   const unsigned column6 = 4u * (lane >> 3) + (lane & 3u) + 16u * pass6;
+  // CDNA5 DS TR8 request lanes cover four rows within each eight-column half.
+  const unsigned row8 = 8u * (lane >> 4) + (lane & 3u) + 4u * row_half;
+  const unsigned column_base8 = 8u * ((lane >> 2) & 1u);
   for (unsigned i = 0; i < 8; ++i) {
     lds4[lane * 8 + i] = tr4[lane * 8 + i];
     lds8[lane * 8 + i] = tr8[lane * 8 + i];
@@ -84,7 +87,7 @@ __global__ void lds_transpose_kernel(const std::uint8_t *tr4, const std::uint8_t
   const auto b6 = __builtin_amdgcn_ds_load_tr6_b96_v3i32(
       (i32x3 __attribute__((address_space(3))) *)(lds6 + column6 * 12));
   const auto b8 = __builtin_amdgcn_ds_load_tr8_b64_v2i32(
-      (i32x2 __attribute__((address_space(3))) *)(lds8 + column16 * 16 + row_half * 8));
+      (i32x2 __attribute__((address_space(3))) *)(lds8 + row8 * 16 + column_base8));
   const auto b16 = __builtin_amdgcn_ds_load_tr16_b128_v8f16(
       (f16x8 __attribute__((address_space(3))) *)(lds16 + column16 * 32 + row_half * 16));
   __builtin_memcpy(&r4, &b4, sizeof(r4));
@@ -112,6 +115,21 @@ std::vector<std::uint8_t> pack_column_major(unsigned element_bits, unsigned colu
     for (unsigned m = 0; m < 16; ++m) {
       const std::uint32_t value = coordinate_value(element_bits, m, k, trial);
       const std::size_t bit = (k * 16u + m) * element_bits;
+      for (unsigned b = 0; b < element_bits; ++b)
+        packed[(bit + b) / 8] |= ((value >> b) & 1u) << ((bit + b) % 8);
+    }
+  }
+  return packed;
+}
+
+std::vector<std::uint8_t> pack_row_major(unsigned element_bits, unsigned columns,
+                                         unsigned trial) {
+  const std::size_t byte_count = 16u * columns * element_bits / 8u;
+  std::vector<std::uint8_t> packed(byte_count, 0);
+  for (unsigned m = 0; m < 16; ++m) {
+    for (unsigned k = 0; k < columns; ++k) {
+      const std::uint32_t value = coordinate_value(element_bits, m, k, trial);
+      const std::size_t bit = (m * columns + k) * element_bits;
       for (unsigned b = 0; b < element_bits; ++b)
         packed[(bit + b) / 8] |= ((value >> b) & 1u) << ((bit + b) % 8);
     }
@@ -151,10 +169,23 @@ std::vector<std::uint8_t> expected_tr4(unsigned trial) {
   return packed;
 }
 
-void check_results(const std::vector<TransposeResult> &actual, const char *space, unsigned trial) {
+std::vector<std::uint8_t> expected_ds_tr8(unsigned trial) {
+  std::vector<std::uint8_t> packed(kWaveLanes * 8, 0);
+  for (unsigned lane = 0; lane < kWaveLanes; ++lane) {
+    const unsigned m_base = 8u * (lane >> 4);
+    const unsigned k = lane & 15u;
+    for (unsigned i = 0; i < 8; ++i)
+      packed[lane * 8 + i] =
+          static_cast<std::uint8_t>(coordinate_value(8, m_base + i, k, trial));
+  }
+  return packed;
+}
+
+void check_results(const std::vector<TransposeResult> &actual, const char *space, unsigned trial,
+                   bool ds_tr8) {
   const auto expected4 = expected_tr4(trial);
   const auto expected6 = expected_row_major(6, 32, trial);
-  const auto expected8 = expected_row_major(8, 16, trial);
+  const auto expected8 = ds_tr8 ? expected_ds_tr8(trial) : expected_row_major(8, 16, trial);
   const auto expected16 = expected_row_major(16, 16, trial);
   for (unsigned lane = 0; lane < kWaveLanes; ++lane) {
     EXPECT_EQ(std::memcmp(actual[lane].tr4, expected4.data() + lane * 8, 8), 0)
@@ -168,11 +199,12 @@ void check_results(const std::vector<TransposeResult> &actual, const char *space
   }
 }
 
-template <class Kernel> void run_transpose_test(Kernel kernel, const char *space) {
+template <class Kernel> void run_transpose_test(Kernel kernel, const char *space, bool ds_tr8) {
   for (unsigned trial = 0; trial < 3; ++trial) {
     const auto host4 = pack_column_major(4, 32, trial);
     const auto host6 = pack_column_major(6, 32, trial);
-    const auto host8 = pack_column_major(8, 16, trial);
+    const auto host8 =
+        ds_tr8 ? pack_row_major(8, 16, trial) : pack_column_major(8, 16, trial);
     const auto host16 = pack_column_major(16, 16, trial);
     auto device4 = DeviceBuffer<std::uint8_t>::from_host(host4);
     auto device6 = DeviceBuffer<std::uint8_t>::from_host(host6);
@@ -188,17 +220,17 @@ template <class Kernel> void run_transpose_test(Kernel kernel, const char *space
                               output.get());
     HIP_CHECK(hipGetLastError());
     HIP_CHECK(hipDeviceSynchronize());
-    check_results(output.to_host(), space, trial);
+    check_results(output.to_host(), space, trial, ds_tr8);
   }
 }
 } // namespace
 
 TEST(Gfx1250MemoryIsaTranspose, GlobalLoadsProduceDocumentedWmmaCoordinates) {
   REQUIRE_GFX1250_DEVICE();
-  run_transpose_test(global_transpose_kernel, "global");
+  run_transpose_test(global_transpose_kernel, "global", false);
 }
 
-TEST(Gfx1250MemoryIsaTranspose, LdsLoadsProduceDocumentedWmmaCoordinates) {
+TEST(Gfx1250MemoryIsaTranspose, LdsLoadsProduceDocumentedMatrixCoordinates) {
   REQUIRE_GFX1250_DEVICE();
-  run_transpose_test(lds_transpose_kernel, "lds");
+  run_transpose_test(lds_transpose_kernel, "lds", true);
 }
