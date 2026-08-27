@@ -1,0 +1,20 @@
+{
+  "collection": "memory_isa",
+  "cases": [
+    {"name": "memory_isa_gfx1250_scalar_test", "supported_targets": ["gfx1250"]},
+    {"name": "memory_isa_gfx1250_s_buffer_test", "supported_targets": ["gfx1250"]},
+    {"name": "memory_isa_gfx1250_global_flat_test", "supported_targets": ["gfx1250"]},
+    {"name": "memory_isa_gfx1250_flat_aperture_test", "supported_targets": ["gfx1250"]},
+    {"name": "memory_isa_gfx1250_buffer_test", "supported_targets": ["gfx1250"]},
+    {"name": "memory_isa_gfx1250_buffer_modes_test", "supported_targets": ["gfx1250"]},
+    {"name": "memory_isa_gfx1250_scratch_test", "supported_targets": ["gfx1250"]},
+    {"name": "memory_isa_gfx1250_lds_test", "supported_targets": ["gfx1250"]},
+    {"name": "memory_isa_gfx1250_atomic_test", "supported_targets": ["gfx1250"]},
+    {"name": "memory_isa_gfx1250_block_test", "supported_targets": ["gfx1250"]},
+    {"name": "memory_isa_gfx1250_async_test", "supported_targets": ["gfx1250"]},
+    {"name": "memory_isa_gfx1250_transpose_test", "supported_targets": ["gfx1250"]},
+    {"name": "memory_isa_gfx1250_tensor_test", "supported_targets": ["gfx1250"]},
+    {"name": "memory_isa_gfx1250_cluster_test", "supported_targets": ["gfx1250"]},
+    {"name": "memory_isa_gfx1250_source_coverage_test", "supported_targets": ["gfx1250"]}
+  ]
+}

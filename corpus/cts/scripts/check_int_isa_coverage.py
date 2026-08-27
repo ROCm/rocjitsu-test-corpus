@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate gfx1250 integer CTS inventory and linked-image opcode coverage."""
+"""Validate a gfx1250 CTS inventory and linked-image opcode coverage."""
 
 from __future__ import annotations
 
@@ -54,6 +54,10 @@ def validate_documents(
     inventory: object,
     disassembly_by_name: dict[str, str],
     source_root: Path,
+    *,
+    test_prefix: str = "int_isa_gfx1250_",
+    coverage_test_name: str = COVERAGE_TEST_NAME,
+    coverage_label: str = "gfx1250 integer",
 ) -> list[str]:
     errors: list[str] = []
     if not isinstance(coverage, dict):
@@ -95,21 +99,21 @@ def validate_documents(
                 )
                 continue
             if "gfx1250" in targets:
-                if name == COVERAGE_TEST_NAME:
+                if name == coverage_test_name:
                     coverage_test_inventory_count += 1
-                elif name.startswith("int_isa_gfx1250_"):
+                elif name.startswith(test_prefix):
                     inventory_names.add(name)
 
     if coverage_test_inventory_count != 1:
         errors.append(
-            f"{COVERAGE_TEST_NAME}: case inventory must contain exactly one "
+            f"{coverage_test_name}: case inventory must contain exactly one "
             f"gfx1250 entry (found {coverage_test_inventory_count})"
         )
 
     coverage_names = set(names)
     if missing := sorted(inventory_names - coverage_names):
         errors.append(
-            f"gfx1250 integer cases missing coverage entries: {', '.join(missing)}"
+            f"{coverage_label} cases missing coverage entries: {', '.join(missing)}"
         )
     if extra := sorted(coverage_names - inventory_names):
         errors.append(
@@ -132,6 +136,7 @@ def validate_documents(
         source = entry.get("source")
         expected = entry.get("expected_opcodes", [])
         alternatives = entry.get("expected_opcode_alternatives", [])
+        patterns = entry.get("expected_disassembly_patterns", [])
         semantic_only = entry.get("semantic_only", False)
         if not isinstance(name, str) or not name:
             errors.append(f"coverage test entry {index} has an invalid name")
@@ -147,6 +152,11 @@ def validate_documents(
             errors.append(
                 f"{name}: expected_opcode_alternatives must be a list of "
                 "non-empty string lists"
+            )
+            continue
+        if not _string_list(patterns):
+            errors.append(
+                f"{name}: expected_disassembly_patterns must be a string list"
             )
             continue
         if not isinstance(semantic_only, bool):
@@ -178,6 +188,17 @@ def validate_documents(
                     f"{name}: linked image is missing opcode alternatives: "
                     f"{' | '.join(sorted(normalized_group))}"
                 )
+        disassembly = disassembly_by_name.get(name, "")
+        for pattern in patterns:
+            try:
+                matched = re.search(pattern, disassembly, re.IGNORECASE | re.MULTILINE)
+            except re.error as error:
+                errors.append(f"{name}: invalid disassembly pattern {pattern!r}: {error}")
+                continue
+            if matched is None:
+                errors.append(
+                    f"{name}: linked image is missing disassembly pattern: {pattern}"
+                )
 
     return errors
 
@@ -189,7 +210,7 @@ def _disassemble_image(executable: Path, llvm_objdump: Path, target: str) -> str
         raise RuntimeError(f"llvm-objdump does not exist: {llvm_objdump}")
     if not os.access(llvm_objdump, os.X_OK):
         raise RuntimeError(f"llvm-objdump is not executable: {llvm_objdump}")
-    with tempfile.TemporaryDirectory(prefix="int-isa-image-") as directory:
+    with tempfile.TemporaryDirectory(prefix="isa-coverage-image-") as directory:
         temporary = Path(directory)
         copied = temporary / executable.name
         shutil.copy2(executable, copied)
@@ -205,7 +226,7 @@ def _disassemble_image(executable: Path, llvm_objdump: Path, target: str) -> str
                 f"llvm-objdump could not extract {executable}: {extracted.stderr.strip()}"
             )
         image_name = re.compile(
-            rf"^{re.escape(copied.name)}\..*\.hipv4-amdgcn-amd-amdhsa--"
+            rf"^{re.escape(copied.name)}\..*\.hip(?:v4)?-amdgcn-amd-amdhsa--"
             rf"{re.escape(target)}(?:$|[:+])"
         )
         candidates = sorted(
@@ -252,6 +273,9 @@ def main() -> int:
     parser.add_argument("--case-inventory", type=Path, required=True)
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--llvm-objdump", type=Path, required=True)
+    parser.add_argument("--test-prefix", default="int_isa_gfx1250_")
+    parser.add_argument("--coverage-test-name", default=COVERAGE_TEST_NAME)
+    parser.add_argument("--success-label", default="gfx1250 integer CTS")
     parser.add_argument("--image", action="append", default=[])
     args = parser.parse_args()
 
@@ -277,13 +301,16 @@ def main() -> int:
                 inventory,
                 disassembly_by_name,
                 args.source_root.resolve(),
+                test_prefix=args.test_prefix,
+                coverage_test_name=args.coverage_test_name,
+                coverage_label=args.success_label,
             )
         )
     for error in errors:
         print(f"MISS {error}")
     if errors:
         return 1
-    print("PASS gfx1250 integer CTS linked-image coverage")
+    print(f"PASS {args.success_label} linked-image coverage")
     return 0
 
 

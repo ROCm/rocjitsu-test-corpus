@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import stat
+import sys
 
 import pytest
 
@@ -75,6 +76,76 @@ def test_validate_recognizes_global_memory_opcodes(tmp_path: Path):
         disassembly[NAME] = "\tglobal_load_tr8_b64 v[0:1], v[2:3], off\n"
 
     assert _validate(tmp_path, mutate) == []
+
+
+def test_validate_accepts_custom_collection_parameters(tmp_path: Path):
+    coverage, inventory, disassembly, source_root = _inputs(tmp_path)
+    memory_name = "memory_isa_gfx1250_case_test"
+    coverage["tests"][0]["name"] = memory_name
+    inventory["cases"][0]["name"] = memory_name
+    inventory["cases"][1]["name"] = "memory_isa_gfx1250_source_coverage_test"
+    disassembly[memory_name] = disassembly.pop(NAME)
+
+    assert (
+        MODULE.validate_documents(
+            coverage,
+            inventory,
+            disassembly,
+            source_root,
+            test_prefix="memory_isa_gfx1250_",
+            coverage_test_name="memory_isa_gfx1250_source_coverage_test",
+            coverage_label="gfx1250 memory CTS",
+        )
+        == []
+    )
+
+
+def test_validate_uses_custom_collection_label_in_diagnostics(tmp_path: Path):
+    coverage, inventory, disassembly, source_root = _inputs(tmp_path)
+    inventory["cases"].append(
+        {
+            "name": "memory_isa_gfx1250_missing_test",
+            "supported_targets": ["gfx1250"],
+        }
+    )
+    errors = MODULE.validate_documents(
+        coverage,
+        inventory,
+        disassembly,
+        source_root,
+        test_prefix="memory_isa_gfx1250_",
+        coverage_test_name=MODULE.COVERAGE_TEST_NAME,
+        coverage_label="gfx1250 memory CTS",
+    )
+    assert any(
+        "gfx1250 memory CTS cases missing coverage entries" in error for error in errors
+    )
+
+
+def test_validate_accepts_disassembly_modifier_patterns(tmp_path: Path):
+    def mutate(coverage, inventory, disassembly, source_root):
+        coverage["tests"][0]["expected_disassembly_patterns"] = [
+            r"v_gap_op_e32.*offset:16.*th:TH_ATOMIC_RETURN"
+        ]
+        disassembly[NAME] = "\tv_gap_op_e32 v0, v1 offset:16 th:TH_ATOMIC_RETURN\n"
+
+    assert _validate(tmp_path, mutate) == []
+
+
+def test_validate_rejects_missing_disassembly_modifier_pattern(tmp_path: Path):
+    def mutate(coverage, inventory, disassembly, source_root):
+        coverage["tests"][0]["expected_disassembly_patterns"] = [r"offset:16"]
+
+    errors = _validate(tmp_path, mutate)
+    assert any("missing disassembly pattern" in error for error in errors), errors
+
+
+def test_validate_rejects_invalid_disassembly_modifier_pattern(tmp_path: Path):
+    def mutate(coverage, inventory, disassembly, source_root):
+        coverage["tests"][0]["expected_disassembly_patterns"] = [r"["]
+
+    errors = _validate(tmp_path, mutate)
+    assert any("invalid disassembly pattern" in error for error in errors), errors
 
 
 @pytest.mark.parametrize("opcode", ["v_cmp_lt_i32", "v_cmp_gt_i32"])
@@ -269,11 +340,61 @@ def _fake_objdump(tmp_path: Path, extracted_names: list[str]) -> Path:
     return path
 
 
-def test_disassemble_image_extracts_exact_target(tmp_path: Path):
+@pytest.mark.parametrize("bundle_spelling", ["hipv4-amdgcn", "hip-amdgcn"])
+def test_disassemble_image_extracts_exact_target(tmp_path: Path, bundle_spelling: str):
     executable = tmp_path / "case"
     executable.write_bytes(b"host executable")
-    objdump = _fake_objdump(tmp_path, ["0.hipv4-amdgcn-amd-amdhsa--gfx1250"])
+    objdump = _fake_objdump(
+        tmp_path, [f"0.{bundle_spelling}-amd-amdhsa--gfx1250"]
+    )
     assert "v_gap_op_e32" in MODULE._disassemble_image(executable, objdump, "gfx1250")
+
+
+def test_main_accepts_custom_memory_collection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    coverage, inventory, _, source_root = _inputs(tmp_path)
+    memory_name = "memory_isa_gfx1250_case_test"
+    coverage["tests"][0]["name"] = memory_name
+    inventory["cases"][0]["name"] = memory_name
+    inventory["cases"][1]["name"] = "memory_isa_gfx1250_source_coverage_test"
+
+    coverage_path = tmp_path / "coverage.json"
+    inventory_path = tmp_path / "inventory.json"
+    executable = tmp_path / "memory-case"
+    coverage_path.write_text(json.dumps(coverage), encoding="utf-8")
+    inventory_path.write_text(json.dumps(inventory), encoding="utf-8")
+    executable.write_bytes(b"host executable")
+    objdump = _fake_objdump(tmp_path, ["0.hipv4-amdgcn-amd-amdhsa--gfx1250"])
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(SCRIPT),
+            "--coverage",
+            str(coverage_path),
+            "--case-inventory",
+            str(inventory_path),
+            "--source-root",
+            str(source_root),
+            "--llvm-objdump",
+            str(objdump),
+            "--test-prefix",
+            "memory_isa_gfx1250_",
+            "--coverage-test-name",
+            "memory_isa_gfx1250_source_coverage_test",
+            "--success-label",
+            "gfx1250 memory CTS",
+            "--image",
+            f"{memory_name}={executable}",
+        ],
+    )
+
+    assert MODULE.main() == 0
+    assert capsys.readouterr().out == (
+        "PASS gfx1250 memory CTS linked-image coverage\n"
+    )
 
 
 @pytest.mark.parametrize(
