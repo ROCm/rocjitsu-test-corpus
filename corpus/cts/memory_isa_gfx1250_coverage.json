@@ -1,12 +1,12 @@
 {
   "schema_version": 2,
   "target": "gfx1250",
-  "scope": "Selected deterministic CDNA5 functional memory representatives, including S_BUFFER and executed VBUFFER descriptor modes, FLAT aperture routing, and clustered dispatch with visible load results. Linked runtime images pin exact opcodes and material modifiers, including cluster M0, wait, and barrier lowering; runtime tests pin the architecturally visible behavior named by each case.",
+  "scope": "Selected deterministic CDNA5 functional memory representatives, including S_BUFFER and executed VBUFFER descriptor modes, FLAT aperture routing, and clustered dispatch. Linked runtime images pin exact opcodes and material modifiers, including all four M0[1:0] workgroup-mask values plus wait and barrier lowering. Runtime tests pin destination selection for M0=0, 1, and 2 and visible results for both M0=3 requesters; physical request combining is not observed.",
   "excluded_scope": [
     "the exhaustive cross-product of S_BUFFER and VBUFFER widths, address modifiers, and descriptor modes",
     "the exhaustive FLAT width, atomic, and modifier matrix across address spaces",
     "the exhaustive atomic type and address-space matrix",
-    "the exhaustive cluster-mask cross-product",
+    "cluster-mask cross-products for clusters larger than two workgroups",
     "physical multicast request coalescing, timeout fidelity, cache effects, and transaction counts",
     "prefetch, MWAIT, fault-delivery, and timing behavior"
   ],
@@ -88,7 +88,7 @@
       "source": "gfx1250/memory_isa/cluster_memory_test.cpp",
       "expected_opcodes": ["cluster_load_b32", "cluster_load_async_to_lds_b32", "s_wait_loadcnt", "s_wait_asynccnt", "s_barrier_signal_isfirst", "s_barrier_signal", "s_barrier_wait"],
       "expected_disassembly_patterns": [
-        "s_mov_b32\\s+m0,\\s*3\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*cluster_load_b32\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*(?:s_mov_b32\\s+m0,\\s*3\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*)*cluster_load_async_to_lds_b32\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*s_mov_b32\\s+m0,\\s*1\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*cluster_load_async_to_lds_b32\\b",
+        "s_mov_b32\\s+m0,\\s*3\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*cluster_load_b32\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*s_mov_b32\\s+m0,\\s*0\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*cluster_load_async_to_lds_b32\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*s_mov_b32\\s+m0,\\s*1\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*cluster_load_async_to_lds_b32\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*s_mov_b32\\s+m0,\\s*2\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*cluster_load_async_to_lds_b32\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*s_mov_b32\\s+m0,\\s*3\\b(?:(?!\\bm0\\b|cluster_load_)[\\s\\S])*cluster_load_async_to_lds_b32\\b",
         "s_barrier_signal -3",
         "s_barrier_wait 0xfffd"
       ]
