@@ -92,11 +92,14 @@ Coverage is representative rather than exhaustive. The current suite excludes
 the exhaustive cross-product of S_BUFFER and VBUFFER widths, address modifiers,
 and descriptor modes; the exhaustive FLAT width, atomic, and modifier matrix
 across address spaces; the full atomic type/address-space matrix; exhaustive
-cluster masks, request coalescing, and timeout behavior; cache and prefetch
-controls; MWAIT; fault delivery; and timing fidelity. Representative FLAT B32
-routing across global, LDS, and scratch addresses and focused clustered B32
-load/async-to-LDS behavior are covered. The manifest records the same boundary
-for machine-readable audits. The scratch misalignment case targets
+cluster masks; physical multicast request coalescing and timeout fidelity; cache,
+transaction-count, and prefetch behavior; MWAIT; fault delivery; and timing fidelity.
+Representative FLAT B32 routing across global, LDS, and scratch
+addresses is covered. Cluster coverage pins clustered dispatch, workgroup ranks,
+B32 load and async-to-LDS execution, visible data results, and emitted M0, wait,
+and barrier lowering; it does not prove that matching requests were physically
+coalesced. The manifest records the same boundary for machine-readable audits.
+The scratch misalignment case targets
 `SH_MEM_CONFIG.alignment_mode=UNALIGNED`: its base-plus-immediate address is byte
 offset 157, and its byte-exact oracle is not the expected result for modes that
 automatically align DWORD accesses.

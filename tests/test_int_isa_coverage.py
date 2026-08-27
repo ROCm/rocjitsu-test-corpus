@@ -340,10 +340,13 @@ def _fake_objdump(tmp_path: Path, extracted_names: list[str]) -> Path:
     return path
 
 
-def test_disassemble_image_extracts_exact_target(tmp_path: Path):
+@pytest.mark.parametrize("bundle_spelling", ["hipv4-amdgcn", "hip-amdgcn"])
+def test_disassemble_image_extracts_exact_target(tmp_path: Path, bundle_spelling: str):
     executable = tmp_path / "case"
     executable.write_bytes(b"host executable")
-    objdump = _fake_objdump(tmp_path, ["0.hipv4-amdgcn-amd-amdhsa--gfx1250"])
+    objdump = _fake_objdump(
+        tmp_path, [f"0.{bundle_spelling}-amd-amdhsa--gfx1250"]
+    )
     assert "v_gap_op_e32" in MODULE._disassemble_image(executable, objdump, "gfx1250")
 
 

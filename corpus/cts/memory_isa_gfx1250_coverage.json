@@ -1,12 +1,14 @@
 {
   "schema_version": 2,
   "target": "gfx1250",
-  "scope": "Selected deterministic CDNA5 functional memory representatives, including S_BUFFER and executed VBUFFER descriptor modes, FLAT aperture routing, and focused clustered loads. Linked runtime images pin exact opcodes and material modifiers; runtime tests pin the documented behavior named by each case.",
+  "scope": "Selected deterministic CDNA5 functional memory representatives, including S_BUFFER and executed VBUFFER descriptor modes, FLAT aperture routing, and clustered dispatch with visible load results. Linked runtime images pin exact opcodes and material modifiers, including cluster M0, wait, and barrier lowering; runtime tests pin the architecturally visible behavior named by each case.",
   "excluded_scope": [
     "the exhaustive cross-product of S_BUFFER and VBUFFER widths, address modifiers, and descriptor modes",
     "the exhaustive FLAT width, atomic, and modifier matrix across address spaces",
     "the exhaustive atomic type and address-space matrix",
-    "exhaustive cluster masks, request coalescing, timeout behavior, cache, prefetch, MWAIT, fault-delivery, and timing behavior"
+    "the exhaustive cluster-mask cross-product",
+    "physical multicast request coalescing, timeout fidelity, cache effects, and transaction counts",
+    "prefetch, MWAIT, fault-delivery, and timing behavior"
   ],
   "tests": [
     {

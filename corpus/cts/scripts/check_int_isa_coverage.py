@@ -226,7 +226,7 @@ def _disassemble_image(executable: Path, llvm_objdump: Path, target: str) -> str
                 f"llvm-objdump could not extract {executable}: {extracted.stderr.strip()}"
             )
         image_name = re.compile(
-            rf"^{re.escape(copied.name)}\..*\.hipv4-amdgcn-amd-amdhsa--"
+            rf"^{re.escape(copied.name)}\..*\.hip(?:v4)?-amdgcn-amd-amdhsa--"
             rf"{re.escape(target)}(?:$|[:+])"
         )
         candidates = sorted(

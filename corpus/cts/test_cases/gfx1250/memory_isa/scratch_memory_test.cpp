@@ -91,6 +91,8 @@ __global__ void scratch_width_kernel(ScratchResult *load_output, std::uint8_t *s
                : "v"(base), "v"(misaligned_base)
                : "memory");
   load_output[lane] = result;
+  const std::uint32_t reserve_value = reserve[threadIdx.x & 255];
+  asm volatile("" : : "v"(reserve_value) : "memory");
 }
 
 template <class T>
