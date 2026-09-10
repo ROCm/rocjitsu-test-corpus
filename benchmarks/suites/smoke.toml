@@ -1,0 +1,14 @@
+name = "smoke"
+targets = ["gfx950"]
+warmups = 1
+samples = 3
+num_threads = 8
+timeout_seconds = 60
+
+[[cases]]
+id = "triton.rmsnorm_bf16.threads8"
+workload = "rmsnorm"
+suite = "Triton"
+name = "BF16 RMSNorm"
+operation = "RMSNorm"
+params = { rows = 128, columns = 4096, dtype = "bf16", epsilon = 1e-05 }
