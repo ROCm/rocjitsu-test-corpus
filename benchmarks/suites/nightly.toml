@@ -1,0 +1,230 @@
+name = "nightly"
+targets = ["gfx950", "gfx1250"]
+warmups = 3
+samples = 21
+num_threads = 8
+timeout_seconds = 300
+
+[[cases]]
+id = "triton.copy_fp32_32m.threads8"
+workload = "copy"
+suite = "Triton"
+name = "32 MiB contiguous FP32 copy"
+operation = "Copy"
+params = { elements = 8388608, dtype = "fp32" }
+
+[[cases]]
+id = "triton.vector_add_fp32_boundary.threads8"
+workload = "vector_add"
+suite = "Triton"
+name = "Boundary FP32 vector add"
+operation = "Vector add"
+params = { elements = 8388611, dtype = "fp32" }
+
+[[cases]]
+id = "triton.transpose_fp16_2048.threads8"
+workload = "transpose"
+suite = "Triton"
+name = "2048x2048 FP16 transpose"
+operation = "Transpose"
+params = { rows = 2048, columns = 2048, dtype = "fp16" }
+
+[[cases]]
+id = "triton.gather_fp32_irregular.threads8"
+workload = "gather"
+suite = "Triton"
+name = "Irregular FP32 gather"
+operation = "Gather"
+params = { source_elements = 8388608, output_elements = 4194307, index_stride = 104729, index_offset = 17, dtype = "fp32" }
+
+[[cases]]
+id = "triton.atomic_add_fp32_contended.threads8"
+workload = "atomic_add"
+suite = "Triton"
+name = "Contended FP32 atomic add"
+operation = "Atomic add"
+params = { elements = 131072, buckets = 256, dtype = "fp32" }
+
+[[cases]]
+id = "triton.softmax_fp16_aligned.threads8"
+workload = "softmax"
+suite = "Triton"
+name = "Aligned FP16 softmax"
+operation = "Softmax"
+params = { rows = 64, columns = 4096, dtype = "fp16" }
+
+[[cases]]
+id = "triton.softmax_fp16_boundary.threads8"
+workload = "softmax"
+suite = "Triton"
+name = "Boundary FP16 softmax"
+operation = "Softmax"
+params = { rows = 64, columns = 4097, dtype = "fp16" }
+
+[[cases]]
+id = "triton.rmsnorm_bf16.threads8"
+workload = "rmsnorm"
+suite = "Triton"
+name = "BF16 RMSNorm"
+operation = "RMSNorm"
+params = { rows = 128, columns = 4096, dtype = "bf16", epsilon = 1e-05 }
+
+[[cases]]
+id = "triton.gemm_bf16_aligned.threads8"
+workload = "gemm"
+suite = "Triton"
+name = "Aligned BF16 GEMM"
+operation = "GEMM"
+params = { m = 256, n = 256, k = 512, dtype = "bf16" }
+
+[[cases]]
+id = "triton.gemm_bf16_ragged.threads8"
+workload = "gemm"
+suite = "Triton"
+name = "Ragged BF16 GEMM"
+operation = "GEMM"
+params = { m = 250, n = 250, k = 510, dtype = "bf16" }
+
+[[cases]]
+id = "triton.gpt_oss_attention_bf16.threads8"
+workload = "gpt_oss_attention"
+suite = "GPT-OSS"
+name = "GPT-OSS BF16 attention"
+operation = "Attention"
+params = { dtype = "bf16", batch = 1, query_heads = 64, key_value_heads = 8, sequence = 128, window = 128, head_dimension = 64 }
+
+[[cases]]
+id = "triton.gemm_fp16_128x128x128.threads8"
+workload = "gemm"
+suite = "Triton"
+name = "FP16 GEMM 128x128x128"
+operation = "GEMM"
+params = { m = 128, n = 128, k = 128, dtype = "fp16" }
+
+[[cases]]
+id = "triton.gemm_fp16_256x256x512.threads8"
+workload = "gemm"
+suite = "Triton"
+name = "FP16 GEMM 256x256x512"
+operation = "GEMM"
+params = { m = 256, n = 256, k = 512, dtype = "fp16" }
+
+[[cases]]
+id = "triton.gemm_fp16_512x512x512.threads8"
+workload = "gemm"
+suite = "Triton"
+name = "FP16 GEMM 512x512x512"
+operation = "GEMM"
+params = { m = 512, n = 512, k = 512, dtype = "fp16" }
+
+[[cases]]
+id = "triton.gemm_fp16_1024x1024x1024.threads8"
+workload = "gemm"
+suite = "Triton"
+name = "FP16 GEMM 1024x1024x1024"
+operation = "GEMM"
+params = { m = 1024, n = 1024, k = 1024, dtype = "fp16" }
+
+[[cases]]
+id = "triton.gemm_fp16_1024x128x512.threads8"
+workload = "gemm"
+suite = "Triton"
+name = "FP16 GEMM 1024x128x512"
+operation = "GEMM"
+params = { m = 1024, n = 128, k = 512, dtype = "fp16" }
+
+[[cases]]
+id = "triton.gemm_fp16_128x1024x512.threads8"
+workload = "gemm"
+suite = "Triton"
+name = "FP16 GEMM 128x1024x512"
+operation = "GEMM"
+params = { m = 128, n = 1024, k = 512, dtype = "fp16" }
+
+[[cases]]
+id = "triton.gemm_fp16_128x128x2048.threads8"
+workload = "gemm"
+suite = "Triton"
+name = "FP16 GEMM 128x128x2048"
+operation = "GEMM"
+params = { m = 128, n = 128, k = 2048, dtype = "fp16" }
+
+[[cases]]
+id = "triton.gemm_fp16_250x250x510.threads8"
+workload = "gemm"
+suite = "Triton"
+name = "FP16 GEMM 250x250x510"
+operation = "GEMM"
+params = { m = 250, n = 250, k = 510, dtype = "fp16" }
+
+[[cases]]
+id = "triton.gemm_bf16_128x128x128.threads8"
+workload = "gemm"
+suite = "Triton"
+name = "BF16 GEMM 128x128x128"
+operation = "GEMM"
+params = { m = 128, n = 128, k = 128, dtype = "bf16" }
+
+[[cases]]
+id = "triton.gemm_bf16_512x512x512.threads8"
+workload = "gemm"
+suite = "Triton"
+name = "BF16 GEMM 512x512x512"
+operation = "GEMM"
+params = { m = 512, n = 512, k = 512, dtype = "bf16" }
+
+[[cases]]
+id = "triton.gemm_bf16_1024x1024x1024.threads8"
+workload = "gemm"
+suite = "Triton"
+name = "BF16 GEMM 1024x1024x1024"
+operation = "GEMM"
+params = { m = 1024, n = 1024, k = 1024, dtype = "bf16" }
+
+[[cases]]
+id = "triton.gemm_bf16_1024x128x512.threads8"
+workload = "gemm"
+suite = "Triton"
+name = "BF16 GEMM 1024x128x512"
+operation = "GEMM"
+params = { m = 1024, n = 128, k = 512, dtype = "bf16" }
+
+[[cases]]
+id = "triton.gemm_bf16_128x1024x512.threads8"
+workload = "gemm"
+suite = "Triton"
+name = "BF16 GEMM 128x1024x512"
+operation = "GEMM"
+params = { m = 128, n = 1024, k = 512, dtype = "bf16" }
+
+[[cases]]
+id = "triton.gemm_bf16_128x128x2048.threads8"
+workload = "gemm"
+suite = "Triton"
+name = "BF16 GEMM 128x128x2048"
+operation = "GEMM"
+params = { m = 128, n = 128, k = 2048, dtype = "bf16" }
+
+[[cases]]
+id = "triton.softmax_fp32_64x4096.threads8"
+workload = "softmax"
+suite = "Triton"
+name = "FP32 softmax 64x4096"
+operation = "Softmax"
+params = { rows = 64, columns = 4096, dtype = "fp32" }
+
+[[cases]]
+id = "triton.rmsnorm_fp16_128x4096.threads8"
+workload = "rmsnorm"
+suite = "Triton"
+name = "FP16 RMSNorm 128x4096"
+operation = "RMSNorm"
+params = { rows = 128, columns = 4096, dtype = "fp16", epsilon = 1e-05 }
+
+[[cases]]
+id = "triton.gpt_oss_attention_bf16_seq256.threads8"
+workload = "gpt_oss_attention"
+suite = "GPT-OSS"
+name = "GPT-OSS BF16 attention sequence 256"
+operation = "Attention"
+params = { dtype = "bf16", batch = 1, query_heads = 64, key_value_heads = 8, sequence = 256, window = 128, head_dimension = 64 }
