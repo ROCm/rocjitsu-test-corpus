@@ -14,6 +14,7 @@ corpus/
   semantics/  Standalone target-specific HIP semantic programs.
   llama/      llama.cpp test-backend-ops cases and vendored GGML sources.
   tensile/    gfx1250 TensileLite configs and generated artifacts.
+  benchmarks/ Parameterized Triton benchmarks and reused upstream kernels.
 
 tests/
   test_corpus.py       Unified pytest entrypoint.
@@ -25,8 +26,16 @@ scripts/
   extract_gfx1250_hsacos.py
   ... additional corpus helper scripts
 
+benchmarks/            Sequential runner, suites, and dashboard publisher.
 requirements.txt       Python packages for pytest and corpus helpers.
 ```
+
+## Benchmarks
+
+The [benchmark guide](benchmarks/README.md) covers installation, sequential
+execution, upstream kernel reuse, and results. Benchmark sources follow the
+corpus provider layout; execution is separate from pytest regression tests.
+CI orchestration and simulator configurations remain in rocm-systems.
 
 ## Corpus Contents
 
