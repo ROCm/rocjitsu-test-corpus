@@ -350,6 +350,7 @@ PYBIND11_MODULE(tk_kernel, m) {
 #include <vector>
 
 #include "../shape_args.hpp"
+#include "../../../include/benchmark.hpp"
 
 namespace {
 
@@ -375,15 +376,17 @@ float to_float(kittens::bf16 value) {
 
 } // namespace
 
-int main(int argc, char **argv) {
-    HipKittensShape shape = parse_hipkittens_shape_args(argc, argv, {256, 256, 256});
+int main(int argc, char **argv) try {
+    auto benchmark = corpus_benchmark::parse(argc, argv);
+    HipKittensShape shape = parse_hipkittens_shape_args(benchmark.remaining.size(), benchmark.remaining.data(), {256, 256, 256});
+    corpus_benchmark::check_shape(shape.m, shape.n, shape.k, 256, 256, 128, 128);
+    if (benchmark.enabled) corpus_benchmark::check_target(benchmark);
     const int M = shape.m;
     const int N = shape.n;
     const int K = shape.k;
     std::vector<kittens::bf16> a_host(M * K);
     std::vector<kittens::bf16> b_host(N * K);
     std::vector<kittens::bf16> c_host(M * N, to_bf16(0.0f));
-    std::vector<float> c_ref(M * N, 0.0f);
 
     for (int i = 0; i < M * K; ++i) {
         a_host[i] = to_bf16(0.125f * static_cast<float>((i % 9) - 4));
@@ -406,6 +409,20 @@ int main(int argc, char **argv) {
     _gl_B b_gl(d_b, 1, 1, N, K);
     _gl_C c_gl(d_c, 1, 1, M, N);
     micro_globals globals{a_gl, b_gl, c_gl, hipStreamDefault};
+    if (benchmark.enabled) {
+        const auto shared_memory = globals.dynamic_shared_memory();
+        const auto grid = globals.grid();
+        const auto block = globals.block();
+        KERNEL_CORPUS_HIP_CHECK(hipFuncSetAttribute((void*)micro_tk, hipFuncAttributeMaxDynamicSharedMemorySize, shared_memory));
+        corpus_benchmark::run(benchmark, M, N, K, [&] {
+            micro_tk<<<grid, block, shared_memory, globals.stream>>>(globals, M, N, K);
+        });
+        KERNEL_CORPUS_HIP_CHECK(hipFree(d_a));
+        KERNEL_CORPUS_HIP_CHECK(hipFree(d_b));
+        KERNEL_CORPUS_HIP_CHECK(hipFree(d_c));
+        return 0;
+    }
+    std::vector<float> c_ref(M * N, 0.0f);
     dispatch_micro(globals);
     KERNEL_CORPUS_HIP_CHECK(hipGetLastError());
     KERNEL_CORPUS_HIP_CHECK(hipDeviceSynchronize());
@@ -447,4 +464,9 @@ int main(int argc, char **argv) {
     std::printf("HipKittens BF16 GEMM validation passed: max_abs_diff=%g tolerance=%g\n",
         max_abs_diff, validation_abs_tolerance);
     return 0;
+}
+
+catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }

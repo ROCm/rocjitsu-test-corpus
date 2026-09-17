@@ -54,7 +54,32 @@ static void cpu_gemm_abt_ref(const std::vector<float>& A,
 }
 
 int main(int argc, char** argv)
+#ifdef CORPUS_BENCHMARK
+try
+#endif
 {
+#ifdef CORPUS_BENCHMARK
+    auto benchmark = corpus_benchmark::parse(argc, argv);
+    argc = benchmark.remaining.size();
+    argv = benchmark.remaining.data();
+    HipKittensShape shape{256, 256, 256};
+    int n_iters = 1, verify = 1;
+    if (argc > 1 && argv[1][0] != '-') {
+        if (argc > 6) throw std::invalid_argument("too many positional arguments");
+        shape.m = corpus_benchmark::integer(argv[1], 1);
+        if (argc > 2) shape.n = corpus_benchmark::integer(argv[2], 1);
+        if (argc > 3) shape.k = corpus_benchmark::integer(argv[3], 1);
+        if (argc > 4) n_iters = corpus_benchmark::integer(argv[4], 1);
+        if (argc > 5) verify = corpus_benchmark::integer(argv[5], 0);
+    } else shape = parse_hipkittens_shape_args(argc, argv, shape);
+    const int M = shape.m, N = shape.n, K = shape.k;
+    corpus_benchmark::check_shape(M, N, K, BLOCK_M, BLOCK_N, K_STEP, K_STEP);
+    if (benchmark.enabled) corpus_benchmark::check_target(benchmark);
+
+    if (!benchmark.enabled) std::printf("gemm_naive (bf16->fp32->bf16)  M=%d N=%d K=%d  iters=%d verify=%d\n",
+                M, N, K, n_iters, verify);
+
+#else
     int M = (argc > 1) ? std::atoi(argv[1]) : 256;
     int N = (argc > 2) ? std::atoi(argv[2]) : 256;
     int K = (argc > 3) ? std::atoi(argv[3]) : 256;
@@ -64,8 +89,10 @@ int main(int argc, char** argv)
     std::printf("gemm_naive (bf16->fp32->bf16)  M=%d N=%d K=%d  iters=%d verify=%d\n",
                 M, N, K, n_iters, verify);
 
+#endif
+
     // ---- host fp32 reference + bf16 buffers ----
-    std::vector<float> A_h(M * K), B_h(N * K), C_ref(M * N);
+    std::vector<float> A_h(M * K), B_h(N * K);
     std::vector<__hip_bfloat16> A_bf(M * K), B_bf(N * K), C_bf(M * N, __hip_bfloat16(0.f));
 
     std::mt19937 rng(0xC0FFEEu);
@@ -94,6 +121,22 @@ int main(int argc, char** argv)
                size_t(1), size_t(1), size_t(M), size_t(N));
     gemm_globals g{A_gl, B_gl, C_gl, /*stream=*/ 0};
 
+#ifdef CORPUS_BENCHMARK
+    if (benchmark.enabled) {
+        const auto shared_memory = g.dynamic_shared_memory<1>();
+        const auto grid = g.grid();
+        const auto block = g.block();
+        HIP_OK(hipFuncSetAttribute(reinterpret_cast<const void*>(gemm_naive_kernel), hipFuncAttributeMaxDynamicSharedMemorySize, shared_memory));
+        corpus_benchmark::run(benchmark, M, N, K, [&] {
+            gemm_naive_kernel<<<grid, block, shared_memory, g.stream>>>(g, M, N, K);
+        });
+        HIP_OK(hipFree(A_d));
+        HIP_OK(hipFree(B_d));
+        HIP_OK(hipFree(C_d));
+        return 0;
+    }
+#endif
+    std::vector<float> C_ref(M * N);
     // ---- warmup + timed run ----
     dispatch(g);
     HIP_OK(hipDeviceSynchronize());
@@ -134,5 +177,13 @@ int main(int argc, char** argv)
                 max_abs, mean_abs, n_bad, M * N);
     return (max_abs < 1.0 || n_bad < 10) ? 0 : 1;
 }
+
+#ifdef CORPUS_BENCHMARK
+catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
+}
+
+#endif
 
 #endif // HARNESS_MAIN

@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <climits>
+#include <cerrno>
 
 struct HipKittensShape {
     int m;
@@ -12,8 +14,9 @@ struct HipKittensShape {
 
 inline bool parse_positive_int(const char *value, int &result) {
     char *end = nullptr;
+    errno = 0;
     const long parsed = std::strtol(value, &end, 10);
-    if (end == value || *end != '\0' || parsed <= 0) {
+    if (errno || end == value || *end != '\0' || parsed <= 0 || parsed > INT_MAX) {
         return false;
     }
     result = static_cast<int>(parsed);

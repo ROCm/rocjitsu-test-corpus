@@ -71,4 +71,7 @@ void dispatch(gemm_globals g)
     gemm_naive_kernel<<<g.grid(), g.block(), mem_size, g.stream>>>(g, g.M(), g.N(), g.K());
 }
 
+#define CORPUS_BENCHMARK
+#include "../shape_args.hpp"
+#include "../../../include/benchmark.hpp"
 #include "../../../third_party/hipkittens/kernels/gemm/bf16fp32/gfx1250/harness.h"

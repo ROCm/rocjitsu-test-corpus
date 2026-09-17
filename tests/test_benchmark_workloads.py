@@ -69,6 +69,8 @@ def load_module(name, path):
 def test_nightly_parameters_are_valid(workloads_context):
     suite = tomllib.loads((ROOT / "benchmarks/suites/nightly.toml").read_text())
     for case in suite["cases"]:
+        if "workload" not in case:
+            continue
         workloads_context.workload.validate_parameters(case["workload"], case["params"])
 
 

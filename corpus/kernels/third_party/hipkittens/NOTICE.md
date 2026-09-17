@@ -30,3 +30,8 @@ iterations, and timing iterations overridable by the MXFP8/FP8 case wrappers,
 to make the CDNA3 BF16 dimensions overridable without preprocessor pollution,
 and to let the BF16 sources compile without their upstream pybind/PyTorch
 modules when used by standalone kernel corpus runners.
+
+The gfx1250 host harness also accepts structured dimensions and an optional
+corpus benchmark mode, enabled by `CORPUS_BENCHMARK` in the naive case wrapper.
+Benchmark mode returns before reference allocation and correctness checking.
+The device kernels and dispatch functions are unchanged.

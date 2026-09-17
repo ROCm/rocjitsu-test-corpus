@@ -1,8 +1,8 @@
 # Rocjitsu benchmarks
 
 Triton workload sources live under `corpus/benchmarks/triton/`, with an
-independent sequential runner. Suite TOML files contain case metadata and
-parameters. Benchmark runs are separate from normal pytest collection.
+independent sequential runner. Suite TOML files contain Triton case metadata and
+parameters, or references to existing native corpus cases. Benchmark runs are separate from normal pytest collection.
 
 ## Setup and run
 
@@ -41,8 +41,8 @@ source root, SDK, and selected plugin binaries. The wrapper must select the
 binary from that build; arbitrary wrapper commands cannot be checked against
 CMake metadata. Rebuild rocjitsu after source changes.
 
-The default `benchmarks/suites/nightly.toml` runs 28 cases on both `gfx950` and
-`gfx1250` (56 cells). Sixteen cases cover FP16 and BF16 GEMMs at
+The default `benchmarks/suites/nightly.toml` runs 28 Triton cases on both `gfx950` and
+`gfx1250`, plus one native BF16 HipKittens GEMM per target (58 cells). Sixteen cases cover FP16 and BF16 GEMMs at
 128x128x128, 256x256x512, 512x512x512, 1024x1024x1024, 1024x128x512,
 128x1024x512, 128x128x2048, and 250x250x510 (M x N x K).
 Use `--manifest benchmarks/suites/smoke.toml` for a short suite, repeated
@@ -117,15 +117,58 @@ dimension 64, sequence lengths divisible by 64, query heads divisible by KV
 heads, and a window of zero (full causal attention) or a positive multiple of 64.
 Unsupported parameters fail the case before GPU allocation.
 
+## Benchmarking existing corpus cases
+
+Native suite entries select an existing correctness variant:
+
+```toml
+[[cases]]
+suite = "kernels"
+case = "hipkittens_gemm_bf16fp32_16x32"
+variant = "m256_n256_k256"
+```
+
+The nightly suite includes that gfx950 case and
+`hipkittens_gemm_bf16fp32_gfx1250_naive` on gfx1250. Each uses its existing
+256x256x256 variant, BF16 inputs and output, FP32 accumulation, and A x B-transpose
+layout. These are distinct kernels with distinct dashboard IDs.
+
+The existing corpus `case.json` owns the parameters, supported targets, build
+settings, and benchmark capability. Structured `parameters` containing `m`, `n`,
+and `k` in its JSON variant produce the arguments for both normal tests and
+benchmarks; other
+cases continue to use `test_args`. Benchmark TOML does not duplicate this metadata.
+Only supported target/case combinations are selected. Unknown references,
+cases without benchmark support, and explicitly incompatible selections fail
+before execution.
+
+The runner reuses the corpus build adapter with an isolated Release build under
+`OUTPUT/native/`, using the active ROCm SDK and building only selected executables.
+CMake, a host C++ compiler with OpenMP support, and the SDK HIP compiler are
+required. Configure/build logs are retained there on failure. Native compilation
+is outside timing samples but inside the CI benchmark step's 30-minute limit.
+
+The two executables accept `--benchmark --case ID --target TARGET --warmups N
+--samples N --output PATH` alongside their shape arguments. A shared helper
+initializes the launch path, warms up, and measures one launch plus synchronization
+per sample using a monotonic host clock. Allocation and reference checks stay
+outside samples. Benchmark mode skips numerical validation; normal corpus tests
+retain it and should be run when changing the kernels or their inputs.
+
+The gfx950 kernel requires M/N multiples of 256 and K a multiple of 128;
+the gfx1250 kernel requires M/N multiples of 64 and K a multiple of 32.
+Dimensions and matrix element counts must fit signed 32-bit indexing.
+These checks run before allocation. Neither kernel supports ragged shapes.
+
 ## Results and plugins
 
 `run.json` uses schema version 1 and records raw samples, summaries, cell status,
 configuration, package versions, and both rocjitsu and corpus revisions,
 commit timestamps, and dirty state. Each cell retains `workload.json`,
 `stdout.txt`, `stderr.txt`, and its generated `config.json` under `cases/`.
-Dashboard problem definitions come from TOML parameters for both successful and
-failed cases, so a new case can publish its first failure without an existing
-catalog entry. Derived launch and source metadata remain in `workload.json`.
+Dashboard problem definitions come from the resolved suite definitions (Triton
+TOML parameters or native corpus metadata) for both successful and failed cases,
+so a new case can publish its first failure without an existing catalog entry. Derived launch and source metadata remain in `workload.json`.
 A workload that fails early may have no `workload.json`.
 
 Use `--manifest benchmarks/suites/plugin-overhead.toml` and
@@ -156,10 +199,12 @@ comparison. `--machine-id` defaults to the recorded hostname; CI passes the
 benchmark runner's name. `--is-beta` controls the site's Beta label.
 
 CI publishes only the uninstrumented nightly suite. The benchmark step has a
-30-minute timeout, excluding installation, building, and publication. The
-expanded suite passed all 56 cells locally in 17m43s with eight threads, three
-warmups, and 21 samples; hosted runner speed may differ. A fresh dataset requires a completed Vanilla run
-before the dashboard can display it, although failed runs can be published.
+30-minute timeout, excluding installation, the rocjitsu build, and publication.
+Native case builds count toward that limit. The full 58-cell suite passed locally
+in 18m11s, including fresh native builds, with eight threads, three warmups, and
+21 samples; hosted runner speed may differ. A fresh dataset requires a completed
+Vanilla run before the dashboard can display it, although failed runs can be
+published.
 
 Run the benchmark harness tests through the repository's pytest configuration,
 without ROCm dependencies. pytest-xdist supplies the plugin used by the root

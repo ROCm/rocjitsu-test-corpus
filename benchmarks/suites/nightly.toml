@@ -228,3 +228,14 @@ suite = "GPT-OSS"
 name = "GPT-OSS BF16 attention sequence 256"
 operation = "Attention"
 params = { dtype = "bf16", batch = 1, query_heads = 64, key_value_heads = 8, sequence = 256, window = 128, head_dimension = 64 }
+
+# Existing correctness cases also support kernel-only measurement.
+[[cases]]
+suite = "kernels"
+case = "hipkittens_gemm_bf16fp32_16x32"
+variant = "m256_n256_k256"
+
+[[cases]]
+suite = "kernels"
+case = "hipkittens_gemm_bf16fp32_gfx1250_naive"
+variant = "m256_n256_k256"

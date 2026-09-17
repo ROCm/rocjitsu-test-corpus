@@ -13,17 +13,15 @@
   "executable": "cases/hipkittens/hipkittens_gemm_bf16fp32_gfx1250_naive",
   "tests": {
     "m256_n256_k256": {
-      "test_args": [
-        256,
-        256,
-        256,
-        1,
-        1
-      ],
       "validation": {
         "kind": "exit_code",
         "pass_exit_code": 0,
         "abs_tolerance": 1.0
+      },
+      "parameters": {
+        "m": 256,
+        "n": 256,
+        "k": 256
       }
     }
   },
@@ -33,5 +31,14 @@
     "bf16-fp32",
     "gfx1250",
     "regression"
-  ]
+  ],
+  "benchmark": {
+    "protocol": "hip-gemm-v1",
+    "name": "HipKittens gfx1250 BF16 GEMM",
+    "operation": "GEMM",
+    "dtype": "bf16",
+    "output_dtype": "bf16",
+    "accumulation_dtype": "fp32",
+    "layout": "ABt"
+  }
 }

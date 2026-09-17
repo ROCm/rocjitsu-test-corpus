@@ -170,6 +170,7 @@ def load_case(case_path):
             "tests",
             "inputs",
             "tags",
+            "benchmark",
         },
     )
     if case["project"] not in SUPPORTED_PROJECTS:
@@ -181,12 +182,16 @@ def load_case(case_path):
     require_fields(case_path, case["build"], ("system", "target"))
     reject_unknown_fields(case_path, case["build"], {"system", "target", "defines"})
     if case["build"]["system"] != "cmake":
-        raise ValueError(f"{case_path} has unsupported build system '{case['build']['system']}'")
+        raise ValueError(
+            f"{case_path} has unsupported build system '{case['build']['system']}'"
+        )
     _validate_build_defines(case_path, case["build"].get("defines", {}))
 
     if not isinstance(case["executable"], str) or not case["executable"]:
         raise ValueError(f"{case_path} field 'executable' must be a non-empty string")
-    _validate_tests(case_path, case["tests"])
+    if "benchmark" in case:
+        _validate_benchmark(case_path, case)
+    _validate_tests(case_path, case["tests"], case.get("benchmark"))
 
     if "inputs" in case:
         _validate_inputs(case_path, case["inputs"])
@@ -288,7 +293,7 @@ def _validate_run(path, run):
             )
 
 
-def _validate_tests(case_path, tests):
+def _validate_tests(case_path, tests, benchmark=None):
     if not isinstance(tests, dict) or not tests:
         raise ValueError(f"{case_path} field 'tests' must be a non-empty object")
     for test_name, test in tests.items():
@@ -297,13 +302,20 @@ def _validate_tests(case_path, tests):
             raise ValueError(f"{case_path} tests keys must be non-empty strings")
         if not isinstance(test, dict):
             raise ValueError(f"{entry_path} must be an object")
-        require_fields(entry_path, test, ("test_args", "validation"))
+        require_fields(entry_path, test, ("validation",))
+        if ("test_args" in test) == ("parameters" in test):
+            raise ValueError(
+                f"{entry_path} requires exactly one of test_args or parameters"
+            )
         reject_unknown_fields(
             entry_path,
             test,
-            {"description", "test_args", "env", "inputs", "validation"},
+            {"description", "test_args", "parameters", "env", "inputs", "validation"},
         )
-        _validate_test_args(entry_path, test["test_args"])
+        if "parameters" in test:
+            validate_parameters(entry_path, test["parameters"], benchmark)
+        else:
+            _validate_test_args(entry_path, test["test_args"])
         if "inputs" in test:
             _validate_inputs(entry_path, test["inputs"])
         _validate_validation(entry_path, test["validation"], require_kind=True)
@@ -450,7 +462,9 @@ def effective_case(kernel_case):
     if kernel_case.test is not None:
         test = kernel_case.test
         case["run"] = {
-            "args": test["test_args"],
+            "args": parameter_arguments(test["parameters"])
+            if "parameters" in test
+            else test["test_args"],
         }
         if "env" in test:
             case["run"]["env"] = test["env"]
@@ -749,3 +763,50 @@ def _resolve_command(command):
     if tool is None:
         raise RuntimeError(f"Missing required tool '{first}' in PATH")
     return [tool] + command[1:]
+
+
+def _validate_benchmark(path, case):
+    spec = case["benchmark"]
+    if not isinstance(spec, dict) or set(spec) != {
+        "protocol",
+        "name",
+        "operation",
+        "dtype",
+        "output_dtype",
+        "accumulation_dtype",
+        "layout",
+    }:
+        raise ValueError(f"{path}: invalid benchmark capability")
+    if spec["protocol"] != "hip-gemm-v1" or case["project"] != "hipkittens":
+        raise ValueError(f"{path}: unsupported benchmark protocol")
+    for key in ("name", "operation"):
+        if not isinstance(spec[key], str) or not spec[key].strip():
+            raise ValueError(f"{path}: benchmark {key} must be a nonempty string")
+    for key, expected in {
+        "dtype": "bf16",
+        "output_dtype": "bf16",
+        "accumulation_dtype": "fp32",
+        "layout": "ABt",
+    }.items():
+        if spec[key] != expected:
+            raise ValueError(f"{path}: benchmark {key} must be {expected}")
+
+
+def validate_parameters(path, parameters, benchmark):
+    if (
+        benchmark is None
+        or not isinstance(parameters, dict)
+        or set(parameters) != {"m", "n", "k"}
+    ):
+        raise ValueError(
+            f"{path}: structured parameters require a HIP GEMM capability and m, n, k"
+        )
+    for key, value in parameters.items():
+        if type(value) is not int or not 0 < value <= 2147483647:
+            raise ValueError(f"{path}: {key} must be a positive 32-bit integer")
+
+
+def parameter_arguments(parameters):
+    return [
+        arg for key in ("m", "n", "k") for arg in (f"--{key}", str(parameters[key]))
+    ]

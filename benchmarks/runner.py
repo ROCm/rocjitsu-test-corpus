@@ -28,6 +28,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, TextIO
 
+from benchmarks import native
+
 BENCHMARK_ROOT = Path(__file__).resolve().parent
 CORPUS_ROOT = BENCHMARK_ROOT.parent
 WORKLOAD_ROOT = CORPUS_ROOT / "corpus" / "benchmarks"
@@ -85,6 +87,11 @@ class Case:
     name: str
     operation: str
     params: dict[str, Any]
+    corpus_cases: tuple[Any, ...] = ()
+
+    @property
+    def provider(self) -> str:
+        return "hipkittens" if self.corpus_cases else "triton"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -184,6 +191,46 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
     ids = set()
     case_fields = {"id", "workload", "suite", "name", "operation", "params"}
     for entry in raw_cases:
+        if isinstance(entry, dict) and set(entry) == {"suite", "case", "variant"}:
+            if entry["suite"] != "kernels" or any(
+                not isinstance(v, str) or not v.strip() for v in entry.values()
+            ):
+                raise RunnerError(
+                    "corpus references require suite=kernels, case, and variant"
+                )
+            try:
+                matches = native.resolve(entry, targets)
+            except (OSError, ValueError, TypeError) as error:
+                raise RunnerError(
+                    f"cannot resolve corpus benchmark: {error}"
+                ) from error
+            capability = matches[0].metadata["effective_case"]["benchmark"]
+            params = {
+                **matches[0].metadata["kernel_case"].test["parameters"],
+                **{
+                    key: capability[key]
+                    for key in ("dtype", "output_dtype", "accumulation_dtype", "layout")
+                },
+            }
+            threads = _integer(value["num_threads"], "num_threads", allow_zero=False)
+            case_id = f"{matches[0].backend}.{entry['case']}.{entry['variant']}.threads{threads}"
+            if not CASE_ID.fullmatch(case_id) or case_id in ids:
+                raise RunnerError(
+                    f"invalid or duplicate corpus benchmark ID: {case_id}"
+                )
+            ids.add(case_id)
+            cases.append(
+                Case(
+                    case_id,
+                    "",
+                    "HipKittens",
+                    capability["name"] + " " + entry["variant"],
+                    capability["operation"],
+                    params,
+                    matches,
+                )
+            )
+            continue
         if not isinstance(entry, dict) or set(entry) != case_fields:
             raise RunnerError(
                 "each case must contain id, workload, suite, name, operation, params"
@@ -253,9 +300,25 @@ def select_matrix(
         for case in suite.cases
         if not requested_cases or case.id in requested_cases
     )
-    return tuple(
-        Cell(case, target) for case in chosen_cases for target in chosen_targets
+    matrix = tuple(
+        Cell(case, target)
+        for case in chosen_cases
+        for target in chosen_targets
+        if not case.corpus_cases
+        or any(candidate.target == target for candidate in case.corpus_cases)
     )
+    if (
+        not matrix
+        or any(
+            not any(cell.case == case for cell in matrix) for case in requested_cases
+        )
+        or any(
+            not any(cell.target == target for cell in matrix)
+            for target in requested_targets
+        )
+    ):
+        raise RunnerError("selected cases do not support the requested targets")
+    return matrix
 
 
 def parse_run_wrapper(value: str) -> tuple[str, ...]:
@@ -325,6 +388,8 @@ def prepare_command(
         "--output",
         str(workload_path),
     )
+    if cell.definition.corpus_cases:
+        payload = ()
     environment = dict(os.environ)
     # Official runs always use the device libraries installed with the selected
     # SDK, never a caller-provided source-build or development override.
@@ -559,7 +624,7 @@ def validate_workload(path: Path, cell: Cell, samples: int) -> dict[str, Any]:
         "schema": "rocjitsu.benchmark.workload.v1",
         "case": cell.case,
         "target": cell.target,
-        "provider": "triton",
+        "provider": cell.definition.provider,
     }
     for field, expected_value in expected.items():
         if value.get(field) != expected_value:
@@ -569,6 +634,8 @@ def validate_workload(path: Path, cell: Cell, samples: int) -> dict[str, Any]:
     parameters = value.get("parameters")
     if not isinstance(parameters, dict):
         raise RunnerError("workload parameters must be an object")
+    if cell.definition.corpus_cases and parameters != cell.definition.params:
+        raise RunnerError("native workload parameters differ from corpus definition")
     timings = value.get("timings_ns")
     if not isinstance(timings, list) or len(timings) != samples:
         actual = len(timings) if isinstance(timings, list) else "not a list"
@@ -894,13 +961,14 @@ def run_suite(
     }
     _write_run(output_path, run)
 
+    manager = native.build_manager(CORPUS_ROOT, output_path / "native")
     try:
         for position, cell in enumerate(matrix, start=1):
             cell_started = time.monotonic()
             _progress(
                 progress,
                 f"START [{position}/{total_cells}] case={cell.case} "
-                f"target={cell.target} provider=triton "
+                f"target={cell.target} provider={cell.definition.provider} "
                 f"timeout_seconds={suite.timeout_seconds:g}",
             )
             command = prepare_command(
@@ -931,6 +999,30 @@ def run_suite(
                 plugin_reports=plugin_artifacts,
             )
             try:
+                if cell.definition.corpus_cases:
+                    corpus_case = next(
+                        case
+                        for case in cell.definition.corpus_cases
+                        if case.target == cell.target
+                    )
+                    build_started = time.monotonic()
+                    built = native.build(corpus_case, manager, build_metadata.rocm_path)
+                    _progress(
+                        progress,
+                        f"BUILD case={cell.case} target={cell.target} elapsed_seconds={time.monotonic() - build_started:.1f}",
+                    )
+                    payload, environment = native.command(
+                        corpus_case,
+                        built,
+                        case_id=cell.case,
+                        target=cell.target,
+                        warmups=selected_warmups,
+                        samples=selected_samples,
+                        output=command.workload_path,
+                    )
+                    command = dataclasses.replace(
+                        command, argv=(*command.argv, *payload), environment=environment
+                    )
                 completed = _run_command(
                     command.argv,
                     cwd=command.cwd,
@@ -968,7 +1060,12 @@ def run_suite(
                 result["error"] = (
                     f"command timed out after {suite.timeout_seconds:g} seconds"
                 )
-            except (OSError, RunnerError) as error:
+            except (
+                OSError,
+                ValueError,
+                RuntimeError,
+                native.kernels_impl.KernelCaseError,
+            ) as error:
                 result["error"] = str(error)
             if not command.workload_path.is_file():
                 result["artifacts"]["workload"] = None

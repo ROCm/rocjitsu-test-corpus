@@ -83,8 +83,8 @@ def _payload(cell: runner.Cell, timings: list[int]) -> dict[str, object]:
         "schema": "rocjitsu.benchmark.workload.v1",
         "case": cell.case,
         "target": cell.target,
-        "provider": "triton",
-        "parameters": {"fixture": True},
+        "provider": cell.definition.provider,
+        "parameters": cell.definition.params if cell.definition.corpus_cases else {"fixture": True},
         "timings_ns": timings,
     }
 
@@ -161,7 +161,7 @@ def _run(
 
 def test_default_manifest_has_full_ordered_matrix(runner_context) -> None:
     matrix = runner.select_matrix(runner_context.suite)
-    assert len(matrix) == 56
+    assert len(matrix) == 58
     assert sum(c.workload == "gemm" for c in runner_context.suite.cases) == 16
     assert matrix[:4] == (
         _cell(runner_context, "triton.copy_fp32_32m.threads8", "gfx950"),
@@ -1267,7 +1267,7 @@ def test_manifest_rejects_unsafe_targets(tmp_path, target):
 def test_manifest_accepts_target_without_builtin_config(tmp_path):
     manifest = tmp_path / "suite.toml"
     manifest.write_text(
-        runner.DEFAULT_MANIFEST.read_text().replace("gfx1250", "gfx942")
+        (runner.BENCHMARK_ROOT / "suites/smoke.toml").read_text().replace('targets = ["gfx950"]', 'targets = ["gfx950", "gfx942"]')
     )
     assert runner.load_manifest(manifest).targets == ("gfx950", "gfx942")
 
@@ -1379,3 +1379,88 @@ def test_missing_wrapper_executable_fails_cell(runner_context):
     assert result["status"] == "failed"
     assert result["tests"][0]["exitCode"] is None
     assert "No such file" in result["tests"][0]["error"]
+
+def _native_build(case, _manager, _sdk):
+    return SimpleNamespace(
+        executable_path=Path("/native/kernel"),
+        metadata={"target_config": case.metadata["target_config"]},
+    )
+
+
+def test_mixed_suite_runs_and_publishes(runner_context, monkeypatch):
+    monkeypatch.setattr(runner.native, "build", _native_build)
+    matrix = runner.select_matrix(runner_context.suite)
+    output, result = _run(runner_context, matrix, "mixed")
+    assert len(result["tests"]) == 58
+    assert all(test["status"] == "completed" for test in result["tests"])
+    for cell in matrix[-2:]:
+        payload = json.loads(
+            (output / "cases" / cell.case / cell.target / "workload.json").read_text()
+        )
+        assert payload["provider"] == "hipkittens"
+        assert payload["parameters"] == cell.definition.params
+    published = dashboard_publish.publish(
+        result,
+        data_dir=runner_context.root / "data",
+        run_id="mixed",
+        repository="https://github.com/ROCm/rocm-systems",
+        environment_id="test",
+        trigger="manual",
+        branch="develop",
+    )
+    assert len(json.loads(Path(published["run"]).read_text())["targets"]) == 2
+    assert result["tests"][-1]["problem"]["layout"] == "ABt"
+
+
+@pytest.mark.parametrize("failure", ["build", "timeout", "interrupted"])
+def test_native_failures_retain_matrix(runner_context, monkeypatch, failure):
+    matrix = tuple(
+        cell
+        for cell in runner.select_matrix(runner_context.suite)
+        if cell.definition.corpus_cases
+    )
+    monkeypatch.setattr(runner.native, "build", _native_build)
+    if failure == "build":
+
+        def fail_build(*_args):
+            raise RuntimeError("native build failed")
+
+        monkeypatch.setattr(runner.native, "build", fail_build)
+
+    def process(argv, **kwargs):
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired(argv, 300)
+        if failure == "interrupted":
+            raise KeyboardInterrupt()
+        return _successful_process(runner_context, argv, **kwargs)
+
+    if failure == "interrupted":
+        with pytest.raises(KeyboardInterrupt):
+            _run(runner_context, matrix, failure, process=process)
+        result = json.loads((runner_context.root / failure / "run.json").read_text())
+    else:
+        _, result = _run(runner_context, matrix, "native-" + failure, process=process)
+    dashboard_publish.publish(
+        result,
+        data_dir=runner_context.root / "data",
+        run_id=failure,
+        repository="https://github.com/ROCm/rocm-systems",
+        environment_id="test",
+        trigger="manual",
+        branch="develop",
+    )
+    assert result["status"] == "failed"
+    assert result["finishedAt"] is not None
+    assert len(result["tests"]) == 2
+    for test in result["tests"]:
+        assert test["status"] == ("timeout" if failure == "timeout" else "failed")
+        assert test["problem"] == {
+            "m": 256,
+            "n": 256,
+            "k": 256,
+            "dtype": "bf16",
+            "outputDtype": "bf16",
+            "accumulationDtype": "fp32",
+            "layout": "ABt",
+        }
+        assert test["artifacts"]["workload"] is None
