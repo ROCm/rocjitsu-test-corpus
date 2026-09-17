@@ -14,9 +14,9 @@ import importlib.util
 import json
 import math
 import os
-from pathlib import Path
 import platform
 import re
+import shlex
 import signal
 import socket
 import statistics
@@ -25,16 +25,14 @@ import sys
 import time
 import tomllib
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any, TextIO
 
 BENCHMARK_ROOT = Path(__file__).resolve().parent
 CORPUS_ROOT = BENCHMARK_ROOT.parent
 WORKLOAD_ROOT = CORPUS_ROOT / "corpus" / "benchmarks"
 DEFAULT_MANIFEST = BENCHMARK_ROOT / "suites" / "nightly.toml"
-TARGET_CONFIGS = {
-    "gfx950": Path("configs") / "gfx950_mi355x_kmd.json",
-    "gfx1250": Path("configs") / "gfx1250_mi455x.json",
-}
+TARGET_NAME = re.compile(r"gfx[0-9A-Za-z]+")
 MANIFEST_FIELDS = {
     "name",
     "targets",
@@ -122,6 +120,7 @@ class PreparedCommand:
 
 @dataclasses.dataclass(frozen=True)
 class TargetMetadata:
+    configuration: dict[str, Any]
     exec_mode: str
     num_threads: int
     config_sha256: str
@@ -176,9 +175,8 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
     if not isinstance(name, str) or not name:
         raise RunnerError("name must be a non-empty string")
     targets = _string_list(value["targets"], "targets")
-    unknown_targets = sorted(set(targets) - set(TARGET_CONFIGS))
-    if unknown_targets:
-        raise RunnerError(f"unknown targets: {unknown_targets}")
+    if any(not TARGET_NAME.fullmatch(target) for target in targets):
+        raise RunnerError("targets must be concrete gfx target names")
     raw_cases = value["cases"]
     if not isinstance(raw_cases, list) or not raw_cases:
         raise RunnerError("cases must be a non-empty array of tables")
@@ -260,28 +258,54 @@ def select_matrix(
     )
 
 
+def parse_run_wrapper(value: str) -> tuple[str, ...]:
+    """Parse a command prefix, with one literal per-cell config placeholder."""
+    try:
+        argv = tuple(shlex.split(value))
+    except ValueError as error:
+        raise RunnerError(f"invalid --run-wrapper: {error}") from error
+    if not argv or argv[0] == "{config}" or argv.count("{config}") != 1:
+        raise RunnerError(
+            "--run-wrapper requires a command and exactly one standalone {config} token"
+        )
+    if any("{config}" in arg and arg != "{config}" for arg in argv):
+        raise RunnerError("{config} must be a standalone --run-wrapper token")
+    return argv
+
+
+def parse_target_configs(values: Sequence[str]) -> dict[str, Path]:
+    configs = {}
+    for value in values:
+        target, separator, path = value.partition("=")
+        if not separator or not TARGET_NAME.fullmatch(target) or not path.strip():
+            raise RunnerError(
+                "--target-config must be TARGET=PATH with a concrete gfx target"
+            )
+        if target in configs:
+            raise RunnerError(f"duplicate --target-config for {target}")
+        configs[target] = Path(path).expanduser().resolve()
+    return configs
+
+
 def prepare_command(
-    build_dir: str | Path,
     output: str | Path,
     cell: Cell,
     *,
-    rocjitsu_source_dir: str | Path,
+    run_wrapper: Sequence[str],
+    target: TargetMetadata,
     warmups: int,
     samples: int,
-    num_threads: int | None = None,
     plugin_profile: str = "none",
 ) -> PreparedCommand:
     """Construct one shell-free Rocjitsu workload command."""
 
-    build = Path(build_dir).expanduser().resolve()
     output_root = Path(output).expanduser().resolve()
     workload_path = output_root / "cases" / cell.case / cell.target / "workload.json"
     config_path, plugin_reports = _materialize_config(
         output_root,
         cell,
         plugin_profile,
-        num_threads=num_threads,
-        rocjitsu_source_dir=Path(rocjitsu_source_dir),
+        configuration=target.configuration,
     )
     payload = (
         sys.executable,
@@ -314,10 +338,7 @@ def prepare_command(
     )
     return PreparedCommand(
         argv=(
-            str(build / "tools" / "rocjitsu" / "rocjitsu"),
-            "--config",
-            str(config_path),
-            "--",
+            *(str(config_path) if arg == "{config}" else arg for arg in run_wrapper),
             *payload,
         ),
         cwd=CORPUS_ROOT,
@@ -328,11 +349,9 @@ def prepare_command(
     )
 
 
-def _require_file(path: Path, description: str, *, executable: bool = False) -> None:
+def _require_file(path: Path, description: str) -> None:
     if not path.is_file():
         raise RunnerError(f"missing {description}: {path}")
-    if executable and not os.access(path, os.X_OK):
-        raise RunnerError(f"{description} is not executable: {path}")
 
 
 def _installed_rocm_path() -> Path:
@@ -344,7 +363,6 @@ def _installed_rocm_path() -> Path:
 
 def validate_build(
     build_dir: str | Path,
-    matrix: Sequence[Cell],
     *,
     rocjitsu_source_dir: str | Path,
     plugin_profile: str = "none",
@@ -395,13 +413,6 @@ def validate_build(
             f"benchmark build uses ROCM_PATH {str(rocm_path)!r}, "
             f"but this Python environment provides {str(installed_rocm)!r}"
         )
-    _require_file(
-        build / "tools" / "rocjitsu" / "rocjitsu", "rocjitsu", executable=True
-    )
-    for target in {cell.target for cell in matrix}:
-        _require_file(
-            expected_source / TARGET_CONFIGS[target], f"{target} configuration"
-        )
     _require_file(WORKLOAD_ROOT / "triton" / "workloads.py", "Triton workload")
     try:
         plugins = PLUGIN_PROFILES[plugin_profile]
@@ -416,11 +427,9 @@ def validate_build(
 
 
 def _load_target_configuration(
-    target: str,
+    path: Path,
     num_threads: int | None = None,
-    rocjitsu_source_dir: Path = CORPUS_ROOT,
 ) -> tuple[dict[str, Any], str]:
-    path = rocjitsu_source_dir / TARGET_CONFIGS[target]
     try:
         encoded = path.read_bytes()
         value = json.loads(encoded)
@@ -442,14 +451,14 @@ def _load_target_configuration(
 
 
 def _target_metadata(
-    target: str,
+    path: Path,
     num_threads: int | None = None,
-    rocjitsu_source_dir: Path = CORPUS_ROOT,
 ) -> TargetMetadata:
-    path = rocjitsu_source_dir / TARGET_CONFIGS[target]
-    value, config_sha256 = _load_target_configuration(
-        target, num_threads, rocjitsu_source_dir
-    )
+    value, config_sha256 = _load_target_configuration(path, num_threads)
+    if value.get("plugins") or value.get("sinks"):
+        raise RunnerError(
+            f"benchmark base configuration must not enable plugins or sinks: {path}"
+        )
     exec_mode = value.get("exec_mode")
     num_threads = value.get("num_threads")
     if not isinstance(exec_mode, str) or not exec_mode:
@@ -461,6 +470,7 @@ def _target_metadata(
     ):
         raise RunnerError(f"target configuration has invalid num_threads: {path}")
     return TargetMetadata(
+        configuration=value,
         exec_mode=exec_mode,
         num_threads=num_threads,
         config_sha256=config_sha256,
@@ -472,19 +482,13 @@ def _materialize_config(
     cell: Cell,
     plugin_profile: str,
     *,
-    num_threads: int | None = None,
-    rocjitsu_source_dir: Path = CORPUS_ROOT,
+    configuration: Mapping[str, Any],
 ) -> tuple[Path, dict[str, Path]]:
     try:
         plugins = PLUGIN_PROFILES[plugin_profile]
     except KeyError as error:
         raise RunnerError(f"unknown plugin profile {plugin_profile!r}") from error
-    value, _ = _load_target_configuration(cell.target, num_threads, rocjitsu_source_dir)
-    if value.get("plugins") or value.get("sinks"):
-        raise RunnerError(
-            f"benchmark base configuration must not enable plugins or sinks: "
-            f"{TARGET_CONFIGS[cell.target]}"
-        )
+    value = dict(configuration)
 
     cell_dir = output_root / "cases" / cell.case / cell.target
     cell_dir.mkdir(parents=True, exist_ok=True)
@@ -802,6 +806,8 @@ def run_suite(
     build_dir: str | Path,
     rocjitsu_source_dir: str | Path,
     output: str | Path,
+    run_wrapper: str,
+    target_configs: Mapping[str, Path],
     warmups: int | None = None,
     samples: int | None = None,
     plugin_profile: str = "none",
@@ -820,12 +826,16 @@ def run_suite(
     selected_samples = suite.samples if samples is None else _sample_count(samples)
     build = Path(build_dir).expanduser().resolve()
     source_dir = Path(rocjitsu_source_dir).expanduser().resolve()
+    wrapper = parse_run_wrapper(run_wrapper)
     build_metadata = validate_build(
-        build, matrix, rocjitsu_source_dir=source_dir, plugin_profile=plugin_profile
+        build, rocjitsu_source_dir=source_dir, plugin_profile=plugin_profile
     )
     targets = tuple(dict.fromkeys(cell.target for cell in matrix))
+    missing = sorted(set(targets) - set(target_configs))
+    if missing:
+        raise RunnerError(f"missing --target-config for selected targets: {missing}")
     target_metadata = {
-        target: _target_metadata(target, suite.num_threads, source_dir)
+        target: _target_metadata(target_configs[target], suite.num_threads)
         for target in targets
     }
     started = time.monotonic()
@@ -894,13 +904,12 @@ def run_suite(
                 f"timeout_seconds={suite.timeout_seconds:g}",
             )
             command = prepare_command(
-                build,
                 output_path,
                 cell,
-                rocjitsu_source_dir=source_dir,
+                run_wrapper=wrapper,
+                target=target_metadata[cell.target],
                 warmups=selected_warmups,
                 samples=selected_samples,
-                num_threads=suite.num_threads,
                 plugin_profile=plugin_profile,
             )
             cell_dir = command.workload_path.parent
@@ -1024,6 +1033,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--rocjitsu-source-dir", type=Path)
     parser.add_argument("--build-dir", type=Path)
+    parser.add_argument(
+        "--run-wrapper", help="Command prefix with one standalone {config} token"
+    )
+    parser.add_argument(
+        "--target-config", action="append", default=[], metavar="TARGET=PATH"
+    )
     parser.add_argument("--output", type=Path)
     parser.add_argument("--list", action="store_true")
     return parser
@@ -1051,9 +1066,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             arguments.build_dir is None
             or arguments.output is None
             or arguments.rocjitsu_source_dir is None
+            or arguments.run_wrapper is None
         ):
             raise RunnerError(
-                "--rocjitsu-source-dir, --build-dir and --output are required unless --list is used"
+                "--rocjitsu-source-dir, --build-dir, --run-wrapper and --output are required unless --list is used"
             )
         run = run_suite(
             suite,
@@ -1061,6 +1077,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             build_dir=arguments.build_dir,
             rocjitsu_source_dir=arguments.rocjitsu_source_dir,
             output=arguments.output,
+            run_wrapper=arguments.run_wrapper,
+            target_configs=parse_target_configs(arguments.target_config),
             warmups=arguments.warmups,
             samples=arguments.samples,
             plugin_profile=arguments.plugin_profile,

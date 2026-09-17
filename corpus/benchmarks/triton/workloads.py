@@ -442,7 +442,7 @@ def to_cpu(tensor):
 def prepare_gpt_oss_attention(parameters):
     from triton.tools.tensor_descriptor import TensorDescriptor
 
-    from corpus.benchmarks.triton.gpt_oss_attention import _attn_fwd, attention_ref
+    from corpus.benchmarks.third_party.gpt_oss.attention import _attn_fwd, attention_ref
 
     batch, sequence = parameters["batch"], parameters["sequence"]
     heads, kv_heads = parameters["query_heads"], parameters["key_value_heads"]

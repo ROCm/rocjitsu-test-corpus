@@ -6,32 +6,40 @@ parameters. Benchmark runs are separate from normal pytest collection.
 
 ## Setup and run
 
-Use Python 3.12. From this repository, install the pinned ROCm environment:
+Use Python 3.12 and install the pinned GPU dependencies with
+`python -m pip install -r benchmarks/requirements.txt`. For the concrete
+rocjitsu build and launch recipe, see the
+[rocm-systems benchmark guide](https://github.com/ROCm/rocm-systems/blob/develop/emulation/rocjitsu/docs/benchmark-suite.md).
+
+The consumer supplies the launch command and one base config per selected target:
 
 ```bash
-python3.12 -m venv /path/to/benchmark-env
-python=/path/to/benchmark-env/bin/python
-"$python" -m pip install -r benchmarks/requirements.txt
-
-src=/path/to/rocm-systems/emulation/rocjitsu
-build=/path/to/rocjitsu-build-release
-rocm=$("$(dirname "$python")/rocm-sdk" path --root)
-export LD_LIBRARY_PATH="$rocm/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-cmake -S "$src" -B "$build" -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DLTO=OFF \
-  -DRJ_ENABLE_ASAN=OFF -DRJ_ENABLE_MSAN=OFF \
-  -DRJ_ENABLE_TSAN=OFF -DRJ_ENABLE_UBSAN=OFF \
-  -DROCM_PATH="$rocm" -DPython3_EXECUTABLE="$python"
-cmake --build "$build"
-
-"$python" -m benchmarks.runner \
+python -m benchmarks.runner \
   --rocjitsu-source-dir "$src" --build-dir "$build" \
+  --target-config "gfx950=$gfx950_config" \
+  --target-config "gfx1250=$gfx1250_config" \
+  --run-wrapper "\"$rocjitsu\" --config {config} --" \
   --output .benchmark-artifacts/run-001
 ```
 
-The runner checks the Release configuration, disabled LTO/sanitizers, source
-root, and SDK against the active Python environment. Rebuild rocjitsu after
-source changes.
+`--run-wrapper` is a shell-style argument list, parsed without executing a shell.
+It must contain exactly one standalone `{config}` token, which the runner
+replaces with the generated per-cell config path before appending the workload
+command. Quote paths containing spaces inside the wrapper string; shell
+operators and variable expansion are not interpreted by the runner.
+
+`--target-config TARGET=PATH` is repeatable. Relative paths resolve from the
+invoking directory. Every selected target needs a mapping; extra mappings are
+allowed for convenience when selecting a subset. The runner snapshots selected
+configs before execution and derives each cell's config from that snapshot.
+It sets the suite's thread count and removes the simulation tick limit, and
+adds the selected plugin and report paths. Base configs must not enable plugins
+or sinks.
+
+The runner still checks the Release configuration, disabled LTO/sanitizers,
+source root, SDK, and selected plugin binaries. The wrapper must select the
+binary from that build; arbitrary wrapper commands cannot be checked against
+CMake metadata. Rebuild rocjitsu after source changes.
 
 The default `benchmarks/suites/nightly.toml` runs 28 cases on both `gfx950` and
 `gfx1250` (56 cells). Sixteen cases cover FP16 and BF16 GEMMs at
@@ -55,10 +63,11 @@ outputs to the CPU and checks an upstream CPU reference after all samples,
 before emitting results. A failed reference check fails the case. Each sample
 launches one Triton kernel.
 
-GPT-OSS attention lives alongside the other Triton workloads in
-`corpus/benchmarks/triton/gpt_oss_attention.py`. Its top comment records the
-upstream repository, commit, and original path. The adapter calls `_attn_fwd`
-directly with fixed launch settings; it does not download a model or autotune.
+The extracted GPT-OSS attention implementation lives in
+`corpus/benchmarks/third_party/gpt_oss/attention.py`. Its `NOTICE.md`
+records the upstream revision and extracted functions; `LICENSE` contains the
+upstream license. The launch adapter stays in `triton/workloads.py` and calls
+`_attn_fwd` directly with fixed launch settings; it does not download a model or autotune.
 
 Package versions are pinned in `requirements.txt`; generated kernels and caches
 are build artifacts.
@@ -152,8 +161,12 @@ expanded suite passed all 56 cells locally in 17m43s with eight threads, three
 warmups, and 21 samples; hosted runner speed may differ. A fresh dataset requires a completed Vanilla run
 before the dashboard can display it, although failed runs can be published.
 
-Run the runner and publisher unit tests without ROCm dependencies:
+Run the benchmark harness tests through the repository's pytest configuration,
+without ROCm dependencies. pytest-xdist supplies the plugin used by the root
+configuration; install these test tools separately from the AMD package index:
 
 ```bash
-python3 -m unittest discover -s benchmarks/tests
+python3 -m pip install --index-url https://pypi.org/simple \
+  'pytest>=5.4.1' 'pytest-xdist>=1.32.0'
+python3 -m pytest -q tests/test_benchmark_*.py
 ```
