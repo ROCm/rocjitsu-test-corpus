@@ -290,6 +290,11 @@ def normalize_run(
     ):
         if provenance.get(key) is not None:
             details[key] = provenance[key]
+    for name, version in _mapping(
+        provenance.get("packages", {}), "provenance packages"
+    ).items():
+        if version is not None:
+            details[f"package.{name}"] = version
     for key in ("cpu", "kernel", "platform"):
         if host.get(key) is not None:
             details[key] = host[key]

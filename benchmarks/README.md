@@ -128,6 +128,11 @@ failed cases, so a new case can publish its first failure without an existing
 catalog entry. Derived launch and source metadata remain in `workload.json`.
 A workload that fails early may have no `workload.json`.
 
+On SIGINT or SIGTERM, the runner terminates the active workload, saves captured
+stdout and stderr, retains existing workload and plugin artifacts, and
+finalizes `run.json` as failed. Completed cells retain their results; cells that
+have not started retain null artifact links.
+
 Use `--manifest benchmarks/suites/plugin-overhead.toml` and
 `--plugin-profile none|logging|race|throughput`, running each profile into a
 separate output directory. Each enabled profile must produce its report.
@@ -152,7 +157,11 @@ run the same suite and sampling settings on the same machine, then publish each
 profile with a distinct `--run-id` and the same `--comparison-id`. The latter
 defaults to the run ID, so unrelated executions are never grouped implicitly.
 Catalog, source, machine, environment, trigger, and targets must match within a
-comparison. `--machine-id` defaults to the recorded hostname; CI passes the
+comparison. Recorded package versions are published as `package.<name>` environment
+entries and participate in these compatibility checks. Packages recorded as
+unavailable are omitted. Existing published runs remain immutable; runs with
+package entries cannot join comparisons that lack those entries.
+`--machine-id` defaults to the recorded hostname; CI passes the
 benchmark runner's name. `--is-beta` controls the site's Beta label.
 
 CI publishes only the uninstrumented nightly suite. The benchmark step has a

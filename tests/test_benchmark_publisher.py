@@ -87,7 +87,11 @@ def _raw(
             "tritonVersion": "3.6.0",
             "tritonCommitSha": None,
             "tensileLiteCommitSha": "c" * 12,
-            "packages": {},
+            "packages": {
+                "rocm-sdk-devel": "7.2.0",
+                "rocm-sdk-libraries": "7.2.0",
+                "rocm-sdk-device-gfx950": "7.2.0",
+            },
         },
         "environment": {"hostname": "benchmark-host"},
         "tests": tests or [_test()],
@@ -240,6 +244,54 @@ def test_same_source_requires_consistent_commit_timestamp(publisher_context):
     assert (publisher_context.data / "index.json").read_bytes() == before
 
 
+def test_published_environment_preserves_package_versions(publisher_context):
+    raw = _raw(publisher_context)
+    raw["provenance"]["packages"].update(
+        {"additional-package": "1.2.3", "uninstalled-package": None}
+    )
+    result = _publish(publisher_context, raw)
+    run = publisher.load_json_document(result["run"])
+    packages = {
+        detail["key"]: detail["value"]
+        for detail in run["environment"]
+        if detail["key"].startswith("package.")
+    }
+    assert packages == {
+        "package.additional-package": "1.2.3",
+        "package.rocm-sdk-devel": "7.2.0",
+        "package.rocm-sdk-device-gfx950": "7.2.0",
+        "package.rocm-sdk-libraries": "7.2.0",
+    }
+
+
+@pytest.mark.parametrize("packages", ["missing", {}, {"uninstalled-package": None}])
+def test_unavailable_package_versions_are_omitted(publisher_context, packages):
+    raw = _raw(publisher_context)
+    if packages == "missing":
+        del raw["provenance"]["packages"]
+    else:
+        raw["provenance"]["packages"] = packages
+    result = _publish(publisher_context, raw)
+    run = publisher.load_json_document(result["run"])
+    assert not any(
+        detail["key"].startswith("package.") for detail in run["environment"]
+    )
+
+
+@pytest.mark.parametrize(
+    "packages",
+    [None, [], {"package": []}, {"package": {}}, {"package": float("inf")}],
+)
+def test_malformed_package_versions_rejected_before_writes(
+    publisher_context, packages
+):
+    raw = _raw(publisher_context)
+    raw["provenance"]["packages"] = packages
+    with pytest.raises(publisher.PublishError):
+        _publish(publisher_context, raw)
+    assert not publisher_context.data.exists()
+
+
 def test_compatible_plugins_share_comparison(publisher_context):
     _publish(publisher_context, comparison_id="experiment")
     for profile in ("logging", "race", "throughput"):
@@ -291,6 +343,38 @@ def test_incompatible_comparisons_rejected(publisher_context):
             _publish(
                 publisher_context, raw, run_id="logging", comparison_id="experiment"
             )
+
+
+@pytest.mark.parametrize("package", ["rocm-sdk-libraries", "rocm-sdk-device-gfx950"])
+@pytest.mark.parametrize(
+    "before_version,after_version",
+    [("7.2.0", "7.2.1"), ("7.2.0", None), (None, "7.2.0")],
+)
+def test_package_version_changes_reject_comparison_before_writes(
+    publisher_context, package, before_version, after_version
+):
+    baseline = _raw(publisher_context)
+    if before_version is None:
+        del baseline["provenance"]["packages"][package]
+    else:
+        baseline["provenance"]["packages"][package] = before_version
+    _publish(publisher_context, baseline, comparison_id="experiment")
+    before = {p: p.read_bytes() for p in publisher_context.data.rglob("*.json")}
+    raw = _raw(publisher_context)
+    raw["configuration"]["pluginProfile"] = "logging"
+    if after_version is None:
+        del raw["provenance"]["packages"][package]
+    else:
+        raw["provenance"]["packages"][package] = after_version
+    assert (
+        raw["provenance"]["rocmSdkVersion"]
+        == baseline["provenance"]["rocmSdkVersion"]
+    )
+    with pytest.raises(publisher.PublishError, match="incompatible comparison"):
+        _publish(publisher_context, raw, run_id="logging", comparison_id="experiment")
+    assert before == {
+        p: p.read_bytes() for p in publisher_context.data.rglob("*.json")
+    }
 
 
 def test_malformed_results_and_problems_rejected(publisher_context):

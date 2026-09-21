@@ -77,6 +77,15 @@ class RunnerError(ValueError):
     """A user-facing configuration or execution error."""
 
 
+class _CommandInterrupted(KeyboardInterrupt):
+    """An interruption with output drained from the terminated workload."""
+
+    def __init__(self, message: str, stdout: str, stderr: str) -> None:
+        super().__init__(message)
+        self.stdout = stdout
+        self.stderr = stderr
+
+
 @dataclasses.dataclass(frozen=True)
 class Case:
     id: str
@@ -747,11 +756,14 @@ def _run_command(
         raise subprocess.TimeoutExpired(
             argv, timeout, output=stdout, stderr=stderr
         ) from None
-    except BaseException:
+    except BaseException as error:
         try:
-            terminate()
+            stdout, stderr = terminate()
         except BaseException:
             pass
+        else:
+            if isinstance(error, KeyboardInterrupt):
+                raise _CommandInterrupted(str(error), stdout, stderr) from error
         raise
     return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
 
@@ -970,13 +982,30 @@ def run_suite(
                 )
             except (OSError, RunnerError) as error:
                 result["error"] = str(error)
-            if not command.workload_path.is_file():
-                result["artifacts"]["workload"] = None
-            (cell_dir / "stdout.txt").write_text(stdout, encoding="utf-8")
-            (cell_dir / "stderr.txt").write_text(stderr, encoding="utf-8")
-            run["tests"][position - 1] = result
-            run["wallTimeSeconds"] = time.monotonic() - started
-            _write_run(output_path, run)
+            except KeyboardInterrupt as error:
+                if isinstance(error, _CommandInterrupted):
+                    stdout = _captured_text(error.stdout)
+                    stderr = _captured_text(error.stderr)
+                result = _failed_test(
+                    cell,
+                    target_metadata[cell.target],
+                    "workload interrupted" + (f": {error}" if str(error) else ""),
+                    config_path=config_artifact,
+                    plugin_reports={
+                        plugin: plugin_artifacts[plugin]
+                        for plugin, path in command.plugin_reports.items()
+                        if path.is_file()
+                    },
+                )
+                raise
+            finally:
+                if not command.workload_path.is_file():
+                    result["artifacts"]["workload"] = None
+                (cell_dir / "stdout.txt").write_text(stdout, encoding="utf-8")
+                (cell_dir / "stderr.txt").write_text(stderr, encoding="utf-8")
+                run["tests"][position - 1] = result
+                run["wallTimeSeconds"] = time.monotonic() - started
+                _write_run(output_path, run)
             detail = ""
             if result["status"] == "completed":
                 detail = f" median_ns={result['timing']['median']}"

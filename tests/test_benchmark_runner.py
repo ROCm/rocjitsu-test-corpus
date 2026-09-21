@@ -9,9 +9,11 @@ import io
 import json
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
+import time
 import types
 from functools import partial
 from pathlib import Path
@@ -1071,22 +1073,44 @@ def test_timeout_kills_workload_process_group(runner_context) -> None:
 @pytest.mark.skipif(not os.name == "posix", reason="process groups require POSIX")
 def test_interrupt_kills_workload_process_group(runner_context) -> None:
     process = mock.Mock(pid=1234)
-    process.communicate.side_effect = [KeyboardInterrupt(), ("", "")]
+    process.communicate.side_effect = [
+        KeyboardInterrupt("SIGTERM"),
+        ("partial out", "partial error"),
+    ]
     with mock.patch.object(
         runner.subprocess, "Popen", return_value=process
     ), mock.patch.object(runner.os, "killpg") as kill_group, pytest.raises(
         KeyboardInterrupt
-    ):
+    ) as raised:
         runner._run_command(("workload",), cwd=runner_context.root, env={}, timeout=1)
     kill_group.assert_called_once_with(1234, signal.SIGKILL)
     assert process.communicate.call_count == 2
+    assert str(raised.value) == "SIGTERM"
+    assert raised.value.stdout == "partial out"
+    assert raised.value.stderr == "partial error"
 
 
-def test_interruption_retains_completed_and_unrun_matrix_cells(runner_context) -> None:
+@pytest.mark.skipif(not os.name == "posix", reason="process groups require POSIX")
+def test_interrupt_survives_failure_to_drain_output(runner_context) -> None:
+    interruption = KeyboardInterrupt("SIGTERM")
+    process = mock.Mock(pid=1234)
+    process.communicate.side_effect = [interruption, OSError("cannot drain")]
+    with mock.patch.object(
+        runner.subprocess, "Popen", return_value=process
+    ), mock.patch.object(runner.os, "killpg"), pytest.raises(KeyboardInterrupt) as raised:
+        runner._run_command(("workload",), cwd=runner_context.root, env={}, timeout=1)
+    assert raised.value is interruption
+
+
+@pytest.mark.parametrize("artifacts_written", [False, True])
+def test_interruption_retains_completed_and_unrun_matrix_cells(
+    runner_context, artifacts_written
+) -> None:
     matrix = _matrix(
         runner_context,
         "triton.rmsnorm_bf16.threads8",
         "triton.gemm_bf16_aligned.threads8",
+        "triton.gpt_oss_attention_bf16.threads8",
     )
     calls = 0
 
@@ -1094,7 +1118,9 @@ def test_interruption_retains_completed_and_unrun_matrix_cells(runner_context) -
         nonlocal calls
         calls += 1
         if calls == 2:
-            raise KeyboardInterrupt()
+            if artifacts_written:
+                _successful_process(runner_context, argv, **kwargs)
+            raise runner._CommandInterrupted("SIGTERM", "partial out", "partial error")
         return _successful_process(runner_context, argv, **kwargs)
 
     with pytest.raises(KeyboardInterrupt):
@@ -1104,17 +1130,39 @@ def test_interruption_retains_completed_and_unrun_matrix_cells(runner_context) -
             "interrupted-partial",
             process=interrupt_after_first,
             samples=1,
+            plugin_profile="logging",
         )
-    raw = json.loads((runner_context.root / "interrupted-partial/run.json").read_text())
-    assert [test["status"] for test in raw["tests"]] == ["completed", "failed"]
-    assert raw["tests"][1]["durationSeconds"] is None
+    output = runner_context.root / "interrupted-partial"
+    raw = json.loads((output / "run.json").read_text())
+    assert calls == 2
+    assert [test["status"] for test in raw["tests"]] == ["completed", "failed", "failed"]
+    assert raw["status"] == "failed"
+    assert raw["finishedAt"] is not None
+    assert raw["tests"][0]["durationSeconds"] is not None
+    assert (output / raw["tests"][0]["artifacts"]["stdout"]).read_text() == "out"
+    active = raw["tests"][1]
+    assert active["durationSeconds"] is None
+    assert active["timing"]["samples"] == []
+    assert active["error"] == "workload interrupted: SIGTERM"
+    assert not active["timedOut"]
+    assert (output / active["artifacts"]["stdout"]).read_text() == "partial out"
+    assert (output / active["artifacts"]["stderr"]).read_text() == "partial error"
+    assert (output / active["artifacts"]["config"]).is_file()
+    if artifacts_written:
+        assert (output / active["artifacts"]["workload"]).is_file()
+        report = output / active["artifacts"]["pluginReports"]["logging"]
+        assert report.read_text() == "logging report\n"
+    else:
+        assert active["artifacts"]["workload"] is None
+        assert active["artifacts"]["pluginReports"] == {}
     assert all(
         (
             value is None
-            for key, value in raw["tests"][1]["artifacts"].items()
+            for key, value in raw["tests"][2]["artifacts"].items()
             if key != "pluginReports"
         )
     )
+    assert raw["tests"][2]["artifacts"]["pluginReports"] == {}
     run, catalog = dashboard_publish.normalize_run(
         raw,
         run_id="interrupted",
@@ -1122,8 +1170,8 @@ def test_interruption_retains_completed_and_unrun_matrix_cells(runner_context) -
         branch="develop",
         environment_id="test",
     )
-    assert len(catalog["tests"]) == 2
-    assert len(run["targets"][0]["results"]) == 2
+    assert len(catalog["tests"]) == 3
+    assert len(run["targets"][0]["results"]) == 3
 
 
 def test_interruption_finalizes_the_run_artifact(runner_context) -> None:
@@ -1146,6 +1194,98 @@ def test_interruption_finalizes_the_run_artifact(runner_context) -> None:
     assert len(persisted["tests"]) == 1
     assert persisted["tests"][0]["status"] == "failed"
     assert "interrupted" in persisted["tests"][0]["error"]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="signals require POSIX")
+@pytest.mark.parametrize("signum", [signal.SIGINT, signal.SIGTERM])
+def test_signal_preserves_flushed_workload_output(runner_context, signum) -> None:
+    ready = runner_context.root / "ready"
+    child = runner_context.root / "waiting_workload.py"
+    child.write_text(
+        "import os, signal, sys\n"
+        "from pathlib import Path\n"
+        "print('flushed stdout', flush=True)\n"
+        "print('flushed stderr', file=sys.stderr, flush=True)\n"
+        "ready = Path(sys.argv[1])\n"
+        "temporary = ready.with_suffix('.tmp')\n"
+        "temporary.write_text(str(os.getpid()))\n"
+        "temporary.replace(ready)\n"
+        "while True:\n"
+        "    signal.pause()\n"
+    )
+    driver = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from unittest.mock import patch\n"
+        "from benchmarks import runner\n"
+        "with patch.object(runner, '_installed_rocm_path', return_value=Path(sys.argv[1])):\n"
+        "    raise SystemExit(runner.main(sys.argv[2:]))\n"
+    )
+    output = runner_context.root / "signaled"
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            driver,
+            str(runner_context.rocm),
+            "--rocjitsu-source-dir",
+            str(runner_context.source),
+            "--build-dir",
+            str(runner_context.build),
+            "--target-config",
+            f"gfx950={runner_context.configs['gfx950']}",
+            "--target",
+            "gfx950",
+            "--case",
+            "triton.rmsnorm_bf16.threads8",
+            "--run-wrapper",
+            shlex.join(
+                [sys.executable, str(child), str(ready), "--config", "{config}", "--"]
+            ),
+            "--output",
+            str(output),
+        ],
+        cwd=runner.CORPUS_ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    child_reaped = False
+    try:
+        deadline = time.monotonic() + 10
+        while not ready.exists():
+            if process.poll() is not None:
+                pytest.fail(f"runner exited before readiness: {process.communicate()}")
+            if time.monotonic() >= deadline:
+                pytest.fail("workload did not signal readiness within 10 seconds")
+            time.sleep(0.01)
+        child_pid = int(ready.read_text())
+        process.send_signal(signum)
+        _, stderr = process.communicate(timeout=10)
+        assert process.returncode == 130, stderr
+        assert "benchmark run interrupted" in stderr
+        with pytest.raises(ProcessLookupError):
+            os.kill(child_pid, 0)
+        child_reaped = True
+    finally:
+        if not child_reaped and ready.exists():
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(int(ready.read_text()), signal.SIGKILL)
+        if process.poll() is None:
+            process.kill()
+        process.communicate(timeout=10)
+    raw = json.loads((output / "run.json").read_text())
+    assert raw["status"] == "failed"
+    assert raw["finishedAt"] is not None
+    active = raw["tests"][0]
+    assert active["status"] == "failed"
+    assert active["durationSeconds"] is None
+    assert "interrupted" in active["error"]
+    assert (output / active["artifacts"]["stdout"]).read_text() == "flushed stdout\n"
+    assert (output / active["artifacts"]["stderr"]).read_text() == "flushed stderr\n"
+    assert (output / active["artifacts"]["config"]).is_file()
+    assert active["artifacts"]["workload"] is None
 
 
 def test_existing_output_is_never_overwritten(runner_context) -> None:
@@ -1331,8 +1471,6 @@ def test_config_snapshot_matches_hash_even_if_source_changes(runner_context):
 
 
 def test_wrapper_preserves_quoted_paths_and_literal_shell_arguments(runner_context):
-    import shlex
-
     script = runner_context.root / "launcher with spaces.py"
     script.write_text("import json, sys; print(json.dumps(sys.argv[1:]))\n")
     sentinel = runner_context.root / "must-not-exist"
