@@ -216,7 +216,6 @@ def _result(test: Mapping[str, Any], test_id: str) -> dict[str, Any]:
         "testId": test_id,
         "durationSeconds": duration,
         "status": status,
-        "exitCode": exit_code,
         "error": error,
     }
 
@@ -554,6 +553,17 @@ def publish(
                 raise PublishError("incompatible comparison executions")
             if old["plugin"]["id"] == run["plugin"]["id"]:
                 raise PublishError("comparison repeats a plugin")
+    if any(
+        old["execution"]["machine"] != run["execution"]["machine"] for old in old_runs
+    ):
+        raise PublishError("all dashboard runs must use the same machine")
+    if run["plugin"]["id"] != "vanilla" and not any(
+        old["comparisonId"] == run["comparisonId"] and old["plugin"]["id"] == "vanilla"
+        for old in old_runs
+    ):
+        raise PublishError(
+            "publish the comparison's Vanilla baseline before plugin runs"
+        )
     run_path = root / "runs" / f"{run_id}.json"
     catalog_path = root / run["testCatalog"]
     for path, value in ((run_path, run), (catalog_path, catalog)):
