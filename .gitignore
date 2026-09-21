@@ -10,3 +10,4 @@ __pycache__/
 *.py[cod]
 *.log
 pytest-results.xml
+.benchmark-artifacts/
