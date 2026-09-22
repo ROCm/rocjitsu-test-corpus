@@ -526,3 +526,38 @@ def test_cli(publisher_context):
     assert publisher.load_json_document(publisher_context.data / "metadata.json")[
         "isBeta"
     ]
+
+
+@pytest.mark.parametrize("status", ["completed", "failed", "timeout"])
+def test_published_results_omit_raw_exit_code(publisher_context, status):
+    result = _publish(
+        publisher_context, _raw(publisher_context, [_test(status=status)])
+    )
+    run = publisher.load_json_document(result["run"])
+    assert set(run["targets"][0]["results"][0]) == {
+        "testId",
+        "durationSeconds",
+        "status",
+        "error",
+    }
+
+
+def test_independent_runs_require_same_machine(publisher_context):
+    _publish(publisher_context)
+    before = (publisher_context.data / "index.json").read_bytes()
+    with pytest.raises(publisher.PublishError, match="same machine"):
+        _publish(publisher_context, run_id="other-machine", machine_id="other")
+    assert (publisher_context.data / "index.json").read_bytes() == before
+
+
+@pytest.mark.parametrize("unrelated_baseline", [False, True])
+def test_plugin_requires_its_own_vanilla_baseline(
+    publisher_context, unrelated_baseline
+):
+    if unrelated_baseline:
+        _publish(publisher_context)
+    raw = _raw(publisher_context)
+    raw["configuration"]["pluginProfile"] = "logging"
+    with pytest.raises(publisher.PublishError, match="Vanilla baseline"):
+        _publish(publisher_context, raw, run_id="logging")
+    assert not (publisher_context.data / "runs/logging.json").exists()

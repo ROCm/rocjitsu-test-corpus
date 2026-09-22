@@ -145,7 +145,7 @@ publisher writes dashboard resources into a local `--data-dir`; CI passes
 `--expected-sha` and `--expected-corpus-sha` to require matching, clean source
 checkouts. Both source checkouts must be clean and include revision metadata.
 
-Published files follow the [dashboard contract](https://github.com/ROCm/rocm-systems/blob/64c135a1314a94d7156ccb352c9ae48b65ec59a5/emulation/rocjitsu/website/docs/website-data-contract.md):
+Published files follow the [dashboard contract](https://github.com/ROCm/rocm-systems/blob/c53572277a6f160e92f360e23f5af7ce2de904a7/emulation/rocjitsu/website/docs/website-data-contract.md):
 `metadata.json`, `index.json`, `test-catalogs/catalog-<hash>.json`, and
 `runs/<run-id>.json` under the supplied data directory. Catalogs describe the
 selected matrix exactly, including failed or interrupted cells. Catalogs and
@@ -167,8 +167,9 @@ benchmark runner's name. `--is-beta` controls the site's Beta label.
 CI publishes only the uninstrumented nightly suite. The benchmark step has a
 30-minute timeout, excluding installation, building, and publication. The
 expanded suite passed all 56 cells locally in 17m43s with eight threads, three
-warmups, and 21 samples; hosted runner speed may differ. A fresh dataset requires a completed Vanilla run
-before the dashboard can display it, although failed runs can be published.
+warmups, and 21 samples; hosted runner speed may differ. A fresh dataset requires a valid Vanilla run, which can contain failed or timed-out results.
+Publish each comparison’s Vanilla baseline before its instrumented runs. All runs
+in a dataset must use the same machine.
 
 Run the benchmark harness tests through the repository's pytest configuration,
 without ROCm dependencies. pytest-xdist supplies the plugin used by the root
