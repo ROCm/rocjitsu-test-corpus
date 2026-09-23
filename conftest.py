@@ -28,7 +28,7 @@ def pytest_addoption(parser):
         action="append",
         default=[],
         help=(
-            "Suite selector (iree, kernels, cts, dbt, semantics, llama, vulkan). "
+            "Suite selector (iree, kernels, cts, dbt, semantics, llama, race, vulkan). "
             "Repeat or pass "
             "comma-separated values."
         ),
