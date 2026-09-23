@@ -1,0 +1,323 @@
+{
+  "collection": "rocjitsu-race",
+  "cases": [
+    {
+      "name": "vgpr_waitcnt",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "vgpr_waitcnt_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "flat_global_wait_both",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "flat_global_vmcnt_only_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "flat_global_lgkmcnt_only_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "flat_lds_wait_both",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "flat_lds_vmcnt_only_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "flat_lds_lgkmcnt_only_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "sgpr_waitcnt",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "sgpr_waitcnt_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "sgpr_waw_load_then_mov",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "sgpr_waw_load_then_mov_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "sgpr_waw_load_then_load",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "sgpr_waw_load_then_load_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "lds_cross_wave",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "lds_cross_wave_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "lds_same_wave_order",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "global_to_lds_buffer",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "global_to_lds_buffer_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "partial_vmcnt_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "multiple_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "multi_kernel",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "multi_kernel_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "multi_workgroup",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "multi_workgroup_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "mixed_counters_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "stress_wavefront_reuse",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "stress_wavefront_reuse_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "exec_mask",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "exec_mask_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "exec_mask_same_wave",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "exec_mask_cross_wave_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "exec_mask_cross_wave",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "lds_transpose",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "lds_transpose_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "dual_offset_lds",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "dual_offset_lds_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "scratch_vmcnt",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "scratch_vmcnt_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "waw_global_load_then_alu",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "waw_global_load_then_alu_safe",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "waw_global_load_then_mfma",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "f64_vgpr_safe",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "f64_vgpr_race",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "f64_vgpr_waw",
+      "supported_targets": [
+        "gfx950"
+      ]
+    },
+    {
+      "name": "vgpr_waitcnt",
+      "supported_targets": [
+        "gfx1151"
+      ]
+    },
+    {
+      "name": "vgpr_waitcnt_race",
+      "supported_targets": [
+        "gfx1151"
+      ]
+    },
+    {
+      "name": "d16_global_load_merge_no_race",
+      "supported_targets": [
+        "gfx1151"
+      ]
+    },
+    {
+      "name": "d16_global_load_hi_merge_no_race",
+      "supported_targets": [
+        "gfx1151"
+      ]
+    },
+    {
+      "name": "d16_global_load_missing_waitcnt_race",
+      "supported_targets": [
+        "gfx1151"
+      ]
+    },
+    {
+      "name": "lds_wave32_cross_wave",
+      "supported_targets": [
+        "gfx1151"
+      ]
+    },
+    {
+      "name": "lds_wave32_cross_wave_race",
+      "supported_targets": [
+        "gfx1151"
+      ]
+    },
+    {
+      "name": "waw_global_load_then_wmma",
+      "supported_targets": [
+        "gfx1151"
+      ]
+    }
+  ]
+}

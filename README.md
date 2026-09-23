@@ -13,6 +13,7 @@ corpus/
   dbt/        Offline DBT translation profiles.
   semantics/  Standalone target-specific HIP semantic programs.
   llama/      llama.cpp test-backend-ops cases and vendored GGML sources.
+  race/       RocJITsu race-detector HIP integration cases.
   tensile/    gfx1250 TensileLite configs and generated artifacts.
   benchmarks/ Parameterized Triton benchmarks and reused upstream kernels.
 
@@ -60,8 +61,30 @@ CI orchestration and simulator configurations remain in rocm-systems.
   Tensile scripts, not by `tests/test_corpus.py`.
 
 `tests/test_corpus.py` discovers and runs the `iree`, `kernels`, `cts`, `dbt`,
-`semantics`, and `llama` suites. By default it uses target `gfx1201` and selects
-the first three; `dbt`, `semantics`, and `llama` are opt-in.
+`semantics`, `llama`, and `race` suites. By default it uses target `gfx1201`
+and selects the first three; `dbt`, `semantics`, `llama`, and `race` are opt-in.
+
+### RocJITsu race-detector integration
+
+The opt-in `race` suite builds the existing gfx950 and gfx1151 HIP integration
+programs with the corpus HIP toolchain and runs each GoogleTest case separately.
+The caller supplies a plugin-free base simulator config through
+`ROCJITSU_RACE_CONFIG` and a run wrapper containing one standalone `{config}`
+token. The suite derives a private race-plugin config and report directory for
+every case:
+
+```bash
+ROCM_PATH=/path/to/rocm-sdk \
+ROCJITSU_RACE_CONFIG=/path/to/gfx950-race-test.json \
+pytest tests/test_corpus.py \
+  --target gfx950 \
+  --suite race \
+  --run-wrapper "rocjitsu --config {config} --"
+```
+
+Set `ROCJITSU_RACE_BUILD_ROOT` to keep the CMake build outside the checkout.
+The HIP programs retain their original functional and race-report assertions;
+the corpus adapter only supplies build and launch isolation.
 
 ### gfx1250 memory CTS
 
