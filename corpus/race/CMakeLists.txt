@@ -77,6 +77,13 @@ if(NOT TARGET GTest::gtest)
     FetchContent_MakeAvailable(googletest)
 endif()
 
+add_executable(race_log_expectation_test race_log_expectation_test.cpp)
+target_compile_features(race_log_expectation_test PRIVATE cxx_std_20)
+target_include_directories(
+    race_log_expectation_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}"
+)
+target_link_libraries(race_log_expectation_test PRIVATE GTest::gtest_main)
+
 function(add_rocjitsu_race_test target_name source)
     add_executable(${target_name} "${source}")
     set_source_files_properties("${source}" PROPERTIES LANGUAGE HIP)
