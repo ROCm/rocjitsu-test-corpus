@@ -10,7 +10,7 @@ from support.prepare_inputs import make_target_spec
 from test_suites import race
 
 
-def test_manifest_preserves_every_moved_gtest() -> None:
+def test_configs_preserve_every_moved_gtest() -> None:
     configs = race.load_target_configs(race.default_config_files())
     expected_counts = {"gfx950": 45, "gfx1151": 8}
 

@@ -84,7 +84,9 @@ pytest tests/test_corpus.py \
 
 Set `ROCJITSU_RACE_BUILD_ROOT` to keep the CMake build outside the checkout.
 The HIP programs retain their original functional and race-report assertions;
-the corpus adapter only supplies build and launch isolation.
+the corpus adapter only supplies build and launch isolation. The same build
+also runs the host-only unit tests for the race-log parser and expectation
+matcher used by those programs.
 
 ### gfx1250 memory CTS
 
