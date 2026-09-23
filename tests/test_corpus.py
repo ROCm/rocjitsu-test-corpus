@@ -23,6 +23,7 @@ from test_suites import (
     iree,
     kernels,
     llama,
+    race,
     runtime_cts,
     semantics,
     vulkan,
@@ -39,6 +40,7 @@ SUITE_MODULES = {
     "vulkan": vulkan,
     "aql": runtime_cts,
     "pm4": runtime_cts,
+    "race": race,
 }
 DEFAULT_TARGET = "gfx1201"
 DEFAULT_SUITES = ("iree", "kernels", "cts")
