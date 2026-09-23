@@ -24,13 +24,12 @@ from support.define_contracts import (
     RunContext,
     TargetSpec,
 )
-from support.prepare_inputs import load_json, load_suite_target_configs, supports_target
+from support.prepare_inputs import load_suite_target_configs, supports_target
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RACE_SOURCE_DIR = REPO_ROOT / "corpus" / "race"
 CONFIGS_ROOT = RACE_SOURCE_DIR / "configs"
-CASES_PATH = RACE_SOURCE_DIR / "test_cases.json"
 TARGET_LAYOUT = {
     "gfx950": {
         "binary": "hip_race_tests_gfx950",
@@ -48,22 +47,36 @@ def default_config_files() -> tuple[Path, ...]:
 
 
 def load_target_configs(config_files: tuple[str, ...] | list[str]) -> list[dict]:
-    return load_suite_target_configs(config_files, repo_root=REPO_ROOT)
+    configs = load_suite_target_configs(
+        config_files,
+        repo_root=REPO_ROOT,
+        required_fields=("cases",),
+        allowed_fields=("cases",),
+    )
+    for config in configs:
+        cases = config["cases"]
+        if (
+            not isinstance(cases, list)
+            or not cases
+            or any(not isinstance(case, str) or not case for case in cases)
+        ):
+            raise ValueError(
+                f"{config['_path']} field 'cases' must contain non-empty strings"
+            )
+        if len(cases) != len(set(cases)):
+            raise ValueError(f"{config['_path']} field 'cases' contains duplicates")
+    return configs
 
 
 def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]:
     discovered: list[CorpusCase] = []
-    cases = discover_cases()
     for target_config in target_configs:
         if not supports_target(target, target_config):
             continue
         layout = TARGET_LAYOUT.get(target.target)
         if layout is None:
             continue
-        for entry in cases:
-            if target.target not in entry["supported_targets"]:
-                continue
-            name = entry["name"]
+        for name in target_config["cases"]:
             test_filter = f"{layout['fixture']}.{name}"
             legacy_name = f"RaceTest.{target.target}_{name}"
             discovered.append(
@@ -73,7 +86,7 @@ def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]
                     target=target.target,
                     collection="rocjitsu",
                     backend=None,
-                    path=CASES_PATH,
+                    path=Path(target_config["_path"]),
                     build={
                         "system": "cmake_hip",
                         "config_name": target_config["config_name"],
@@ -89,45 +102,6 @@ def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]
                 )
             )
     return discovered
-
-
-def discover_cases() -> list[dict]:
-    payload = load_json(CASES_PATH)
-    if payload.get("collection") != "rocjitsu-race":
-        raise ValueError(f"{CASES_PATH} has an invalid collection")
-    entries = payload.get("cases")
-    if not isinstance(entries, list) or not entries:
-        raise ValueError(f"{CASES_PATH} field 'cases' must be a non-empty list")
-
-    cases: list[dict] = []
-    names_by_target: set[tuple[str, str]] = set()
-    for entry in entries:
-        if not isinstance(entry, dict) or set(entry) != {"name", "supported_targets"}:
-            raise ValueError(
-                f"{CASES_PATH} case entries require name and supported_targets"
-            )
-        name = entry["name"]
-        targets = entry["supported_targets"]
-        if not isinstance(name, str) or not name:
-            raise ValueError(f"{CASES_PATH} case name must be a non-empty string")
-        if not isinstance(targets, list) or not targets:
-            raise ValueError(
-                f"{CASES_PATH} case {name!r} requires supported_targets"
-            )
-        for supported_target in targets:
-            if supported_target not in TARGET_LAYOUT:
-                raise ValueError(
-                    f"{CASES_PATH} case {name!r} has unsupported target "
-                    f"{supported_target!r}"
-                )
-            key = (supported_target, name)
-            if key in names_by_target:
-                raise ValueError(
-                    f"{CASES_PATH} repeats case {name!r} for {supported_target}"
-                )
-            names_by_target.add(key)
-        cases.append(entry)
-    return cases
 
 
 def build(
@@ -167,10 +141,17 @@ def build(
                 str(build_dir),
                 "--target",
                 layout["binary"],
+                "race_log_expectation_test",
             ],
             cwd=REPO_ROOT,
             log_path=logs_dir / "build.log",
             phase="build",
+        )
+        _run_command(
+            [str(build_dir / "race_log_expectation_test"), "--gtest_brief=1"],
+            cwd=REPO_ROOT,
+            log_path=logs_dir / "race_log_expectation_test.log",
+            phase="race-log expectation test",
         )
 
     executable = build_dir / layout["binary"]
