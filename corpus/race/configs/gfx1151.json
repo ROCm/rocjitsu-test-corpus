@@ -1,4 +1,14 @@
 {
   "config_name": "gfx1151",
-  "target": "gfx1151"
+  "target": "gfx1151",
+  "cases": [
+    "vgpr_waitcnt",
+    "vgpr_waitcnt_race",
+    "d16_global_load_merge_no_race",
+    "d16_global_load_hi_merge_no_race",
+    "d16_global_load_missing_waitcnt_race",
+    "lds_wave32_cross_wave",
+    "lds_wave32_cross_wave_race",
+    "waw_global_load_then_wmma"
+  ]
 }
