@@ -871,7 +871,40 @@ kind = "memory"
 ordinal = 0
 resource = "global"
 hazard = "GlobalMemoryRace"
-site = "flat_load_u8"
+site = "global_load_u8"
+
+[[mutant]]
+id = "global_byte_eviction.memory001"
+case = "global-byte-eviction"
+kernel = "global_byte_eviction"
+target = "gfx1250"
+kind = "memory"
+ordinal = 1
+resource = "global"
+hazard = "GlobalMemoryRace"
+site = "global_load_u8"
+
+[[mutant]]
+id = "global_byte_eviction.memory002"
+case = "global-byte-eviction"
+kernel = "global_byte_eviction"
+target = "gfx1250"
+kind = "memory"
+ordinal = 2
+resource = "global"
+hazard = "GlobalMemoryRace"
+site = "global_load_u8"
+
+[[mutant]]
+id = "global_byte_eviction.memory003"
+case = "global-byte-eviction"
+kernel = "global_byte_eviction"
+target = "gfx1250"
+kind = "memory"
+ordinal = 3
+resource = "global"
+hazard = "GlobalMemoryRace"
+site = "global_load_u8"
 
 [[mutant]]
 id = "add_checked.wait000"
@@ -1454,4 +1487,37 @@ kind = "memory"
 ordinal = 0
 resource = "global"
 hazard = "GlobalMemoryRace"
-site = "flat_load_ubyte"
+site = "global_load_ubyte"
+
+[[mutant]]
+id = "global_byte_eviction.memory001"
+case = "global-byte-eviction"
+kernel = "global_byte_eviction"
+target = "gfx950"
+kind = "memory"
+ordinal = 1
+resource = "global"
+hazard = "GlobalMemoryRace"
+site = "global_load_ubyte"
+
+[[mutant]]
+id = "global_byte_eviction.memory002"
+case = "global-byte-eviction"
+kernel = "global_byte_eviction"
+target = "gfx950"
+kind = "memory"
+ordinal = 2
+resource = "global"
+hazard = "GlobalMemoryRace"
+site = "global_load_ubyte"
+
+[[mutant]]
+id = "global_byte_eviction.memory003"
+case = "global-byte-eviction"
+kernel = "global_byte_eviction"
+target = "gfx950"
+kind = "memory"
+ordinal = 3
+resource = "global"
+hazard = "GlobalMemoryRace"
+site = "global_load_ubyte"
