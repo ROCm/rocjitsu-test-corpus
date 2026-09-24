@@ -1,0 +1,277 @@
+# Race-detection corpus: kernel-level metadata.
+#
+# Each case names one independently buildable HIP kernel and the hazard it is
+# built to exercise. Tool-specific coverage maps can refer to these stable IDs
+# without coupling this corpus to a particular detector or launch mechanism.
+#
+# This file describes kernels. The mutants derived from them live in
+# mutants.toml, which `scripts/generate.py` writes.
+#
+# Fields:
+#   id           stable selector, also used to build CorpusCase ids
+#   kernel       basename under kernels/, without .hip
+#   requires     gfx targets this kernel assembles for; empty means portable
+#   mutate       mutation kinds this kernel opts into: "wait" and/or "memory"
+#   access       the memory the kernel touches: global | lds | scratch.
+#                This is NOT the resource a hazard lands on. Removing a loadcnt
+#                wait on a global load usually produces a hazard on the
+#                destination VGPR, because the race is on the register rather
+#                than on memory. generate.py combines this with the removed
+#                wait's counter type to tag each mutant with the resource it
+#                actually races on (global/lds/scratch/vgpr/agpr/sgpr).
+#   hazard       the dominant hazard kind the kernel is built to produce
+#   waits        wait counters the kernel exercises
+#
+# Resource names are corpus-facing rather than any one detector's internal
+# spelling; each adapter maps them onto its own vocabulary.
+
+[corpus]
+schema = 1
+name = "race"
+
+# --- Global vector loads -----------------------------------------------------
+# These touch global memory, but a removed loadcnt wait races the destination
+# register, so their mutants are tagged vgpr rather than global.
+
+[[case]]
+id = "add-checked"
+kernel = "add_checked"
+requires = []
+mutate = ["wait"]
+access = "global"
+hazard = "RAW"
+waits = ["loadcnt", "kmcnt"]
+description = "Global vector RAW (load then use), bounds checked"
+
+[[case]]
+id = "add-buffer"
+kernel = "add_buffer"
+requires = []
+mutate = ["wait"]
+access = "global"
+hazard = "RAW"
+waits = ["loadcnt", "kmcnt"]
+description = "Buffer resource RAW (buffer load then use)"
+
+[[case]]
+id = "double-unsafe"
+kernel = "double_unsafe"
+requires = []
+mutate = ["wait"]
+access = "global"
+hazard = "RAW"
+waits = ["loadcnt", "kmcnt"]
+description = "Global vector RAW with no bounds check"
+
+[[case]]
+id = "collatz"
+kernel = "collatz"
+requires = []
+mutate = ["wait"]
+access = "global"
+hazard = "RAW"
+waits = ["loadcnt", "kmcnt"]
+description = "Global RAW across loops and divergent branches"
+
+[[case]]
+id = "atomic-inc"
+kernel = "atomic_inc"
+requires = []
+mutate = ["wait"]
+access = "global"
+hazard = "RAW"
+waits = ["loadcnt", "kmcnt"]
+description = "Global atomic histogram increment"
+
+[[case]]
+id = "pointer-chase"
+kernel = "pointer_chase"
+requires = []
+mutate = ["wait"]
+access = "global"
+hazard = "RAW"
+waits = ["loadcnt", "kmcnt"]
+description = "RAW where a load result addresses the next load"
+
+[[case]]
+id = "war-pattern"
+kernel = "war_pattern"
+requires = []
+mutate = ["wait"]
+access = "global"
+hazard = "WAR"
+waits = ["loadcnt", "kmcnt"]
+description = "Global vector WAR (read then overwrite)"
+
+[[case]]
+id = "waw-pattern"
+kernel = "waw_pattern"
+requires = []
+mutate = ["wait"]
+access = "global"
+hazard = "WAW"
+waits = ["loadcnt", "kmcnt"]
+description = "Global vector WAW (two writes to the same address)"
+
+# --- Scratch -----------------------------------------------------------------
+
+[[case]]
+id = "scratch-access"
+kernel = "scratch_access"
+requires = []
+mutate = ["wait"]
+access = "scratch"
+hazard = "RAW"
+waits = ["loadcnt", "kmcnt"]
+description = "RAW through scratch spills"
+
+# --- LDS ---------------------------------------------------------------------
+
+[[case]]
+id = "lds-reduce"
+kernel = "lds_reduce"
+requires = []
+mutate = ["wait"]
+access = "lds"
+hazard = "RAW"
+waits = ["dscnt", "kmcnt"]
+description = "RAW through a shared-memory reduction"
+
+[[case]]
+id = "lds-war-pattern"
+kernel = "lds_war_pattern"
+requires = []
+mutate = ["wait"]
+access = "lds"
+hazard = "WAR"
+waits = ["dscnt", "kmcnt"]
+description = "LDS WAR (ds_read then ds_write to the same slot)"
+
+[[case]]
+id = "trans-lds"
+kernel = "trans_lds"
+requires = []
+mutate = ["wait"]
+access = "lds"
+hazard = "RAW"
+waits = ["dscnt", "kmcnt"]
+description = "RAW from an LDS read into a transcendental"
+
+# --- Tensor DMA into LDS -----------------------------------------------------
+
+[[case]]
+id = "tensor-lds"
+kernel = "tensor_lds"
+requires = ["gfx1250"]
+mutate = ["wait"]
+access = "lds"
+hazard = "RAW"
+waits = ["tensorcnt", "dscnt"]
+description = "Tensor DMA to LDS RAW (TDM write then LDS read)"
+
+[[case]]
+id = "tensor-lds-offset"
+kernel = "tensor_lds_offset"
+requires = ["gfx1250"]
+mutate = ["wait"]
+access = "lds"
+hazard = "RAW"
+waits = ["tensorcnt", "dscnt"]
+description = "Tensor DMA to LDS RAW at a nonzero descriptor base"
+
+[[case]]
+id = "fa-barrier-epoch"
+kernel = "fa_barrier_epoch"
+requires = ["gfx1250"]
+mutate = ["wait"]
+access = "lds"
+hazard = "RAW"
+waits = ["tensorcnt", "dscnt"]
+description = "Cross-wave LDS reuse across barrier epochs"
+
+# --- Transcendentals ---------------------------------------------------------
+
+[[case]]
+id = "trans-sin-cos"
+kernel = "trans_sin_cos"
+requires = []
+mutate = ["wait"]
+access = "global"
+hazard = "RAW"
+waits = ["loadcnt", "kmcnt"]
+description = "RAW from a load into v_sin / v_cos"
+
+[[case]]
+id = "trans-rcp-sqrt"
+kernel = "trans_rcp_sqrt"
+requires = []
+mutate = ["wait"]
+access = "global"
+hazard = "RAW"
+waits = ["loadcnt", "kmcnt"]
+description = "RAW from a load into v_rcp / v_sqrt / v_rsq"
+
+[[case]]
+id = "trans-chain"
+kernel = "trans_chain"
+requires = []
+mutate = ["wait"]
+access = "global"
+hazard = "RAW"
+waits = ["loadcnt", "kmcnt"]
+description = "RAW along a v_exp into v_log chain"
+
+# --- WMMA --------------------------------------------------------------------
+
+[[case]]
+id = "wmma-exp"
+kernel = "wmma_exp"
+requires = ["gfx1250"]
+mutate = ["wait"]
+access = "global"
+hazard = "RAW"
+waits = ["loadcnt", "kmcnt"]
+description = "RAW from a WMMA result into a transcendental, via builtin"
+
+[[case]]
+id = "wmma-rocwmma"
+kernel = "wmma_rocwmma"
+requires = ["gfx1250"]
+mutate = ["wait"]
+access = "global"
+hazard = "RAW"
+waits = ["loadcnt", "kmcnt"]
+# Needs the rocWMMA headers. Point at them with --cxxflags
+# "-I/path/to/rocwmma/include"; the case is skipped when they are not found.
+description = "RAW from a WMMA result into a transcendental, via rocWMMA"
+
+# A mutation that provably does not introduce a race. A detector reporting
+# nothing here is correct, so the mutant is exempt from scoring rather than
+# counted as a miss.
+#
+# `site` is checked against the instruction actually found at that ordinal when
+# the manifest is generated. If codegen shifts and the ordinal lands on a
+# different instruction, generation fails loudly instead of quietly excusing
+# the wrong one.
+[[case.exempt]]
+kind = "wait"
+ordinal = 3
+site = "s_wait_kmcnt"
+reason = "epilogue wait already satisfied by an earlier s_wait_kmcnt on the K > 0 path the kernel takes, so removing it has no effect"
+
+# --- Cross-workgroup global memory -------------------------------------------
+
+# The only case whose baseline is race-free by construction: every access is an
+# ordinary read, and reads never race reads whatever order the workgroups run
+# in. The `memory` mutation rewrites one sub-dword load as a store, the single
+# edit that makes it racy, which is how the sub-dword eviction behavior of a
+# global shadow gets exercised. Its mutants really are tagged global.
+[[case]]
+id = "global-byte-eviction"
+kernel = "global_byte_eviction"
+requires = []
+mutate = ["memory"]
+access = "global"
+hazard = "GlobalMemoryRace"
+waits = []
+description = "Cross-workgroup sub-dword eviction under a single-byte read flood"
