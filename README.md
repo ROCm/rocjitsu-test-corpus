@@ -13,6 +13,7 @@ corpus/
   dbt/        Offline DBT translation profiles.
   semantics/  Standalone target-specific HIP semantic programs.
   llama/      llama.cpp test-backend-ops cases and vendored GGML sources.
+  vulkan/     Pinned Vulkan compute and texel-buffer CTS selections.
   tensile/    gfx1250 TensileLite configs and generated artifacts.
   benchmarks/ Parameterized Triton benchmarks and reused upstream kernels.
 
@@ -22,6 +23,7 @@ tests/
   support/             Shared discovery, target, build, and run helpers.
 
 scripts/
+  build_vulkan_cts.sh
   run_gfx1250_regression.sh
   extract_gfx1250_hsacos.py
   ... additional corpus helper scripts
@@ -50,6 +52,8 @@ CI orchestration and simulator configurations remain in rocm-systems.
   build-time coverage gate extracts the gfx1250 image from each linked test
   executable and verifies that every expected opcode is present in the code
   that the runtime test executes.
+- `corpus/vulkan/`: pinned Vulkan CTS compute and buffer cases for RDNA3/RDNA4
+  through Mesa RADV. See the [build and local smoke-test guide](corpus/vulkan/README.md).
 - `corpus/semantics/`: standalone HIP programs with deterministic inputs,
   source-ISA coverage, and typed results that can be captured under any
   externally selected launch configuration.
@@ -60,8 +64,8 @@ CI orchestration and simulator configurations remain in rocm-systems.
   Tensile scripts, not by `tests/test_corpus.py`.
 
 `tests/test_corpus.py` discovers and runs the `iree`, `kernels`, `cts`, `dbt`,
-`semantics`, and `llama` suites. By default it uses target `gfx1201` and selects
-the first three; `dbt`, `semantics`, and `llama` are opt-in.
+`semantics`, `llama`, and `vulkan` suites. By default it uses target `gfx1201` and
+selects the first three; `dbt`, `semantics`, `llama`, and `vulkan` are opt-in.
 
 ### gfx1250 memory CTS
 
@@ -196,7 +200,7 @@ Useful selectors:
 
 - `--target <gfx target>`: target to run, for example `gfx942`, `gfx950`,
   `gfx1201`, or `gfx1250`.
-- `--suite <iree|kernels|cts|dbt|semantics|llama>`: include a suite. Repeat or
+- `--suite <iree|kernels|cts|dbt|semantics|llama|vulkan>`: include a suite. Repeat or
   pass comma-separated values.
 - `--exclude-suite <suite>`: exclude a suite.
 - `--backend <backend>`: include a kernel backend such as `hipkittens`.

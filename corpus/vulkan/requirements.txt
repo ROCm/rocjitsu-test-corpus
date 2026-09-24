@@ -1,0 +1,6 @@
+pytest>=5.4.1
+pytest-xdist>=1.32.0
+# The shared pytest entrypoint imports the llama adapter, which uses FileLock.
+filelock
+# The pinned CTS framework generator imports lxml.etree.
+lxml

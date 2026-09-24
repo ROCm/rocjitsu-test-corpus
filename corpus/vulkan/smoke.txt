@@ -1,0 +1,10 @@
+dEQP-VK.compute.pipeline.basic.copy_ssbo_bounds
+dEQP-VK.compute.pipeline.basic.indirect_after_base_dispatch
+dEQP-VK.compute.pipeline.basic.pk_immediate
+dEQP-VK.compute.pipeline.basic.shared_atomic_op_single_group
+dEQP-VK.image.atomic_operations.add.buffer.notransfer.normal_read.normal_img.r32i_end_result
+dEQP-VK.image.load_store.with_format.buffer.a2b10g10r10_uint_pack32
+dEQP-VK.image.store.with_format.buffer.a2b10g10r10_uint_pack32
+dEQP-VK.spirv_assembly.instruction.compute.block_order.all
+dEQP-VK.subgroups.ballot.compute.compute
+dEQP-VK.subgroups.builtin_var.compute.numsubgroups

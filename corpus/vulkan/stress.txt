@@ -1,0 +1,12 @@
+dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.max_workgroup_memory.64
+dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.max_workgroups.x
+dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.max_workgroups.y
+dEQP-VK.compute.pipeline.zero_initialize_workgroup_memory.max_workgroups.z
+dEQP-VK.compute.shader_object_binary.zero_initialize_workgroup_memory.max_workgroup_memory.64
+dEQP-VK.compute.shader_object_binary.zero_initialize_workgroup_memory.max_workgroups.x
+dEQP-VK.compute.shader_object_binary.zero_initialize_workgroup_memory.max_workgroups.y
+dEQP-VK.compute.shader_object_binary.zero_initialize_workgroup_memory.max_workgroups.z
+dEQP-VK.compute.shader_object_spirv.zero_initialize_workgroup_memory.max_workgroup_memory.64
+dEQP-VK.compute.shader_object_spirv.zero_initialize_workgroup_memory.max_workgroups.x
+dEQP-VK.compute.shader_object_spirv.zero_initialize_workgroup_memory.max_workgroups.y
+dEQP-VK.compute.shader_object_spirv.zero_initialize_workgroup_memory.max_workgroups.z
