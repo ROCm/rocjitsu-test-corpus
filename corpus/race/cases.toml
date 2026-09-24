@@ -10,8 +10,12 @@
 # Fields:
 #   id           stable selector, also used to build CorpusCase ids
 #   kernel       basename under kernels/, without .hip
+<<<<<<< HEAD
 #   targets      the corpus targets this kernel assembles for; empty or absent means
 #                every one of them
+=======
+#   requires     gfx targets this kernel assembles for; empty means portable
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 #   mutate       mutation kinds this kernel opts into: "wait" and/or "memory"
 #   access       the memory the kernel touches: global | lds | scratch.
 #                This is NOT the resource a hazard lands on. Removing a loadcnt
@@ -37,7 +41,11 @@ name = "race"
 [[case]]
 id = "add-checked"
 kernel = "add_checked"
+<<<<<<< HEAD
 targets = []
+=======
+requires = []
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "global"
 hazard = "RAW"
@@ -47,7 +55,11 @@ description = "Global vector RAW (load then use), bounds checked"
 [[case]]
 id = "add-buffer"
 kernel = "add_buffer"
+<<<<<<< HEAD
 targets = []
+=======
+requires = []
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "global"
 hazard = "RAW"
@@ -57,7 +69,11 @@ description = "Buffer resource RAW (buffer load then use)"
 [[case]]
 id = "double-unsafe"
 kernel = "double_unsafe"
+<<<<<<< HEAD
 targets = []
+=======
+requires = []
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "global"
 hazard = "RAW"
@@ -67,7 +83,11 @@ description = "Global vector RAW with no bounds check"
 [[case]]
 id = "collatz"
 kernel = "collatz"
+<<<<<<< HEAD
 targets = []
+=======
+requires = []
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "global"
 hazard = "RAW"
@@ -77,7 +97,11 @@ description = "Global RAW across loops and divergent branches"
 [[case]]
 id = "atomic-inc"
 kernel = "atomic_inc"
+<<<<<<< HEAD
 targets = []
+=======
+requires = []
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "global"
 hazard = "RAW"
@@ -87,7 +111,11 @@ description = "Global atomic histogram increment"
 [[case]]
 id = "pointer-chase"
 kernel = "pointer_chase"
+<<<<<<< HEAD
 targets = []
+=======
+requires = []
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "global"
 hazard = "RAW"
@@ -97,7 +125,11 @@ description = "RAW where a load result addresses the next load"
 [[case]]
 id = "war-pattern"
 kernel = "war_pattern"
+<<<<<<< HEAD
 targets = []
+=======
+requires = []
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "global"
 hazard = "WAR"
@@ -107,7 +139,11 @@ description = "Global vector WAR (read then overwrite)"
 [[case]]
 id = "waw-pattern"
 kernel = "waw_pattern"
+<<<<<<< HEAD
 targets = []
+=======
+requires = []
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "global"
 hazard = "WAW"
@@ -119,7 +155,11 @@ description = "Global vector WAW (two writes to the same address)"
 [[case]]
 id = "scratch-access"
 kernel = "scratch_access"
+<<<<<<< HEAD
 targets = []
+=======
+requires = []
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "scratch"
 hazard = "RAW"
@@ -131,7 +171,11 @@ description = "RAW through scratch spills"
 [[case]]
 id = "lds-reduce"
 kernel = "lds_reduce"
+<<<<<<< HEAD
 targets = []
+=======
+requires = []
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "lds"
 hazard = "RAW"
@@ -141,7 +185,11 @@ description = "RAW through a shared-memory reduction"
 [[case]]
 id = "lds-war-pattern"
 kernel = "lds_war_pattern"
+<<<<<<< HEAD
 targets = []
+=======
+requires = []
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "lds"
 hazard = "WAR"
@@ -151,7 +199,11 @@ description = "LDS WAR (ds_read then ds_write to the same slot)"
 [[case]]
 id = "trans-lds"
 kernel = "trans_lds"
+<<<<<<< HEAD
 targets = []
+=======
+requires = []
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "lds"
 hazard = "RAW"
@@ -163,7 +215,11 @@ description = "RAW from an LDS read into a transcendental"
 [[case]]
 id = "tensor-lds"
 kernel = "tensor_lds"
+<<<<<<< HEAD
 targets = ["gfx1250"]
+=======
+requires = ["gfx1250"]
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "lds"
 hazard = "RAW"
@@ -173,7 +229,11 @@ description = "Tensor DMA to LDS RAW (TDM write then LDS read)"
 [[case]]
 id = "tensor-lds-offset"
 kernel = "tensor_lds_offset"
+<<<<<<< HEAD
 targets = ["gfx1250"]
+=======
+requires = ["gfx1250"]
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "lds"
 hazard = "RAW"
@@ -183,7 +243,11 @@ description = "Tensor DMA to LDS RAW at a nonzero descriptor base"
 [[case]]
 id = "fa-barrier-epoch"
 kernel = "fa_barrier_epoch"
+<<<<<<< HEAD
 targets = ["gfx1250"]
+=======
+requires = ["gfx1250"]
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "lds"
 hazard = "RAW"
@@ -195,7 +259,11 @@ description = "Cross-wave LDS reuse across barrier epochs"
 [[case]]
 id = "trans-sin-cos"
 kernel = "trans_sin_cos"
+<<<<<<< HEAD
 targets = []
+=======
+requires = []
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "global"
 hazard = "RAW"
@@ -205,7 +273,11 @@ description = "RAW from a load into v_sin / v_cos"
 [[case]]
 id = "trans-rcp-sqrt"
 kernel = "trans_rcp_sqrt"
+<<<<<<< HEAD
 targets = []
+=======
+requires = []
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "global"
 hazard = "RAW"
@@ -215,7 +287,11 @@ description = "RAW from a load into v_rcp / v_sqrt / v_rsq"
 [[case]]
 id = "trans-chain"
 kernel = "trans_chain"
+<<<<<<< HEAD
 targets = []
+=======
+requires = []
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "global"
 hazard = "RAW"
@@ -227,7 +303,11 @@ description = "RAW along a v_exp into v_log chain"
 [[case]]
 id = "wmma-exp"
 kernel = "wmma_exp"
+<<<<<<< HEAD
 targets = ["gfx1250"]
+=======
+requires = ["gfx1250"]
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "global"
 hazard = "RAW"
@@ -237,7 +317,11 @@ description = "RAW from a WMMA result into a transcendental, via builtin"
 [[case]]
 id = "wmma-rocwmma"
 kernel = "wmma_rocwmma"
+<<<<<<< HEAD
 targets = ["gfx1250"]
+=======
+requires = ["gfx1250"]
+>>>>>>> 39b7198 (- Pin assembly files for baseline kernel)
 mutate = ["wait"]
 access = "global"
 hazard = "RAW"
