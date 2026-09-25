@@ -13,14 +13,14 @@
 // LDS WAR (Write-After-Read) pattern.
 //
 // Each thread reads its slot from shared memory (ds_read, DScnt increments),
-// then writes a new value back to the *same* slot (ds_write) before
-// s_wait_dscnt completes.  The write can corrupt the LDS slot before the
-// in-flight read has captured its data — a classic intra-wave LDS WAR hazard.
+// then writes a new value back to the *same* slot (ds_write).  A write that
+// landed before the in-flight read had captured its data would corrupt the
+// slot — a classic intra-wave LDS WAR hazard.
 //
-// The compiler does NOT insert s_wait_dscnt between the read and the write
-// here because both are in the same thread's sequential flow and it relies
-// on the programmer to insert barriers when needed for cross-wave safety.
-// The plugin should detect the WAR hazard on the write instruction.
+// As compiled the sequence is safe: the write consumes the value the read
+// produced, so the compiler places s_wait_dscnt between them and the read is
+// guaranteed to have completed first.  Removing that wait is what exposes the
+// WAR, so the hazard belongs to the mutants rather than to this kernel.
 __global__ void lds_war_pattern(const int* input, int* output, unsigned int n) {
     __shared__ int sdata[256];
     unsigned int   tid = threadIdx.x;
@@ -29,10 +29,10 @@ __global__ void lds_war_pattern(const int* input, int* output, unsigned int n) {
     sdata[tid] = (i < n) ? input[i] : 0;
     __syncthreads();
 
-    // Intra-wave LDS WAR: read sdata[tid] then immediately overwrite sdata[tid]
-    // without waiting for the DS read to complete.
+    // Intra-wave LDS WAR: read sdata[tid] then overwrite sdata[tid].  The
+    // s_wait_dscnt the compiler places between them is the mutation target.
     int val    = sdata[tid];       // ds_read  — DScnt increments
-    sdata[tid] = val + 1;          // ds_write — WAR: same slot, no s_wait_dscnt
+    sdata[tid] = val + 1;          // ds_write — same slot, ordered by the wait
     __syncthreads();
 
     if (tid == 0) {
