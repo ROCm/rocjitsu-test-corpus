@@ -10,26 +10,25 @@
 
 #include "utils.hpp"
 
-// Scratch (private) memory test: uses a local array large enough to force
-// spilling to scratch memory. Exercises scratch_load/scratch_store instructions
-// and associated wait counters.
+// Scratch (private) memory test: a per-thread array is filled, then one slot is
+// read back and used. The read is ordered against the fill by the wait counter
+// that guards private memory, and removing that wait is the hazard this kernel
+// exists to expose.
 __global__ void scratch_access(const int* input, int* output, unsigned int n) {
     int          local_buf[64];
     unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (tid < n) {
-        // Fill local array from global memory (forces scratch writes)
+        // Fill the private array: vectorized scratch stores.
         for (int j = 0; j < 64; ++j) {
             local_buf[j] = input[tid] + j;
         }
 
-        // Read back from scratch and accumulate
-        int sum = 0;
-        for (int j = 0; j < 64; ++j) {
-            sum += local_buf[j];
-        }
-
-        output[tid] = sum;
+        // Read one slot at an index the compiler cannot resolve, so the array
+        // must stay addressable in scratch. The load's result is used
+        // immediately, so the wait between them is the one that matters.
+        int idx = input[tid] & 63;
+        output[tid] = local_buf[idx];
     }
 }
 
@@ -65,11 +64,13 @@ int main() {
     }
     std::cout << "]" << std::endl;
 
-    // Expected: sum of (input[i] + j) for j in 0..63 = 64*input[i] + 63*64/2 =
-    // 64*input[i] + 2016
+    // Slot j holds input[i] + j, and the slot read is input[i] & 63, so the
+    // result is input[i] + (input[i] & 63). The read index depends on the
+    // loaded value, which is what keeps the compiler from folding the array
+    // away -- see the kernel comment.
     bool pass = true;
     for (unsigned int i = 0; i < arraySize; ++i) {
-        int expected = 64 * input[i] + 2016;
+        int expected = input[i] + (input[i] & 63);
         if (output[i] != expected) {
             std::cerr << "Mismatch at " << i << ": expected " << expected << " got " << output[i] << std::endl;
             pass = false;
