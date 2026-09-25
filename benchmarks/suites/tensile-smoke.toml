@@ -1,0 +1,16 @@
+name = "tensile-smoke"
+targets = ["gfx1250"]
+warmups = 1
+samples = 3
+num_threads = 8
+timeout_seconds = 300
+
+[[cases]]
+suite = "kernels"
+case = "tensile_sgemm_gfx1250_mt16x32"
+variant = "m128_n128_k128"
+
+[[cases]]
+suite = "kernels"
+case = "tensile_sgemm_gfx1250_mt32x16"
+variant = "m128_n128_k128"

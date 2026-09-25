@@ -66,9 +66,11 @@ def load_module(name, path):
     return module
 
 
-def test_nightly_parameters_are_valid(workloads_context):
+def test_nightly_triton_parameters_are_valid(workloads_context):
     suite = tomllib.loads((ROOT / "benchmarks/suites/nightly.toml").read_text())
     for case in suite["cases"]:
+        if case.get("suite") == "kernels":
+            continue  # Corpus references are resolved and validated by the runner.
         workloads_context.workload.validate_parameters(case["workload"], case["params"])
 
 

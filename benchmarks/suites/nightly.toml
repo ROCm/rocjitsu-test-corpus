@@ -228,3 +228,34 @@ suite = "GPT-OSS"
 name = "GPT-OSS BF16 attention sequence 256"
 operation = "Attention"
 params = { dtype = "bf16", batch = 1, query_heads = 64, key_value_heads = 8, sequence = 256, window = 128, head_dimension = 64 }
+
+
+[[cases]]
+suite = "kernels"
+case = "tensile_sgemm_gfx1250_mt16x32"
+variant = "m127_n127_k127"
+
+[[cases]]
+suite = "kernels"
+case = "tensile_sgemm_gfx1250_mt16x32"
+variant = "m128_n128_k128"
+
+[[cases]]
+suite = "kernels"
+case = "tensile_sgemm_gfx1250_mt16x32"
+variant = "m129_n129_k129"
+
+[[cases]]
+suite = "kernels"
+case = "tensile_sgemm_gfx1250_mt32x16"
+variant = "m127_n127_k127"
+
+[[cases]]
+suite = "kernels"
+case = "tensile_sgemm_gfx1250_mt32x16"
+variant = "m128_n128_k128"
+
+[[cases]]
+suite = "kernels"
+case = "tensile_sgemm_gfx1250_mt32x16"
+variant = "m129_n129_k129"

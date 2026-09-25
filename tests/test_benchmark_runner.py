@@ -163,8 +163,14 @@ def _run(
 
 def test_default_manifest_has_full_ordered_matrix(runner_context) -> None:
     matrix = runner.select_matrix(runner_context.suite)
-    assert len(matrix) == 56
-    assert sum(c.workload == "gemm" for c in runner_context.suite.cases) == 16
+    assert len(matrix) == 62
+    assert (
+        sum(
+            c.workload == "gemm" and c.provider == "triton"
+            for c in runner_context.suite.cases
+        )
+        == 16
+    )
     assert matrix[:4] == (
         _cell(runner_context, "triton.copy_fp32_32m.threads8", "gfx950"),
         _cell(runner_context, "triton.copy_fp32_32m.threads8", "gfx1250"),
@@ -1097,7 +1103,9 @@ def test_interrupt_survives_failure_to_drain_output(runner_context) -> None:
     process.communicate.side_effect = [interruption, OSError("cannot drain")]
     with mock.patch.object(
         runner.subprocess, "Popen", return_value=process
-    ), mock.patch.object(runner.os, "killpg"), pytest.raises(KeyboardInterrupt) as raised:
+    ), mock.patch.object(runner.os, "killpg"), pytest.raises(
+        KeyboardInterrupt
+    ) as raised:
         runner._run_command(("workload",), cwd=runner_context.root, env={}, timeout=1)
     assert raised.value is interruption
 
@@ -1135,7 +1143,11 @@ def test_interruption_retains_completed_and_unrun_matrix_cells(
     output = runner_context.root / "interrupted-partial"
     raw = json.loads((output / "run.json").read_text())
     assert calls == 2
-    assert [test["status"] for test in raw["tests"]] == ["completed", "failed", "failed"]
+    assert [test["status"] for test in raw["tests"]] == [
+        "completed",
+        "failed",
+        "failed",
+    ]
     assert raw["status"] == "failed"
     assert raw["finishedAt"] is not None
     assert raw["tests"][0]["durationSeconds"] is not None
@@ -1407,7 +1419,9 @@ def test_manifest_rejects_unsafe_targets(tmp_path, target):
 def test_manifest_accepts_target_without_builtin_config(tmp_path):
     manifest = tmp_path / "suite.toml"
     manifest.write_text(
-        runner.DEFAULT_MANIFEST.read_text().replace("gfx1250", "gfx942")
+        runner.DEFAULT_MANIFEST.read_text()
+        .split('\n[[cases]]\nsuite = "kernels"')[0]
+        .replace("gfx1250", "gfx942")
     )
     assert runner.load_manifest(manifest).targets == ("gfx950", "gfx942")
 
@@ -1517,3 +1531,219 @@ def test_missing_wrapper_executable_fails_cell(runner_context):
     assert result["status"] == "failed"
     assert result["tests"][0]["exitCode"] is None
     assert "No such file" in result["tests"][0]["error"]
+
+
+def test_tensile_matrix_and_unsupported_target(runner_context):
+    matrix = runner.select_matrix(runner_context.suite)
+    native = [cell for cell in matrix if cell.definition.provider == "tensile"]
+    assert len(native) == 6
+    assert {cell.target for cell in native} == {"gfx1250"}
+    assert {cell.definition.params["m"] for cell in native} == {127, 128, 129}
+    assert all(cell.case.endswith(".threads8") for cell in native)
+    with pytest.raises(runner.RunnerError, match="do not support"):
+        runner.select_matrix(
+            runner_context.suite, cases=[native[0].case], targets=["gfx950"]
+        )
+
+
+def test_tensile_smoke_manifest():
+    suite = runner.load_manifest(runner.BENCHMARK_ROOT / "suites/tensile-smoke.toml")
+    assert len(runner.select_matrix(suite)) == 2
+    assert suite.warmups == 1 and suite.samples == 3
+
+
+def test_tensile_workload_contract(runner_context, tmp_path):
+    cell = next(
+        c
+        for c in runner.select_matrix(runner_context.suite)
+        if c.definition.provider == "tensile"
+    )
+    value = _payload(cell, [10, 11, 12])
+    value.update(provider="tensile", parameters=cell.definition.params)
+    path = tmp_path / "native.json"
+    path.write_text(json.dumps(value))
+    assert runner.validate_workload(path, cell, 3)["timing"]["median"] == 11
+    value["parameters"] = {**cell.definition.params, "m": 1}
+    path.write_text(json.dumps(value))
+    with pytest.raises(runner.RunnerError, match="parameters"):
+        runner.validate_workload(path, cell, 3)
+    value.update(parameters=cell.definition.params, provider="triton")
+    path.write_text(json.dumps(value))
+    with pytest.raises(runner.RunnerError, match="provider"):
+        runner.validate_workload(path, cell, 3)
+
+
+def test_native_build_failure_preserves_triton_result(runner_context):
+    native = next(
+        c
+        for c in runner.select_matrix(runner_context.suite)
+        if c.definition.provider == "tensile"
+    )
+    triton = _matrix(runner_context, "triton.rmsnorm_bf16.threads8")[0]
+    with mock.patch.object(
+        runner, "build_corpus_case", side_effect=RuntimeError("compiler failed")
+    ):
+        output, result = _run(
+            runner_context, [native, triton], "native-failure", samples=1
+        )
+    assert result["status"] == "failed"
+    assert "compiler failed" in result["tests"][0]["error"]
+    assert result["tests"][0]["artifacts"]["build"] == "builds/kernels/gfx1250"
+    assert result["tests"][1]["status"] == "completed"
+    assert json.loads((output / "run.json").read_text()) == result
+
+
+def test_native_command_uses_corpus_shape_and_wrapper(runner_context):
+    cell = next(
+        c
+        for c in runner.select_matrix(runner_context.suite)
+        if c.definition.provider == "tensile"
+    )
+    built = SimpleNamespace(
+        executable_path=Path("/fake/tensile"), metadata={"target_config": {}}
+    )
+    command = runner.prepare_command(
+        runner_context.root / "native-command",
+        cell,
+        run_wrapper=runner.parse_run_wrapper(runner_context.wrapper),
+        target=runner._target_metadata(runner_context.configs["gfx1250"], 8),
+        warmups=3,
+        samples=21,
+        native_build=built,
+    )
+    assert "/fake/tensile" in command.argv
+    assert "--benchmark" in command.argv
+    assert command.argv[command.argv.index("--m") + 1] == "127"
+    assert command.argv[command.argv.index("--config") + 1] == str(command.config_path)
+
+
+def test_tensile_correctness_config_enables_build():
+    configs = runner.kernels.load_target_configs(runner.kernels.default_config_files())
+    config = next(c for c in configs if c["target"] == "gfx1250")
+    assert (
+        runner.kernels_impl._cmake_cache_variables(config)[
+            "KERNEL_CORPUS_ENABLE_TENSILE"
+        ]
+        == "ON"
+    )
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="checks Linux process state")
+def test_native_build_interruption_kills_descendants_and_retains_log(tmp_path):
+    import threading
+
+    pid_file = tmp_path / "child.pid"
+    script = (
+        "import pathlib,subprocess,sys,time; "
+        "p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); "
+        "print('compiler started',flush=True); "
+        f"pathlib.Path({str(pid_file)!r}).write_text(str(p.pid)); "
+        "time.sleep(30)"
+    )
+
+    def interrupt_when_ready():
+        deadline = time.monotonic() + 5
+        while not pid_file.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        os.kill(os.getpid(), signal.SIGINT)
+
+    thread = threading.Thread(target=interrupt_when_ready, daemon=True)
+    log = tmp_path / "build.log"
+    thread.start()
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            runner.kernels_impl._run_command(
+                [sys.executable, "-c", script],
+                cwd=tmp_path,
+                log_path=log,
+                phase="build",
+                env=os.environ.copy(),
+            )
+    finally:
+        thread.join(timeout=6)
+    assert "compiler started" in log.read_text()
+    pid = int(pid_file.read_text())
+    state_path = Path(f"/proc/{pid}/stat")
+    deadline = time.monotonic() + 2
+    while state_path.exists() and time.monotonic() < deadline:
+        if state_path.read_text().split()[2] == "Z":
+            break
+        time.sleep(0.01)
+    assert not state_path.exists() or state_path.read_text().split()[2] == "Z"
+
+
+def test_native_build_failure_is_cached_for_shape_variants(runner_context):
+    native = [
+        c
+        for c in runner.select_matrix(runner_context.suite)
+        if c.definition.provider == "tensile"
+    ][:3]
+    with mock.patch.object(
+        runner, "build_corpus_case", side_effect=RuntimeError("compiler failed")
+    ) as build:
+        _, result = _run(runner_context, native, "native-failure-cache", samples=1)
+    assert build.call_count == 1
+    assert all(test["status"] == "failed" for test in result["tests"])
+    assert len({test["error"] for test in result["tests"]}) == 1
+
+
+def test_native_success_records_source_and_retains_build_provenance(runner_context):
+    cell = next(
+        c
+        for c in runner.select_matrix(runner_context.suite)
+        if c.definition.provider == "tensile"
+    )
+    build_dir = runner_context.root / "native-build"
+    provenance_path = build_dir / "cases/tensile/provenance.json"
+    provenance_path.parent.mkdir(parents=True)
+    provenance_path.write_text(
+        json.dumps({"source_revision": "c" * 40, "files": {"kernel": "d" * 64}})
+    )
+    built = SimpleNamespace(
+        build_dir=build_dir,
+        executable_path=build_dir / "tensile",
+        metadata={"target_config": {}},
+    )
+
+    def execute(argv, **_kwargs):
+        payload = _payload(cell, [1])
+        payload.update(provider="tensile", parameters=cell.definition.params)
+        Path(argv[argv.index("--output") + 1]).write_text(json.dumps(payload))
+        return subprocess.CompletedProcess(argv, 0, "native output", "")
+
+    with mock.patch.object(runner, "build_corpus_case", return_value=built):
+        _, result = _run(
+            runner_context, [cell], "native-success", process=execute, samples=1
+        )
+    assert result["status"] == "completed"
+    assert result["provenance"]["tensileLiteCommitSha"] == "c" * 40
+    assert result["tests"][0]["artifacts"]["build"] == "builds/kernels/gfx1250"
+
+
+def test_tensile_corpus_build_uses_sdk_host_compiler(tmp_path):
+    config = {
+        "hip_architectures": ["gfx1250"],
+        "run_environment": {"ROCM_PATH": str(tmp_path / "sdk")},
+        "cmake": {"cache_variables": {"KERNEL_CORPUS_ENABLE_TENSILE": "ON"}},
+    }
+    with mock.patch.object(runner.kernels_impl, "_run_command") as execute:
+        runner.kernels_impl.configure_cmake(config, tmp_path / "build", tmp_path)
+    command = execute.call_args.args[0]
+    assert f"-DCMAKE_C_COMPILER={tmp_path}/sdk/lib/llvm/bin/amdclang" in command
+    assert f"-DCMAKE_CXX_COMPILER={tmp_path}/sdk/lib/llvm/bin/amdclang++" in command
+
+
+def test_tensile_corpus_build_preserves_explicit_compiler(tmp_path):
+    config = {
+        "hip_architectures": ["gfx1250"],
+        "cmake": {
+            "cache_variables": {
+                "KERNEL_CORPUS_ENABLE_TENSILE": "ON",
+                "ROCM_PATH": str(tmp_path),
+                "CMAKE_CXX_COMPILER": "/custom/clang++",
+            }
+        },
+    }
+    with mock.patch.object(runner.kernels_impl, "_run_command") as execute:
+        runner.kernels_impl.configure_cmake(config, tmp_path / "build", tmp_path)
+    assert "-DCMAKE_CXX_COMPILER=/custom/clang++" in execute.call_args.args[0]

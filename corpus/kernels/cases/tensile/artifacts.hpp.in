@@ -1,0 +1,11 @@
+// Copyright (c) 2026 Advanced Micro Devices, Inc.
+// SPDX-License-Identifier: MIT
+#pragma once
+#include <array>
+#include <utility>
+inline constexpr const char* artifact_directory = R"(@TENSILE_ARTIFACT_DIR@)";
+inline constexpr const char* source_revision = "@TENSILE_SOURCE_REVISION@";
+inline constexpr std::array<std::pair<const char*, const char*>,3> artifact_hashes{{
+@TENSILE_ARTIFACT_HASHES@}};
+inline constexpr const char* kernel_names[]{
+@TENSILE_KERNEL_NAMES@};

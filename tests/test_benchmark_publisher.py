@@ -561,3 +561,28 @@ def test_plugin_requires_its_own_vanilla_baseline(
     with pytest.raises(publisher.PublishError, match="Vanilla baseline"):
         _publish(publisher_context, raw, run_id="logging")
     assert not (publisher_context.data / "runs/logging.json").exists()
+
+
+def test_mixed_tensile_catalog_preserves_failed_cell_and_triton_history(publisher_context):
+    first = _publish(publisher_context)
+    old_catalog = Path(first["catalog"]).read_bytes()
+    native_id = "tensile.tensile_sgemm_gfx1250_mt16x32.m128_n128_k128.threads8"
+    native = _test(native_id, target="gfx1250", status="failed", problem={
+        "m": 128, "n": 128, "k": 128, "dtype": "fp32",
+        "outputDtype": "fp32", "accumulationDtype": "fp32", "layout": "ABt",
+    })
+    native.update(suite="Tensile", name="Tensile gfx1250 SGEMM MT16x32", operation="GEMM", numThreads=8)
+    native["timing"] = {"unit": "ns", "samples": [], "minimum": None, "median": None, "maximum": None}
+    raw = _raw(publisher_context, [_test(), native])
+    raw["status"] = "failed"
+    raw["configuration"]["targetConfigSha256"]["gfx1250"] = "d" * 64
+    second = _publish(publisher_context, raw, run_id="mixed-tensile")
+    catalog = publisher.load_json_document(second["catalog"])
+    assert catalog["targets"] == {"gfx950": ["triton.copy_fp32_32m"], "gfx1250": [native_id]}
+    tensile_entry = next(t for t in catalog["tests"] if t["id"] == native_id)
+    assert tensile_entry["suite"] == "Tensile"
+    assert tensile_entry["problem"]["m"] == 128
+    run = publisher.load_json_document(second["run"])
+    target = next(t for t in run["targets"] if t["id"] == "gfx1250")
+    assert target["results"][0]["status"] == "failed"
+    assert Path(first["catalog"]).read_bytes() == old_catalog

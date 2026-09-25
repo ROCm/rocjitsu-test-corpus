@@ -9,6 +9,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import struct
 from dataclasses import dataclass
@@ -21,7 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 KERNELS_ROOT = REPO_ROOT / "corpus" / "kernels"
 KERNEL_CORPUS_ROOT = KERNELS_ROOT
 DEFAULT_CONFIGS = tuple(sorted((KERNEL_CORPUS_ROOT / "configs").glob("*.json")))
-SUPPORTED_PROJECTS = {"hip-matmul", "hip-stream-k", "hipkittens", "rocblas"}
+SUPPORTED_PROJECTS = {"hip-matmul", "hip-stream-k", "hipkittens", "rocblas", "tensile"}
 SUPPORTED_CASE_KINDS = {"cmake_executable"}
 SUPPORTED_VALIDATION_KINDS = {"exit_code"}
 SUPPORTED_INPUT_FORMATS = {"raw"}
@@ -33,6 +34,7 @@ KERNEL_CORPUS_ENABLE_CACHE_VARIABLES = (
     "KERNEL_CORPUS_ENABLE_HIP_MATMUL",
     "KERNEL_CORPUS_ENABLE_HIPKITTENS",
     "KERNEL_CORPUS_ENABLE_ROCBLAS",
+    "KERNEL_CORPUS_ENABLE_TENSILE",
 )
 
 
@@ -170,6 +172,7 @@ def load_case(case_path):
             "tests",
             "inputs",
             "tags",
+            "benchmark",
         },
     )
     if case["project"] not in SUPPORTED_PROJECTS:
@@ -186,7 +189,9 @@ def load_case(case_path):
 
     if not isinstance(case["executable"], str) or not case["executable"]:
         raise ValueError(f"{case_path} field 'executable' must be a non-empty string")
-    _validate_tests(case_path, case["tests"])
+    if "benchmark" in case:
+        _validate_benchmark(case_path, case)
+    _validate_tests(case_path, case["tests"], case.get("benchmark"))
 
     if "inputs" in case:
         _validate_inputs(case_path, case["inputs"])
@@ -288,7 +293,7 @@ def _validate_run(path, run):
             )
 
 
-def _validate_tests(case_path, tests):
+def _validate_tests(case_path, tests, benchmark=None):
     if not isinstance(tests, dict) or not tests:
         raise ValueError(f"{case_path} field 'tests' must be a non-empty object")
     for test_name, test in tests.items():
@@ -297,13 +302,20 @@ def _validate_tests(case_path, tests):
             raise ValueError(f"{case_path} tests keys must be non-empty strings")
         if not isinstance(test, dict):
             raise ValueError(f"{entry_path} must be an object")
-        require_fields(entry_path, test, ("test_args", "validation"))
+        require_fields(entry_path, test, ("validation",))
+        if ("test_args" in test) == ("parameters" in test):
+            raise ValueError(
+                f"{entry_path} requires exactly one of test_args or parameters"
+            )
         reject_unknown_fields(
             entry_path,
             test,
-            {"description", "test_args", "env", "inputs", "validation"},
+            {"description", "test_args", "parameters", "env", "inputs", "validation"},
         )
-        _validate_test_args(entry_path, test["test_args"])
+        if "parameters" in test:
+            validate_parameters(entry_path, test["parameters"], benchmark)
+        else:
+            _validate_test_args(entry_path, test["test_args"])
         if "inputs" in test:
             _validate_inputs(entry_path, test["inputs"])
         _validate_validation(entry_path, test["validation"], require_kind=True)
@@ -403,6 +415,25 @@ def build_runner(case, target_config, artifact_root, log_dir):
 
 def configure_cmake(target_config, build_dir, log_dir):
     cache_variables = _cmake_cache_variables(target_config)
+    if cache_variables.get("KERNEL_CORPUS_ENABLE_TENSILE") == "ON":
+        environment = command_environment(target_config)
+        rocm_path = cache_variables.get("ROCM_PATH") or environment.get("ROCM_PATH")
+        if not rocm_path:
+            sdk = shutil.which("rocm-sdk", path=environment.get("PATH"))
+            if sdk:
+                try:
+                    rocm_path = subprocess.check_output(
+                        [sdk, "path", "--root"], env=environment, text=True
+                    ).strip()
+                except subprocess.CalledProcessError as error:
+                    raise KernelCaseError("cannot locate Tensile ROCm SDK root") from error
+        if not rocm_path:
+            raise KernelCaseError("Tensile requires ROCM_PATH or rocm-sdk in PATH")
+        cache_variables["ROCM_PATH"] = rocm_path
+        for language, compiler in (("C", "amdclang"), ("CXX", "amdclang++")):
+            cache_variables.setdefault(
+                f"CMAKE_{language}_COMPILER", str(Path(rocm_path) / "lib/llvm/bin" / compiler)
+            )
     cache_variables["CMAKE_HIP_ARCHITECTURES"] = ";".join(target_config["hip_architectures"])
     command = ["cmake", "-S", str(KERNEL_CORPUS_ROOT), "-B", str(build_dir)]
     if "generator" in target_config.get("cmake", {}):
@@ -450,7 +481,9 @@ def effective_case(kernel_case):
     if kernel_case.test is not None:
         test = kernel_case.test
         case["run"] = {
-            "args": test["test_args"],
+            "args": parameter_arguments(test["parameters"])
+            if "parameters" in test
+            else test["test_args"],
         }
         if "env" in test:
             case["run"]["env"] = test["env"]
@@ -691,7 +724,7 @@ def _run_command(
     expected_returncode=0,
 ):
     command = _resolve_command(command)
-    process = subprocess.run(
+    process = subprocess.Popen(
         command,
         cwd=str(cwd),
         env=env,
@@ -699,29 +732,45 @@ def _run_command(
         stderr=subprocess.PIPE,
         text=True,
         errors="replace",
-        check=False,
+        start_new_session=os.name == "posix",
     )
+    stdout = ""
+    stderr = ""
+    try:
+        stdout, stderr = process.communicate()
+    except BaseException:
+        try:
+            if os.name == "posix":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            else:
+                process.kill()
+            stdout, stderr = process.communicate()
+        except BaseException:
+            # Preserve the original interruption even if draining fails.
+            pass
+        raise
+    finally:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(
+            "\n".join(
+                [
+                    "$ " + " ".join(shlex.quote(part) for part in command),
+                    f"cwd: {cwd}",
+                    f"returncode: {process.returncode}",
+                    "",
+                    "stdout:",
+                    stdout,
+                    "",
+                    "stderr:",
+                    stderr,
+                ]
+            ),
+            encoding="utf-8",
+        )
     returncode = process.returncode
-    stdout = process.stdout
-    stderr = process.stderr
-
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.write_text(
-        "\n".join(
-            [
-                "$ " + " ".join(shlex.quote(part) for part in command),
-                f"cwd: {cwd}",
-                f"returncode: {returncode}",
-                "",
-                "stdout:",
-                stdout,
-                "",
-                "stderr:",
-                stderr,
-            ]
-        ),
-        encoding="utf-8",
-    )
     if returncode != expected_returncode:
         raise RuntimeError(
             "\n".join(
@@ -749,3 +798,50 @@ def _resolve_command(command):
     if tool is None:
         raise RuntimeError(f"Missing required tool '{first}' in PATH")
     return [tool] + command[1:]
+
+
+def _validate_benchmark(path, case):
+    spec = case["benchmark"]
+    if not isinstance(spec, dict) or set(spec) != {
+        "protocol",
+        "name",
+        "operation",
+        "dtype",
+        "output_dtype",
+        "accumulation_dtype",
+        "layout",
+    }:
+        raise ValueError(f"{path}: invalid benchmark capability")
+    if spec["protocol"] != "hip-gemm-v1" or case["project"] != "tensile":
+        raise ValueError(f"{path}: unsupported benchmark protocol")
+    for key in ("name", "operation"):
+        if not isinstance(spec[key], str) or not spec[key].strip():
+            raise ValueError(f"{path}: benchmark {key} must be a nonempty string")
+    for key, expected in {
+        "dtype": "fp32",
+        "output_dtype": "fp32",
+        "accumulation_dtype": "fp32",
+        "layout": "ABt",
+    }.items():
+        if spec[key] != expected:
+            raise ValueError(f"{path}: benchmark {key} must be {expected}")
+
+
+def validate_parameters(path, parameters, benchmark):
+    if (
+        benchmark is None
+        or not isinstance(parameters, dict)
+        or set(parameters) != {"m", "n", "k"}
+    ):
+        raise ValueError(
+            f"{path}: structured parameters require a HIP GEMM capability and m, n, k"
+        )
+    for key, value in parameters.items():
+        if type(value) is not int or not 0 < value <= 2147483647:
+            raise ValueError(f"{path}: {key} must be a positive 32-bit integer")
+
+
+def parameter_arguments(parameters):
+    return [
+        arg for key in ("m", "n", "k") for arg in (f"--{key}", str(parameters[key]))
+    ]

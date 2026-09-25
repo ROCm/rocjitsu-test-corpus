@@ -28,6 +28,12 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, TextIO
 
+# Reuse corpus discovery and builds without importing pytest.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
+from support.define_contracts import RunContext, TargetSpec  # noqa: E402
+from support.manage_builds import BuildManager  # noqa: E402
+from test_suites import kernels, kernels_impl  # noqa: E402
+
 BENCHMARK_ROOT = Path(__file__).resolve().parent
 CORPUS_ROOT = BENCHMARK_ROOT.parent
 WORKLOAD_ROOT = CORPUS_ROOT / "corpus" / "benchmarks"
@@ -94,6 +100,11 @@ class Case:
     name: str
     operation: str
     params: dict[str, Any]
+    corpus_cases: tuple[Any, ...] = ()
+
+    @property
+    def provider(self) -> str:
+        return self.corpus_cases[0].backend if self.corpus_cases else "triton"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -115,6 +126,12 @@ class Cell:
     @property
     def case(self) -> str:
         return self.definition.id
+
+    @property
+    def corpus_case(self):
+        return next(
+            case for case in self.definition.corpus_cases if case.target == self.target
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -191,8 +208,16 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
         raise RunnerError("cases must be a non-empty array of tables")
     cases = []
     ids = set()
+    num_threads = _integer(value["num_threads"], "num_threads", allow_zero=False)
     case_fields = {"id", "workload", "suite", "name", "operation", "params"}
     for entry in raw_cases:
+        if isinstance(entry, dict) and set(entry) == {"suite", "case", "variant"}:
+            case = _resolve_corpus_case(entry, targets, num_threads)
+            if case.id in ids:
+                raise RunnerError(f"duplicate case ID {case.id!r}")
+            ids.add(case.id)
+            cases.append(case)
+            continue
         if not isinstance(entry, dict) or set(entry) != case_fields:
             raise RunnerError(
                 "each case must contain id, workload, suite, name, operation, params"
@@ -236,6 +261,61 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
     )
 
 
+def _resolve_corpus_case(entry, targets, num_threads):
+    if entry["suite"] != "kernels" or any(
+        not isinstance(v, str) or not v for v in entry.values()
+    ):
+        raise RunnerError(
+            "corpus references require suite=kernels and nonempty case/variant"
+        )
+    try:
+        configs = kernels.load_target_configs(kernels.default_config_files())
+        matches = tuple(
+            case
+            for target in targets
+            for case in kernels.discover(TargetSpec(target), configs)
+            if case.metadata["name"] == entry["case"]
+            and case.run["variant"] == entry["variant"]
+        )
+    except (OSError, ValueError, TypeError) as error:
+        raise RunnerError(f"cannot discover corpus: {error}") from error
+    if not matches or len({case.target for case in matches}) != len(matches):
+        raise RunnerError(
+            f"unknown, unsupported, or ambiguous corpus case/variant: {entry}"
+        )
+    for case in matches:
+        if case.expected_compile_failure or kernels_impl.matches_case_selector(
+            case.metadata["kernel_case"],
+            case.metadata["target_config"].get("skip_run_tests", []),
+        ):
+            raise RunnerError(f"case is not runnable for benchmarking: {case.id}")
+    capability = matches[0].metadata["effective_case"].get("benchmark")
+    variant = matches[0].metadata["kernel_case"].test
+    if not capability or not variant or "parameters" not in variant:
+        raise RunnerError(f"case has no structured benchmark capability: {entry}")
+    identifier = (
+        f"{matches[0].backend}.{entry['case']}.{entry['variant']}.threads{num_threads}"
+    )
+    if not CASE_ID.fullmatch(identifier):
+        raise RunnerError(f"invalid benchmark case ID {identifier!r}")
+    params = {
+        **variant["parameters"],
+        **{
+            key: capability[key]
+            for key in ("dtype", "output_dtype", "accumulation_dtype", "layout")
+        },
+    }
+    return Case(
+        identifier,
+        "gemm",
+        "Tensile",
+        capability["name"] + " " + entry["variant"],
+        capability["operation"],
+        params,
+        matches,
+    )
+
+
 def select_matrix(
     suite: Suite,
     *,
@@ -262,9 +342,16 @@ def select_matrix(
         for case in suite.cases
         if not requested_cases or case.id in requested_cases
     )
-    return tuple(
-        Cell(case, target) for case in chosen_cases for target in chosen_targets
+    matrix = tuple(
+        Cell(case, target)
+        for case in chosen_cases
+        for target in chosen_targets
+        if not case.corpus_cases
+        or any(candidate.target == target for candidate in case.corpus_cases)
     )
+    if not matrix:
+        raise RunnerError("selected cases do not support the requested targets")
+    return matrix
 
 
 def parse_run_wrapper(value: str) -> tuple[str, ...]:
@@ -305,6 +392,7 @@ def prepare_command(
     warmups: int,
     samples: int,
     plugin_profile: str = "none",
+    native_build=None,
 ) -> PreparedCommand:
     """Construct one shell-free Rocjitsu workload command."""
 
@@ -334,7 +422,29 @@ def prepare_command(
         "--output",
         str(workload_path),
     )
+    if cell.definition.corpus_cases:
+        if native_build is None or native_build.executable_path is None:
+            raise RunnerError("native benchmark executable has not been built")
+        payload = (
+            str(native_build.executable_path),
+            *map(str, cell.corpus_case.metadata["effective_case"]["run"]["args"]),
+            "--benchmark",
+            "--case",
+            cell.case,
+            "--target",
+            cell.target,
+            "--warmups",
+            str(warmups),
+            "--samples",
+            str(samples),
+            "--output",
+            str(workload_path),
+        )
     environment = dict(os.environ)
+    if native_build is not None:
+        environment = kernels_impl.command_environment(
+            native_build.metadata["target_config"]
+        )
     # Official runs always use the device libraries installed with the selected
     # SDK, never a caller-provided source-build or development override.
     environment.pop("HIPBLASLT_TENSILE_LIBPATH", None)
@@ -356,6 +466,31 @@ def prepare_command(
         config_path=config_path,
         plugin_reports=plugin_reports,
     )
+
+
+def build_corpus_case(cell, manager, rocm_path):
+    """Use the correctness corpus build adapter with a fixed benchmark profile."""
+    case = cell.corpus_case
+    config = dict(case.metadata["target_config"])
+    cache = {key: "OFF" for key in kernels_impl.KERNEL_CORPUS_ENABLE_CACHE_VARIABLES}
+    cache.update(
+        KERNEL_CORPUS_ENABLE_TENSILE="ON",
+        CMAKE_BUILD_TYPE="Release",
+        ROCM_PATH=str(rocm_path),
+        CMAKE_C_COMPILER=str(rocm_path / "lib/llvm/bin/amdclang"),
+        CMAKE_CXX_COMPILER=str(rocm_path / "lib/llvm/bin/amdclang++"),
+    )
+    config["cmake"] = {"cache_variables": cache}
+    config["run_environment"] = {
+        **config.get("run_environment", {}),
+        "ROCM_PATH": str(rocm_path),
+    }
+    case = dataclasses.replace(
+        case,
+        metadata={**case.metadata, "target_config": config},
+        build={**case.build, "profile": "benchmark", "rocm_path": str(rocm_path)},
+    )
+    return manager.ensure_built(case, kernels)
 
 
 def _require_file(path: Path, description: str) -> None:
@@ -568,7 +703,7 @@ def validate_workload(path: Path, cell: Cell, samples: int) -> dict[str, Any]:
         "schema": "rocjitsu.benchmark.workload.v1",
         "case": cell.case,
         "target": cell.target,
-        "provider": "triton",
+        "provider": cell.definition.provider,
     }
     for field, expected_value in expected.items():
         if value.get(field) != expected_value:
@@ -578,6 +713,8 @@ def validate_workload(path: Path, cell: Cell, samples: int) -> dict[str, Any]:
     parameters = value.get("parameters")
     if not isinstance(parameters, dict):
         raise RunnerError("workload parameters must be an object")
+    if cell.definition.corpus_cases and parameters != cell.definition.params:
+        raise RunnerError("workload parameters do not match the corpus definition")
     timings = value.get("timings_ns")
     if not isinstance(timings, list) or len(timings) != samples:
         actual = len(timings) if isinstance(timings, list) else "not a list"
@@ -807,6 +944,11 @@ def _failed_test(
             "stderr": f"{base}/stderr.txt" if config_path else None,
             "config": config_path,
             "pluginReports": dict(plugin_reports),
+            **(
+                {"build": "builds/kernels/" + cell.corpus_case.build["config_name"]}
+                if cell.definition.corpus_cases
+                else {}
+            ),
         },
     }
 
@@ -906,15 +1048,63 @@ def run_suite(
     }
     _write_run(output_path, run)
 
+    build_manager = BuildManager(RunContext(CORPUS_ROOT, output_path / "builds", False))
+    build_errors = {}
     try:
         for position, cell in enumerate(matrix, start=1):
             cell_started = time.monotonic()
             _progress(
                 progress,
                 f"START [{position}/{total_cells}] case={cell.case} "
-                f"target={cell.target} provider=triton "
+                f"target={cell.target} provider={cell.definition.provider} "
                 f"timeout_seconds={suite.timeout_seconds:g}",
             )
+            native_build = None
+            if cell.definition.corpus_cases:
+                build_key = (cell.target, cell.corpus_case.build["target"])
+                try:
+                    if build_key in build_errors:
+                        raise RunnerError(build_errors[build_key])
+                    native_build = build_corpus_case(
+                        cell, build_manager, build_metadata.rocm_path
+                    )
+                    provenance_path = (
+                        native_build.build_dir / "cases/tensile/provenance.json"
+                    )
+                    native_provenance = json.loads(
+                        provenance_path.read_text(encoding="utf-8")
+                    )
+                    if not isinstance(native_provenance, dict):
+                        raise RunnerError("invalid native source provenance")
+                    revision = native_provenance.get("source_revision")
+                    if not isinstance(revision, str) or not re.fullmatch(
+                        r"[0-9a-f]{40}", revision
+                    ):
+                        raise RunnerError("invalid native source provenance")
+                    run["provenance"]["tensileLiteCommitSha"] = revision
+                except (
+                    OSError,
+                    RuntimeError,
+                    ValueError,
+                    kernels_impl.KernelCaseError,
+                ) as error:
+                    message = f"native build failed: {error}"
+                    build_errors[build_key] = str(error)
+                    result = _failed_test(
+                        cell,
+                        target_metadata[cell.target],
+                        message,
+                        config_path=None,
+                        plugin_reports={},
+                    )
+                    run["tests"][position - 1] = result
+                    run["wallTimeSeconds"] = time.monotonic() - started
+                    _write_run(output_path, run)
+                    _progress(
+                        progress,
+                        f"FAILED case={cell.case} target={cell.target}: {message}",
+                    )
+                    continue
             command = prepare_command(
                 output_path,
                 cell,
@@ -923,6 +1113,7 @@ def run_suite(
                 warmups=selected_warmups,
                 samples=selected_samples,
                 plugin_profile=plugin_profile,
+                native_build=native_build,
             )
             cell_dir = command.workload_path.parent
             (output_path / "cache" / "triton" / cell.target).mkdir(

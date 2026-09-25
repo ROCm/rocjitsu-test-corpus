@@ -1,0 +1,67 @@
+{
+  "name": "tensile_sgemm_gfx1250_mt16x32",
+  "project": "tensile",
+  "runner": "../runner.cpp",
+  "kind": "cmake_executable",
+  "supported_targets": [
+    "gfx1250"
+  ],
+  "build": {
+    "system": "cmake",
+    "target": "tensile_sgemm_gfx1250_mt16x32"
+  },
+  "executable": "cases/tensile/tensile_sgemm_gfx1250_mt16x32",
+  "tests": {
+    "m127_n127_k127": {
+      "parameters": {
+        "m": 127,
+        "n": 127,
+        "k": 127
+      },
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0,
+        "abs_tolerance": 0.0001
+      }
+    },
+    "m128_n128_k128": {
+      "parameters": {
+        "m": 128,
+        "n": 128,
+        "k": 128
+      },
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0,
+        "abs_tolerance": 0.0001
+      }
+    },
+    "m129_n129_k129": {
+      "parameters": {
+        "m": 129,
+        "n": 129,
+        "k": 129
+      },
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0,
+        "abs_tolerance": 0.0001
+      }
+    }
+  },
+  "tags": [
+    "tensile",
+    "gemm",
+    "fp32",
+    "gfx1250"
+  ],
+  "benchmark": {
+    "protocol": "hip-gemm-v1",
+    "name": "Tensile gfx1250 SGEMM MT16x32",
+    "operation": "GEMM",
+    "dtype": "fp32",
+    "output_dtype": "fp32",
+    "accumulation_dtype": "fp32",
+    "layout": "ABt"
+  }
+}

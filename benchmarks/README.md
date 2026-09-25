@@ -1,19 +1,23 @@
 # Rocjitsu benchmarks
 
-Triton workload sources live under `corpus/benchmarks/triton/`, with an
-independent sequential runner. Suite TOML files contain case metadata and
-parameters. Benchmark runs are separate from normal pytest collection.
+The sequential runner measures Triton workloads from
+`corpus/benchmarks/triton/` and native Tensile cases from the kernel corpus.
+Suite TOML files define Triton parameters or reference named corpus variants.
+Benchmark runs are separate from normal pytest collection.
 
 ## Setup and run
 
-Use Python 3.12 and install the pinned GPU dependencies with
+Use Python 3.12, CMake 3.28 or newer, Ninja, and a C++ compiler. Install the pinned GPU dependencies with
 `python -m pip install -r benchmarks/requirements.txt`. For the concrete
 rocjitsu build and launch recipe, see the
-[rocm-systems benchmark guide](https://github.com/ROCm/rocm-systems/blob/develop/emulation/rocjitsu/docs/benchmark-suite.md).
+[rocm-systems benchmark guide](https://github.com/ROCm/rocm-systems/blob/develop/emulation/rocjitsu/docs/benchmarking.md).
 
-The consumer supplies the launch command and one base config per selected target:
+The consumer supplies the launch command and one base config per selected target.
+Use a private `ROCJITSU_RUNTIME_DIR` for each concurrent run so emulator runtime
+files do not share another invocation's temporary state:
 
 ```bash
+export ROCJITSU_RUNTIME_DIR="$(mktemp -d)"
 python -m benchmarks.runner \
   --rocjitsu-source-dir "$src" --build-dir "$build" \
   --target-config "gfx950=$gfx950_config" \
@@ -41,8 +45,9 @@ source root, SDK, and selected plugin binaries. The wrapper must select the
 binary from that build; arbitrary wrapper commands cannot be checked against
 CMake metadata. Rebuild rocjitsu after source changes.
 
-The default `benchmarks/suites/nightly.toml` runs 28 cases on both `gfx950` and
-`gfx1250` (56 cells). Sixteen cases cover FP16 and BF16 GEMMs at
+The default `benchmarks/suites/nightly.toml` retains 28 Triton cases on both
+`gfx950` and `gfx1250` and adds six gfx1250 Tensile SGEMM cells (62 cells total).
+Sixteen Triton cases cover FP16 and BF16 GEMMs at
 128x128x128, 256x256x512, 512x512x512, 1024x1024x1024, 1024x128x512,
 128x1024x512, 128x128x2048, and 250x250x510 (M x N x K).
 Use `--manifest benchmarks/suites/smoke.toml` for a short suite, repeated
@@ -61,7 +66,12 @@ Input allocation, compilation, descriptors, warmups, and
 result serialization stay outside samples. The GPT-OSS attention adapter copies
 outputs to the CPU and checks an upstream CPU reference after all samples,
 before emitting results. A failed reference check fails the case. Each sample
-launches one Triton kernel.
+launches one Triton kernel. A Tensile sample launches the complete prepared
+GEMM invocation sequence and synchronizes, including any required StreamK
+workspace reset. Loading code objects, preparing launch arguments, and building
+the native executable are outside timing samples and the per-cell execution
+timeout. Benchmark mode does not compute a CPU reference or copy results back
+for validation; normal corpus execution validates the same launch path.
 
 The extracted GPT-OSS attention implementation lives in
 `corpus/benchmarks/third_party/gpt_oss/attention.py`. Its `NOTICE.md`
@@ -117,14 +127,50 @@ dimension 64, sequence lengths divisible by 64, query heads divisible by KV
 heads, and a window of zero (full causal attention) or a positive multiple of 64.
 Unsupported parameters fail the case before GPU allocation.
 
+## Tensile corpus cases
+
+The two native SGEMM cases use the existing gfx1250 Tensile library's 16×32
+and 32×16 solutions, each at M=N=K=127, 128, and 129. Both use FP32 inputs,
+outputs, and accumulation, A × Bᵀ, batch count 1, and alpha=beta=1. C and D
+have separate storage, so repeated samples do not accumulate prior outputs.
+These are small aligned and edge-path workloads; they do not establish
+large-problem StreamK scaling performance.
+
+Suite entries reference the corpus definition:
+
+```toml
+[[cases]]
+suite = "kernels"
+case = "tensile_sgemm_gfx1250_mt16x32"
+variant = "m128_n128_k128"
+```
+
+The corpus owns parameters, supported targets, solution identity, and normal
+correctness checks. IDs have the form
+`tensile.<case>.<variant>.threads8`. Unsupported target combinations are not
+added to the matrix. Explicit selection with no runnable cells is an error.
+
+Use `--manifest benchmarks/suites/tensile-smoke.toml` with the normal runner
+command to measure both solutions at 128³, with one warmup and three samples.
+`--list` resolves these references without downloading or building dependencies.
+
+The native build downloads TensileLite host source pinned to
+`a8f0845f87ab50adc3dc8d0edd86693cb31065b1`, matching the packaged artifacts.
+It uses the same ROCm SDK as the emulator, including LLVM, and requires zlib
+and zstd development libraries. Kernels are already packaged: normal
+benchmark execution does not generate or compile Tensile GPU kernels. Native
+build logs and dependency provenance are retained with the run artifacts. See
+the [native Tensile adapter guide](../corpus/kernels/cases/tensile/README.md)
+for standalone builds, numerical validation, and dependency cache overrides.
+
 ## Results and plugins
 
 `run.json` uses schema version 1 and records raw samples, summaries, cell status,
 configuration, package versions, and both rocjitsu and corpus revisions,
 commit timestamps, and dirty state. Each cell retains `workload.json`,
 `stdout.txt`, `stderr.txt`, and its generated `config.json` under `cases/`.
-Dashboard problem definitions come from TOML parameters for both successful and
-failed cases, so a new case can publish its first failure without an existing
+Dashboard problem definitions come from TOML parameters or resolved corpus
+variants for both successful and failed cases, so a new case can publish its first failure without an existing
 catalog entry. Derived launch and source metadata remain in `workload.json`.
 A workload that fails early may have no `workload.json`.
 
@@ -164,10 +210,12 @@ package entries cannot join comparisons that lack those entries.
 `--machine-id` defaults to the recorded hostname; CI passes the
 benchmark runner's name. `--is-beta` controls the site's Beta label.
 
-CI publishes only the uninstrumented nightly suite. The benchmark step has a
-30-minute timeout, excluding installation, building, and publication. The
-expanded suite passed all 56 cells locally in 17m43s with eight threads, three
-warmups, and 21 samples; hosted runner speed may differ. A fresh dataset requires a valid Vanilla run, which can contain failed or timed-out results.
+CI publishes only the uninstrumented nightly suite. The companion workflow
+allows 60 minutes for the suite, including native workload preparation.
+The earlier 56-cell Triton suite passed locally in 17m43s with eight threads,
+three warmups, and 21 samples; that measurement excludes these Tensile additions
+and does not predict hosted runner time. A fresh dataset requires a valid
+Vanilla run, which can contain failed or timed-out results.
 Publish each comparison’s Vanilla baseline before its instrumented runs. All runs
 in a dataset must use the same machine.
 
