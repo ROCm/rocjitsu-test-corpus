@@ -300,6 +300,17 @@ hazard = "RAW"
 site = "s_wait_loadcnt"
 
 [[mutant]]
+id = "scratch_access.wait003"
+case = "scratch-access"
+kernel = "scratch_access"
+target = "gfx1250"
+kind = "wait"
+ordinal = 3
+resource = "vgpr"
+hazard = "RAW"
+site = "s_wait_loadcnt"
+
+[[mutant]]
 id = "lds_reduce.wait000"
 case = "lds-reduce"
 kernel = "lds_reduce"
@@ -1144,6 +1155,17 @@ kernel = "scratch_access"
 target = "gfx950"
 kind = "wait"
 ordinal = 2
+resource = "vgpr"
+hazard = "RAW"
+site = "s_waitcnt"
+
+[[mutant]]
+id = "scratch_access.wait003"
+case = "scratch-access"
+kernel = "scratch_access"
+target = "gfx950"
+kind = "wait"
+ordinal = 3
 resource = "vgpr"
 hazard = "RAW"
 site = "s_waitcnt"
