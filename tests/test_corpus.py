@@ -17,7 +17,7 @@ from support.prepare_inputs import (
     parse_csv_values,
     resolve_repo_path,
 )
-from test_suites import cts, dbt, iree, kernels, llama, semantics
+from test_suites import cts, dbt, iree, kernels, llama, race, semantics
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SUITE_MODULES = {
@@ -27,6 +27,7 @@ SUITE_MODULES = {
     "dbt": dbt,
     "semantics": semantics,
     "llama": llama,
+    "race": race,
 }
 DEFAULT_TARGET = "gfx1201"
 DEFAULT_SUITES = ("iree", "kernels", "cts")
