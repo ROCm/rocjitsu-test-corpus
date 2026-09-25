@@ -3,6 +3,9 @@
 Small runnable ROCm corpus for exercising kernels and higher-level library
 entry points from upstream projects.
 
+Standalone performance workloads that are intentionally excluded from the
+ordinary pytest matrix live under `benchmarks/`.
+
 ## At a Glance
 
 The corpus keeps runnable cases separate from vendored or extracted upstream
@@ -11,6 +14,9 @@ source:
 ```text
 cases/
   <project>/<case>/      runner, metadata, and optional overrides/helpers
+
+benchmarks/
+  <workload>/            opt-in performance workload and qualification tools
 
 third_party/
   <project>/             vendored or extracted upstream sources
@@ -164,6 +170,9 @@ options below.
 `KERNEL_CORPUS_ENABLE_HIPKITTENS=ON` needs `hip` and an OpenMP-capable host compiler
 runtime.
 `KERNEL_CORPUS_ENABLE_ROCBLAS=ON` needs `hip` and `rocBLAS`.
+`KERNEL_CORPUS_ENABLE_VGPR_SATURATION=ON` needs `hip` and Python. It is
+independent of `KERNEL_CORPUS_ENABLE_ALL` and remains disabled unless selected
+explicitly.
 
 The Stream-K runner is intended for CDNA / gfx9-family targets and is not expected
 to work on RDNA targets. Its extracted hip-stream-k kernels use a local fragment

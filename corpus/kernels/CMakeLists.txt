@@ -7,10 +7,21 @@ option(KERNEL_CORPUS_ENABLE_HIP_STREAMK "Build HIP Stream-K case" ${KERNEL_CORPU
 option(KERNEL_CORPUS_ENABLE_HIP_MATMUL "Build nod-ai hip-matmul cases" ${KERNEL_CORPUS_ENABLE_ALL})
 option(KERNEL_CORPUS_ENABLE_HIPKITTENS "Build HipKittens GEMM cases" ${KERNEL_CORPUS_ENABLE_ALL})
 option(KERNEL_CORPUS_ENABLE_ROCBLAS "Build rocBLAS cases" ${KERNEL_CORPUS_ENABLE_ALL})
+option(
+    KERNEL_CORPUS_ENABLE_VGPR_SATURATION
+    "Build the standalone rocjitsu VGPR saturation benchmark"
+    OFF
+)
 
 include(cmake/KernelCorpusHip.cmake)
 
-if(KERNEL_CORPUS_ENABLE_HIP_STREAMK OR KERNEL_CORPUS_ENABLE_HIP_MATMUL OR KERNEL_CORPUS_ENABLE_HIPKITTENS OR KERNEL_CORPUS_ENABLE_ROCBLAS)
+if(
+    KERNEL_CORPUS_ENABLE_HIP_STREAMK
+    OR KERNEL_CORPUS_ENABLE_HIP_MATMUL
+    OR KERNEL_CORPUS_ENABLE_HIPKITTENS
+    OR KERNEL_CORPUS_ENABLE_ROCBLAS
+    OR KERNEL_CORPUS_ENABLE_VGPR_SATURATION
+)
     kernel_corpus_enable_hip()
 endif()
 
@@ -28,4 +39,8 @@ endif()
 
 if(KERNEL_CORPUS_ENABLE_ROCBLAS)
     add_subdirectory(cases/rocblas)
+endif()
+
+if(KERNEL_CORPUS_ENABLE_VGPR_SATURATION)
+    add_subdirectory(benchmarks/vgpr_saturation)
 endif()
