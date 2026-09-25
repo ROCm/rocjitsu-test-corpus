@@ -42,7 +42,12 @@ int main() {
     HIP_CHECK(hipGetLastError());
     HIP_CHECK(hipDeviceSynchronize());
 
+    // Both buffers come back. d_data carries the write-after-read this kernel
+    // exists to exercise, so checking only d_result would let that store vanish
+    // entirely without the test noticing.
+    std::vector<int> written(arraySize);
     HIP_CHECK(hipMemcpy(result.data(), d_result, arraySize * sizeof(int), hipMemcpyDeviceToHost));
+    HIP_CHECK(hipMemcpy(written.data(), d_data, arraySize * sizeof(int), hipMemcpyDeviceToHost));
     HIP_CHECK(hipFree(d_data));
     HIP_CHECK(hipFree(d_result));
 
@@ -56,9 +61,18 @@ int main() {
 
     bool pass = true;
     for (unsigned int i = 0; i < arraySize; ++i) {
-        int expected = static_cast<int>(i) * 3 + 1;
-        if (result[i] != expected) {
-            std::cerr << "Mismatch at " << i << ": expected " << expected << " got " << result[i] << std::endl;
+        int expected_result = static_cast<int>(i) * 3 + 1;
+        if (result[i] != expected_result) {
+            std::cerr << "result mismatch at " << i << ": expected " << expected_result << " got "
+                      << result[i] << std::endl;
+            pass = false;
+            break;
+        }
+        // data[i] started at i and the kernel writes back val + 100.
+        int expected_written = static_cast<int>(i) + 100;
+        if (written[i] != expected_written) {
+            std::cerr << "data mismatch at " << i << ": expected " << expected_written << " got "
+                      << written[i] << std::endl;
             pass = false;
             break;
         }

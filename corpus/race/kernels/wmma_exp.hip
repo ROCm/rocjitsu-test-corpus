@@ -119,13 +119,27 @@ int main() {
     }
     std::cout << "]" << std::endl;
 
-    // Validate: all exp() outputs must be finite and strictly positive. The
-    // output buffer starts zeroed, so accepting zero would let a kernel that
-    // stored nothing report PASS.
+    // A and B are uniform, so every element of the 16x16 result is the same
+    // K-deep dot product of that value with itself, passed through exp().
+    //
+    // Only half of K contributes. The 16x16x32 shape consumes 32 halfs per lane
+    // across the wave for each operand, but the buffers hold N*N = 256 elements,
+    // so the fragment loads zero-fill every lane whose index is out of range.
+    // That leaves 16 of the 32 k-steps carrying data.
+    constexpr unsigned int kSteps   = 16;
+    const float            a        = static_cast<float>(h_A[0]);
+    const float            b        = static_cast<float>(h_B[0]);
+    const float            expected = std::exp(static_cast<float>(kSteps) * a * b);
+
+    // An accumulator that never received the MMA result leaves exp(0) = 1, so
+    // the tolerance must be tighter than expected - 1.
+    const float tolerance = 1e-4f;
+
     bool pass = true;
     for (std::size_t i = 0; i < matSize; ++i) {
-        if (!std::isfinite(h_C[i]) || h_C[i] <= 0.0f) {
-            std::cerr << "Bad value at " << i << ": " << h_C[i] << std::endl;
+        if (!std::isfinite(h_C[i]) || std::fabs(h_C[i] - expected) > tolerance) {
+            std::cerr << "Bad value at " << i << ": expected " << expected << " +/- " << tolerance
+                      << ", got " << h_C[i] << std::endl;
             pass = false;
             break;
         }

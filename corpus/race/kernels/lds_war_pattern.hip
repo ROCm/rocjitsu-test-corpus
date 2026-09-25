@@ -45,7 +45,12 @@ int main() {
     constexpr int          threadsPerBlock = 256;
     constexpr int          numBlocks       = arraySize / threadsPerBlock;
 
-    std::vector<int> input(arraySize, 1);
+    // Distinct values per element, so the slot each block reports back is tied
+    // to the input it was filled from rather than to a constant.
+    std::vector<int> input(arraySize);
+    for (unsigned int i = 0; i < arraySize; ++i)
+        input[i] = static_cast<int>(i);
+
     std::vector<int> output(numBlocks, 0);
     int *            d_in, *d_out;
 
@@ -73,8 +78,11 @@ int main() {
     // its slot by 1. The first thread's slot ends at 1+1 = 2; output[b] = 2.
     bool pass = true;
     for (int i = 0; i < numBlocks; ++i) {
-        if (output[i] != 2) {
-            std::cerr << "Mismatch at block " << i << ": expected 2 got " << output[i] << std::endl;
+        // Thread 0 of each block reports its slot after the read-modify-write.
+        int expected = input[i * threadsPerBlock] + 1;
+        if (output[i] != expected) {
+            std::cerr << "Mismatch at block " << i << ": expected " << expected << " got " << output[i]
+                      << std::endl;
             pass = false;
         }
     }

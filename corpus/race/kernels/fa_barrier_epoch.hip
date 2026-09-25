@@ -147,12 +147,23 @@ int main() {
     }
     std::cout << "]" << std::endl;
 
+    // Thread t of block b sums the four LDS slots (t*4 + i) % LDS_ELEMS, where
+    // slot j of that block holds h_in[b*BLOCK_SIZE + j].
     bool pass = true;
-    for (int i = 0; i < N; ++i) {
-        if (h_out[i] == 0) {
-            std::cerr << "Mismatch at " << i << ": got 0 (expected non-zero)\n";
-            pass = false;
-            break;
+    for (int b = 0; b < NUM_BLOCKS && pass; ++b) {
+        for (int t = 0; t < BLOCK_SIZE; ++t) {
+            uint32_t expected = 0;
+            for (int i = 0; i < 4; ++i) {
+                const int read_idx = (t * 4 + i) % LDS_ELEMS;
+                expected += h_in[b * BLOCK_SIZE + read_idx];
+            }
+            const int out_idx = b * BLOCK_SIZE + t;
+            if (h_out[out_idx] != expected) {
+                std::cerr << "Mismatch at " << out_idx << ": expected " << expected << " got "
+                          << h_out[out_idx] << "\n";
+                pass = false;
+                break;
+            }
         }
     }
     std::cerr << (pass ? "PASS" : "FAIL") << std::endl;

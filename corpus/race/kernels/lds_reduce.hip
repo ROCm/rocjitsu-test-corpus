@@ -37,7 +37,13 @@ int main() {
     constexpr int          threadsPerBlock = 256;
     constexpr int          numBlocks       = arraySize / threadsPerBlock;
 
-    std::vector<int> input(arraySize, 1);
+    // Distinct values per element, so a block's sum depends on which slots were
+    // added together. A uniform input cannot distinguish the tree reduction
+    // from any other operation that combines the same number of elements.
+    std::vector<int> input(arraySize);
+    for (unsigned int i = 0; i < arraySize; ++i)
+        input[i] = static_cast<int>(i);
+
     std::vector<int> output(numBlocks, 0);
     int *            d_in, *d_out;
 
@@ -63,8 +69,13 @@ int main() {
 
     bool pass = true;
     for (int i = 0; i < numBlocks; ++i) {
-        if (output[i] != threadsPerBlock) {
-            std::cerr << "Mismatch at block " << i << ": expected " << threadsPerBlock << " got " << output[i]
+        // Each block reduces its own contiguous slice of the input.
+        long long expected = 0;
+        for (int t = 0; t < threadsPerBlock; ++t)
+            expected += input[i * threadsPerBlock + t];
+
+        if (output[i] != expected) {
+            std::cerr << "Mismatch at block " << i << ": expected " << expected << " got " << output[i]
                       << std::endl;
             pass = false;
         }
