@@ -1,0 +1,4 @@
+dEQP-VK.spirv_assembly.instruction.compute.compute_shader_derivatives.compute.derivative_value.coarse.float32.linear.16_1_1
+dEQP-VK.spirv_assembly.instruction.compute.non_semantic_info.any_constant_type
+dEQP-VK.spirv_assembly.instruction.compute.non_semantic_info.dummy_instruction_set
+dEQP-VK.spirv_assembly.instruction.compute.non_semantic_info.placement
