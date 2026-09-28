@@ -276,6 +276,46 @@ def test_manifest_rejects_non_utf8_input(runner_context) -> None:
         runner.load_manifest(manifest)
 
 
+@pytest.mark.parametrize("value", ["0", "-1", "2", "true", "1.5", '\"251\"'])
+def test_manifest_rejects_invalid_case_samples(runner_context, value) -> None:
+    manifest = runner_context.root / "suite.toml"
+    text = runner.DEFAULT_MANIFEST.read_text(encoding="utf-8")
+    manifest.write_text(text.replace("samples = 251", f"samples = {value}", 1))
+    with pytest.raises(runner.RunnerError, match="samples"):
+        runner.load_manifest(manifest)
+
+
+@pytest.mark.parametrize("override", [None, 3])
+def test_case_samples_and_global_override(runner_context, override) -> None:
+    cases = (
+        "triton.gemm_fp16_128x128x128.threads8",
+        "triton.gemm_bf16_128x128x128.threads8",
+        "triton.gemm_fp16_256x256x512.threads8",
+    )
+    output, result = _run(
+        runner_context,
+        _matrix(runner_context, *cases, targets=("gfx950", "gfx1250")),
+        "case-samples",
+        samples=override,
+    )
+    assert result["status"] == "completed"
+    assert len(result["tests"]) == 6
+    assert result["measurement"]["samples"] == (override or 21)
+    if override is None:
+        assert result["measurement"]["caseSamples"] == {
+            cases[0]: 251, cases[1]: 251,
+        }
+    else:
+        assert "caseSamples" not in result["measurement"]
+    for test in result["tests"]:
+        expected = override if override is not None else (
+            251 if "128x128x128" in test["logicalTestId"] else 21
+        )
+        assert len(test["timing"]["samples"]) == expected
+    persisted = json.loads((output / "run.json").read_text())
+    assert persisted == result
+
+
 def test_even_sample_count_is_rejected(runner_context) -> None:
     with pytest.raises(runner.RunnerError, match="must be odd"):
         runner.run_suite(
@@ -603,7 +643,7 @@ def test_progress_reports_suite_and_cell_status(runner_context) -> None:
     )
     assert (
         messages[1]
-        == "[rocjitsu-benchmark] START [1/1] case=triton.rmsnorm_bf16.threads8 target=gfx950 provider=triton timeout_seconds=300"
+        == "[rocjitsu-benchmark] START [1/1] case=triton.rmsnorm_bf16.threads8 target=gfx950 provider=triton samples=1 timeout_seconds=300"
     )
     assert re.search(
         "^\\[rocjitsu-benchmark\\] DONE  \\[1/1\\] case=triton\\.rmsnorm_bf16\\.threads8 target=gfx950 status=completed elapsed_seconds=\\d+\\.\\d median_ns=1$",

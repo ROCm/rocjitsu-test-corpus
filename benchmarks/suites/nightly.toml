@@ -95,6 +95,7 @@ params = { dtype = "bf16", batch = 1, query_heads = 64, key_value_heads = 8, seq
 
 [[cases]]
 id = "triton.gemm_fp16_128x128x128.threads8"
+samples = 251
 workload = "gemm"
 suite = "Triton"
 name = "FP16 GEMM 128x128x128"
@@ -159,6 +160,7 @@ params = { m = 250, n = 250, k = 510, dtype = "fp16" }
 
 [[cases]]
 id = "triton.gemm_bf16_128x128x128.threads8"
+samples = 251
 workload = "gemm"
 suite = "Triton"
 name = "BF16 GEMM 128x128x128"

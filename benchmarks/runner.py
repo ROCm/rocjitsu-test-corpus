@@ -94,6 +94,7 @@ class Case:
     name: str
     operation: str
     params: dict[str, Any]
+    samples: int | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -193,9 +194,14 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
     ids = set()
     case_fields = {"id", "workload", "suite", "name", "operation", "params"}
     for entry in raw_cases:
-        if not isinstance(entry, dict) or set(entry) != case_fields:
+        if (
+            not isinstance(entry, dict)
+            or not case_fields <= set(entry)
+            or set(entry) - case_fields - {"samples"}
+        ):
             raise RunnerError(
-                "each case must contain id, workload, suite, name, operation, params"
+                "each case must contain id, workload, suite, name, operation, params; "
+                "only samples is optional"
             )
         for field in case_fields - {"params"}:
             if not isinstance(entry[field], str) or not entry[field].strip():
@@ -216,6 +222,8 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
             raise RunnerError(
                 f"case parameters must be finite JSON values: {error}"
             ) from error
+        if "samples" in entry:
+            _sample_count(entry["samples"], "case samples")
         cases.append(Case(**entry))
     timeout = value["timeout_seconds"]
     if (
@@ -904,15 +912,28 @@ def run_suite(
             for cell in matrix
         ],
     }
+    if samples is None:
+        case_samples = {
+            cell.case: cell.definition.samples
+            for cell in matrix
+            if cell.definition.samples is not None
+        }
+        if case_samples:
+            run["measurement"]["caseSamples"] = case_samples
     _write_run(output_path, run)
 
     try:
         for position, cell in enumerate(matrix, start=1):
+            cell_samples = (
+                cell.definition.samples
+                if samples is None and cell.definition.samples is not None
+                else selected_samples
+            )
             cell_started = time.monotonic()
             _progress(
                 progress,
                 f"START [{position}/{total_cells}] case={cell.case} "
-                f"target={cell.target} provider=triton "
+                f"target={cell.target} provider=triton samples={cell_samples} "
                 f"timeout_seconds={suite.timeout_seconds:g}",
             )
             command = prepare_command(
@@ -921,7 +942,7 @@ def run_suite(
                 run_wrapper=wrapper,
                 target=target_metadata[cell.target],
                 warmups=selected_warmups,
-                samples=selected_samples,
+                samples=cell_samples,
                 plugin_profile=plugin_profile,
             )
             cell_dir = command.workload_path.parent
@@ -957,7 +978,7 @@ def run_suite(
                         f"command exited with status {completed.returncode}"
                     )
                 aggregate = validate_workload(
-                    command.workload_path, cell, selected_samples
+                    command.workload_path, cell, cell_samples
                 )
                 missing_reports = [
                     plugin
