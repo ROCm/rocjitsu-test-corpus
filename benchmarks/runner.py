@@ -28,6 +28,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, TextIO
 
+from benchmarks import affinity
+
 BENCHMARK_ROOT = Path(__file__).resolve().parent
 CORPUS_ROOT = BENCHMARK_ROOT.parent
 WORKLOAD_ROOT = CORPUS_ROOT / "corpus" / "benchmarks"
@@ -850,12 +852,21 @@ def run_suite(
         target: _target_metadata(target_configs[target], suite.num_threads)
         for target in targets
     }
+    try:
+        cpu_affinity = affinity.discover()
+    except (OSError, ValueError) as error:
+        raise RunnerError(f"cannot select benchmark CPU affinity: {error}") from error
+    cpu_mask = ",".join(map(str, cpu_affinity["selected_cpus"]))
+    wrapper = ("taskset", "-c", cpu_mask, *wrapper)
     started = time.monotonic()
     timestamp = _utc_now()
     source = _source_info(source_dir)
     corpus = _source_info(CORPUS_ROOT)
     environment = _environment_info()
     output_path.mkdir(parents=True)
+    (output_path / "cpu-affinity.json").write_text(
+        json.dumps(cpu_affinity, indent=2) + "\n", encoding="utf-8"
+    )
     total_cells = len(matrix)
     _progress(
         progress,

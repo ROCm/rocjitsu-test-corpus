@@ -49,6 +49,14 @@ def runner_context(tmp_path, monkeypatch):
     for plugin in ("logging", "race", "throughput"):
         (ctx.build / f"librocjitsu_plugin_{plugin}.so").touch()
     monkeypatch.setattr(runner, "_installed_rocm_path", lambda: ctx.rocm)
+    ctx.affinity = {
+        "selected_cpus": [2, 4, 6, 8, 10, 12, 14, 16],
+        "allowed_cpus": list(range(32)),
+        "cpu_topology": [],
+        "cpu_models": ["test-cpu"],
+    }
+    ctx.discover = mock.Mock(return_value=ctx.affinity)
+    monkeypatch.setattr(runner.affinity, "discover", ctx.discover)
     ctx.suite = runner.load_manifest()
     return ctx
 
@@ -159,6 +167,57 @@ def _run(
             target_configs=runner_context.configs,
         )
     return (output, result)
+
+
+def test_run_pins_wrapper_and_records_affinity(runner_context, monkeypatch) -> None:
+    monkeypatch.setenv("OPENBLAS_NUM_THREADS", "32")
+
+    def execute(argv, **kwargs):
+        assert argv[:3] == ("taskset", "-c", "2,4,6,8,10,12,14,16")
+        assert argv[3] == str(runner_context.build / "custom launcher")
+        assert kwargs["env"]["OPENBLAS_NUM_THREADS"] == "32"
+        configuration = json.loads(Path(argv[argv.index("--config") + 1]).read_text())
+        assert configuration["num_threads"] == runner_context.suite.num_threads
+        assert "cpu_dispatch_threads" not in configuration
+        assert "async_helper_threads" not in configuration
+        return _successful_process(runner_context, argv, **kwargs)
+
+    output, result = _run(
+        runner_context,
+        _matrix(
+            runner_context,
+            "triton.rmsnorm_bf16.threads8",
+            "triton.gemm_bf16_aligned.threads8",
+        ),
+        "affinity",
+        process=execute,
+        samples=1,
+    )
+    assert result["status"] == "completed"
+    runner_context.discover.assert_called_once_with()
+    assert (
+        json.loads((output / "cpu-affinity.json").read_text())
+        == runner_context.affinity
+    )
+
+
+@pytest.mark.parametrize(
+    "error", [OSError("missing topology"), ValueError("too few cores")]
+)
+def test_invalid_topology_fails_before_execution(runner_context, error) -> None:
+    runner_context.discover.side_effect = error
+    with mock.patch.object(runner, "_run_command") as execute:
+        with pytest.raises(
+            runner.RunnerError, match="cannot select benchmark CPU affinity"
+        ):
+            _run(
+                runner_context,
+                _matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+                "invalid-affinity",
+                process=execute,
+            )
+    execute.assert_not_called()
+    assert not (runner_context.root / "invalid-affinity").exists()
 
 
 def test_default_manifest_has_full_ordered_matrix(runner_context) -> None:
@@ -775,12 +834,22 @@ def test_build_validation_requires_selected_plugin_binary(runner_context) -> Non
 def test_target_metadata_is_read_from_selected_configuration(runner_context) -> None:
     configuration = runner_context.root / "target.json"
     configuration.write_text(
-        json.dumps({"exec_mode": "parallel", "num_threads": 8, "max_ticks": 100000}),
+        json.dumps(
+            {
+                "exec_mode": "parallel",
+                "num_threads": 8,
+                "max_ticks": 100000,
+                "cpu_dispatch_threads": 1,
+                "async_helper_threads": 0,
+            }
+        ),
         encoding="utf-8",
     )
     with mock.patch.dict(runner_context.configs, {"gfx950": configuration}, clear=True):
         config, _ = runner._load_target_configuration(runner_context.configs["gfx950"])
         assert config["max_ticks"] == 0
+        assert config["cpu_dispatch_threads"] == 1
+        assert config["async_helper_threads"] == 0
         metadata = runner._target_metadata(runner_context.configs["gfx950"])
         effective_metadata = runner._target_metadata(
             runner_context.configs["gfx950"], runner_context.suite.num_threads
@@ -1097,7 +1166,9 @@ def test_interrupt_survives_failure_to_drain_output(runner_context) -> None:
     process.communicate.side_effect = [interruption, OSError("cannot drain")]
     with mock.patch.object(
         runner.subprocess, "Popen", return_value=process
-    ), mock.patch.object(runner.os, "killpg"), pytest.raises(KeyboardInterrupt) as raised:
+    ), mock.patch.object(runner.os, "killpg"), pytest.raises(
+        KeyboardInterrupt
+    ) as raised:
         runner._run_command(("workload",), cwd=runner_context.root, env={}, timeout=1)
     assert raised.value is interruption
 
@@ -1135,7 +1206,11 @@ def test_interruption_retains_completed_and_unrun_matrix_cells(
     output = runner_context.root / "interrupted-partial"
     raw = json.loads((output / "run.json").read_text())
     assert calls == 2
-    assert [test["status"] for test in raw["tests"]] == ["completed", "failed", "failed"]
+    assert [test["status"] for test in raw["tests"]] == [
+        "completed",
+        "failed",
+        "failed",
+    ]
     assert raw["status"] == "failed"
     assert raw["finishedAt"] is not None
     assert raw["tests"][0]["durationSeconds"] is not None
@@ -1214,11 +1289,12 @@ def test_signal_preserves_flushed_workload_output(runner_context, signum) -> Non
         "    signal.pause()\n"
     )
     driver = (
-        "import sys\n"
+        "import os, sys\n"
         "from pathlib import Path\n"
         "from unittest.mock import patch\n"
         "from benchmarks import runner\n"
-        "with patch.object(runner, '_installed_rocm_path', return_value=Path(sys.argv[1])):\n"
+        "with patch.object(runner, '_installed_rocm_path', return_value=Path(sys.argv[1])), "
+        "patch.object(runner.affinity, 'discover', return_value={'selected_cpus': [min(os.sched_getaffinity(0))]}):\n"
         "    raise SystemExit(runner.main(sys.argv[2:]))\n"
     )
     output = runner_context.root / "signaled"
@@ -1504,6 +1580,7 @@ def test_wrapper_preserves_quoted_paths_and_literal_shell_arguments(runner_conte
 
 
 def test_missing_wrapper_executable_fails_cell(runner_context):
+    runner_context.affinity["selected_cpus"] = [min(os.sched_getaffinity(0))]
     runner_context.wrapper = (
         f'"{runner_context.root / "missing"}" --config {{config}} --'
     )
@@ -1515,5 +1592,10 @@ def test_missing_wrapper_executable_fails_cell(runner_context):
         samples=1,
     )
     assert result["status"] == "failed"
-    assert result["tests"][0]["exitCode"] is None
-    assert "No such file" in result["tests"][0]["error"]
+    assert result["tests"][0]["exitCode"] != 0
+    stderr = (
+        runner_context.root
+        / "missing-launcher"
+        / result["tests"][0]["artifacts"]["stderr"]
+    )
+    assert "No such file" in stderr.read_text()
