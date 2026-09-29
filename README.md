@@ -91,6 +91,8 @@ The HIP programs retain their original functional and race-report assertions;
 the corpus adapter only supplies build and launch isolation. The same build
 also runs the host-only unit tests for the race-log parser and expectation
 matcher used by those programs.
+Each invocation records a GoogleTest XML report and requires the selected case
+to complete successfully; empty selections and skipped cases fail the corpus test.
 
 ### gfx1250 memory CTS
 

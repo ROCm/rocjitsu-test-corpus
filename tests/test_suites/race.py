@@ -15,6 +15,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from support.define_contracts import (
@@ -25,7 +26,6 @@ from support.define_contracts import (
     TargetSpec,
 )
 from support.prepare_inputs import load_suite_target_configs, supports_target
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RACE_SOURCE_DIR = REPO_ROOT / "corpus" / "race"
@@ -187,10 +187,12 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     base_config = _base_config_path()
     config_path = case_dir / "config.json"
     _materialize_config(base_config, config_path, sink_dir)
+    gtest_report = case_dir / "gtest.xml"
     command = [
         *_run_wrapper_command(context.run_wrapper, config_path),
         str(build_result.executable_path),
         f"--gtest_filter={case.metadata['test_filter']}",
+        f"--gtest_output=xml:{gtest_report}",
     ]
     environment = dict(os.environ)
     environment["RJ_SINK_DIR"] = str(sink_dir)
@@ -202,9 +204,40 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
         phase="run",
         env=environment,
     )
+    _validate_gtest_report(gtest_report, case.metadata["test_filter"])
     report = sink_dir / "race.log"
     if not report.is_file():
         raise RuntimeError(f"Race test did not produce {report}")
+
+
+def _validate_gtest_report(path: Path, expected_filter: str) -> None:
+    # GoogleTest exits successfully when a filter matches no tests, or when a
+    # test skips. Neither result exercises the assertion this corpus case owns.
+    try:
+        root = ET.parse(path).getroot()
+    except (OSError, ET.ParseError) as error:
+        raise RuntimeError(
+            f"Could not read race GoogleTest report {path}: {error}"
+        ) from error
+    cases = root.findall("./testsuite/testcase")
+    if root.get("tests") != "1" or len(cases) != 1:
+        raise RuntimeError(
+            f"Expected exactly one GoogleTest case for {expected_filter}: {path}"
+        )
+    case = cases[0]
+    actual_filter = f"{case.get('classname')}.{case.get('name')}"
+    if (
+        actual_filter != expected_filter
+        or case.get("status") != "run"
+        or case.get("result") != "completed"
+        or case.find("failure") is not None
+        or case.find("error") is not None
+        or case.find("skipped") is not None
+        or any(root.get(field) != "0" for field in ("failures", "errors", "disabled"))
+    ):
+        raise RuntimeError(
+            f"GoogleTest did not pass the requested case {expected_filter}: {path}"
+        )
 
 
 def _build_root(context: RunContext) -> Path:
@@ -262,8 +295,7 @@ def _run_wrapper_command(run_wrapper: str | None, config_path: Path) -> list[str
     if any("{config}" in argument and argument != "{config}" for argument in wrapper):
         raise RuntimeError("{config} must be a standalone --run-wrapper token")
     return [
-        str(config_path) if argument == "{config}" else argument
-        for argument in wrapper
+        str(config_path) if argument == "{config}" else argument for argument in wrapper
     ]
 
 
