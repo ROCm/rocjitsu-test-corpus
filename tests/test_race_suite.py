@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
 
 from support.prepare_inputs import make_target_spec
+from support.define_contracts import BuildResult, RunContext
 from test_suites import race
 
 
@@ -17,7 +19,9 @@ def test_configs_preserve_every_moved_gtest() -> None:
     for target, expected_count in expected_counts.items():
         cases = race.discover(make_target_spec(target), configs)
         assert len(cases) == expected_count
-        assert {case.metadata["test_filter"] for case in cases} == _source_gtests(target)
+        assert {case.metadata["test_filter"] for case in cases} == _source_gtests(
+            target
+        )
         assert all(
             f"RaceTest.{target}_{case.metadata['name']}" in case.selector_names
             for case in cases
@@ -53,9 +57,12 @@ def test_materialize_config_rejects_preconfigured_plugins(tmp_path: Path) -> Non
 
 def test_run_wrapper_substitutes_private_config(tmp_path: Path) -> None:
     config = tmp_path / "config.json"
-    assert race._run_wrapper_command(
-        "rocjitsu --config {config} --", config
-    ) == ["rocjitsu", "--config", str(config), "--"]
+    assert race._run_wrapper_command("rocjitsu --config {config} --", config) == [
+        "rocjitsu",
+        "--config",
+        str(config),
+        "--",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -65,6 +72,90 @@ def test_run_wrapper_substitutes_private_config(tmp_path: Path) -> None:
 def test_run_wrapper_requires_one_config_token(wrapper: str, tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="exactly one"):
         race._run_wrapper_command(wrapper, tmp_path / "config.json")
+
+
+@pytest.mark.parametrize(
+    "outcome, error",
+    [
+        ("passed", None),
+        ("empty", "exactly one"),
+        ("multiple", "exactly one"),
+        ("wrong_case", "did not pass the requested case"),
+        ("skipped", "did not pass the requested case"),
+        ("failed", "did not pass the requested case"),
+        ("missing", "Could not read race GoogleTest report"),
+        ("malformed", "Could not read race GoogleTest report"),
+    ],
+)
+def test_run_requires_the_requested_gtest_to_pass(
+    tmp_path: Path, monkeypatch, outcome: str, error: str | None
+) -> None:
+    case = race.discover(
+        make_target_spec("gfx950"),
+        race.load_target_configs(race.default_config_files()),
+    )[0]
+    base = tmp_path / "base.json"
+    base.write_text('{"vm": {}}', encoding="utf-8")
+    monkeypatch.setenv("ROCJITSU_RACE_CONFIG", str(base))
+    context = RunContext(
+        repo_root=race.REPO_ROOT,
+        artifact_directory=tmp_path / "artifacts",
+        skip_all_runs=False,
+        run_wrapper="rocjitsu --config {config} --",
+    )
+    case_dir = (
+        context.artifact_directory
+        / "race"
+        / case.target
+        / "cases"
+        / case.metadata["name"]
+    )
+    case_dir.mkdir(parents=True)
+    # A report from an earlier successful run must not hide a missing result.
+    (case_dir / "gtest.xml").write_text("stale report", encoding="utf-8")
+
+    def successful_process(command, *, cwd, log_path, phase, env):
+        assert not (case_dir / "gtest.xml").exists()
+        assert cwd == case_dir
+        assert command[2] == str(case_dir / "config.json")
+        assert f"--gtest_filter={case.metadata['test_filter']}" in command
+        assert env["ROCJITSU_RUNTIME_DIR"] == str(case_dir / "runtime")
+        # An empty race log is valid for clean kernels, so it cannot prove
+        # that GoogleTest executed the requested test.
+        (Path(env["RJ_SINK_DIR"]) / "race.log").touch()
+        if outcome == "missing":
+            return
+        report_arg = next(arg for arg in command if arg.startswith("--gtest_output="))
+        report = Path(report_arg.removeprefix("--gtest_output=xml:"))
+        if outcome == "malformed":
+            report.write_text("broken XML", encoding="utf-8")
+            return
+        count = {"empty": 0, "multiple": 2}.get(outcome, 1)
+        root = ET.Element(
+            "testsuites", tests=str(count), failures="0", errors="0", disabled="0"
+        )
+        suite = ET.SubElement(root, "testsuite")
+        fixture, name = case.metadata["test_filter"].split(".")
+        for _ in range(count):
+            result = ET.SubElement(
+                suite,
+                "testcase",
+                classname=fixture,
+                name="other" if outcome == "wrong_case" else name,
+                status="run",
+                result="skipped" if outcome == "skipped" else "completed",
+            )
+            if outcome == "failed":
+                ET.SubElement(result, "failure")
+        ET.ElementTree(root).write(report)
+
+    monkeypatch.setattr(race, "_run_command", successful_process)
+    build_result = BuildResult(build_dir=None, executable_path=tmp_path / "race-test")
+    if error:
+        with pytest.raises(RuntimeError, match=error):
+            race.run(case, build_result, context)
+    else:
+        race.run(case, build_result, context)
 
 
 def _source_gtests(target: str) -> set[str]:
