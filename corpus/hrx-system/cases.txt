@@ -1,0 +1,16 @@
+queue_cooperative_dispatch_tests
+queue_execution_resource_tests
+asan_executable_tests
+sanitizer_executable_load_tests
+tsan_executable_tests
+asan_allocation_tests
+manual_asan_executable_tests
+buffer_tests
+command_buffer_tests
+core_tests
+file_tests
+queue_tests
+dispatch_tests
+executable_tests
+queue_dispatch_tests
+sanitizer_tests

@@ -1,0 +1,2 @@
+--index-url https://nightly.repo.amd.com/rocm/core/whl-next/
+rocm[devel,libraries]==10.1.0a20260827
