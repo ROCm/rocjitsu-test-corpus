@@ -79,6 +79,7 @@ endif()
 
 add_executable(race_log_expectation_test race_log_expectation_test.cpp)
 target_compile_features(race_log_expectation_test PRIVATE cxx_std_20)
+set_target_properties(race_log_expectation_test PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 target_include_directories(
     race_log_expectation_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}"
 )
