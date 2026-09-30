@@ -10,6 +10,16 @@
     "flat_lds_wait_both",
     "flat_lds_vmcnt_only_race",
     "flat_lds_lgkmcnt_only_race",
+    "vmcnt_no_wait_race",
+    "lgkmcnt_no_wait_race",
+    "lgkmcnt_capacity_boundary",
+    "lgkmcnt_below_capacity_race",
+    "mixed_lgkmcnt_capacity_boundary",
+    "mixed_lgkmcnt_below_capacity_race",
+    "wide_scalar_lgkmcnt_capacity_boundary",
+    "wide_scalar_lgkmcnt_below_capacity_race",
+    "vmcnt_capacity_boundary",
+    "vmcnt_below_capacity_race",
     "sgpr_waitcnt",
     "sgpr_waitcnt_race",
     "sgpr_waw_load_then_mov",
@@ -44,8 +54,8 @@
     "waw_global_load_then_alu",
     "waw_global_load_then_alu_safe",
     "waw_global_load_then_mfma",
-    "f64_vgpr_safe",
     "f64_vgpr_race",
+    "f64_vgpr_safe",
     "f64_vgpr_waw"
   ]
 }
