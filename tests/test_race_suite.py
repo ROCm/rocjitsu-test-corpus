@@ -15,7 +15,7 @@ from test_suites import race
 
 def test_configs_preserve_every_moved_gtest() -> None:
     configs = race.load_target_configs(race.default_config_files())
-    expected_counts = {"gfx950": 45, "gfx1151": 8}
+    expected_counts = {"gfx950": 55, "gfx1151": 21}
 
     for target, expected_count in expected_counts.items():
         cases = race.discover(make_target_spec(target), configs)
