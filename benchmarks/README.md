@@ -32,27 +32,76 @@ operators and variable expansion are not interpreted by the runner.
 invoking directory. Every selected target needs a mapping; extra mappings are
 allowed for convenience when selecting a subset. The runner snapshots selected
 configs before execution and derives each cell's config from that snapshot.
-It sets the suite's thread count and removes the simulation tick limit, and
-adds the selected plugin and report paths. Base configs must not enable plugins
-or sinks.
+It applies the suite's thread policy, removes the simulation tick limit, and
+adds the selected plugin and report paths. With `num_threads = "default"`,
+the runner preserves the native allocation policy and records the allocation
+reported by `--thread-budget-table`. Base configs must not enable plugins or sinks.
 
 The runner still checks the Release configuration, disabled LTO/sanitizers,
 source root, SDK, and selected plugin binaries. The wrapper must select the
 binary from that build; arbitrary wrapper commands cannot be checked against
 CMake metadata. Rebuild rocjitsu after source changes.
 
-The default `benchmarks/suites/nightly.toml` runs 28 cases on both `gfx950` and
-`gfx1250` (56 cells). Sixteen cases cover FP16 and BF16 GEMMs at
-128x128x128, 256x256x512, 512x512x512, 1024x1024x1024, 1024x128x512,
-128x1024x512, 128x128x2048, and 250x250x510 (M x N x K).
+The default `benchmarks/suites/nightly.toml` contains 12 case definitions and
+16 target/case combinations across `gfx950` and `gfx1250`:
+
+- GPT-OSS windowed and full causal attention on both targets.
+- Triton persistent and grouped GEMM on both targets.
+- DeepSeek FP8 MLP projections with target-specific token counts.
+- TensileLite BF16 Stream-K and MXFP8 on gfx950, and BF16 subtile and MXFP4
+  Stream-K on gfx1250.
+
+Nightly uses one warmup and three samples after initialization, with the native
+default CPU thread budget. The runner inherits the caller's CPU affinity; it does
+not select an L3 domain or add a `taskset` wrapper. Shapes were selected for
+10–180 second launches in an earlier affinity-pinned investigation. Runtime,
+variance, and total suite time need remeasurement with the caller's CPU allocation.
+
 Use `--manifest benchmarks/suites/smoke.toml` for a short suite, repeated
 `--case` and `--target` flags for subsets, and `--warmups`/`--samples` for
 experiments. Sample counts must be positive and odd. `--list` shows the matrix
 without building or requiring GPU dependencies. Output directories must be new.
-
-All cells run sequentially, with eight simulator threads per cell. Progress appears when
-cells start and finish. Failures and timeouts leave finalized partial results;
+All cells run sequentially. Failures and timeouts leave finalized partial results;
 the runner returns failure if any selected cell fails.
+
+## Nightly dependencies and measurement
+
+TensileLite cases require `TENSILE_CANDIDATE_ARTIFACTS` to point to generated
+artifacts and `TENSILE_CANDIDATE_RUNNER` to point to the native executable. Follow
+[the build and generation instructions](../corpus/benchmarks/tensile_candidates/README.md)
+before running nightly. The persistent and grouped Triton kernels and DeepSeek
+kernel are vendored in the corpus.
+
+With the investigation baseline, rocm-systems revision
+`ca5b3d87c5312fefd487569d6661d57fa06e31ef`, and the pinned ROCm packages,
+set `HSA_ENABLE_SDMA_COPY_SIZE_OVERRIDE=0` for supported large host/device copies:
+
+```bash
+HSA_ENABLE_SDMA_COPY_SIZE_OVERRIDE=0 python -m benchmarks.runner \
+  --rocjitsu-source-dir "$src" --build-dir "$build" \
+  --target-config "gfx950=$gfx950_config" \
+  --target-config "gfx1250=$gfx1250_config" \
+  --run-wrapper "\"$rocjitsu\" --config {config} --" \
+  --output .benchmark-artifacts/nightly-001
+```
+
+The optional `triton_matmul` adapter is excluded from nightly: its upstream
+package requires `triton._compile_warmup_state`, which the pinned compiler lacks.
+The short attention calibration is also excluded. Nightly is the sole manifest
+for the selected new benchmarks.
+
+Triton workloads write `workload.progress.json` beside their result, recording
+preparation, initialization, warmup, sample, and validation stages. Initialization
+includes compilation; progress writes stay outside the measured interval.
+
+For variance measurements, collect three fresh processes with three samples each,
+using new output directories and rotating case order between rounds. Report all
+nine samples, median, min/max, sample standard deviation, coefficient of
+variation, and the spread of process medians. Add two process runs if CV exceeds
+5% or process medians span more than 10% of their median. Keep failed and
+interrupted attempts with their artifacts; measure full-suite elapsed time separately.
+Record revisions, package versions, environment, caller CPU affinity, and resolved
+worker allocation alongside results.
 
 ## Measurement and source reuse
 
@@ -89,8 +138,8 @@ params = { dtype = "fp32", elements = 8388608 }
 
 `workload` selects the preparation function; `id` identifies the case in
 `--case` selection and dashboard history. Give different parameter variants
-distinct IDs. Thread count is recorded in the published environment; the default IDs end in
-`.threads8` to distinguish them from the former single-thread runs.
+distinct IDs. Thread count is recorded in the published environment; nightly IDs end in
+`.default` for native allocation, while fixed-thread suites retain `.threads8` IDs.
 Repeat the complete definition in each suite that uses it.
 Dimensions, dtypes, and operation parameters belong in TOML; launch settings
 such as tile sizes, warps, and stages stay in code and are recorded in results.
@@ -166,8 +215,10 @@ benchmark runner's name. `--is-beta` controls the site's Beta label.
 
 CI publishes only the uninstrumented nightly suite. The benchmark step has a
 30-minute timeout, excluding installation, building, and publication. The
-expanded suite passed all 56 cells locally in 17m43s with eight threads, three
-warmups, and 21 samples; hosted runner speed may differ. A fresh dataset requires a valid Vanilla run, which can contain failed or timed-out results.
+current nightly selection requires TensileLite artifacts and a native adapter.
+Consumer CI must provide these dependencies and allow the manifest sampling
+defaults to take effect. Its wall time has not been revalidated without affinity
+pinning. A fresh dataset requires a valid Vanilla run, which can contain failed or timed-out results.
 Publish each comparison’s Vanilla baseline before its instrumented runs. All runs
 in a dataset must use the same machine.
 

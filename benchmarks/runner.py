@@ -63,6 +63,11 @@ WORKLOADS = {
     "rmsnorm",
     "gemm",
     "gpt_oss_attention",
+    "triton_persistent",
+    "triton_grouped",
+    "triton_matmul",
+    "deepseek_fp8",
+    "tensile_candidate",
 }
 WORKLOAD_FIELDS = {"schema", "case", "target", "provider", "parameters", "timings_ns"}
 PLUGIN_PROFILES: dict[str, tuple[str, ...]] = {
@@ -94,6 +99,7 @@ class Case:
     name: str
     operation: str
     params: dict[str, Any]
+    targets: tuple[str, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -103,7 +109,7 @@ class Suite:
     cases: tuple[Case, ...]
     warmups: int
     samples: int
-    num_threads: int
+    num_threads: int | str
     timeout_seconds: float
 
 
@@ -193,7 +199,7 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
     ids = set()
     case_fields = {"id", "workload", "suite", "name", "operation", "params"}
     for entry in raw_cases:
-        if not isinstance(entry, dict) or set(entry) != case_fields:
+        if not isinstance(entry, dict) or set(entry) - {"targets"} != case_fields:
             raise RunnerError(
                 "each case must contain id, workload, suite, name, operation, params"
             )
@@ -216,6 +222,11 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
             raise RunnerError(
                 f"case parameters must be finite JSON values: {error}"
             ) from error
+        entry = dict(entry)
+        if "targets" in entry:
+            entry["targets"] = _string_list(entry["targets"], "case targets")
+            if set(entry["targets"]) - set(targets):
+                raise RunnerError("case targets must be selected from suite targets")
         cases.append(Case(**entry))
     timeout = value["timeout_seconds"]
     if (
@@ -231,7 +242,11 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
         cases=tuple(cases),
         warmups=_integer(value["warmups"], "warmups", allow_zero=True),
         samples=_sample_count(value["samples"]),
-        num_threads=_integer(value["num_threads"], "num_threads", allow_zero=False),
+        num_threads=(
+            "default"
+            if value["num_threads"] == "default"
+            else _integer(value["num_threads"], "num_threads", allow_zero=False)
+        ),
         timeout_seconds=float(timeout),
     )
 
@@ -262,9 +277,15 @@ def select_matrix(
         for case in suite.cases
         if not requested_cases or case.id in requested_cases
     )
-    return tuple(
-        Cell(case, target) for case in chosen_cases for target in chosen_targets
+    matrix = tuple(
+        Cell(case, target)
+        for case in chosen_cases
+        for target in chosen_targets
+        if not case.targets or target in case.targets
     )
+    if not matrix:
+        raise RunnerError("selected cases have no supported targets in the selection")
+    return matrix
 
 
 def parse_run_wrapper(value: str) -> tuple[str, ...]:
@@ -318,7 +339,11 @@ def prepare_command(
     )
     payload = (
         sys.executable,
-        str(WORKLOAD_ROOT / "triton" / "workloads.py"),
+        str(
+            WORKLOAD_ROOT / "tensile_candidates" / "workload.py"
+            if cell.definition.workload == "tensile_candidate"
+            else WORKLOAD_ROOT / "triton" / "workloads.py"
+        ),
         "--workload",
         cell.definition.workload,
         "--params",
@@ -486,6 +511,69 @@ def _target_metadata(
     )
 
 
+def _default_target_metadata(
+    path: Path,
+    target: str,
+    output: Path,
+    wrapper: Sequence[str],
+) -> TargetMetadata:
+    """Resolve automatic workers using the same native CLI and CPU affinity."""
+    value, digest = _load_target_configuration(path)
+    if value.get("plugins") or value.get("sinks"):
+        raise RunnerError(
+            f"benchmark base configuration must not enable plugins or sinks: {path}"
+        )
+    mode = value.get("exec_mode")
+    if not isinstance(mode, str) or not mode:
+        raise RunnerError(f"target configuration has invalid exec_mode: {path}")
+    directory = output / "thread-policy" / target
+    directory.mkdir(parents=True)
+    snapshot = directory / "config.json"
+    snapshot.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+    argv = [str(snapshot) if arg == "{config}" else arg for arg in wrapper]
+    if argv[-1] == "--":
+        argv.pop()
+    argv.append("--thread-budget-table")
+    try:
+        completed = _run_command(
+            argv, cwd=CORPUS_ROOT, env=dict(os.environ), timeout=30
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise RunnerError(
+            f"cannot resolve default worker policy; use a native Rocjitsu CLI supporting --thread-budget-table: {error}"
+        ) from error
+    raw = _captured_text(completed.stdout)
+    (directory / "policy.txt").write_text(raw)
+    (directory / "stderr.txt").write_text(_captured_text(completed.stderr))
+    rows = re.findall(
+        r"^\s*Configured\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*$",
+        raw,
+        re.MULTILINE,
+    )
+    if completed.returncode or len(rows) != 1:
+        raise RunnerError(
+            "cannot resolve default worker policy; use a native Rocjitsu CLI supporting --thread-budget-table with one Configured row; see "
+            + str(directory)
+        )
+    engine, dispatch, helpers, total = map(int, rows[0])
+    if engine < 1 or total < engine:
+        raise RunnerError(f"invalid native worker allocation; see {directory}")
+    (directory / "allocation.json").write_text(
+        json.dumps(
+            {
+                "engine": engine,
+                "dispatch": dispatch,
+                "helpers": helpers,
+                "total": total,
+                "command": argv,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+    return TargetMetadata(value, mode, engine, digest)
+
+
 def _materialize_config(
     output_root: Path,
     cell: Cell,
@@ -568,7 +656,9 @@ def validate_workload(path: Path, cell: Cell, samples: int) -> dict[str, Any]:
         "schema": "rocjitsu.benchmark.workload.v1",
         "case": cell.case,
         "target": cell.target,
-        "provider": "triton",
+        "provider": (
+            "tensile" if cell.definition.workload == "tensile_candidate" else "triton"
+        ),
     }
     for field, expected_value in expected.items():
         if value.get(field) != expected_value:
@@ -846,16 +936,27 @@ def run_suite(
     missing = sorted(set(targets) - set(target_configs))
     if missing:
         raise RunnerError(f"missing --target-config for selected targets: {missing}")
-    target_metadata = {
-        target: _target_metadata(target_configs[target], suite.num_threads)
-        for target in targets
-    }
+    target_metadata = (
+        {}
+        if suite.num_threads == "default"
+        else {
+            target: _target_metadata(target_configs[target], suite.num_threads)
+            for target in targets
+        }
+    )
     started = time.monotonic()
     timestamp = _utc_now()
     source = _source_info(source_dir)
     corpus = _source_info(CORPUS_ROOT)
     environment = _environment_info()
     output_path.mkdir(parents=True)
+    if suite.num_threads == "default":
+        target_metadata = {
+            target: _default_target_metadata(
+                target_configs[target], target, output_path, wrapper
+            )
+            for target in targets
+        }
     total_cells = len(matrix)
     _progress(
         progress,
@@ -912,7 +1013,7 @@ def run_suite(
             _progress(
                 progress,
                 f"START [{position}/{total_cells}] case={cell.case} "
-                f"target={cell.target} provider=triton "
+                f"target={cell.target} provider={'tensile' if cell.definition.workload == 'tensile_candidate' else 'triton'} "
                 f"timeout_seconds={suite.timeout_seconds:g}",
             )
             command = prepare_command(

@@ -9,6 +9,7 @@ import argparse
 import json
 import math
 import sys
+import time
 from typing import Any
 
 import torch
@@ -18,6 +19,7 @@ import triton.language as tl
 from benchmarks.measurement import (
     deterministic_tensor as _deterministic_tensor,
     measure as _measure,
+    progress_writer as _progress_writer,
     reported_target as _reported_target,
     target_matches as _target_matches,
     write_result as _write_result,
@@ -547,9 +549,21 @@ PREPARE = {
     "gpt_oss_attention": prepare_gpt_oss_attention,
 }
 
+# Keep the candidate imports lazy: ordinary workloads do not need their sources.
+CANDIDATE_WORKLOADS = {
+    "triton_persistent",
+    "triton_grouped",
+    "triton_matmul",
+    "deepseek_fp8",
+}
+
 
 def validate_parameters(workload: str, parameters: dict[str, Any]) -> dict[str, Any]:
     """Reject unsupported inputs before allocating any GPU buffers."""
+    if workload in CANDIDATE_WORKLOADS:
+        from corpus.benchmarks.triton.candidates import validate_candidate_parameters
+
+        return validate_candidate_parameters(workload, parameters)
     dimensions = {
         "copy": ("elements",),
         "vector_add": ("elements",),
@@ -616,6 +630,10 @@ def validate_parameters(workload: str, parameters: dict[str, Any]) -> dict[str, 
 
 def prepare(workload, parameters):
     p = validate_parameters(workload, parameters)
+    if workload in CANDIDATE_WORKLOADS:
+        from corpus.benchmarks.triton.candidates import PREPARE_CANDIDATES
+
+        return PREPARE_CANDIDATES[workload](p)
     p["input_pattern"] = "deterministic_nonzero_constant_by_phase"
     if workload == "copy":
         p["bytes"] = p["elements"] * (4 if p["dtype"] == "fp32" else 2)
@@ -639,7 +657,9 @@ def prepare(workload, parameters):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", required=True)
-    parser.add_argument("--workload", choices=PREPARE, required=True)
+    parser.add_argument(
+        "--workload", choices=sorted(set(PREPARE) | CANDIDATE_WORKLOADS), required=True
+    )
     parser.add_argument("--params", type=json.loads, required=True)
     parser.add_argument("--target", required=True)
     parser.add_argument("--warmups", type=int, default=3)
@@ -663,11 +683,26 @@ def main() -> int:
             f"runtime reported target {reported_target!r}, expected {arguments.target!r}"
         )
 
+    progress = _progress_writer(arguments.output, arguments.case)
+    durations = []
+
+    def boundary(stage, started, finished=None):
+        if progress is not None:
+            progress({"stage": stage, "index": None,
+                      "monotonic_start_ns": started, "monotonic_end_ns": finished,
+                      "timings_ns": list(durations)})
+
     with torch.inference_mode():
+        started = time.monotonic_ns()
+        boundary("preparation", started)
         parameters, launch, check = prepare(arguments.workload, arguments.params)
-        durations = _measure(launch, arguments.warmups, arguments.samples)
+        boundary("preparation", started, time.monotonic_ns())
+        durations = _measure(launch, arguments.warmups, arguments.samples, progress=progress)
         if check is not None:
+            started = time.monotonic_ns()
+            boundary("validation", started)
             check()
+            boundary("validation", started, time.monotonic_ns())
 
     result = {
         "schema": SCHEMA,
@@ -678,6 +713,8 @@ def main() -> int:
         "timings_ns": durations,
     }
     _write_result(arguments.output, result)
+    finished = time.monotonic_ns()
+    boundary("complete", finished, finished)
     return 0
 
 

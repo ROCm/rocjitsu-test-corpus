@@ -25,6 +25,57 @@ import pytest
 from benchmarks import dashboard_publish, runner
 
 
+# Keep harness behavior tests independent of the scheduled workload selection.
+def harness_suite():
+    return runner.Suite(
+        name="nightly",
+        targets=("gfx950", "gfx1250"),
+        warmups=3,
+        samples=21,
+        num_threads=8,
+        timeout_seconds=300,
+        cases=(
+            runner.Case(
+                id="triton.rmsnorm_bf16.threads8",
+                workload="rmsnorm",
+                suite="Triton",
+                name="BF16 RMSNorm",
+                operation="RMSNorm",
+                params={
+                    "rows": 128,
+                    "columns": 4096,
+                    "dtype": "bf16",
+                    "epsilon": 1e-05,
+                },
+            ),
+            runner.Case(
+                id="triton.gemm_bf16_aligned.threads8",
+                workload="gemm",
+                suite="Triton",
+                name="Aligned BF16 GEMM",
+                operation="GEMM",
+                params={"m": 256, "n": 256, "k": 512, "dtype": "bf16"},
+            ),
+            runner.Case(
+                id="triton.gpt_oss_attention_bf16.threads8",
+                workload="gpt_oss_attention",
+                suite="GPT-OSS",
+                name="GPT-OSS BF16 attention",
+                operation="Attention",
+                params={
+                    "dtype": "bf16",
+                    "batch": 1,
+                    "query_heads": 64,
+                    "key_value_heads": 8,
+                    "sequence": 128,
+                    "window": 128,
+                    "head_dimension": 64,
+                },
+            ),
+        ),
+    )
+
+
 @pytest.fixture
 def runner_context(tmp_path, monkeypatch):
     ctx = SimpleNamespace(
@@ -49,7 +100,7 @@ def runner_context(tmp_path, monkeypatch):
     for plugin in ("logging", "race", "throughput"):
         (ctx.build / f"librocjitsu_plugin_{plugin}.so").touch()
     monkeypatch.setattr(runner, "_installed_rocm_path", lambda: ctx.rocm)
-    ctx.suite = runner.load_manifest()
+    ctx.suite = harness_suite()
     return ctx
 
 
@@ -161,20 +212,33 @@ def _run(
     return (output, result)
 
 
-def test_default_manifest_has_full_ordered_matrix(runner_context) -> None:
-    matrix = runner.select_matrix(runner_context.suite)
-    assert len(matrix) == 56
-    assert sum(c.workload == "gemm" for c in runner_context.suite.cases) == 16
-    assert matrix[:4] == (
-        _cell(runner_context, "triton.copy_fp32_32m.threads8", "gfx950"),
-        _cell(runner_context, "triton.copy_fp32_32m.threads8", "gfx1250"),
-        _cell(runner_context, "triton.vector_add_fp32_boundary.threads8", "gfx950"),
-        _cell(runner_context, "triton.vector_add_fp32_boundary.threads8", "gfx1250"),
+def test_default_manifest_has_full_ordered_matrix() -> None:
+    suite = runner.load_manifest()
+    matrix = runner.select_matrix(suite)
+    assert suite.name == "nightly"
+    assert len(suite.cases) == 12
+    assert len(matrix) == 16
+    assert {cell.definition.suite for cell in matrix} == {
+        "GPT-OSS",
+        "DeepSeek",
+        "Triton",
+        "TensileLite",
+    }
+    assert matrix[:2] == tuple(
+        runner.Cell(suite.cases[0], target) for target in suite.targets
     )
-    assert runner_context.suite.warmups == 3
-    assert runner_context.suite.samples == 21
-    assert runner_context.suite.num_threads == 8
-    assert runner_context.suite.timeout_seconds == 300
+    assert suite.targets == ("gfx950", "gfx1250")
+    assert all(
+        sum(cell.target == target for cell in matrix) == 8 for target in suite.targets
+    )
+    assert all(
+        not cell.definition.targets or cell.target in cell.definition.targets
+        for cell in matrix
+    )
+    assert suite.warmups == 1
+    assert suite.samples == 3
+    assert suite.num_threads == "default"
+    assert suite.timeout_seconds == 1200
 
 
 def test_smoke_manifest_has_single_triton_case(runner_context) -> None:
@@ -209,7 +273,8 @@ def test_manifest_rejects_unknown_workload(runner_context) -> None:
     manifest = runner_context.root / "suite.toml"
     text = runner.DEFAULT_MANIFEST.read_text(encoding="utf-8")
     manifest.write_text(
-        text.replace('workload = "copy"', 'workload = "missing"', 1), encoding="utf-8"
+        text.replace('workload = "gpt_oss_attention"', 'workload = "missing"', 1),
+        encoding="utf-8",
     )
     with pytest.raises(runner.RunnerError, match="workload"):
         runner.load_manifest(manifest)
@@ -251,7 +316,8 @@ def test_manifest_rejects_invalid_thread_count(runner_context) -> None:
     text = runner.DEFAULT_MANIFEST.read_text(encoding="utf-8")
     for value in ("0", "-1", "true"):
         manifest.write_text(
-            text.replace("num_threads = 8", f"num_threads = {value}"), encoding="utf-8"
+            text.replace('num_threads = "default"', f"num_threads = {value}"),
+            encoding="utf-8",
         )
         with pytest.raises(
             runner.RunnerError, match="num_threads must be a positive integer"
@@ -262,7 +328,7 @@ def test_manifest_rejects_invalid_thread_count(runner_context) -> None:
 def test_manifest_rejects_case_path_traversal(runner_context) -> None:
     manifest = runner_context.root / "suite.toml"
     text = runner.DEFAULT_MANIFEST.read_text(encoding="utf-8").replace(
-        '"triton.softmax_fp16_aligned.threads8"', '"triton./../../../escaped"'
+        '"gpt_oss.window_batch4_seq3072.default"', '"triton./../../../escaped"'
     )
     manifest.write_text(text, encoding="utf-8")
     with pytest.raises(runner.RunnerError, match="invalid benchmark case ID"):
@@ -1236,6 +1302,8 @@ def test_signal_preserves_flushed_workload_output(runner_context, signum) -> Non
             f"gfx950={runner_context.configs['gfx950']}",
             "--target",
             "gfx950",
+            "--manifest",
+            str(runner.BENCHMARK_ROOT / "suites" / "smoke.toml"),
             "--case",
             "triton.rmsnorm_bf16.threads8",
             "--run-wrapper",
@@ -1342,10 +1410,16 @@ def test_list_needs_no_build_or_dependency_metadata(runner_context) -> None:
         stdout
     ):
         status = runner.main(
-            ["--list", "--case", "triton.rmsnorm_bf16.threads8", "--target", "gfx950"]
+            [
+                "--list",
+                "--case",
+                "gpt_oss.window_batch4_seq3072.default",
+                "--target",
+                "gfx950",
+            ]
         )
     assert status == 0
-    assert stdout.getvalue() == "triton.rmsnorm_bf16.threads8\tgfx950\n"
+    assert stdout.getvalue() == "gpt_oss.window_batch4_seq3072.default\tgfx950\n"
 
 
 @pytest.mark.parametrize(
@@ -1517,3 +1591,130 @@ def test_missing_wrapper_executable_fails_cell(runner_context):
     assert result["status"] == "failed"
     assert result["tests"][0]["exitCode"] is None
     assert "No such file" in result["tests"][0]["error"]
+
+
+def test_default_threads_preserve_policy_and_record_native_allocation(runner_context):
+    import dataclasses
+
+    runner_context.suite = dataclasses.replace(
+        runner_context.suite, num_threads="default"
+    )
+    policy = {
+        "exec_mode": "functional",
+        "cpu_thread_budget": 0,
+        "thread_allocations": [
+            {"num_threads": 8, "cpu_dispatch_threads": 25, "async_helper_threads": 16}
+        ],
+    }
+    runner_context.configs["gfx950"].write_text(json.dumps(policy))
+    commands = []
+
+    def execute(argv, **kwargs):
+        commands.append(tuple(argv))
+        if argv[-1] == "--thread-budget-table":
+            assert "--" not in argv
+            snapshot = json.loads(Path(argv[argv.index("--config") + 1]).read_text())
+            assert snapshot == {**policy, "max_ticks": 0}
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                "Budget | num_threads | cpu_dispatch_threads per GPU | async_helper_threads | Total\nConfigured | 8 | 25 | 16 | 48\n",
+                "",
+            )
+        return _successful_process(runner_context, argv, **kwargs)
+
+    matrix = _matrix(runner_context, runner_context.suite.cases[0].id)
+    output, result = _run(runner_context, matrix, "default", process=execute)
+    assert result["tests"][0]["numThreads"] == 8
+    assert (
+        commands[0][0]
+        == commands[1][0]
+        == str(runner_context.build / "custom launcher")
+    )
+    assert not (output / "cpu-affinity.json").exists()
+    saved = json.loads((output / "thread-policy/gfx950/allocation.json").read_text())
+    assert {k: saved[k] for k in ("engine", "dispatch", "helpers", "total")} == {
+        "engine": 8,
+        "dispatch": 25,
+        "helpers": 16,
+        "total": 48,
+    }
+    assert (output / "thread-policy/gfx950/policy.txt").is_file()
+    snapshot = json.loads(
+        (output / result["tests"][0]["artifacts"]["config"]).read_text()
+    )
+    assert snapshot == {**policy, "max_ticks": 0}
+
+
+@pytest.mark.parametrize(
+    "code,text",
+    [
+        (1, "unknown option"),
+        (0, "no configured row"),
+        (0, "Configured | 0 | 1 | 0 | 1\n"),
+        (0, "Configured | 8 | 9 | 0 | 16\nConfigured | 8 | 9 | 0 | 16\n"),
+    ],
+)
+def test_default_threads_reject_unavailable_native_policy(runner_context, code, text):
+    import dataclasses
+
+    runner_context.suite = dataclasses.replace(
+        runner_context.suite, num_threads="default"
+    )
+    with pytest.raises(runner.RunnerError, match="native|worker policy"):
+        _run(
+            runner_context,
+            _matrix(runner_context, runner_context.suite.cases[0].id),
+            "bad-default",
+            process=lambda argv, **kw: subprocess.CompletedProcess(
+                argv, code, text, ""
+            ),
+        )
+
+
+def test_default_manifest_and_case_target_selection(tmp_path):
+    text = runner.DEFAULT_MANIFEST.read_text().replace(
+        "num_threads = 8", 'num_threads = "default"'
+    )
+    text = text.replace("[[cases]]", '[[cases]]\ntargets = ["gfx950"]', 1)
+    manifest = tmp_path / "suite.toml"
+    manifest.write_text(text)
+    suite = runner.load_manifest(manifest)
+    assert suite.num_threads == "default"
+    assert runner.select_matrix(suite, cases=[suite.cases[0].id])[0].target == "gfx950"
+    with pytest.raises(runner.RunnerError, match="no supported targets"):
+        runner.select_matrix(suite, cases=[suite.cases[0].id], targets=["gfx1250"])
+    manifest.write_text(text.replace('targets = ["gfx950"]', 'targets = ["gfx9999"]'))
+    with pytest.raises(runner.RunnerError, match="case targets"):
+        runner.load_manifest(manifest)
+
+
+def test_tensile_candidate_command_and_provider(runner_context, tmp_path):
+    case = runner.Case(
+        "tensile.candidate",
+        "tensile_candidate",
+        "Tensile",
+        "Candidate",
+        "GEMM",
+        {"dtype": "bf16"},
+    )
+    cell = runner.Cell(case, "gfx950")
+    command = runner.prepare_command(
+        tmp_path / "out",
+        cell,
+        run_wrapper=runner.parse_run_wrapper(runner_context.wrapper),
+        target=runner._target_metadata(runner_context.configs["gfx950"], 8),
+        warmups=1,
+        samples=3,
+    )
+    assert str(runner.WORKLOAD_ROOT / "tensile_candidates/workload.py") in command.argv
+    value = _payload(cell, [1, 2, 3])
+    command.workload_path.write_text(json.dumps(value))
+    with pytest.raises(runner.RunnerError, match="provider"):
+        runner.validate_workload(command.workload_path, cell, 3)
+    value["provider"] = "tensile"
+    command.workload_path.write_text(json.dumps(value))
+    assert (
+        runner.validate_workload(command.workload_path, cell, 3)["timing"]["median"]
+        == 2
+    )

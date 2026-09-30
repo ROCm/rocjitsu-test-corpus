@@ -68,8 +68,28 @@ def load_module(name, path):
 
 def test_nightly_parameters_are_valid(workloads_context):
     suite = tomllib.loads((ROOT / "benchmarks/suites/nightly.toml").read_text())
+    tensile = load_module(
+        "tensile_prepare_under_test",
+        ROOT / "corpus/benchmarks/tensile_candidates/prepare.py",
+    )
     for case in suite["cases"]:
-        workloads_context.workload.validate_parameters(case["workload"], case["params"])
+        params = case["params"]
+        if case["workload"] == "tensile_candidate":
+            variant = params["variant"]
+            assert variant in tensile.CANDIDATES
+            assert case["targets"] == [tensile.CANDIDATES[variant][0]]
+            dtype = (
+                "mxfp8"
+                if variant == "mxfp8_subtile"
+                else "mxfp4" if variant == "mxfp4_streamk" else "bf16"
+            )
+            assert params["dtype"] == dtype
+            assert set(params) == {"dtype", "variant", "m", "n", "k"}
+            assert all(
+                type(params[key]) is int and params[key] > 0 for key in ("m", "n", "k")
+            )
+        else:
+            workloads_context.workload.validate_parameters(case["workload"], params)
 
 
 def test_reference_copies_use_registered_host_memory(workloads_context):
@@ -195,7 +215,7 @@ def run_main(workloads_context, check):
         events.append("prepare")
         return ({"fixture": True}, launch, check(events))
 
-    def measure(callback, warmups, samples):
+    def measure(callback, warmups, samples, progress=None):
         assert callback is launch
         events.append("measure")
         return [12, 13, 14]
