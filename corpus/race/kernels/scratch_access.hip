@@ -11,9 +11,9 @@
 #include "utils.hpp"
 
 // Scratch (private) memory test: a per-thread array is filled, then one slot is
-// read back and used. The read is ordered against the fill by the wait counter
-// that guards private memory, and removing that wait is the hazard this kernel
-// exists to expose.
+// read back and used. No wait sits between the fill and the read-back; the
+// wait after the scratch load guards consumption of its result, and removing
+// that wait is the hazard this kernel exists to expose.
 __global__ void scratch_access(const int* input, int* output, unsigned int n) {
     int          local_buf[64];
     unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;

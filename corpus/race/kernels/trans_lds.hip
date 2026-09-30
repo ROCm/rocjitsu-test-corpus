@@ -12,13 +12,13 @@
 #include "utils.hpp"
 
 // LDS → transcendental hazard: threads collaboratively load data into
-// shared memory (LDS), then each thread reads its LDS slot and
-// immediately feeds the value into v_exp_f32.
+// shared memory (LDS), then each thread reads its LDS slot and feeds the
+// value (via __expf's v_mul_f32 prescale) into v_exp_f32.
 //
 // Hazard surface:
 //   - ds_write (store to LDS) → barrier → ds_read (load from LDS)
-//   - ds_read writes VGPR → v_exp_f32 reads it  (ds→trans hazard,
-//     requires s_wait_dscnt before transcendental issue)
+//   - ds_read writes VGPR → v_mul_f32 → v_exp_f32  (the LDS wait guards
+//     the ds_read result, not the transcendental)
 //   - v_exp_f32 writes VGPR → v_add_f32 reads it  (trans→VALU)
 __global__ void trans_lds(const float* __restrict__ input, float* __restrict__ output, unsigned int n) {
     __shared__ float sdata[256];
@@ -31,9 +31,9 @@ __global__ void trans_lds(const float* __restrict__ input, float* __restrict__ o
 
     // Read from LDS and apply transcendental
     float val = sdata[tid];  // ds_read → VGPR
-    float e   = __expf(val); // v_exp_f32 (ds→trans hazard)
+    float e   = __expf(val); // v_mul_f32 → v_exp_f32
 
-    // Also read the neighbor (with wrap) to create a second ds→trans dep
+    // Also read the neighbor (with wrap) for a second LDS read
     float neighbor = sdata[(tid + 1) % blockDim.x];
     float e2       = __logf(neighbor + 1.0f); // v_log_f32 (ds→VALU→trans)
 

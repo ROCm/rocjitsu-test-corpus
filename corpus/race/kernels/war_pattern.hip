@@ -11,13 +11,13 @@
 #include "utils.hpp"
 
 // WAR (Write-After-Read) pattern: each thread reads data[i], then overwrites
-// data[i]. The read and overwrite target the same VGPR, exercising RAW/WAR
-// hazard paths. Result is stored in a separate output buffer for validation.
+// data[i] with a value computed from the read, exercising RAW/WAR hazard
+// paths. Result is stored in a separate output buffer for validation.
 __global__ void war_pattern(int* data, int* result, unsigned int n) {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {
         int val   = data[i];     // read (global_load -> VGPR)
-        result[i] = val * 3 + 1; // use loaded value (depends on s_wait_loadcnt)
+        result[i] = val * 3 + 1; // use loaded value (depends on the load wait)
         data[i]   = val + 100;   // write back (WAR on the global address)
     }
 }

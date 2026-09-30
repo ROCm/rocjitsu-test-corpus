@@ -27,7 +27,8 @@
 // Hazard surface:
 //   - global_load → VGPR (load_matrix_sync)
 //   - WMMA writes accumulator VGPRs (mma_sync)
-//   - v_exp_f32 reads accumulator VGPRs immediately (WMMA→trans hazard)
+//   - v_pk_mul_f32 / v_exp_f32 read accumulator VGPRs after v_nop padding
+//     (WMMA→trans, no wait counter)
 //   - global_store reads result VGPRs (trans→store hazard)
 //
 // The launch below is one 32-thread block, which is a whole wave only where
@@ -71,8 +72,8 @@ __global__ void wmma_rocwmma(const __half* __restrict__ A,
     }
 
     // Apply transcendental (exp) directly to accumulator registers.
-    // This creates the critical hazard: mma_sync writes acc VGPRs,
-    // then v_exp_f32 reads them with no intervening wait.
+    // mma_sync writes acc VGPRs, then v_pk_mul_f32 / v_exp_f32 read them
+    // with only v_nop padding, not a wait, in between.
     for (int i = 0; i < acc.num_elements; ++i) {
         acc.x[i] = __expf(acc.x[i]);
     }

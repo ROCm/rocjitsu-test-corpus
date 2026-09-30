@@ -17,14 +17,16 @@
 // input, providing a strong correctness oracle.
 //
 // Hazard surface:
-//   - global_load → v_exp_f32  (load→trans)
+//   - global_load → v_mul_f32 → v_exp_f32  (the load wait guards the v_mul,
+//     __expf's log2(e) prescale, not the transcendental)
 //   - v_exp_f32 writes VGPR → v_log_f32 reads it  (trans→trans dependency)
-//   - v_log_f32 writes VGPR → global_store reads it  (trans→store)
+//   - v_log_f32 writes VGPR → __logf's rescale reads it (trans→VALU), then
+//     global_store
 __global__ void trans_chain(const float* __restrict__ input, float* __restrict__ output, unsigned int n) {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {
         float x   = input[i];  // global_load → VGPR
-        float e   = __expf(x); // v_exp_f32 (load→trans hazard)
+        float e   = __expf(x); // v_mul_f32 → v_exp_f32
         float l   = __logf(e); // v_log_f32 (trans→trans hazard)
         output[i] = l;         // global_store
     }

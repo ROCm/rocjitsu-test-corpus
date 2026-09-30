@@ -16,21 +16,22 @@
 // reciprocal square root (v_rsq_f32) in sequence.
 //
 // Hazard surface:
-//   - global_load → v_rcp_f32   (load→trans)
-//   - global_load → v_sqrt_f32  (load→trans)
-//   - v_rcp_f32 writes VGPR → v_mul_f32 reads it  (trans→VALU)
-//   - v_sqrt_f32 writes VGPR → v_add_f32 reads it (trans→VALU)
-//   - v_mul_f32 → v_rsq_f32  (VALU→trans)
+//   - global_load → VALU → v_rcp_f32 / v_sqrt_f32  (__frcp_rn and
+//     __fsqrt_rn lower to IEEE sequences, so the load wait guards
+//     v_div_scale_f32 / v_ldexp_f32, not the transcendentals)
+//   - v_rcp_f32 writes VGPR → v_fma_f32 reads it  (trans→VALU)
+//   - v_sqrt_f32 writes VGPR → v_ldexp_f32 reads it (trans→VALU)
+//   - v_fmac_f32 → v_rsq_f32  (VALU→trans)
 //   - v_rsq_f32 → global_store (trans→store)
 __global__ void trans_rcp_sqrt(const float* __restrict__ input, float* __restrict__ output, unsigned int n) {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {
         float x = input[i]; // global_load → VGPR
 
-        float r = __frcp_rn(x);  // v_rcp_f32  (load→trans)
-        float s = __fsqrt_rn(x); // v_sqrt_f32 (load→trans)
+        float r = __frcp_rn(x);  // v_rcp_f32 within an IEEE div sequence
+        float s = __fsqrt_rn(x); // v_sqrt_f32 between v_ldexp_f32 scaling
 
-        float prod = r * s; // v_mul_f32  (trans→VALU)
+        float prod = r * s; // contracted into v_fmac_f32
         float sum  = s + r; // v_add_f32  (trans→VALU)
 
         // Feed VALU result back into transcendental

@@ -30,9 +30,9 @@
 // So after s_barrier_wait returns, all waves' prior LDS writes are visible.
 // The ds_load_u16 reads are safe — no race.
 //
-// The plugin was not recognising s_barrier_wait as an epoch boundary, so the
-// tensor writes (before the barrier) and ds_load_u16 reads (after it) ended
-// up in the same epoch, producing false-positive cross-wave race warnings.
+// A detector that does not treat s_barrier_wait as a synchronisation point
+// sees the tensor writes (before the barrier) and the ds_load_u16 reads (after
+// it) as unordered, and reports false-positive cross-wave races.
 //
 // This reproducer uses ds_store_b16 instead of tensor_load_to_lds (avoiding
 // the tensor descriptor setup) but exercises the same synchronisation
@@ -40,7 +40,8 @@
 //
 // Mutation ground truth:
 //   - Baseline (unmodified): 0 hazards
-//   - Remove s_wait_dscnt before barrier: intra-wave RAW — wave's own
+//   - Remove s_wait_dscnt before barrier: cross-wave RAW — the ds_store_b16
+//     may still be in flight when the barrier releases, so other waves'
 //     ds_load_u16 may see stale data
 //   - Remove __syncthreads (barrier): true cross-wave race — other waves
 //     read LDS before the writer has finished
@@ -88,7 +89,7 @@ __global__ void fa_barrier_epoch(const uint16_t* __restrict__ d_in,
     // -------------------------------------------------------------------------
     // Phase 2: Workgroup barrier — s_barrier_signal / s_barrier_wait.
     // After this point, all waves' LDS writes are visible to all waves.
-    // This is the epoch boundary that the plugin must recognise.
+    // This is the synchronisation point a detector must recognise.
     // -------------------------------------------------------------------------
     __syncthreads();
 

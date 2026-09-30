@@ -11,7 +11,8 @@
 #include "utils.hpp"
 
 // Atomic histogram kernel.
-// Exercises global_atomic_add instructions and associated wait counters.
+// Exercises global_atomic_add instructions. The result is unused, so no wait
+// counter follows the atomic.
 __global__ void atomic_histogram(const int* input, int* histogram, unsigned int n, int num_bins) {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {

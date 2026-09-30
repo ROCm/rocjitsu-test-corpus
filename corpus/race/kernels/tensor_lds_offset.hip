@@ -22,7 +22,7 @@
 //
 // Hazard surface:
 //   - tensor_load_to_lds writes sdata[32:63] (async, tracked by TENSORcnt)
-//   - ds_read reads sdata[32:63]
+//   - ds_load_b32 reads sdata[32:63]
 //   - Removing s_wait_tensorcnt → RAW hazard on the tile's LDS data
 //
 // The builtin is gated by the "gfx1250-insts" target feature, so the harness is

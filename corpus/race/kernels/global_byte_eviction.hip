@@ -14,7 +14,7 @@
 // Cross-workgroup sub-dword eviction under a single-byte flood.
 //
 // Ten single-thread workgroups touch bytes of ONE 4-byte global word. Byte 0 is
-// read heavily so it floods the shadow's access history; byte 1 keeps a lone
+// read heavily so it floods the access history; byte 1 keeps a lone
 // reader that a later write to byte 1 must still race:
 //
 //     WG0..6 read data[0]  (byte 0)  ─ seven readers flood byte 0
@@ -25,34 +25,31 @@
 // Every access is an ordinary read, so the baseline is race-free and
 // deterministic: reads never race reads, whatever order the workgroups run in.
 //
-// The `data_hazard` global shadow keeps a small, fixed number of per-workgroup
-// access slots per 4-byte word. A FLAT pool of those slots is order-dependent:
-// byte 0's seven readers fill the slots, byte 1's reader (WG7) takes the last
-// one, then WG8's byte-0 read overwrites it — evicting byte 1's only reader.
-//
 // The mutation harness turns the PROBE load into a byte store (read -> write).
-// WG9 then WRITES byte 1, which must race WG7's read of byte 1 (WAR). With the
-// evicted reader gone the race is MISSED -> false negative. Partitioning
-// retention per byte keeps byte 1's reader however busy byte 0 gets, so the
-// mutant is DETECTED.
+// WG9 then WRITES byte 1, which must race WG7's read of byte 1 (WAR).
 //
 // Only bytes 0 and 1 are touched, and each by more than one workgroup, so every
 // load the harness may rewrite as a store forms a real cross-workgroup race —
 // no rewrite yields a spurious race-free "miss". The flood load `data[0]` and
 // the byte-1 loads must stay distinct instructions so the harness can mutate the
-// probe alone; `volatile` keeps the compiler from folding them into one
-// address-selected load.
-__global__ void global_byte_eviction(const volatile unsigned char* data, int* result) {
+// probe alone. `volatile` does not do this (the compiler still folds them into
+// one address-selected load); the distinct `asm volatile` marker after each
+// load does, and labels it in the assembly.
+__global__ void global_byte_eviction(const unsigned char* data, int* result) {
     unsigned int wg = blockIdx.x;
     int          v;
     if (wg < 7) {
         v = data[0]; // WG0..6: flood byte 0
+        asm volatile("; flood" ::: "memory");
     } else if (wg == 7) {
         v = data[1]; // WG7: byte 1's lone reader (must survive the flood)
+        asm volatile("; retained" ::: "memory");
     } else if (wg == 8) {
-        v = data[0]; // WG8: one more byte-0 read, evicting the last flat slot
+        v = data[0]; // WG8: one more byte-0 read
+        asm volatile("; evict" ::: "memory");
     } else {
         v = data[1]; // WG9: PROBE read of byte 1 (mutated to a byte store)
+        asm volatile("; probe" ::: "memory");
     }
     result[wg] = v;
 }

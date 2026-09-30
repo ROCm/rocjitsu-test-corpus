@@ -18,9 +18,11 @@
 // slot — a classic intra-wave LDS WAR hazard.
 //
 // As compiled the sequence is safe: the write consumes the value the read
-// produced, so the compiler places s_wait_dscnt between them and the read is
-// guaranteed to have completed first.  Removing that wait is what exposes the
-// WAR, so the hazard belongs to the mutants rather than to this kernel.
+// produced, so the compiler places an LDS wait between the read and the add
+// that feeds the write.  That wait guards the loaded VGPR; the write cannot
+// overtake the read anyway, since DS ops from one wave execute in order.
+// Removing the wait lets the add use a stale VGPR, so the hazard belongs to
+// the mutants rather than to this kernel.
 __global__ void lds_war_pattern(const int* input, int* output, unsigned int n) {
     __shared__ int sdata[256];
     unsigned int   tid = threadIdx.x;
@@ -32,7 +34,7 @@ __global__ void lds_war_pattern(const int* input, int* output, unsigned int n) {
     // Intra-wave LDS WAR: read sdata[tid] then overwrite sdata[tid].  The
     // s_wait_dscnt the compiler places between them is the mutation target.
     int val    = sdata[tid];       // ds_read  — DScnt increments
-    sdata[tid] = val + 1;          // ds_write — same slot, ordered by the wait
+    sdata[tid] = val + 1;          // ds_write — same slot, data from the add
     __syncthreads();
 
     if (tid == 0) {

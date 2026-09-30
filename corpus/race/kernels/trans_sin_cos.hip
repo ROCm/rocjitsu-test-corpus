@@ -12,13 +12,13 @@
 #include "utils.hpp"
 
 // Global-load → transcendental hazard: loads float values from global
-// memory into VGPRs, then immediately consumes them in v_sin_f32 and
-// v_cos_f32 transcendental instructions.  The products sin(x)*cos(x)
+// memory into VGPRs, then consumes them in v_sin_f32 and v_cos_f32
+// transcendental instructions (after a v_mul_f32 scale by 1/(2*pi)).  The products sin(x)*cos(x)
 // are stored to the output buffer.
 //
 // Hazard surface:
-//   - global_load writes VGPRs → v_sin_f32 / v_cos_f32 read them
-//     (requires s_wait_loadcnt before transcendental issue)
+//   - global_load writes VGPRs → v_mul_f32 → v_sin_f32 / v_cos_f32
+//     (the load wait guards the v_mul_f32, not the transcendentals)
 //   - v_sin_f32 / v_cos_f32 write VGPRs → v_mul_f32 reads them
 //     (trans→VALU dependency)
 __global__ void trans_sin_cos(const float* __restrict__ input, float* __restrict__ output, unsigned int n) {

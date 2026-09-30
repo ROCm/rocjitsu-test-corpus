@@ -13,13 +13,14 @@
 
 // WMMA (Wave Matrix Multiply-Accumulate) followed by transcendental (exp).
 // This exercises v_wmma instructions writing VGPR results that are then
-// consumed by v_exp_f32 (transcendental unit), creating a potential
-// data hazard if the proper waits/delays are missing between the WMMA
-// writeback and the transcendental read.
+// consumed by __expf (v_pk_mul_f32, then v_exp_f32). That is a VALU pipeline
+// dependency padded with v_nop; no s_wait_* sits between the WMMA and the exp.
+// The s_wait_loadcnt before the WMMA guards the fragment loads, so removing it
+// tests the load -> WMMA dependency, not WMMA -> exp.
 //
 // Each wave loads input tile fragments from global memory into VGPRs,
-// performs a 16x16x32 f16 WMMA, then immediately feeds the accumulator
-// VGPRs into v_exp_f32 transcendentals and stores the results.
+// performs a 16x16x32 f16 WMMA, then feeds the accumulator VGPRs through
+// exp and stores the results.
 //
 // Uses the gfx1250-native __builtin_amdgcn_wmma_f32_16x16x32_f16 which
 // does not require extra target-feature flags and avoids an ICE in
@@ -53,8 +54,8 @@ __global__ void wmma_exp(const _Float16* __restrict__ A,
     acc = __builtin_amdgcn_wmma_f32_16x16x32_f16(0u, a_frag, 0u, b_frag, 0u, acc, false, false);
 
     // Apply transcendental (exp) to the WMMA result.
-    // This creates the critical hazard: WMMA writes acc VGPRs,
-    // then v_exp_f32 reads them with no intervening wait.
+    // WMMA writes acc VGPRs, then v_pk_mul_f32 / v_exp_f32 read them with
+    // only v_nop padding, not a wait, in between.
     float8 result;
 #pragma unroll
     for (int i = 0; i < 8; ++i) {
@@ -63,8 +64,8 @@ __global__ void wmma_exp(const _Float16* __restrict__ A,
 
     // Store results unconditionally. With 32 lanes × 8 elements = 256 = N²,
     // every store index is in-bounds. Removing the per-element bounds check
-    // keeps all stores in a single basic block, avoiding redundant
-    // s_wait_kmcnt instructions the compiler inserts at block boundaries.
+    // keeps all stores in a single basic block; with the check, the compiler
+    // splits the single fragment-load wait into many s_wait_loadcnt.
     float* C_lane = C + lane * 8;
 #pragma unroll
     for (int i = 0; i < 8; ++i) {

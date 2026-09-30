@@ -12,7 +12,7 @@
 
 // WAW (Write-After-Write) pattern: two separate stores to the same output
 // address. The second store depends on a loaded value, so removing
-// s_wait_loadcnt could cause the second store to use an uninitialized/stale
+// its load wait could cause the second store to use an uninitialized/stale
 // value (data hazard).
 __global__ void waw_pattern(const int* a, const int* b, int* output, unsigned int n) {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;

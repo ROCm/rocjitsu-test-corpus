@@ -24,8 +24,8 @@
 //
 // Hazard surface:
 //   - tensor_load_to_lds writes to LDS (async, tracked by TENSORcnt)
-//   - ds_read reads from LDS (via __shared__ access)
-//   - Removing s_wait_tensorcnt → RAW hazard on LDS data: the ds_read may
+//   - ds_load_b32 reads from LDS (via __shared__ access)
+//   - Removing s_wait_tensorcnt → RAW hazard on LDS data: the ds_load_b32 may
 //     observe stale sentinel values instead of the tensor-loaded data.
 //
 // The builtin is gated by the "gfx1250-insts" target feature and is

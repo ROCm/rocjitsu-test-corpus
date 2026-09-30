@@ -11,7 +11,7 @@
 #include "utils.hpp"
 
 // Parallel reduction using LDS (shared memory).
-// Exercises ds_read/ds_write instructions and s_wait_dscnt waits.
+// Exercises LDS load/store instructions and the waits that order them.
 __global__ void lds_reduce(const int* input, int* output, unsigned int n) {
     __shared__ int sdata[256];
     unsigned int   tid = threadIdx.x;
