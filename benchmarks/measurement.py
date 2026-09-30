@@ -101,6 +101,14 @@ def progress_writer(output_path: str, case: str):
     return write
 
 
+def to_cpu(tensor):
+    # The simulated KMD needs host pages registered for device-to-host copies.
+    # Pinned memory uses that public HIP path; pageable tensor.cpu() does not.
+    host = torch.empty(tensor.shape, dtype=tensor.dtype, device="cpu", pin_memory=True)
+    host.copy_(tensor)
+    return host
+
+
 def deterministic_tensor(
     shape: tuple[int, ...], dtype: torch.dtype, phase: int = 0
 ) -> torch.Tensor:

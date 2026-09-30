@@ -65,7 +65,6 @@ WORKLOADS = {
     "gpt_oss_attention",
     "triton_persistent",
     "triton_grouped",
-    "triton_matmul",
     "deepseek_fp8",
     "tensile_candidate",
 }
@@ -139,6 +138,7 @@ class TargetMetadata:
     exec_mode: str
     num_threads: int
     config_sha256: str
+    thread_allocation: dict[str, int] | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -556,22 +556,25 @@ def _default_target_metadata(
             + str(directory)
         )
     engine, dispatch, helpers, total = map(int, rows[0])
-    if engine < 1 or total < engine:
+    if engine < 1 or dispatch < 1 or total != engine + dispatch - 1 + helpers:
         raise RunnerError(f"invalid native worker allocation; see {directory}")
+    allocation = {
+        "engine": engine,
+        "dispatch": dispatch,
+        "helpers": helpers,
+        "total": total,
+    }
     (directory / "allocation.json").write_text(
         json.dumps(
             {
-                "engine": engine,
-                "dispatch": dispatch,
-                "helpers": helpers,
-                "total": total,
+                **allocation,
                 "command": argv,
             },
             indent=2,
         )
         + "\n"
     )
-    return TargetMetadata(value, mode, engine, digest)
+    return TargetMetadata(value, mode, engine, digest, allocation)
 
 
 def _materialize_config(
@@ -1005,6 +1008,13 @@ def run_suite(
             for cell in matrix
         ],
     }
+    allocations = {
+        target: metadata.thread_allocation
+        for target, metadata in target_metadata.items()
+        if metadata.thread_allocation is not None
+    }
+    if allocations:
+        run["configuration"]["targetThreadAllocation"] = allocations
     _write_run(output_path, run)
 
     try:

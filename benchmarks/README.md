@@ -36,6 +36,10 @@ It applies the suite's thread policy, removes the simulation tick limit, and
 adds the selected plugin and report paths. With `num_threads = "default"`,
 the runner preserves the native allocation policy and records the allocation
 reported by `--thread-budget-table`. Base configs must not enable plugins or sinks.
+With the default thread policy, resolved engine, dispatch, helper, and total
+worker counts are included in `run.json` and the published environment.
+Comparisons reject different allocations or a mix of results with and without
+allocation metadata.
 
 The runner still checks the Release configuration, disabled LTO/sanitizers,
 source root, SDK, and selected plugin binaries. The wrapper must select the
@@ -85,9 +89,7 @@ HSA_ENABLE_SDMA_COPY_SIZE_OVERRIDE=0 python -m benchmarks.runner \
   --output .benchmark-artifacts/nightly-001
 ```
 
-The optional `triton_matmul` adapter is excluded from nightly: its upstream
-package requires `triton._compile_warmup_state`, which the pinned compiler lacks.
-The short attention calibration is also excluded. Nightly is the sole manifest
+The short attention calibration is excluded. Nightly is the sole manifest
 for the selected new benchmarks.
 
 Triton workloads write `workload.progress.json` beside their result, recording

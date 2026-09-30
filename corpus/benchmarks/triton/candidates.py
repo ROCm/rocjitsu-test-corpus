@@ -5,16 +5,10 @@
 import torch
 import triton
 
-from benchmarks.measurement import deterministic_tensor
+from benchmarks.measurement import deterministic_tensor, to_cpu
 
 TRITON_COMMIT = "ced7e4b42f992f0b125208767cafc371d079ffd9"
 DEEPSEEK_COMMIT = "9b4e9788e4a3a731f7567338ed15d3ec549ce03b"
-
-
-def _copy_to_cpu(tensor):
-    host = torch.empty(tensor.shape, dtype=tensor.dtype, device="cpu", pin_memory=True)
-    host.copy_(tensor)
-    return host
 
 
 def _constant_check(outputs, reduction, input_dtype=torch.float16, scales=1.0):
@@ -36,7 +30,7 @@ def _constant_check(outputs, reduction, input_dtype=torch.float16, scales=1.0):
                 output.shape, reduction * a * b * scales, dtype=output.dtype
             )
             torch.testing.assert_close(
-                _copy_to_cpu(output), expected, rtol=0.01, atol=0.01
+                to_cpu(output), expected, rtol=0.01, atol=0.01
             )
 
     return check
@@ -99,9 +93,7 @@ def prepare_triton_grouped(parameters):
     )
 
     m, n, k = (parameters[name] for name in ("rows", "columns", "reduction"))
-    groups = parameters.get("groups", 4)
-    if m % 64 or n % 64 or k % 64:
-        raise ValueError("upstream grouped GEMM requires full 64-element tiles")
+    groups = parameters["groups"]
     aa = [
         deterministic_tensor((m, k), torch.float16, phase=i * 17) for i in range(groups)
     ]
@@ -183,90 +175,7 @@ def prepare_deepseek_fp8(parameters):
     return parameters, launch, _constant_check([c], k, input_dtype=dtype, scales=0.125)
 
 
-def prepare_triton_library(parameters):
-    """Prepare upstream wrapper once, then replay its single fixed kernel launch."""
-    import importlib
-    import os
-    from pathlib import Path
-    import sys
-
-    root = os.environ.get("ROCJITSU_TRITON_KERNELS_ROOT")
-    if not root:
-        raise ValueError(
-            "ROCJITSU_TRITON_KERNELS_ROOT must point to the pinned python/triton_kernels directory"
-        )
-    package_root = Path(root).resolve()
-    if not (package_root / "triton_kernels/matmul.py").is_file():
-        raise ValueError(
-            "ROCJITSU_TRITON_KERNELS_ROOT does not contain triton_kernels/matmul.py"
-        )
-    sys.path.insert(0, str(package_root))
-    upstream = importlib.import_module("triton_kernels.matmul")
-    if not Path(upstream.__file__).resolve().is_relative_to(package_root):
-        raise RuntimeError(
-            "another triton_kernels package was imported before the pinned dependency"
-        )
-    m, n, k = (parameters[name] for name in ("rows", "columns", "reduction"))
-    a = deterministic_tensor((m, k), torch.float16)
-    b = deterministic_tensor((k, n), torch.float16, phase=83)
-    c = torch.empty((m, n), device="cuda", dtype=torch.float16)
-    flags = upstream.OptFlags(
-        block_m=64,
-        block_n=64,
-        block_k=64,
-        num_warps=4,
-        num_stages=1,
-        group_m=8,
-        xcd_swizzle=0,
-        w_cache_modifier="",
-        split_k=1,
-        is_persistent=False,
-        idle_sms=0,
-        epilogue_subtile=1,
-        arch=None,
-        occupancy_target=1,
-        target_kernel_kwargs={},
-    )
-    kernels = upstream.specializations.get()
-    kernel = kernels._matmul
-    captured = []
-
-    class Capture:
-        def __getitem__(self, grid):
-            def capture(*args, **kwargs):
-                captured.append((grid, args, kwargs))
-
-            return capture
-
-    # This adapter runs in a single-threaded workload process. Restore upstream
-    # state even if allocation or argument preparation fails.
-    kernels._matmul = Capture()
-    try:
-        with upstream.scoped_opt_flags(flags):
-            upstream.matmul(a, b, None, c=c)
-    finally:
-        kernels._matmul = kernel
-    if len(captured) != 1:
-        raise RuntimeError(
-            f"expected one upstream _matmul launch, captured {len(captured)}"
-        )
-    grid, args, kwargs = captured[0]
-
-    def launch():
-        kernel[grid](*args, **kwargs)
-
-    _metadata(
-        parameters,
-        ("https://github.com/triton-lang/triton", TRITON_COMMIT),
-        "python/triton_kernels/triton_kernels/matmul_details/_matmul.py:_matmul",
-        {"grid": list(grid), **vars(flags)},
-    )
-    parameters["dependency_root"] = str(package_root)
-    return parameters, launch, _constant_check([c], k)
-
-
 PREPARE_CANDIDATES = {
-    "triton_matmul": prepare_triton_library,
     "triton_persistent": prepare_triton_persistent,
     "triton_grouped": prepare_triton_grouped,
     "deepseek_fp8": prepare_deepseek_fp8,

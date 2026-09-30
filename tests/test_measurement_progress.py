@@ -66,3 +66,13 @@ def test_progress_sidecar_replaces_atomically(measurement, tmp_path):
     }
     assert not list(tmp_path.glob("*.tmp"))
     assert measurement.progress_writer("-", "example") is None
+
+
+def test_reference_copies_use_registered_host_memory(measurement):
+    tensor = MagicMock()
+    host = measurement.to_cpu(tensor)
+    measurement.torch.empty.assert_called_once_with(
+        tensor.shape, dtype=tensor.dtype, device="cpu", pin_memory=True
+    )
+    host.copy_.assert_called_once_with(tensor)
+    tensor.cpu.assert_not_called()

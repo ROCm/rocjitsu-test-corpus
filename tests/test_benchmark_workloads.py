@@ -92,16 +92,6 @@ def test_nightly_parameters_are_valid(workloads_context):
             workloads_context.workload.validate_parameters(case["workload"], params)
 
 
-def test_reference_copies_use_registered_host_memory(workloads_context):
-    tensor = MagicMock()
-    host = workloads_context.workload.to_cpu(tensor)
-    workloads_context.torch.empty.assert_called_once_with(
-        tensor.shape, dtype=tensor.dtype, device="cpu", pin_memory=True
-    )
-    host.copy_.assert_called_once_with(tensor)
-    tensor.cpu.assert_not_called()
-
-
 def test_attention_prepares_buffers_and_descriptors_only_once(workloads_context):
     parameters, launch, check = workloads_context.workload.prepare(
         "gpt_oss_attention", GPT_PARAMS

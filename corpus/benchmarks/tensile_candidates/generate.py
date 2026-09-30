@@ -5,16 +5,37 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 
-from prepare import CANDIDATES, REVISION, configuration
+from prepare import CANDIDATES, REVISION, configuration, verify_source
 import yaml
+
+
+def package(generated, output):
+    libraries = list(generated.rglob('TensileLibrary.yaml'))
+    if len(libraries) != 1:
+        raise ValueError(f'expected one generated library, found {len(libraries)}')
+    library = libraries[0]
+    parsed = yaml.safe_load(library.read_text())
+    if len(parsed.get("solutions", [])) != 1:
+        raise ValueError("generated library must contain exactly one fixed solution")
+    objects = sorted(library.parent.glob('*.co')) + sorted(library.parent.glob('*.hsaco'))
+    if not objects:
+        raise ValueError('generated library has no code objects')
+    metadata = json.loads((output / 'source.json').read_text())
+    metadata['files'] = {}
+    for source in [library, *objects]:
+        dest = output / source.name
+        shutil.copy2(source, dest)
+        metadata['files'][source.name] = hashlib.sha256(dest.read_bytes()).hexdigest()
+    (output / 'artifacts.json').write_text(json.dumps(metadata, indent=2) + '\n')
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-root', type=Path, required=True,
-                        help='ROCm/rocm-libraries checkout or extracted archive at the pinned revision')
+                        help='clean ROCm/rocm-libraries Git checkout at the pinned revision')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--variant', choices=CANDIDATES, action='append')
     parser.add_argument('--shape', type=int, nargs=3,
@@ -23,6 +44,7 @@ def main():
     variants = args.variant or list(CANDIDATES)
     if args.shape and len(variants) != 1:
         parser.error('--shape requires exactly one --variant')
+    verify_source(args.source_root)
     source = args.source_root.resolve() / 'projects/hipblaslt/tensilelite'
     if not (source / 'Tensile/Tensile.py').is_file():
         parser.error('source-root has no TensileLite generator')
@@ -50,8 +72,7 @@ def main():
         (output/'generation-command.json').write_text(json.dumps(command, indent=2)+'\n')
         with (output/'generate.log').open('w') as log:
             subprocess.run(command, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-        subprocess.run([sys.executable, str(Path(__file__).with_name('package.py')),
-                        '--generated', str(output/'generated'), '--output', str(output)], check=True)
+        package(output / 'generated', output)
 
 
 if __name__ == '__main__':

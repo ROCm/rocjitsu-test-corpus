@@ -1,11 +1,8 @@
 """Prepare one fixed solution per pinned TensileLite candidate (no timed runs)."""
-import argparse
 import copy
 import hashlib
-import json
 from pathlib import Path
-
-import yaml
+import subprocess
 
 REVISION = "dd77374194a3ea1a7258cd54f87af6747b6362a5"
 CANDIDATES = {
@@ -17,6 +14,8 @@ CANDIDATES = {
 
 
 def configuration(variant, shape=None):
+    import yaml
+
     target, filename, group_index, defaults = CANDIDATES[variant]
     path = Path(__file__).parent / "upstream" / filename
     original = path.read_bytes()
@@ -46,19 +45,22 @@ def configuration(variant, shape=None):
                     "upstream_problem_group": group_index}
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--variant", choices=CANDIDATES, required=True)
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--shape", type=int, nargs=3, metavar=("M", "N", "K"))
-    args = parser.parse_args()
-    config, metadata = configuration(args.variant, args.shape)
-    args.output.mkdir(parents=True, exist_ok=True)
-    data = yaml.safe_dump(config, sort_keys=False)
-    (args.output / "candidate.yaml").write_text(data)
-    metadata["config_sha256"] = hashlib.sha256(data.encode()).hexdigest()
-    (args.output / "source.json").write_text(json.dumps(metadata, indent=2) + "\n")
+def verify_source(source_root):
+    """Require the clean, pinned Git checkout used by generation and native builds."""
+    source_root = Path(source_root).resolve()
 
+    def git(*args):
+        try:
+            return subprocess.run(
+                ['git', '-C', str(source_root), *args], check=True,
+                capture_output=True, text=True,
+            ).stdout.strip()
+        except subprocess.CalledProcessError as error:
+            raise ValueError('Tensile source must be a Git checkout; archives are unsupported') from error
 
-if __name__ == "__main__":
-    main()
+    if Path(git('rev-parse', '--show-toplevel')).resolve() != source_root:
+        raise ValueError('Tensile source must be the rocm-libraries checkout root')
+    if git('rev-parse', 'HEAD') != REVISION:
+        raise ValueError(f'Tensile source must be at pinned revision {REVISION}')
+    if git('status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none'):
+        raise ValueError('Tensile source must be clean (including untracked files)')

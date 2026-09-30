@@ -22,9 +22,12 @@ measurements and failures in the campaign report.
 
 Use a ROCm SDK and an isolated Python environment with the pinned source's Python
 requirements and `rocisa` installed. Set `TENSILE_SOURCE` to the full pinned
-rocm-libraries source tree, `ROCM_PATH` to the SDK, and `PYTHON` to that environment's
-interpreter. Include `shared/origami`, `shared/stinkytofu`, and
-`shared/mxdatagenerator` if extracting only part of the source archive.
+rocm-libraries Git checkout, `ROCM_PATH` to the SDK, and `PYTHON` to that environment's
+interpreter. Generation and CMake configuration verify the checkout revision and
+reject tracked changes and untracked files. Extracted source archives are not
+supported. Keep build outputs outside the source checkout. PyYAML is required
+for generation. The Python workload adapter for prebuilt artifacts uses only the
+standard library.
 
 From the corpus root, build the host adapter:
 

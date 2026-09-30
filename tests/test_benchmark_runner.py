@@ -1639,6 +1639,9 @@ def test_default_threads_preserve_policy_and_record_native_allocation(runner_con
         "helpers": 16,
         "total": 48,
     }
+    assert result["configuration"]["targetThreadAllocation"] == {
+        "gfx950": {k: saved[k] for k in ("engine", "dispatch", "helpers", "total")}
+    }
     assert (output / "thread-policy/gfx950/policy.txt").is_file()
     snapshot = json.loads(
         (output / result["tests"][0]["artifacts"]["config"]).read_text()
@@ -1652,6 +1655,8 @@ def test_default_threads_preserve_policy_and_record_native_allocation(runner_con
         (1, "unknown option"),
         (0, "no configured row"),
         (0, "Configured | 0 | 1 | 0 | 1\n"),
+        (0, "Configured | 8 | 0 | 0 | 8\n"),
+        (0, "Configured | 8 | 25 | 16 | 16\n"),
         (0, "Configured | 8 | 9 | 0 | 16\nConfigured | 8 | 9 | 0 | 16\n"),
     ],
 )

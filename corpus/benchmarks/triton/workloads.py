@@ -22,6 +22,7 @@ from benchmarks.measurement import (
     progress_writer as _progress_writer,
     reported_target as _reported_target,
     target_matches as _target_matches,
+    to_cpu,
     write_result as _write_result,
 )
 
@@ -433,14 +434,6 @@ def prepare_gemm(parameters):
     return parameters, launch, None
 
 
-def to_cpu(tensor):
-    # The simulated KMD needs host pages registered for device-to-host copies.
-    # Pinned memory uses that public HIP path; pageable tensor.cpu() does not.
-    host = torch.empty(tensor.shape, dtype=tensor.dtype, device="cpu", pin_memory=True)
-    host.copy_(tensor)
-    return host
-
-
 def prepare_gpt_oss_attention(parameters):
     from triton.tools.tensor_descriptor import TensorDescriptor
 
@@ -553,7 +546,6 @@ PREPARE = {
 CANDIDATE_WORKLOADS = {
     "triton_persistent",
     "triton_grouped",
-    "triton_matmul",
     "deepseek_fp8",
 }
 

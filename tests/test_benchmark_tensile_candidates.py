@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest import mock
 import hashlib
 import json
 import os
@@ -42,6 +43,60 @@ class TensileCandidates(unittest.TestCase):
             prepare.configuration('bf16_streamk', (0, 1, 1))
 
 
+class TensileSourceVerification(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.source = self.root / 'source'
+        self.source.mkdir()
+        self.git('init', '-q')
+        self.git('config', 'user.name', 'Benchmark Test')
+        self.git('config', 'user.email', 'benchmark@example.invalid')
+        self.tracked = self.source / 'generator.py'
+        self.tracked.write_text('original')
+        self.git('add', 'generator.py')
+        self.git('-c', 'commit.gpgsign=false', 'commit', '--signoff', '-qm', 'Fixture')
+        self.revision = self.git('rev-parse', 'HEAD')
+
+    def git(self, *args):
+        return subprocess.run(['git', '-C', str(self.source), *args], check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    def test_clean_pinned_checkout_accepted(self):
+        with mock.patch.object(prepare, 'REVISION', self.revision):
+            prepare.verify_source(self.source)
+
+    def test_invalid_source_rejected_before_generation(self):
+        directory = ROOT / 'corpus/benchmarks/tensile_candidates'
+        with mock.patch.dict(sys.modules, {'prepare': prepare}), mock.patch.object(
+                sys, 'path', [str(directory), *sys.path]):
+            spec = importlib.util.spec_from_file_location('tensile_generate', directory / 'generate.py')
+            generate = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(generate)
+        archive = self.root / 'archive'
+        archive.mkdir()
+        cases = [
+            ('wrong revision', self.source, '0' * 40, 'pinned revision'),
+            ('archive', archive, self.revision, 'Git checkout'),
+            ('dirty', self.source, self.revision, 'must be clean'),
+            ('untracked', self.source, self.revision, 'must be clean'),
+        ]
+        for name, source, revision, message in cases:
+            with self.subTest(name=name):
+                self.tracked.write_text('changed' if name == 'dirty' else 'original')
+                if name == 'untracked':
+                    (self.source / 'extra.py').write_text('untracked')
+                output = self.root / 'output'
+                argv = ['generate.py', '--source-root', str(source), '--output', str(output)]
+                with mock.patch.object(prepare, 'REVISION', revision), mock.patch.object(
+                        sys, 'argv', argv), mock.patch.object(generate, 'configuration') as configuration:
+                    with self.assertRaisesRegex(ValueError, message):
+                        generate.main()
+                    configuration.assert_not_called()
+                self.assertFalse(output.exists())
+
+
 class TensileWorkloadContract(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -68,7 +123,7 @@ class TensileWorkloadContract(unittest.TestCase):
         self.runner.chmod(0o755)
         env = dict(os.environ, TENSILE_CANDIDATE_ARTIFACTS=str(self.root),
                    TENSILE_CANDIDATE_RUNNER=str(self.runner))
-        command = [sys.executable, str(ROOT / 'corpus/benchmarks/tensile_candidates/workload.py'),
+        command = [sys.executable, '-S', str(ROOT / 'corpus/benchmarks/tensile_candidates/workload.py'),
                    '--workload', 'tensile_candidate', '--case', 'fixture', '--target', 'gfx950',
                    '--params', json.dumps(dict(variant='bf16_streamk', dtype='bf16', m=256, n=256, k=256)),
                    '--warmups', '1', '--samples', '1', '--output', str(self.output)]
