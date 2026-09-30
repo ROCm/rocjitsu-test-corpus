@@ -1,11 +1,11 @@
 	.amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx1250"
 	.amdhsa_code_object_version 6
 	.text
-	.protected	_Z20global_byte_evictionPVKhPi ; -- Begin function _Z20global_byte_evictionPVKhPi
-	.globl	_Z20global_byte_evictionPVKhPi
+	.protected	_Z20global_byte_evictionPKhPi ; -- Begin function _Z20global_byte_evictionPKhPi
+	.globl	_Z20global_byte_evictionPKhPi
 	.p2align	8
-	.type	_Z20global_byte_evictionPVKhPi,@function
-_Z20global_byte_evictionPVKhPi:         ; @_Z20global_byte_evictionPVKhPi
+	.type	_Z20global_byte_evictionPKhPi,@function
+_Z20global_byte_evictionPKhPi:          ; @_Z20global_byte_evictionPKhPi
 	.cfi_startproc
 ; %bb.0:
 	s_mov_b64 s[64:65], 0
@@ -20,63 +20,104 @@ _Z20global_byte_evictionPVKhPi:         ; @_Z20global_byte_evictionPVKhPi
 	s_add_co_i32 s4, s4, 1
 	s_getreg_b32 s6, hwreg(HW_REG_IB_STS2, 6, 4)
 	s_mul_i32 s4, ttmp9, s4
-	s_delay_alu instid0(SALU_CYCLE_1) | instskip(SKIP_3) | instid1(SALU_CYCLE_1)
+	s_delay_alu instid0(SALU_CYCLE_1)
 	s_add_co_i32 s5, s5, s4
 	s_cmp_eq_u32 s6, 0
-	s_mov_b32 s4, 0
-	s_cselect_b32 s6, ttmp9, s5
-	s_cmp_lt_u32 s6, 7
-	s_cbranch_scc1 .LBB0_9
-; %bb.1:
-	s_cmp_lt_i32 s6, 8
-	s_mov_b32 s5, -1
-	s_cbranch_scc1 .LBB0_3
-; %bb.2:
-	s_cmp_lg_u32 s6, 8
+	s_cselect_b32 s4, ttmp9, s5
 	s_mov_b32 s5, 0
-	s_cselect_b32 s4, -1, 0
-.LBB0_3:
+	s_cmp_gt_u32 s4, 6
+	s_cbranch_scc0 .LBB0_4
+; %bb.1:
+	s_cmp_lt_i32 s4, 8
+	s_cbranch_scc1 .LBB0_5
+; %bb.2:
+	s_cmp_eq_u32 s4, 8
+	s_cbranch_scc0 .LBB0_6
+; %bb.3:
+	v_mov_b32_e32 v0, 0
+	s_wait_kmcnt 0x0
+	global_load_u8 v0, v0, s[0:1]
+	;;#ASMSTART
+	; evict
+	;;#ASMEND
+	s_branch .LBB0_7
+.LBB0_4:
+                                        ; implicit-def: $vgpr0
+	s_cbranch_execnz .LBB0_13
+	s_branch .LBB0_14
+.LBB0_5:
+                                        ; implicit-def: $vgpr0
+	s_mov_b32 s6, 0
+	s_cbranch_execnz .LBB0_8
+	s_branch .LBB0_9
+.LBB0_6:
+	s_mov_b32 s5, -1
+                                        ; implicit-def: $vgpr0
+.LBB0_7:
+	s_mov_b32 s6, 0
+	s_branch .LBB0_9
+.LBB0_8:
+	s_cmp_lg_u32 s4, 7
+	s_mov_b32 s6, -1
+	s_cselect_b32 s5, -1, 0
+.LBB0_9:
+	s_delay_alu instid0(SALU_CYCLE_1) | instskip(SKIP_1) | instid1(SALU_CYCLE_1)
 	s_and_b32 s5, s5, exec_lo
 	s_cselect_b32 s5, 1, 0
-	s_mov_b32 s7, 0
 	s_cmp_lg_u32 s5, 1
-	s_cbranch_scc1 .LBB0_5
-; %bb.4:
-	s_cmp_lg_u32 s6, 7
-	s_mov_b32 s7, -1
-	s_cselect_b32 s4, -1, 0
-.LBB0_5:
-	s_delay_alu instid0(SALU_CYCLE_1) | instskip(SKIP_1) | instid1(SALU_CYCLE_1)
-	s_and_b32 s4, s4, exec_lo
-	s_cselect_b32 s4, 1, 0
-	s_cmp_lg_u32 s4, 1
+	s_cbranch_scc0 .LBB0_15
+; %bb.10:
+	s_and_b32 s5, s6, exec_lo
+	s_cselect_b32 s5, 1, 0
+	s_delay_alu instid0(SALU_CYCLE_1)
+	s_cmp_lg_u32 s5, 1
+	s_cbranch_scc1 .LBB0_12
+.LBB0_11:
+	s_wait_loadcnt 0x0
+	v_mov_b32_e32 v0, 0
 	s_wait_kmcnt 0x0
-	s_add_nc_u64 s[4:5], s[0:1], 1
-	s_cbranch_scc1 .LBB0_7
-; %bb.6:
-	s_add_nc_u64 s[0:1], s[0:1], 1
-	s_mov_b32 s7, 0
-.LBB0_7:
-	s_delay_alu instid0(SALU_CYCLE_1) | instskip(SKIP_1) | instid1(SALU_CYCLE_1)
-	s_and_b32 s7, s7, exec_lo
-	s_cselect_b32 s7, 1, 0
-	s_cmp_lg_u32 s7, 1
-	s_cbranch_scc1 .LBB0_9
-; %bb.8:
-	s_mov_b64 s[0:1], s[4:5]
-.LBB0_9:
-	v_dual_mov_b32 v0, 0 :: v_dual_mov_b32 v1, s6
+	global_load_u8 v0, v0, s[0:1] offset:1
+	;;#ASMSTART
+	; retained
+	;;#ASMEND
+.LBB0_12:
+	s_branch .LBB0_14
+.LBB0_13:
+	s_wait_loadcnt 0x0
+	v_mov_b32_e32 v0, 0
 	s_wait_kmcnt 0x0
-	flat_load_u8 v0, v0, s[0:1] scope:SCOPE_SYS
-	s_wait_loadcnt_dscnt 0x0
+	global_load_u8 v0, v0, s[0:1]
+	;;#ASMSTART
+	; flood
+	;;#ASMEND
+.LBB0_14:
+	s_wait_loadcnt 0x0
+	v_and_b32_e32 v0, 0xff, v0
+	v_mov_b32_e32 v1, s4
+	s_wait_kmcnt 0x0
 	global_store_b32 v1, v0, s[2:3] scale_offset
 	s_endpgm
+.LBB0_15:
+	s_wait_loadcnt 0x0
+	v_mov_b32_e32 v0, 0
+	s_mov_b32 s6, 0
+	s_wait_kmcnt 0x0
+	global_load_u8 v0, v0, s[0:1] offset:1
+	;;#ASMSTART
+	; probe
+	;;#ASMEND
+	s_and_b32 s5, s6, exec_lo
+	s_cselect_b32 s5, 1, 0
+	s_delay_alu instid0(SALU_CYCLE_1)
+	s_cmp_lg_u32 s5, 1
+	s_cbranch_scc0 .LBB0_11
+	s_branch .LBB0_12
 .Lfunc_end0:
-	.size	_Z20global_byte_evictionPVKhPi, .Lfunc_end0-_Z20global_byte_evictionPVKhPi
+	.size	_Z20global_byte_evictionPKhPi, .Lfunc_end0-_Z20global_byte_evictionPKhPi
 	.cfi_endproc
 	.section	.rodata,"a",@progbits
 	.p2align	6, 0x0
-	.amdhsa_kernel _Z20global_byte_evictionPVKhPi
+	.amdhsa_kernel _Z20global_byte_evictionPKhPi
 		.amdhsa_group_segment_fixed_size 0
 		.amdhsa_private_segment_fixed_size 0
 		.amdhsa_kernarg_size 16
@@ -107,7 +148,7 @@ _Z20global_byte_evictionPVKhPi:         ; @_Z20global_byte_evictionPVKhPi
 		.amdhsa_fp16_overflow 0
 		.amdhsa_memory_ordered 1
 		.amdhsa_forward_progress 1
-		.amdhsa_inst_pref_size ((instprefsize(.Lfunc_end0-_Z20global_byte_evictionPVKhPi)<<4)&4080)>>4
+		.amdhsa_inst_pref_size ((instprefsize(.Lfunc_end0-_Z20global_byte_evictionPKhPi)<<4)&4080)>>4
 		.amdhsa_round_robin_scheduling 0
 		.amdhsa_exception_fp_ieee_invalid_op 0
 		.amdhsa_exception_fp_denorm_src 0
@@ -119,19 +160,19 @@ _Z20global_byte_evictionPVKhPi:         ; @_Z20global_byte_evictionPVKhPi
 	.end_amdhsa_kernel
 	.text
                                         ; -- End function
-	.set .L_Z20global_byte_evictionPVKhPi.num_vgpr, 2
-	.set .L_Z20global_byte_evictionPVKhPi.num_agpr, 0
-	.set .L_Z20global_byte_evictionPVKhPi.numbered_sgpr, 66
-	.set .L_Z20global_byte_evictionPVKhPi.num_named_barrier, 0
-	.set .L_Z20global_byte_evictionPVKhPi.private_seg_size, 0
-	.set .L_Z20global_byte_evictionPVKhPi.uses_vcc, 0
-	.set .L_Z20global_byte_evictionPVKhPi.uses_flat_scratch, 0
-	.set .L_Z20global_byte_evictionPVKhPi.has_dyn_sized_stack, 0
-	.set .L_Z20global_byte_evictionPVKhPi.has_recursion, 0
-	.set .L_Z20global_byte_evictionPVKhPi.has_indirect_call, 0
+	.set .L_Z20global_byte_evictionPKhPi.num_vgpr, 2
+	.set .L_Z20global_byte_evictionPKhPi.num_agpr, 0
+	.set .L_Z20global_byte_evictionPKhPi.numbered_sgpr, 66
+	.set .L_Z20global_byte_evictionPKhPi.num_named_barrier, 0
+	.set .L_Z20global_byte_evictionPKhPi.private_seg_size, 0
+	.set .L_Z20global_byte_evictionPKhPi.uses_vcc, 0
+	.set .L_Z20global_byte_evictionPKhPi.uses_flat_scratch, 0
+	.set .L_Z20global_byte_evictionPKhPi.has_dyn_sized_stack, 0
+	.set .L_Z20global_byte_evictionPKhPi.has_recursion, 0
+	.set .L_Z20global_byte_evictionPKhPi.has_indirect_call, 0
 	.section	.AMDGPU.csdata,"",@progbits
 ; Kernel info:
-; codeLenInByte = 248
+; codeLenInByte = 352
 ; TotalNumSgprs: 66
 ; NumVgprs: 2
 ; ScratchSize: 0
@@ -194,11 +235,11 @@ amdhsa.kernels:
       - 2
       - 0
     .max_flat_workgroup_size: 1024
-    .name:           _Z20global_byte_evictionPVKhPi
+    .name:           _Z20global_byte_evictionPKhPi
     .private_segment_fixed_size: 0
     .sgpr_count:     66
     .sgpr_spill_count: 0
-    .symbol:         _Z20global_byte_evictionPVKhPi.kd
+    .symbol:         _Z20global_byte_evictionPKhPi.kd
     .uniform_work_group_size: 1
     .uses_dynamic_stack: false
     .vgpr_count:     2
