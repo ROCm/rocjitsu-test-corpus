@@ -14,6 +14,7 @@ corpus/
   semantics/  Standalone target-specific HIP semantic programs.
   llama/      llama.cpp test-backend-ops cases and vendored GGML sources.
   vulkan/     Pinned Vulkan compute and texel-buffer CTS selections.
+  runtime-torture/ Standalone direct-KFD MEC/MES/CP stress tests.
   tensile/    gfx1250 TensileLite configs and generated artifacts.
   benchmarks/ Parameterized Triton benchmarks and reused upstream kernels.
 
@@ -54,6 +55,9 @@ CI orchestration and simulator configurations remain in rocm-systems.
   that the runtime test executes.
 - `corpus/vulkan/`: pinned Vulkan CTS compute and buffer cases for RDNA3/RDNA4
   through Mesa RADV. See the [build and local smoke-test guide](corpus/vulkan/README.md).
+- `corpus/runtime-torture/`: standalone direct-KFD queue, packet, dependency,
+  SDMA and shader stress tests for gfx1201/gfx1250. Run binaries directly or
+  with CTest; see the [build instructions](corpus/runtime-torture/README.md).
 - `corpus/semantics/`: standalone HIP programs with deterministic inputs,
   source-ISA coverage, and typed results that can be captured under any
   externally selected launch configuration.
