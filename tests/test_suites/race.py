@@ -196,7 +196,9 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     ]
     environment = dict(os.environ)
     environment["RJ_SINK_DIR"] = str(sink_dir)
-    environment["ROCJITSU_RUNTIME_DIR"] = str(runtime_dir)
+    # Each case runs from its own directory. Keep the socket path relative so
+    # runtime/<pid>/daemon.sock fits even under a long artifact directory.
+    environment["ROCJITSU_RUNTIME_DIR"] = "runtime"
     _run_command(
         command,
         cwd=case_dir,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -74,6 +75,48 @@ def test_run_wrapper_requires_one_config_token(wrapper: str, tmp_path: Path) -> 
         race._run_wrapper_command(wrapper, tmp_path / "config.json")
 
 
+def test_run_can_bind_private_daemon_socket_under_long_artifact_directory(
+    tmp_path: Path, monkeypatch
+) -> None:
+    cases = race.discover(
+        make_target_spec("gfx950"),
+        race.load_target_configs(race.default_config_files()),
+    )[:2]
+    base = tmp_path / "base.json"
+    base.write_text('{"vm": {}}', encoding="utf-8")
+    monkeypatch.setenv("ROCJITSU_RACE_CONFIG", str(base))
+    context = RunContext(
+        repo_root=race.REPO_ROOT,
+        artifact_directory=tmp_path / ("long-artifact-directory-" * 8),
+        skip_all_runs=False,
+        run_wrapper="rocjitsu --daemon --config {config} --",
+    )
+    run_command = race._run_command
+
+    def bind_daemon_socket(command, **kwargs):
+        # Exercise the OS socket limit in a child with the launcher's cwd and
+        # environment. Reusing the socket name also checks case isolation.
+        run_command(
+            [
+                sys.executable,
+                "-c",
+                "import os, socket; from pathlib import Path; "
+                "runtime = Path(os.environ['ROCJITSU_RUNTIME_DIR']) / '1234567'; "
+                "runtime.mkdir(); "
+                "sock = socket.socket(socket.AF_UNIX); "
+                "sock.bind(str(runtime / 'daemon.sock')); sock.close()",
+            ],
+            **kwargs,
+        )
+        (Path(kwargs["env"]["RJ_SINK_DIR"]) / "race.log").touch()
+
+    monkeypatch.setattr(race, "_run_command", bind_daemon_socket)
+    monkeypatch.setattr(race, "_validate_gtest_report", lambda *args: None)
+    build_result = BuildResult(build_dir=None, executable_path=tmp_path / "race-test")
+    for case in cases:
+        race.run(case, build_result, context)
+
+
 @pytest.mark.parametrize(
     "outcome, error",
     [
@@ -119,7 +162,7 @@ def test_run_requires_the_requested_gtest_to_pass(
         assert cwd == case_dir
         assert command[2] == str(case_dir / "config.json")
         assert f"--gtest_filter={case.metadata['test_filter']}" in command
-        assert env["ROCJITSU_RUNTIME_DIR"] == str(case_dir / "runtime")
+        assert cwd / env["ROCJITSU_RUNTIME_DIR"] == case_dir / "runtime"
         # An empty race log is valid for clean kernels, so it cannot prove
         # that GoogleTest executed the requested test.
         (Path(env["RJ_SINK_DIR"]) / "race.log").touch()
