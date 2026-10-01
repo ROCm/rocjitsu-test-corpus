@@ -91,6 +91,6 @@ if(AMDGPU_LLVM_BIN)
     add_test(NAME aql_running_queue_pause_gfx1201 COMMAND aql_running_queue_pause_gfx1201)
     add_test(NAME aql_dispatch_oversubscribed_gfx1201 COMMAND packet_flood_gfx1201 --mode aql --queues 8 --iterations 1)
     set_tests_properties(aql_running_queue_pause_gfx1201 aql_dispatch_oversubscribed_gfx1201
-      PROPERTIES TIMEOUT 60 SKIP_RETURN_CODE 77 RUN_SERIAL TRUE LABELS "investigation")
+      PROPERTIES TIMEOUT 60 SKIP_RETURN_CODE 77 RUN_SERIAL TRUE LABELS "investigation;INVESTIGATE")
   endif()
 endif()

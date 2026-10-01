@@ -1,8 +1,8 @@
 // INVESTIGATE: Live-wave pause is unresolved and can require host recovery.
 // Purpose: Investigate suspension and resumption of a queue while its shader is still running.
 // Check that shader progress stops while an independent queue advances, then resumes
-// with intact arithmetic state. Live-queue update failed on the gfx1201 test machine;
-// this is an investigation case, not a qualified CWSR test or part of fast CI.
+// with intact arithmetic state. Live-queue update failed on gfx1201 and gfx1250.
+// This is an investigation case, not a qualified CWSR test or part of fast CI.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --iterations N: shader launches, each with four pause/resume attempts.
@@ -12,6 +12,12 @@
 //   --queues and --seed: accepted by the common parser but unused here.
 // Progress waits retain their separate 10-second deadline.
 // gfx1201 live-queue UPDATE_QUEUE returned EACCES; trap/preemption setup is unqualified.
+// gfx1250 (KFD 1.23, fw 2380) also returned EACCES, with a privileged SQC instruction-fetch
+// fault at 0x01ffffffffbf0000 followed by failed MES removal and GPU reset. That address
+// matches the public kernel's reserved trap-code VA (2^57 minus 4 MiB minus 64 KiB).
+// The cause remains unresolved; do not classify this as a firmware bug or enable in CI.
+// https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/amd/amdkfd/kfd_flat_memory.c
+// https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/amd/amdgpu/amdgpu_vm.h
 //
 // Inspiration: disable/re-enable a live kernel and validate its surviving state.
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/libhsakmt/tests/kfdtest/src/KFDCWSRTest.cpp
@@ -28,7 +34,7 @@ int main(int argc, char** argv) {
   std::puts("INVESTIGATE: live-wave queue pause/resume; trap/preemption setup unqualified");
   std::fflush(stdout);
   const uint32_t rounds = Option(argc, argv, "--iterations", 32, 100000);
-  Device device(1201);
+  Device device(1250);
   Buffer code(device, sizeof(kKernelImage), true), args(device, 4096);
   Buffer result(device, 4096), control(device, 4096), signals(device, 4096);
   std::memcpy(code.data, kKernelImage, sizeof(kKernelImage));

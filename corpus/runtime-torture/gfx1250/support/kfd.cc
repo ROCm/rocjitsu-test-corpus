@@ -1,10 +1,12 @@
 // Native KFD allocation, queue and doorbell helpers; no runtime library dependency.
-// AQL drains use barrier completions and track reusable capacity separately from
-// the raw reported read index. Scenarios still check their own work completions.
-// Requires Linux x86-64, 4 KiB pages, wave32, one XCC and KFD context-save sizes.
+// Requires Linux x86-64, 4 KiB pages, wave32 and KFD context-save sizes.
+// Allocate a context header/save area for each XCC, following public libhsakmt queues.c.
 // GTT is coherent/uncached; EOP backing is private VRAM. Retire GPU references
 // before freeing backing; failures leave live-resource cleanup to KFD process teardown.
+// AQL drains use a barrier completion: the reported read index can lag retired
+// packets. Keep that raw index observable and separately track drained capacity.
 // Public implementation and ABI references:
+// https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/libhsakmt/src/queues.c
 // https://github.com/torvalds/linux/blob/master/include/uapi/linux/kfd_ioctl.h
 // https://github.com/tinygrad/tinygrad/blob/194aa6bad34604144bb98e80ae5837925d9f0839/tinygrad/runtime/ops_amd.py
 // https://github.com/ROCm/rocm-systems/blob/96f1528fa5c5a0e12d706dbf4507c441c456f6eb/projects/rocr-runtime/runtime/hsa-runtime/inc/amd_hsa_queue.h
@@ -27,30 +29,48 @@
 #include <fstream>
 #include <thread>
 
-#include "support/aql.h"
+#include "support/metadata.h"
 
 namespace torture {
 namespace {
+// Public KFD 1.19 CREATE_QUEUE tail; some distro headers still stop at byte 88.
+// https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/libhsakmt/include/hsakmt/linux/kfd_ioctl.h
+struct CreateQueueArgs {
+  uint64_t ring_base_address, write_pointer_address, read_pointer_address, doorbell_offset;
+  uint32_t ring_size, gpu_id, queue_type, queue_percentage, queue_priority, queue_id;
+  uint64_t eop_buffer_address, eop_buffer_size, ctx_save_restore_address;
+  uint32_t ctx_save_restore_size, ctl_stack_size, sdma_engine_id, metadata_ring_size;
+};
+static_assert(sizeof(CreateQueueArgs) == 96 && offsetof(CreateQueueArgs, metadata_ring_size) == 92);
 constexpr uint64_t kTimeoutNs = 10000000000ull;
 constexpr size_t kDoorbellBytes = 8192;
 size_t PageAlign(size_t size) { return (size + 4095) & ~size_t{4095}; }
+size_t DebugBytes(Device& device) {
+  // Public libhsakmt queues.c: 32 bytes per wave, aligned to 64 per XCC.
+  const uint64_t xcc = device.Property("num_xcc");
+  const uint64_t simds = device.Property("simd_count");
+  const uint64_t waves = device.Property("max_waves_per_simd");
+  Check(xcc && xcc <= 16 && simds && !(simds % xcc) && waves && waves <= 64,
+        "invalid debug-save topology");
+  return ((simds / xcc * waves * 32 + 63) & ~uint64_t{63}) * xcc;
+}
 size_t ContextBytes(Device& device) {
-  Check(device.Property("num_xcc") == 1, "only single-XCC targets are implemented");
+  const uint64_t xcc = device.Property("num_xcc");
+  Check(xcc && xcc <= 16, "invalid XCC count");
   const uint64_t bytes = device.Property("cwsr_size");
   const uint64_t stack = device.Property("ctl_stack_size");
   Check(bytes && bytes < (1ull << 30) && !(bytes & 4095) && stack >= 4096 && stack < bytes &&
             !(stack & 4095),
         "invalid KFD context-save sizes");
-  return PageAlign(bytes +
-                   device.Property("simd_count") / device.Property("simd_per_cu") * 32 * 32);
+  return PageAlign(bytes * xcc + DebugBytes(device));
 }
 }  // namespace
 
 Device::Device(uint32_t target) {
   Check(sizeof(void*) == 8 && sysconf(_SC_PAGESIZE) == 4096,
         "requires 64-bit Linux and 4 KiB pages");
-  const uint32_t wanted = 120001;
-  Check(target == 1201, "wrong target for gfx1201 support");
+  const uint32_t wanted = 120500;
+  Check(target == 1250, "wrong target for gfx1250 support");
   const char* root = "/sys/class/kfd/kfd/topology/nodes";
   DIR* nodes = opendir(root);
   if (!nodes) Fail("open KFD topology: %s", std::strerror(errno));
@@ -85,6 +105,7 @@ Device::Device(uint32_t target) {
   kfd_ioctl_get_version_args version{};
   Ioctl(AMDKFD_IOC_GET_VERSION, &version, "GET_VERSION");
   Check(version.major_version == 1, "unsupported KFD ABI major");
+  kfd_minor = version.minor_version;
   kfd_ioctl_acquire_vm_args vm{};
   vm.drm_fd = drm;
   vm.gpu_id = gpu_id;
@@ -244,24 +265,32 @@ void Buffer::Wait(size_t word, uint32_t value, uint32_t timeout_ms, Queue* queue
   }
 }
 
-Queue::Queue(Device& device, uint32_t ring_bytes, uint32_t priority, bool aql, bool multi_producer)
+Queue::Queue(Device& device, uint32_t ring_bytes, uint32_t priority, bool aql, bool multi_producer,
+             bool metadata)
     : device_(device),
-      ring_(device, ring_bytes, true),
+      ring_(device, size_t(ring_bytes) * (aql && metadata ? 5 : 1), true),
       pointers_(device, 4096),
       eop_(device, 4096, true, true),
       context_(device, ContextBytes(device), true),
+      ring_bytes_(ring_bytes),
       aql_(aql),
+      metadata_(aql && metadata),
       priority_(priority) {
   Check(ring_bytes >= 4096 && !(ring_bytes & (ring_bytes - 1)) && priority <= 15,
         "invalid queue configuration");
   Check(!multi_producer || aql_, "multi-producer publication requires AQL");
   // KFD HsaUserContextSaveAreaHeader: DebugOffset, DebugSize, ErrorReason.
   // Context/stack sizes come from this GPU's sysfs, not another architecture.
-  auto* header = static_cast<uint32_t*>(context_.data);
-  header[4] = device.Property("cwsr_size");
-  header[5] = device.Property("simd_count") / device.Property("simd_per_cu") * 32 * 32;
+  const uint64_t xcc = device.Property("num_xcc");
+  const uint64_t save_bytes = device.Property("cwsr_size");
   const uint64_t error_address = pointers_.address(512);
-  std::memcpy(header + 6, &error_address, sizeof(error_address));
+  for (uint64_t i = 0; i < xcc; ++i) {
+    auto* header = reinterpret_cast<uint32_t*>(static_cast<char*>(context_.data) + i * save_bytes);
+    header[4] = (xcc - i) * save_bytes;
+    header[5] = DebugBytes(device);
+    std::memcpy(header + 6, &error_address, sizeof(error_address));
+  }
+  if (metadata_) Check(device.kfd_minor >= 19, "metadata queues require KFD 1.19 or newer");
   if (aql_) {
     // Firmware-facing AMD queue descriptor, not a ROCr object. Offsets follow
     // amd_hsa_queue.h (linked above). No dynamic scratch or runtime callbacks.
@@ -291,9 +320,15 @@ Queue::Queue(Device& device, uint32_t ring_bytes, uint32_t priority, bool aql, b
     for (uint32_t i = 0; i < ring_bytes / 64; ++i)
       static_cast<uint32_t*>(ring_.data)[i * 16] = 1;  // INVALID AQL packet.
   }
-  kfd_ioctl_create_queue_args create{};
+  if (metadata_) {
+    for (uint32_t i = 0; i < ring_bytes / 64; ++i)
+      for (uint32_t header = 0; header < 4; ++header)
+        ring_.Store((ring_bytes + i * 256 + header * 64) / 4, 1);  // INVALID.
+  }
+  CreateQueueArgs create{};
   create.ring_base_address = ring_.address();
   create.ring_size = ring_bytes;
+  create.metadata_ring_size = metadata_ ? ring_bytes * 4 : 0;
   create.gpu_id = device.gpu_id;
   create.queue_type = aql_ ? KFD_IOC_QUEUE_TYPE_COMPUTE_AQL : KFD_IOC_QUEUE_TYPE_COMPUTE;
   create.queue_percentage = 100;
@@ -308,7 +343,7 @@ Queue::Queue(Device& device, uint32_t ring_bytes, uint32_t priority, bool aql, b
   // All backing and INVALID AQL headers must be visible before queue activation.
   __atomic_thread_fence(__ATOMIC_RELEASE);
   __asm__ __volatile__("sfence" ::: "memory");
-  device.Ioctl(AMDKFD_IOC_CREATE_QUEUE, &create, "CREATE_QUEUE");
+  device.Ioctl(_IOWR('K', 0x02, CreateQueueArgs), &create, "CREATE_QUEUE");
   id_ = create.queue_id;
   doorbell_ = device.Doorbell(create.doorbell_offset);
 }
@@ -319,7 +354,7 @@ Queue::~Queue() {
   device_.Ioctl(AMDKFD_IOC_DESTROY_QUEUE, &destroy, "DESTROY_QUEUE");
 }
 uint64_t Queue::consumed() {
-  const uint64_t mask = ring_.size / 4 - 1;
+  const uint64_t mask = ring_bytes_ / 4 - 1;
   const uint64_t raw =
       __atomic_load_n(static_cast<uint64_t*>(pointers_.data) + (aql_ ? 16 : 0), __ATOMIC_ACQUIRE);
   if (aql_)
@@ -340,10 +375,25 @@ void Queue::Dump() {
                                           __ATOMIC_ACQUIRE),
       pointers_.Load(129), pointers_.Load(128), context_.Load(0), context_.Load(1),
       context_.Load(2), context_.Load(3));
+  if (aql_) {
+    const uint64_t read = pointers_.Load64(128);
+    const size_t slot = read % (ring_bytes_ / 64);
+    const size_t offset = slot * 64;
+    // Report addresses without dereferencing packet pointers: malformed or
+    // stale pointers are exactly what a GPU page-fault investigation needs.
+    std::fprintf(stderr,
+                 "AQL ring=%llx descriptor=%llx slot=%zu header=%08x kernel=%llx "
+                 "kernarg=%llx completion=%llx metadata=%llx\n",
+                 (unsigned long long)ring_.address(), (unsigned long long)pointers_.address(), slot,
+                 ring_.Load(offset / 4), (unsigned long long)ring_.Load64(offset + 32),
+                 (unsigned long long)ring_.Load64(offset + 40),
+                 (unsigned long long)ring_.Load64(offset + 56),
+                 (unsigned long long)(metadata_ ? ring_.address(ring_bytes_ + slot * 256) : 0));
+  }
 }
 void Queue::Submit(const std::vector<uint32_t>& words) {
   Check(!aql_, "PM4 submission to AQL ring");
-  const uint64_t capacity = ring_.size / 4;
+  const uint64_t capacity = ring_bytes_ / 4;
   Check(!words.empty() && words.size() < capacity, "submission exceeds ring capacity");
   const uint64_t deadline = NowNs() + kTimeoutNs;
   while (producer_ - consumed() + words.size() >= capacity) {
@@ -367,7 +417,7 @@ void Queue::SubmitAql(const void* packet) {
 }
 uint64_t Queue::ReserveAql(uint32_t count) {
   Check(aql_, "AQL reservation on PM4 ring");
-  const uint64_t capacity = ring_.size / 64;
+  const uint64_t capacity = ring_bytes_ / 64;
   Check(count && count <= capacity, "invalid AQL reservation size");
   const uint64_t deadline = NowNs() + kTimeoutNs;
   while (producer_ - std::max(consumed(), drained_aql_) + count > capacity) {
@@ -380,9 +430,10 @@ uint64_t Queue::ReserveAql(uint32_t count) {
   return first;
 }
 void Queue::PublishAql(uint64_t index, const void* packet) {
-  Check(aql_ && index < producer_ && producer_ - index <= ring_.size / 64,
+  Check(aql_ && index < producer_ && producer_ - index <= ring_bytes_ / 64,
         "AQL publication outside reserved window");
-  auto* slot = static_cast<char*>(ring_.data) + (index % (ring_.size / 64)) * 64;
+  auto* slot = static_cast<char*>(ring_.data) + (index % (ring_bytes_ / 64)) * 64;
+  if (metadata_) PublishMetadata(index, packet);
   // Commit header last; firmware must never see a partially populated packet.
   std::memcpy(slot + 4, static_cast<const char*>(packet) + 4, 60);
   __atomic_thread_fence(__ATOMIC_RELEASE);
@@ -391,15 +442,29 @@ void Queue::PublishAql(uint64_t index, const void* packet) {
   std::memcpy(&header, packet, 4);
   __atomic_store_n(reinterpret_cast<uint32_t*>(slot), header, __ATOMIC_RELEASE);
 }
+uint64_t Queue::AqlMetadataSlotAddress(uint64_t index) const {
+  Check(metadata_ && index < producer_ && producer_ - index <= ring_bytes_ / 64,
+        "metadata slot outside reserved window");
+  return ring_.address(ring_bytes_ + (index % (ring_bytes_ / 64)) * 256);
+}
+void Queue::PublishMetadata(uint64_t index, const void* packet) {
+  const AqlMetadata data = MakeMetadata(packet);
+  auto* slot = reinterpret_cast<uint32_t*>(AqlMetadataSlotAddress(index));
+  for (uint32_t block = 0; block < 4; ++block)
+    std::memcpy(slot + block * 16 + 1, data.words + block * 16 + 1, 60);
+  __asm__ __volatile__("sfence" ::: "memory");
+  for (uint32_t block = 4; block-- > 0;)
+    __atomic_store_n(slot + block * 16, data.words[block * 16], __ATOMIC_RELEASE);
+}
 void Queue::NotifyAql() {
   Check(aql_ && producer_, "AQL notification without reservation");
   __asm__ __volatile__("sfence" ::: "memory");
   __atomic_store_n(doorbell_, producer_ - 1, __ATOMIC_RELEASE);
 }
 uint64_t Queue::AqlSlotAddress(uint64_t index) const {
-  Check(aql_ && index < producer_ && producer_ - index <= ring_.size / 64,
+  Check(aql_ && index < producer_ && producer_ - index <= ring_bytes_ / 64,
         "AQL slot outside reserved window");
-  return ring_.address((index % (ring_.size / 64)) * 64);
+  return ring_.address((index % (ring_bytes_ / 64)) * 64);
 }
 uint64_t Queue::AqlWriteIndexAddress() const {
   Check(aql_, "AQL write index requested for PM4 queue");
@@ -410,7 +475,7 @@ uint64_t Queue::GpuDoorbellAddress() {
   return reinterpret_cast<uintptr_t>(doorbell_);
 }
 void Queue::SeedEmptyPm4(uint64_t index) {
-  Check(!aql_ && producer_ == 0 && consumed() == 0 && !(index % (ring_.size / 4)),
+  Check(!aql_ && producer_ == 0 && consumed() == 0 && !(index % (ring_bytes_ / 4)),
         "counter seed requires unused PM4 queue and ring-aligned index");
   // Hardware PM4 RPTR is ring-relative. Lift the software counters by whole
   // rings, as in tinygrad's 64-bit doorbell regression; no packets are skipped.
@@ -436,7 +501,7 @@ void Queue::Drain() {
     NotifyAql();
     WaitSignal(pointers_, signal_offset, *this);
     const uint64_t deadline = NowNs() + kTimeoutNs;
-    while ((ring_.Load((index % (ring_.size / 64)) * 16) & 0xff) != 1) {
+    while ((ring_.Load((index % (ring_bytes_ / 64)) * 16) & 0xff) != 1) {
       if (NowNs() >= deadline) {
         Dump();
         Fail("AQL drain marker not invalidated queue=%u", id_);
@@ -479,7 +544,7 @@ void Queue::SetScratch(Buffer& backing, uint32_t bytes_per_lane) {
   pointers_.Store(35, waves | (wave_units << 12));  // COMPUTE_TMPRING_SIZE_GFX12.
   pointers_.Store(36, uint32_t(backing.address()));
   pointers_.Store(37, uint32_t(backing.address() >> 32) | (1u << 30));
-  pointers_.Store(38, bytes);
+  pointers_.Store(38, bytes / device_.Property("num_xcc"));
   // X/Y/Z/W selectors; 32_UINT format; ADD_TID; OOB disabled for swizzled scratch.
   pointers_.Store(39,
                   4u | (5u << 3) | (6u << 6) | (7u << 9) | (0x14u << 12) | (1u << 23) | (2u << 28));
@@ -502,7 +567,7 @@ void Queue::SetPriority(uint32_t priority) {
   kfd_ioctl_update_queue_args update{};
   update.queue_id = id_;
   update.ring_base_address = ring_.address();
-  update.ring_size = ring_.size;
+  update.ring_size = ring_bytes_;
   update.queue_percentage = enabled_ ? 100 : 0;
   update.queue_priority = priority;
   device_.Ioctl(AMDKFD_IOC_UPDATE_QUEUE, &update, "UPDATE_QUEUE");

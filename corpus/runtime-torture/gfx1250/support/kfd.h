@@ -26,6 +26,7 @@ struct Device {
   int drm = -1;
   uint32_t gpu_id = 0;
   uint32_t gfx = 0;
+  uint32_t kfd_minor = 0;
   std::map<std::string, uint64_t> properties;
 
  private:
@@ -62,7 +63,7 @@ struct Buffer {
 class Queue {
  public:
   explicit Queue(Device& device, uint32_t ring_bytes = 4096, uint32_t priority = 7,
-                 bool aql = false, bool multi_producer = false);
+                 bool aql = false, bool multi_producer = false, bool metadata = true);
   ~Queue();
   Queue(const Queue&) = delete;
   Queue& operator=(const Queue&) = delete;
@@ -73,6 +74,11 @@ class Queue {
   uint64_t ReserveAql(uint32_t count);
   void PublishAql(uint64_t index, const void* packet);
   void NotifyAql();
+  // Explicitly publish companion metadata for GPU-produced AQL packets.
+  // Normal PublishAql calls this before making the AQL header valid.
+  void PublishMetadata(uint64_t index, const void* packet);
+  uint64_t AqlMetadataSlotAddress(uint64_t index) const;
+  bool has_metadata() const { return metadata_; }
   uint64_t AqlSlotAddress(uint64_t index) const;
   uint64_t AqlWriteIndexAddress() const;
   uint64_t GpuDoorbellAddress();
@@ -93,12 +99,14 @@ class Queue {
   Buffer pointers_;
   Buffer eop_;
   Buffer context_;
+  uint32_t ring_bytes_ = 0;
   uint32_t id_ = 0;
   uint64_t* doorbell_ = nullptr;
   uint64_t producer_ = 0;
   uint64_t consumed_ = 0;
   uint64_t drained_aql_ = 0;
   bool aql_ = false;
+  bool metadata_ = false;
   uint32_t priority_ = 7;
   bool enabled_ = true;
 };

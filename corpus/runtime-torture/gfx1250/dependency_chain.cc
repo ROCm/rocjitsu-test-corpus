@@ -4,6 +4,11 @@
 // transforms VRAM data in shaders, with SDMA upload/download and AQL barriers.
 // AQL alternates agent/system scopes on interior links; transfer edges retain
 // system scope. Verify every stage and guards, not just final completion.
+// INVESTIGATE: pm4_dependency_chain_no_offload_gfx1250 builds this same scenario
+// with WAIT_REG_MEM optimize_ace_offload_mode clear. Only PM4 is accepted.
+// Reproducer: --queues 8 --iterations 4. On fw 2380 it stalled on round 2 and
+// subsequent queue progress/recovery failed. The cause and scheduling guarantees
+// remain unresolved; a host reboot may be needed. Checks are identical to smoke.
 //
 // Parameters (decimal integers; ranges inclusive):
 //   --mode pm4|aql: default pm4.
@@ -16,6 +21,7 @@
 // https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/runtime/src/iree/hal/cts/queue/semaphore_submission_test.cc
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocprofiler-sdk/tests/bin/hsa-queue-dependency/multiqueue_app.cpp
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/clr/opencl/tests/ocltst/module/runtime/OCLMemDependency.cpp
+#include <cstdio>
 #include <cstring>
 #include <memory>
 
@@ -30,7 +36,11 @@ static int RunPm4(int argc, char** argv) {
   Start(argc, argv, "dependency_chain", true);
   const uint32_t count = Option(argc, argv, "--queues", 16, 128);
   const uint32_t iterations = Option(argc, argv, "--iterations", 32, 100000);
-  Device device(1201);
+#ifdef INVESTIGATE_PM4_NO_OFFLOAD
+  std::puts("INVESTIGATE: dependency waits with optimize_ace_offload_mode=0");
+  std::fflush(stdout);
+#endif
+  Device device(1250);
   Buffer result(device, count * 4096);
   std::vector<std::unique_ptr<Queue>> queues;
   for (uint32_t q = 0; q < count; ++q) queues.emplace_back(new Queue(device));
@@ -40,7 +50,12 @@ static int RunPm4(int argc, char** argv) {
     for (uint32_t q = count; q-- > 0;) {
       Pm4 commands;
       if (q) {
+#ifdef INVESTIGATE_PM4_NO_OFFLOAD
+        // Identical comparison and poll interval; only ordinal7 bit 31 differs.
+        commands.WaitCompare(result.address((q - 1) * 4096 + 64), round, 3, 0xffffffffu);
+#else
         commands.Wait(result.address((q - 1) * 4096 + 64), round);
+#endif
         commands.Barrier();
         commands.Copy(result.address((q - 1) * 4096), result.address(q * 4096));
       } else {
@@ -76,7 +91,7 @@ static int RunAql(int argc, char** argv) {
   Check(count >= 2, "shader chain requires at least two queues");
   constexpr uint32_t kWords = 256, kGuard = 0xdeadbeef;
   const uint32_t bytes = (count + 1) * 4096;
-  Device device(1201);
+  Device device(1250);
   Buffer code(device, sizeof(kKernelImage), true), args(device, count * 512);
   Buffer source(device, bytes), snapshot(device, bytes), local(device, bytes, false, true);
   Buffer signals(device, 4096);
@@ -138,5 +153,8 @@ static int RunAql(int argc, char** argv) {
 }
 
 int main(int argc, char** argv) {
+#ifdef INVESTIGATE_PM4_NO_OFFLOAD
+  Check(!AqlMode(argc, argv), "non-offloaded wait investigation requires --mode pm4");
+#endif
   return AqlMode(argc, argv) ? RunAql(argc, argv) : RunPm4(argc, argv);
 }
