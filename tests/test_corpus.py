@@ -17,7 +17,16 @@ from support.prepare_inputs import (
     parse_csv_values,
     resolve_repo_path,
 )
-from test_suites import cts, dbt, iree, kernels, llama, semantics, vulkan
+from test_suites import (
+    cts,
+    dbt,
+    iree,
+    kernels,
+    llama,
+    runtime_torture,
+    semantics,
+    vulkan,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SUITE_MODULES = {
@@ -28,6 +37,7 @@ SUITE_MODULES = {
     "semantics": semantics,
     "llama": llama,
     "vulkan": vulkan,
+    "runtime-torture": runtime_torture,
 }
 DEFAULT_TARGET = "gfx1201"
 DEFAULT_SUITES = ("iree", "kernels", "cts")
@@ -67,6 +77,17 @@ def pytest_generate_tests(metafunc):
         for suite in selected_suites:
             suite_module = SUITE_MODULES[suite]
             try:
+                if suite == "runtime-torture":
+                    target_cases.extend(
+                        runtime_torture.discover(
+                            target,
+                            binary_dir=config.getoption("binary_dir"),
+                            cases_config=config.getoption("cases_config"),
+                            run_wrapper=config.getoption("run_wrapper"),
+                        )
+                    )
+                    continue
+
                 suite_configs = _load_suite_configs(
                     suite, suite_module, suite_config_cache
                 )
@@ -95,9 +116,7 @@ def pytest_generate_tests(metafunc):
                     )
                     continue
 
-                target_cases.extend(
-                    suite_module.discover(target, suite_configs)
-                )
+                target_cases.extend(suite_module.discover(target, suite_configs))
             except (OSError, TypeError, ValueError) as exc:
                 raise pytest.UsageError(f"{suite} suite: {exc}") from exc
         discovered.extend(filter_cases(target_cases, selection))
@@ -113,6 +132,17 @@ def pytest_generate_tests(metafunc):
     params = []
     for case in cases:
         marks = []
+        if case.suite == "runtime-torture":
+            if case.run["status"] == "SKIP":
+                marks.append(pytest.mark.skip(reason=case.run["reason"]))
+            elif case.run["status"] == "XFAIL":
+                marks.append(
+                    pytest.mark.xfail(
+                        strict=True,
+                        raises=runtime_torture.ExpectedFailure,
+                        reason=case.run["reason"],
+                    )
+                )
         if case.expected_compile_failure or case.expected_run_failure:
             marks.append(
                 pytest.mark.xfail(
@@ -191,9 +221,7 @@ def _load_suite_configs(
     cache: dict[str, list],
 ) -> list:
     if suite not in cache:
-        config_files = tuple(
-            str(path) for path in suite_module.default_config_files()
-        )
+        config_files = tuple(str(path) for path in suite_module.default_config_files())
         cache[suite] = suite_module.load_target_configs(config_files)
     return cache[suite]
 

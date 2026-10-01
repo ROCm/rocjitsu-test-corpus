@@ -57,7 +57,7 @@ CI orchestration and simulator configurations remain in rocm-systems.
   through Mesa RADV. See the [build and local smoke-test guide](corpus/vulkan/README.md).
 - `corpus/runtime-torture/`: standalone direct-KFD queue, packet, dependency,
   SDMA and shader stress tests for gfx1201/gfx1250. Run binaries directly or
-  with CTest; see the [build instructions](corpus/runtime-torture/README.md).
+  through the manifest-based pytest adapter; see the [build instructions](corpus/runtime-torture/README.md).
 - `corpus/semantics/`: standalone HIP programs with deterministic inputs,
   source-ISA coverage, and typed results that can be captured under any
   externally selected launch configuration.
@@ -204,7 +204,7 @@ Useful selectors:
 
 - `--target <gfx target>`: target to run, for example `gfx942`, `gfx950`,
   `gfx1201`, or `gfx1250`.
-- `--suite <iree|kernels|cts|dbt|semantics|llama|vulkan>`: include a suite. Repeat or
+- `--suite <iree|kernels|cts|dbt|semantics|llama|vulkan|runtime-torture>`: include a suite. Repeat or
   pass comma-separated values.
 - `--exclude-suite <suite>`: exclude a suite.
 - `--backend <backend>`: include a kernel backend such as `hipkittens`.

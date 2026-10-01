@@ -1,10 +1,11 @@
+// Public HSA packet ABI, independently populated by these tests.
+// https://github.com/ROCm/rocm-systems/blob/96f1528fa5c5a0e12d706dbf4507c441c456f6eb/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa.h
+// https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/inc/amd_hsa_signal.h
 #ifndef TORTURE_TESTS_SUPPORT_AQL_H_
 #define TORTURE_TESTS_SUPPORT_AQL_H_
 #include "support/kfd.h"
 
 namespace torture {
-// Public HSA packet ABI, independently populated by these tests.
-// https://github.com/ROCm/rocm-systems/blob/96f1528fa5c5a0e12d706dbf4507c441c456f6eb/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa.h
 struct Dispatch {
   uint32_t header_setup;
   uint16_t workgroup_x, workgroup_y, workgroup_z, reserved0;

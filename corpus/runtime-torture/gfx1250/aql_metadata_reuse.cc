@@ -8,7 +8,7 @@
 // does not exercise the companion's final two-dword preload block.
 // This checks metadata-path data integrity, not a metadata performance benefit.
 // Kernarg backing is executable for the plain queue's CP preload fetches.
-// INVESTIGATE: aql_metadata_nonexec_kernargs_gfx1250 builds this same scenario
+// Reproducer: aql_metadata_nonexec_kernargs_gfx1250 builds this same scenario
 // without executable kernarg backing. Plain-AQL preload previously caused a CP
 // fetch fault on a different gfx1250 machine; not rerun on the current machine.
 // This preserves the permission difference for diagnosis, not a confirmed bug.
@@ -41,8 +41,8 @@ int main(int argc, char** argv) {
   const uint32_t rounds = Option(argc, argv, "--iterations", 64, 100000);
   constexpr uint32_t batch = 32, slots = batch * 2;
   Device device(1250);
-#ifdef INVESTIGATE_NONEXEC_KERNARGS
-  std::puts("INVESTIGATE: plain/metadata AQL preload with non-executable kernargs");
+#ifdef REPRO_NONEXEC_KERNARGS
+  std::puts("Reproducer: plain/metadata AQL preload with non-executable kernargs");
   std::fflush(stdout);
   constexpr bool executable_args = false;
 #else

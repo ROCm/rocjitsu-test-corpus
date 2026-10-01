@@ -1,11 +1,3 @@
-#ifndef TORTURE_TESTS_SUPPORT_PM4_H_
-#define TORTURE_TESTS_SUPPORT_PM4_H_
-
-#include <initializer_list>
-
-#include "support/kfd.h"
-
-namespace torture {
 // Small encoders for gfx1250 MEC type-3 packet forms. These are
 // deliberately explicit: scenarios own ordering and storage lifetime.
 // gfx12.5-specific WRITE_DATA scope and ACQUIRE_MEM GCR fields:
@@ -16,6 +8,14 @@ namespace torture {
 // https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/libamdf/cts/gpu/pm4_queue_test.cc
 // https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/runtime/src/iree/hal/drivers/amdgpu/util/pm4_atomic.h
 // https://github.com/ROCm/rocm-systems/blob/96f1528fa5c5a0e12d706dbf4507c441c456f6eb/projects/rocr-runtime/runtime/hsa-runtime/core/inc/amd_gpu_pm4.h
+#ifndef TORTURE_TESTS_SUPPORT_PM4_H_
+#define TORTURE_TESTS_SUPPORT_PM4_H_
+
+#include <initializer_list>
+
+#include "support/kfd.h"
+
+namespace torture {
 class Pm4 {
  public:
   std::vector<uint32_t> words;
@@ -39,7 +39,7 @@ class Pm4 {
     // Dependency waits follow public KFD PM4WaitRegMemPacket: equal, memory
     // space, 32-bit mask, ACE offload enabled in the poll-interval dword.
     // With offload clear, an eight-queue reverse chain stalled on its second
-    // round on the test system (fw 2380). INVESTIGATE reproducer:
+    // round on the test system (fw 2380). Skipped reproducer:
     // pm4_dependency_chain_no_offload_gfx1250 --queues 8 --iterations 4.
     // WaitCompare leaves this bit clear; precise firmware behavior is unresolved.
     Packet(0x3c, {3u | (1u << 4), uint32_t(address), uint32_t(address >> 32), value, 0xffffffffu,

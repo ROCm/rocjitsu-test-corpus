@@ -1,3 +1,7 @@
+// Direct-KFD buffer and queue interfaces; scenarios own GPU lifetimes.
+// ABI reference: https://github.com/torvalds/linux/blob/master/include/uapi/linux/kfd_ioctl.h
+// Queue layout reference:
+// https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/inc/amd_hsa_queue.h
 #ifndef TORTURE_TESTS_SUPPORT_KFD_H_
 #define TORTURE_TESTS_SUPPORT_KFD_H_
 

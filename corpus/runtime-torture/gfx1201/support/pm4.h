@@ -1,3 +1,9 @@
+// Small encoders for gfx1201 MEC type-3 packet forms. These are
+// deliberately explicit: scenarios own ordering and storage lifetime.
+// Public encoding references:
+// https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/libamdf/cts/gpu/pm4_queue_test.cc
+// https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/runtime/src/iree/hal/drivers/amdgpu/util/pm4_atomic.h
+// https://github.com/ROCm/rocm-systems/blob/96f1528fa5c5a0e12d706dbf4507c441c456f6eb/projects/rocr-runtime/runtime/hsa-runtime/core/inc/amd_gpu_pm4.h
 #ifndef TORTURE_TESTS_SUPPORT_PM4_H_
 #define TORTURE_TESTS_SUPPORT_PM4_H_
 
@@ -6,12 +12,6 @@
 #include "support/kfd.h"
 
 namespace torture {
-// Small encoders for gfx1201 MEC type-3 packet forms. These are
-// deliberately explicit: scenarios own ordering and storage lifetime.
-// Public encoding references:
-// https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/libamdf/cts/gpu/pm4_queue_test.cc
-// https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/runtime/src/iree/hal/drivers/amdgpu/util/pm4_atomic.h
-// https://github.com/ROCm/rocm-systems/blob/96f1528fa5c5a0e12d706dbf4507c441c456f6eb/projects/rocr-runtime/runtime/hsa-runtime/core/inc/amd_gpu_pm4.h
 class Pm4 {
  public:
   std::vector<uint32_t> words;

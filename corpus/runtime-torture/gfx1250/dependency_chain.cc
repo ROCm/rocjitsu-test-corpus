@@ -4,7 +4,7 @@
 // transforms VRAM data in shaders, with SDMA upload/download and AQL barriers.
 // AQL alternates agent/system scopes on interior links; transfer edges retain
 // system scope. Verify every stage and guards, not just final completion.
-// INVESTIGATE: pm4_dependency_chain_no_offload_gfx1250 builds this same scenario
+// Reproducer: pm4_dependency_chain_no_offload_gfx1250 builds this same scenario
 // with WAIT_REG_MEM optimize_ace_offload_mode clear. Only PM4 is accepted.
 // Reproducer: --queues 8 --iterations 4. On fw 2380 it stalled on round 2 and
 // subsequent queue progress/recovery failed. The cause and scheduling guarantees
@@ -36,8 +36,8 @@ static int RunPm4(int argc, char** argv) {
   Start(argc, argv, "dependency_chain", true);
   const uint32_t count = Option(argc, argv, "--queues", 16, 128);
   const uint32_t iterations = Option(argc, argv, "--iterations", 32, 100000);
-#ifdef INVESTIGATE_PM4_NO_OFFLOAD
-  std::puts("INVESTIGATE: dependency waits with optimize_ace_offload_mode=0");
+#ifdef REPRO_PM4_NO_OFFLOAD
+  std::puts("Reproducer: dependency waits with optimize_ace_offload_mode=0");
   std::fflush(stdout);
 #endif
   Device device(1250);
@@ -50,7 +50,7 @@ static int RunPm4(int argc, char** argv) {
     for (uint32_t q = count; q-- > 0;) {
       Pm4 commands;
       if (q) {
-#ifdef INVESTIGATE_PM4_NO_OFFLOAD
+#ifdef REPRO_PM4_NO_OFFLOAD
         // Identical comparison and poll interval; only ordinal7 bit 31 differs.
         commands.WaitCompare(result.address((q - 1) * 4096 + 64), round, 3, 0xffffffffu);
 #else
@@ -153,7 +153,7 @@ static int RunAql(int argc, char** argv) {
 }
 
 int main(int argc, char** argv) {
-#ifdef INVESTIGATE_PM4_NO_OFFLOAD
+#ifdef REPRO_PM4_NO_OFFLOAD
   Check(!AqlMode(argc, argv), "non-offloaded wait investigation requires --mode pm4");
 #endif
   return AqlMode(argc, argv) ? RunAql(argc, argv) : RunPm4(argc, argv);

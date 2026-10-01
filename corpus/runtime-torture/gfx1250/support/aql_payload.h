@@ -1,3 +1,6 @@
+// Packet/signal ABI references:
+// https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa.h
+// https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/inc/amd_hsa_signal.h
 // Small AQL payload and barrier helpers for the dual-mode scenarios.
 // A slot owns one kernarg and completion signal. Caller must retire every
 // dispatch AND dependency referencing a slot before preparing that slot again.

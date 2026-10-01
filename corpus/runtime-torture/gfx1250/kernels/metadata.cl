@@ -1,3 +1,5 @@
+// Kernel ABI and kernarg preload reference:
+// https://llvm.org/docs/AMDGPUUsage.html
 // Purpose: Consume scalar kernargs spanning two 15-dword metadata preload blocks.
 // Request 29 arguments (one pointer plus 28 scalars = 30 dwords); the host checks
 // the actual descriptor. Two user SGPRs remain reserved for the kernarg pointer.

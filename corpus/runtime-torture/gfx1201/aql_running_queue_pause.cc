@@ -1,4 +1,4 @@
-// INVESTIGATE: Live-wave pause is unresolved and can require host recovery.
+// Reproducer: Live-wave pause is unresolved and can require host recovery.
 // Purpose: Investigate suspension and resumption of a queue while its shader is still running.
 // Check that shader progress stops while an independent queue advances, then resumes
 // with intact arithmetic state. Live-queue update failed on the gfx1201 test machine;
@@ -25,7 +25,7 @@
 using namespace torture;
 int main(int argc, char** argv) {
   Start(argc, argv, "aql_running_queue_pause");
-  std::puts("INVESTIGATE: live-wave queue pause/resume; trap/preemption setup unqualified");
+  std::puts("Reproducer: live-wave queue pause/resume; trap/preemption setup unqualified");
   std::fflush(stdout);
   const uint32_t rounds = Option(argc, argv, "--iterations", 32, 100000);
   Device device(1201);

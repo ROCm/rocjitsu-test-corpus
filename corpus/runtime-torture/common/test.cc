@@ -1,4 +1,7 @@
 // Shared CLI, deadlines and result checks; no GPU programming policy.
+// Process watchdog and monotonic deadline API references:
+// https://pubs.opengroup.org/onlinepubs/9799919799/functions/alarm.html
+// https://pubs.opengroup.org/onlinepubs/9799919799/functions/clock_gettime.html
 #include "common/test.h"
 
 #include <signal.h>

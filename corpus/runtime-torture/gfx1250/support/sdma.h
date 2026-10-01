@@ -1,10 +1,11 @@
+// Public gfx1250 SDMA GCR (six dwords) and copy/fence packet references:
+// https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_blit_sdma.cpp
+// https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/core/inc/sdma_registers.h
 #ifndef TORTURE_TESTS_SUPPORT_SDMA_H_
 #define TORTURE_TESTS_SUPPORT_SDMA_H_
 #include "support/kfd.h"
 
 namespace torture {
-// Public gfx1250 SDMA GCR (six dwords) and copy/fence packet references:
-// https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_blit_sdma.cpp
 class Sdma {
  public:
   explicit Sdma(uint32_t gfx) { Check(gfx == 120500, "wrong SDMA target"); }

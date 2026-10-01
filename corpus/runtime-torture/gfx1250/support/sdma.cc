@@ -1,3 +1,7 @@
+// Direct-KFD SDMA ring publication, doorbells and read-pointer retirement.
+// Queue ABI: https://github.com/torvalds/linux/blob/master/include/uapi/linux/kfd_ioctl.h
+// Public queue programming reference:
+// https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/libhsakmt/src/queues.c
 #include "support/sdma.h"
 
 #include <linux/kfd_ioctl.h>
