@@ -144,6 +144,11 @@ revision for execution and `python -m benchmarks.dashboard_publish`. The
 publisher writes dashboard resources into a local `--data-dir`; CI passes
 `--expected-sha` and `--expected-corpus-sha` to require matching, clean source
 checkouts. Both source checkouts must be clean and include revision metadata.
+Use `--trigger auto --branch develop` for automatic runs. Manual runs use
+`--trigger manual --branch BRANCH`, where `BRANCH` is the branch that was
+benchmarked. The publisher requires a nonempty branch for manual runs and
+rejects automatic runs from other branches. Manual runs appear only in the
+dashboard's **Run Comparison** view, including manual runs from `develop`.
 
 Published files follow the [dashboard contract](https://github.com/ROCm/rocm-systems/blob/c53572277a6f160e92f360e23f5af7ce2de904a7/emulation/rocjitsu/website/docs/website-data-contract.md):
 `metadata.json`, `index.json`, `test-catalogs/catalog-<hash>.json`, and

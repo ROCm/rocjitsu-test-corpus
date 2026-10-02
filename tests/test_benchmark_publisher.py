@@ -176,6 +176,86 @@ def test_subset_catalogs_are_snapshots_and_preserve_history(publisher_context):
     assert second["catalog"] == reordered["catalog"]
 
 
+@pytest.mark.parametrize("branch", ["develop", "users/ianwood2/topic"])
+def test_manual_publication_preserves_mixed_history(publisher_context, branch):
+    first = _publish(publisher_context)
+    original = Path(first["run"]).read_bytes()
+    options = {"run_id": "manual", "trigger": "manual", "branch": branch}
+    manual = _publish(publisher_context, **options)
+    run = publisher.load_json_document(manual["run"])
+    assert run["source"]["branch"] == branch
+    assert run["execution"]["trigger"] == "manual"
+    snapshot = {p: p.read_bytes() for p in publisher_context.data.rglob("*.json")}
+    assert not _publish(publisher_context, **options)["changed"]
+    assert snapshot == {
+        p: p.read_bytes() for p in publisher_context.data.rglob("*.json")
+    }
+    _publish(publisher_context, run_id="next-auto")
+    assert Path(first["run"]).read_bytes() == original
+    assert publisher.load_json_document(manual["index"])["runFiles"] == [
+        "runs/github-123-attempt-1.json",
+        "runs/manual.json",
+        "runs/next-auto.json",
+    ]
+    raw = _raw(publisher_context)
+    raw["tests"][0]["durationSeconds"] = 42
+    with pytest.raises(publisher.PublishError, match="immutable"):
+        _publish(publisher_context, raw, **options)
+
+
+@pytest.mark.parametrize(
+    "trigger,branch,error",
+    [
+        ("auto", "topic", "requires branch develop"),
+        ("manual", "", "branch must be a non-empty string"),
+        ("manual", "  ", "branch must be a non-empty string"),
+        ("manual", None, "branch must be a non-empty string"),
+        ("manual", 42, "branch must be a non-empty string"),
+        ("unknown", "develop", "invalid trigger"),
+    ],
+)
+def test_invalid_publication_sources_rejected_before_writes(
+    publisher_context, trigger, branch, error
+):
+    with pytest.raises(publisher.PublishError, match=error):
+        _publish(publisher_context, trigger=trigger, branch=branch)
+    assert not publisher_context.data.exists()
+
+
+@pytest.mark.parametrize(
+    "field,value,error",
+    [
+        ("branch", "", "branch must be a non-empty string"),
+        ("branch", "  ", "branch must be a non-empty string"),
+        ("trigger", "auto", "requires branch develop"),
+        ("trigger", "unknown", "invalid trigger"),
+        ("commit", "invalid", "invalid published source"),
+    ],
+)
+def test_invalid_existing_manual_source_rejected_before_writes(
+    publisher_context, field, value, error
+):
+    result = _publish(publisher_context, trigger="manual", branch="topic")
+    run = publisher.load_json_document(result["run"])
+    run["execution" if field == "trigger" else "source"][field] = value
+    Path(result["run"]).write_text(json.dumps(run))
+    before = {p: p.read_bytes() for p in publisher_context.data.rglob("*.json")}
+    with pytest.raises(publisher.PublishError, match=error):
+        _publish(publisher_context, run_id="next")
+    assert before == {
+        p: p.read_bytes() for p in publisher_context.data.rglob("*.json")
+    }
+
+
+@pytest.mark.parametrize("option", ["expected_sha", "expected_corpus_sha"])
+def test_manual_publication_requires_matching_shas(publisher_context, option):
+    with pytest.raises(publisher.PublishError, match="expected SHA"):
+        _publish(
+            publisher_context, trigger="manual", branch="topic", **{option: "f" * 40}
+        )
+    assert not publisher_context.data.exists()
+
+
 def test_first_failure_timeout_and_recovery(publisher_context):
     raw = _raw(
         publisher_context,
@@ -488,7 +568,8 @@ def test_strict_json(publisher_context):
             publisher.load_json_document(path)
 
 
-def test_cli(publisher_context):
+@pytest.mark.parametrize("branch", ["develop", "users/ianwood2/topic"])
+def test_cli(publisher_context, branch):
     raw_path = publisher_context.root / "raw.json"
     raw_path.write_text(json.dumps(_raw(publisher_context)))
     with contextlib.redirect_stdout(io.StringIO()):
@@ -508,7 +589,7 @@ def test_cli(publisher_context):
                     "--trigger",
                     "manual",
                     "--branch",
-                    "develop",
+                    branch,
                     "--expected-sha",
                     "a" * 40,
                     "--expected-corpus-sha",
@@ -521,11 +602,44 @@ def test_cli(publisher_context):
             == 0
         )
     run = publisher.load_json_document(publisher_context.data / "runs/cli.json")
+    assert run["source"]["branch"] == branch
+    assert run["execution"]["trigger"] == "manual"
     assert run["execution"]["machine"] == "benchmark-host"
     assert run["comparisonId"] == "experiment"
     assert publisher.load_json_document(publisher_context.data / "metadata.json")[
         "isBeta"
     ]
+
+
+@pytest.mark.parametrize("trigger,branch", [("auto", "topic"), ("manual", " ")])
+def test_cli_rejects_invalid_branch(publisher_context, trigger, branch):
+    raw_path = publisher_context.root / "raw.json"
+    raw_path.write_text(json.dumps(_raw(publisher_context)))
+    with pytest.raises(SystemExit) as error:
+        publisher.main(
+            [
+                "--raw-run",
+                str(raw_path),
+                "--data-dir",
+                str(publisher_context.data),
+                "--run-id",
+                "cli",
+                "--repository",
+                "https://github.com/ROCm/rocm-systems",
+                "--environment-id",
+                "local",
+                "--trigger",
+                trigger,
+                "--branch",
+                branch,
+                "--expected-sha",
+                "a" * 40,
+                "--expected-corpus-sha",
+                "e" * 40,
+            ]
+        )
+    assert error.value.code == 2
+    assert not publisher_context.data.exists()
 
 
 @pytest.mark.parametrize("status", ["completed", "failed", "timeout"])
