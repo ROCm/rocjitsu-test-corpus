@@ -1,8 +1,8 @@
 # Rocjitsu benchmarks
 
-Triton workload sources live under `corpus/benchmarks/triton/`, with an
-independent sequential runner. Suite TOML files contain case metadata and
-parameters. Benchmark runs are separate from normal pytest collection.
+Workload sources live under `corpus/benchmarks/`, with a sequential runner in
+`benchmarks/`. Suite TOML files contain case metadata and parameters. Benchmark
+runs are separate from normal pytest collection.
 
 ## Setup and run
 
@@ -11,9 +11,12 @@ Use Python 3.12 and install the pinned GPU dependencies with
 rocjitsu build and launch recipe, see the
 [rocm-systems benchmark guide](https://github.com/ROCm/rocm-systems/blob/develop/emulation/rocjitsu/docs/benchmark-suite.md).
 
-The consumer supplies the launch command and one base config per selected target:
+The consumer supplies the launch command and one base config per selected target.
+Set `HSA_ENABLE_SDMA_COPY_SIZE_OVERRIDE=0` for large host/device copies with the
+pinned SDK:
 
 ```bash
+export HSA_ENABLE_SDMA_COPY_SIZE_OVERRIDE=0
 python -m benchmarks.runner \
   --rocjitsu-source-dir "$src" --build-dir "$build" \
   --target-config "gfx950=$gfx950_config" \
@@ -32,36 +35,70 @@ operators and variable expansion are not interpreted by the runner.
 invoking directory. Every selected target needs a mapping; extra mappings are
 allowed for convenience when selecting a subset. The runner snapshots selected
 configs before execution and derives each cell's config from that snapshot.
-It sets the suite's thread count and removes the simulation tick limit, and
-adds the selected plugin and report paths. Base configs must not enable plugins
-or sinks.
+It applies the suite's thread policy, removes the simulation tick limit, and
+adds the selected plugin and report paths. With `num_threads = "default"`,
+the runner preserves the native allocation policy and records the allocation
+reported by `--thread-budget-table`. Base configs must not enable plugins or sinks.
+With the default thread policy, resolved engine, dispatch, helper, and total
+worker counts are included in `run.json` and the published environment.
+Comparisons reject different allocations or a mix of results with and without
+allocation metadata.
 
-The runner still checks the Release configuration, disabled LTO/sanitizers,
+The runner checks the Release configuration, disabled LTO/sanitizers,
 source root, SDK, and selected plugin binaries. The wrapper must select the
 binary from that build; arbitrary wrapper commands cannot be checked against
 CMake metadata. Rebuild rocjitsu after source changes.
 
-The default `benchmarks/suites/nightly.toml` runs 28 cases on both `gfx950` and
-`gfx1250` (56 cells). Sixteen cases cover FP16 and BF16 GEMMs at
-128x128x128, 256x256x512, 512x512x512, 1024x1024x1024, 1024x128x512,
-128x1024x512, 128x128x2048, and 250x250x510 (M x N x K).
+The default `benchmarks/suites/nightly.toml` contains 16 case definitions and
+20 target/case combinations across `gfx950` and `gfx1250`:
+
+- GPT-OSS windowed and full causal attention on both targets.
+- Triton persistent and grouped GEMM on both targets.
+- DeepSeek FP8 MLP projections with target-specific token counts.
+- TensileLite BF16 Stream-K and MXFP8 on gfx950, and BF16 subtile and MXFP4
+  Stream-K on gfx1250.
+
+Four larger gfx1250 cases come from
+[rocm-systems issue 12611](https://github.com/ROCm/rocm-systems/issues/12611):
+DeepSeek W1 and W2 with 3072 tokens, four grouped 3584³ GEMMs, and persistent
+8192 × 8192 × 4096 matmul. Their `configuration = "issue12611"` selects the issue's
+fixed launch settings: Triton tiles 128 × 128 × 64 with four warps and two stages;
+DeepSeek tiles 64 × 64 × 128 with eight warps, three stages, and unit scales.
+Nightly uses one warmup and three samples after compile-only preparation, with
+Rocjitsu's default CPU thread budget and the caller's CPU affinity.
+
 Use `--manifest benchmarks/suites/smoke.toml` for a short suite, repeated
 `--case` and `--target` flags for subsets, and `--warmups`/`--samples` for
 experiments. Sample counts must be positive and odd. `--list` shows the matrix
 without building or requiring GPU dependencies. Output directories must be new.
-
-All cells run sequentially, with eight simulator threads per cell. Progress appears when
-cells start and finish. Failures and timeouts leave finalized partial results;
+All cells run sequentially. Failures and timeouts leave finalized partial results;
 the runner returns failure if any selected cell fails.
 
-## Measurement and source reuse
+## Measurement and dependencies
+
+TensileLite cases require `TENSILE_CANDIDATE_ARTIFACTS` to point to generated
+artifacts and `TENSILE_CANDIDATE_RUNNER` to point to the native executable. Follow
+[the build and generation instructions](../corpus/benchmarks/tensile_candidates/README.md)
+before running nightly. The persistent and grouped Triton kernels and DeepSeek
+kernel are vendored in the corpus.
+
+Triton workloads write `workload.progress.json` beside their result, recording
+preparation, compilation, warmup, sample, and validation stages. Compilation
+compiles and loads kernels without executing them; progress writes stay outside
+the measured interval.
 
 Each sample measures host elapsed time around launch and device synchronization.
-Input allocation, compilation, descriptors, warmups, and
-result serialization stay outside samples. The GPT-OSS attention adapter copies
-outputs to the CPU and checks an upstream CPU reference after all samples,
-before emitting results. A failed reference check fails the case. Each sample
-launches one Triton kernel.
+Input allocation, descriptors, and result serialization stay outside samples.
+Kernels are compiled and launch handles initialized before sampling, without
+executing an implicit initialization launch. Requested warmups run before the
+samples; with zero warmups, the first execution is the first timed sample.
+Remaining first-execution runtime costs can still occur in that sample.
+
+Each Triton sample launches one kernel. The DeepSeek, grouped GEMM, persistent
+GEMM, and GPT-OSS adapters copy outputs to the CPU and check references after all
+samples, before emitting results. A failed reference check fails the case. The
+Tensile adapter validates every measured launch; see its [README](../corpus/benchmarks/tensile_candidates/README.md) for input patterns
+and validation limits.
 
 The extracted GPT-OSS attention implementation lives in
 `corpus/benchmarks/third_party/gpt_oss/attention.py`. Its `NOTICE.md`
@@ -89,8 +126,8 @@ params = { dtype = "fp32", elements = 8388608 }
 
 `workload` selects the preparation function; `id` identifies the case in
 `--case` selection and dashboard history. Give different parameter variants
-distinct IDs. Thread count is recorded in the published environment; the default IDs end in
-`.threads8` to distinguish them from the former single-thread runs.
+distinct IDs. Thread count is recorded in the published environment; nightly IDs end in
+`.default` for native allocation, while fixed-thread suites retain `.threads8` IDs.
 Repeat the complete definition in each suite that uses it.
 Dimensions, dtypes, and operation parameters belong in TOML; launch settings
 such as tile sizes, warps, and stages stay in code and are recorded in results.
@@ -109,6 +146,9 @@ Supported parameters (all dimensions are positive integers):
 | `rmsnorm` | `rows`, `columns`, `epsilon` | fp16, bf16, fp32 |
 | `gemm` | `m`, `n`, `k` | fp16, bf16 |
 | `gpt_oss_attention` | `batch`, `query_heads`, `key_value_heads`, `sequence`, `window`, `head_dimension` | bf16 |
+| `triton_persistent` | `rows`, `columns`, `reduction`; optional `configuration = "issue12611"` | fp16 |
+| `triton_grouped` | `rows`, `columns`, `reduction`, `groups`; optional `configuration = "issue12611"` | fp16 |
+| `deepseek_fp8` | `rows`, `columns`, `reduction`; optional `configuration = "issue12611"` | fp8 |
 
 Gather accepts a nonnegative index offset and wraps indices by source size.
 RMSNorm epsilon must be finite and positive. GEMM uses non-transposed inputs,
@@ -116,6 +156,8 @@ matching input/output dtypes, and FP32 accumulation. GPT-OSS requires head
 dimension 64, sequence lengths divisible by 64, query heads divisible by KV
 heads, and a window of zero (full causal attention) or a positive multiple of 64.
 Unsupported parameters fail the case before GPU allocation.
+Grouped GEMM requires full tiles: rows and columns divisible by 64 by default,
+or 128 with `configuration = "issue12611"`, and reduction divisible by 64.
 
 ## Results and plugins
 
@@ -164,12 +206,10 @@ package entries cannot join comparisons that lack those entries.
 `--machine-id` defaults to the recorded hostname; CI passes the
 benchmark runner's name. `--is-beta` controls the site's Beta label.
 
-CI publishes only the uninstrumented nightly suite. The benchmark step has a
-30-minute timeout, excluding installation, building, and publication. The
-expanded suite passed all 56 cells locally in 17m43s with eight threads, three
-warmups, and 21 samples; hosted runner speed may differ. A fresh dataset requires a valid Vanilla run, which can contain failed or timed-out results.
-Publish each comparison’s Vanilla baseline before its instrumented runs. All runs
-in a dataset must use the same machine.
+Consumer CI must provide the nightly dependencies and allow the manifest sampling
+defaults to take effect. A fresh dataset requires a valid Vanilla run, which can
+contain failed or timed-out results. Publish each comparison's Vanilla baseline
+before its instrumented runs. All runs in a dataset must use the same machine.
 
 Run the benchmark harness tests through the repository's pytest configuration,
 without ROCm dependencies. pytest-xdist supplies the plugin used by the root
@@ -178,5 +218,5 @@ configuration; install these test tools separately from the AMD package index:
 ```bash
 python3 -m pip install --index-url https://pypi.org/simple \
   'pytest>=5.4.1' 'pytest-xdist>=1.32.0'
-python3 -m pytest -q tests/test_benchmark_*.py
+python3 -m pytest -q tests/test_benchmark_*.py tests/test_measurement_progress.py
 ```

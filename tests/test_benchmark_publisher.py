@@ -292,6 +292,53 @@ def test_malformed_package_versions_rejected_before_writes(
     assert not publisher_context.data.exists()
 
 
+@pytest.mark.parametrize("changed", [False, True, "missing"])
+def test_resolved_worker_allocation_controls_comparison(publisher_context, changed):
+    raw = _raw(publisher_context)
+    raw["tests"][0]["numThreads"] = 8
+    raw["configuration"]["targetThreadAllocation"] = {
+        "gfx950": {"engine": 8, "dispatch": 9, "helpers": 0, "total": 16}
+    }
+    result = _publish(publisher_context, raw, comparison_id="workers")
+    published = publisher.load_json_document(result["run"])
+    details = {item["key"]: item["value"] for item in published["environment"]}
+    assert details["target.gfx950.threadAllocation.total"] == 16
+    assert details["target.gfx950.threadAllocation.helpers"] == 0
+
+    raw["configuration"].update(pluginProfile="logging", plugins=["logging"])
+    if changed == "missing":
+        del raw["configuration"]["targetThreadAllocation"]
+    elif changed:
+        raw["configuration"]["targetThreadAllocation"]["gfx950"].update(
+            dispatch=25, helpers=16, total=48
+        )
+    if changed:
+        with pytest.raises(publisher.PublishError, match="incompatible comparison"):
+            _publish(publisher_context, raw, run_id="logging", comparison_id="workers")
+    else:
+        _publish(publisher_context, raw, run_id="logging", comparison_id="workers")
+
+
+@pytest.mark.parametrize(
+    "allocation",
+    [
+        {},
+        {"gfx1250": {"engine": 1, "dispatch": 1, "helpers": 0, "total": 1}},
+        {"gfx950": {"engine": 1}},
+        {"gfx950": {"engine": 1, "dispatch": 1, "helpers": False, "total": 1}},
+        {"gfx950": {"engine": 1, "dispatch": 0, "helpers": 0, "total": 1}},
+        {"gfx950": {"engine": 2, "dispatch": 1, "helpers": 0, "total": 2}},
+        {"gfx950": {"engine": 1, "dispatch": 9, "helpers": 0, "total": 1}},
+    ],
+)
+def test_invalid_worker_allocation_rejected(publisher_context, allocation):
+    raw = _raw(publisher_context)
+    raw["configuration"]["targetThreadAllocation"] = allocation
+    with pytest.raises(publisher.PublishError, match="thread allocation"):
+        _publish(publisher_context, raw)
+    assert not publisher_context.data.exists()
+
+
 def test_compatible_plugins_share_comparison(publisher_context):
     _publish(publisher_context, comparison_id="experiment")
     for profile in ("logging", "race", "throughput"):
@@ -329,11 +376,13 @@ def test_incompatible_comparisons_rejected(publisher_context):
                 comparison_id="experiment",
                 **{option: value},
             )
-    for change in ("source", "catalog", "environment"):
+    for change in ("source", "corpus", "catalog", "environment"):
         raw = _raw(publisher_context)
         raw["configuration"]["pluginProfile"] = "logging"
         if change == "source":
             raw["provenance"]["rocjitsuCommitSha"] = "b" * 40
+        elif change == "corpus":
+            raw["provenance"]["corpusCommitSha"] = "b" * 40
         elif change == "catalog":
             raw["tests"][0]["logicalTestId"] = "new"
             raw["tests"][0]["testId"] = "gfx950:new"

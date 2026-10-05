@@ -55,6 +55,8 @@ def workloads_context(monkeypatch):
         "measurement_under_test", ROOT / "benchmarks/measurement.py"
     )
     monkeypatch.setitem(sys.modules, "benchmarks.measurement", ctx.measurement)
+    candidates = load_module("candidates_under_test", WORKLOAD.with_name("candidates.py"))
+    monkeypatch.setitem(sys.modules, "corpus.benchmarks.triton.candidates", candidates)
     ctx.workload = load_module("upstream_under_test", WORKLOAD)
     return ctx
 
@@ -68,18 +70,28 @@ def load_module(name, path):
 
 def test_nightly_parameters_are_valid(workloads_context):
     suite = tomllib.loads((ROOT / "benchmarks/suites/nightly.toml").read_text())
-    for case in suite["cases"]:
-        workloads_context.workload.validate_parameters(case["workload"], case["params"])
-
-
-def test_reference_copies_use_registered_host_memory(workloads_context):
-    tensor = MagicMock()
-    host = workloads_context.workload.to_cpu(tensor)
-    workloads_context.torch.empty.assert_called_once_with(
-        tensor.shape, dtype=tensor.dtype, device="cpu", pin_memory=True
+    tensile = load_module(
+        "tensile_prepare_under_test",
+        ROOT / "corpus/benchmarks/tensile_candidates/prepare.py",
     )
-    host.copy_.assert_called_once_with(tensor)
-    tensor.cpu.assert_not_called()
+    for case in suite["cases"]:
+        params = case["params"]
+        if case["workload"] == "tensile_candidate":
+            variant = params["variant"]
+            assert variant in tensile.CANDIDATES
+            assert case["targets"] == [tensile.CANDIDATES[variant][0]]
+            dtype = (
+                "mxfp8"
+                if variant == "mxfp8_subtile"
+                else "mxfp4" if variant == "mxfp4_streamk" else "bf16"
+            )
+            assert params["dtype"] == dtype
+            assert set(params) == {"dtype", "variant", "m", "n", "k"}
+            assert all(
+                type(params[key]) is int and params[key] > 0 for key in ("m", "n", "k")
+            )
+        else:
+            workloads_context.workload.validate_parameters(case["workload"], params)
 
 
 def test_attention_prepares_buffers_and_descriptors_only_once(workloads_context):
@@ -188,6 +200,7 @@ def test_attention_parameters_control_launch(workloads_context):
 def run_main(workloads_context, check):
     events = []
     launch = MagicMock()
+    launch.compile.side_effect = lambda: events.append("compile")
 
     def prepare(workload, params):
         assert workload == "gpt_oss_attention"
@@ -195,7 +208,7 @@ def run_main(workloads_context, check):
         events.append("prepare")
         return ({"fixture": True}, launch, check(events))
 
-    def measure(callback, warmups, samples):
+    def measure(callback, warmups, samples, progress=None):
         assert callback is launch
         events.append("measure")
         return [12, 13, 14]
@@ -234,7 +247,7 @@ def test_reference_check_runs_after_measurement_before_emission(workloads_contex
 
     with run_main(workloads_context, check) as (events, write_result, main):
         assert main() == 0
-        assert events == ["prepare", "measure", "check"]
+        assert events == ["prepare", "compile", "measure", "check"]
         assert write_result.call_args.args[1]["timings_ns"] == [12, 13, 14]
 
 
@@ -251,5 +264,5 @@ def test_reference_failure_does_not_emit_successful_samples(workloads_context):
     with run_main(workloads_context, check) as (events, write_result, main):
         with pytest.raises(AssertionError, match="reference mismatch"):
             main()
-        assert events == ["prepare", "measure", "check"]
+        assert events == ["prepare", "compile", "measure", "check"]
         write_result.assert_not_called()

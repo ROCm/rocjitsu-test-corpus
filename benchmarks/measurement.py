@@ -27,25 +27,102 @@ def reported_target() -> str:
     )
 
 
-def measure(launch: Callable[[], None], warmups: int, samples: int) -> list[int]:
-    # Compile and initialize Triton's launch path before the requested warmups.
-    launch()
-    torch.cuda.synchronize()
+class TritonLaunch:
+    """Keep identical arguments for compile-only preparation and execution."""
 
-    for _ in range(warmups):
-        launch()
-        torch.cuda.synchronize()
+    def __init__(self, kernel, grid, *args, keepalive=(), **kwargs):
+        self.kernel, self.grid = kernel, grid
+        self.args, self.kwargs = args, kwargs
+        # Grouped GEMM passes pointer tables; retain the tensors they address.
+        self.keepalive = keepalive
 
+    def compile(self):
+        compiled = self.kernel.warmup(*self.args, grid=self.grid, **self.kwargs)
+        # Accessing run initializes the launcher and loads the binary, without
+        # executing it. Do this here rather than on the first timed call.
+        _ = compiled.run
+
+    def __call__(self):
+        self.kernel[self.grid](*self.args, **self.kwargs)
+
+
+def measure(
+    launch: Callable[[], None],
+    warmups: int,
+    samples: int,
+    progress: Callable[[dict[str, Any]], None] | None = None,
+) -> list[int]:
+    """Sample launches with progress callbacks outside timed intervals."""
     durations: list[int] = []
-    for _ in range(samples):
+
+    def run(stage: str, index: int) -> int:
+        stage_start = time.monotonic_ns()
+        if progress is not None:
+            progress(
+                {
+                    "stage": stage,
+                    "index": index,
+                    "monotonic_start_ns": stage_start,
+                    "monotonic_end_ns": None,
+                    "timings_ns": list(durations),
+                }
+            )
         start = time.perf_counter_ns()
         launch()
         torch.cuda.synchronize()
         duration = time.perf_counter_ns() - start
+        stage_end = time.monotonic_ns()
         if duration <= 0:
             raise RuntimeError("measured a non-positive dispatch duration")
-        durations.append(duration)
+        if stage == "sample":
+            durations.append(duration)
+        if progress is not None:
+            progress(
+                {
+                    "stage": stage,
+                    "index": index,
+                    "monotonic_start_ns": stage_start,
+                    "monotonic_end_ns": stage_end,
+                    "duration_ns": duration,
+                    "timings_ns": list(durations),
+                }
+            )
+        return duration
+
+    for index in range(warmups):
+        print(f"benchmark: warmup {index + 1}/{warmups}", file=sys.stderr, flush=True)
+        run("warmup", index + 1)
+    for index in range(samples):
+        duration = run("sample", index + 1)
+        print(
+            f"benchmark: sample {index + 1}/{samples} {duration} ns",
+            file=sys.stderr,
+            flush=True,
+        )
     return durations
+
+
+def progress_writer(output_path: str, case: str):
+    """Return an atomic sidecar writer, or None for stdout-only results."""
+    if output_path == "-":
+        return None
+    path = Path(output_path).with_suffix(".progress.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    def write(event):
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        temporary.write_text(json.dumps({"case": case, **event}, sort_keys=True) + "\n")
+        temporary.replace(path)
+
+    return write
+
+
+def to_cpu(tensor):
+    # The simulated KMD needs host pages registered for device-to-host copies.
+    # Pinned memory uses that public HIP path; pageable tensor.cpu() does not.
+    host = torch.empty(tensor.shape, dtype=tensor.dtype, device="cpu", pin_memory=True)
+    host.copy_(tensor)
+    return host
 
 
 def deterministic_tensor(

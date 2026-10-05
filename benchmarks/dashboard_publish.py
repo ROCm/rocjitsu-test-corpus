@@ -342,6 +342,30 @@ def normalize_run(
         or set(targets) != set(groups)
     ):
         raise PublishError("raw run targets do not match results")
+    if "targetThreadAllocation" in configuration:
+        allocations = _mapping(
+            configuration["targetThreadAllocation"], "target thread allocations"
+        )
+        if set(allocations) != set(targets):
+            raise PublishError("thread allocation targets do not match results")
+        for target, allocation in allocations.items():
+            allocation = _mapping(allocation, "thread allocation")
+            if set(allocation) != {"engine", "dispatch", "helpers", "total"}:
+                raise PublishError(
+                    "thread allocation must contain engine, dispatch, helpers, total"
+                )
+            for key, count in allocation.items():
+                if type(count) is not int or count < (0 if key == "helpers" else 1):
+                    raise PublishError(f"invalid thread allocation {key}")
+                details[f"target.{target}.threadAllocation.{key}"] = count
+            if allocation["engine"] != details[f"target.{target}.numThreads"]:
+                raise PublishError(
+                    "thread allocation engine count conflicts with numThreads"
+                )
+            # Native allocation counts one dispatch worker on the calling thread.
+            total = allocation["engine"] + allocation["dispatch"] - 1 + allocation["helpers"]
+            if allocation["total"] != total:
+                raise PublishError("thread allocation total conflicts with worker counts")
     catalog = _catalog(
         list(definitions.values()),
         {
