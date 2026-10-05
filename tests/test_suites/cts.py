@@ -229,7 +229,7 @@ def _ensure_configured(
         str(CTS_SOURCE_DIR),
         "-B",
         str(build_dir),
-        "-DCMAKE_HIP_FLAGS=-O2",
+        "-DCMAKE_BUILD_TYPE=Release",
     ]
     hip_architectures = target_config.get("hip_architectures", [])
     if hip_architectures:
