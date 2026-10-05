@@ -4,12 +4,12 @@
 // stale data, wrong-branch reads or prematurely satisfied dependencies.
 //
 // Parameters (decimal integers; ranges are inclusive):
-//   --mode pm4|aql: queue protocol; default pm4.
-//   AQL defaults to 2 branches (4 queues); PM4 to 8; both allow 1..32.
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
+//   --mode pm4: default pm4; use the AQL suite for AQL coverage.
 //   --iterations N: rounds.
 //     Default 32; range 1..100000.
 //   --queues N: branches; also creates a root and a join queue.
-//     Default PM4 8, AQL 2; range 1..32.
+//     Default 8; range 1..32.
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --seed: accepted by the common parser but unused here.

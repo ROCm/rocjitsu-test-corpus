@@ -4,7 +4,7 @@
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   Queue protocol: AQL only.
-//   Both modes serialize publication; this does not test concurrent AQL reservation.
+//   Publication is serialized; this does not test concurrent AQL reservation.
 //   --iterations N: submissions per producer thread.
 //     Default 128; range 1..100000.
 //   --queues N: host producer threads sharing one queue.
@@ -12,6 +12,7 @@
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --seed: accepted by the common parser but unused here.
+//   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits retain their separate 10-second deadline.
 //
 // Inspiration: independent native-KFD adaptation of these public test patterns.

@@ -3,6 +3,7 @@
 // to detect skipped, stale or corrupted command streams.
 //
 // Parameters (decimal integers; ranges are inclusive):
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
 //   --iterations N: batches of 64 indirect buffers.
 //     Default 128; range 1..100000.
 //   --timeout N: process watchdog in seconds.

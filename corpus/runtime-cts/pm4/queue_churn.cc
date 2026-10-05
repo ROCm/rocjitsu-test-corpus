@@ -1,15 +1,15 @@
 // Purpose: Exercise queue creation, first submission, destruction and reuse
 // while a persistent queue survives. PM4 checks writes on transient queues and
-// the survivor, destroying transient queues in reverse order. AQL (formerly
-// aql_queue_churn) checks first-dispatch arithmetic, shader markers, firmware
-// completion and guards. Reuse storage only after completion and retirement.
+// the survivor, destroying transient queues in reverse order. Check guards
+// and reuse storage only after completion and retirement.
 // The public simulator regression is inspiration, not a claimed gfx12 defect.
 //
 // Parameters (decimal integers; ranges inclusive):
-//   --mode pm4|aql: default pm4.
-//   --iterations N: rounds; default PM4 32, AQL 64; range 1..100000.
-//   --queues N: transient queues plus one survivor; default PM4 8, AQL 1;
-//     range 1..128. Higher AQL counts are not qualified oversubscription coverage.
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
+//   --mode pm4: default pm4; use the AQL suite for AQL coverage.
+//   --iterations N: rounds; default 32; range 1..100000.
+//   --queues N: transient queues plus one survivor; default 8;
+//     range 1..128.
 //   --timeout N: watchdog seconds; default 45; range 1..3600.
 //   --seed: accepted but unused. Progress waits have a 10-second deadline.
 //

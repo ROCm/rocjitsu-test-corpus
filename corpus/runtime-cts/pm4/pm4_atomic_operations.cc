@@ -4,6 +4,7 @@
 // bits, and verify narrow operations do not modify the adjacent guard word.
 //
 // Parameters (decimal integers; ranges are inclusive):
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
 //   --iterations N: rounds; default 64; range 1..100000.
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
 //   --queues and --seed: accepted by common parser but unused.

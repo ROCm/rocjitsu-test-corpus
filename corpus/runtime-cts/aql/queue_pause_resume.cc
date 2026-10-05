@@ -1,4 +1,4 @@
-// Purpose: Test disabling a AQL queue before publishing work, updating priority while
+// Purpose: Test disabling an AQL queue before publishing work, updating priority while
 // paused, and re-enabling it. Require independent queue progress while pending work stays blocked,
 // then check that resumed work executes exactly once; no live shader is paused.
 //
@@ -10,6 +10,7 @@
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --queues and --seed: accepted by the common parser but unused here.
+//   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits retain their separate 10-second deadline.
 //
 // Inspiration: independent native-KFD adaptation of these public test patterns.

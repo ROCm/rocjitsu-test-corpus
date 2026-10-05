@@ -12,6 +12,7 @@
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --seed: accepted by the common parser but unused here.
+//   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits retain their separate 10-second deadline.
 //
 // Inspiration: independent native-KFD adaptation of these public test patterns.

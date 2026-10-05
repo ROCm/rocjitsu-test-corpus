@@ -1,6 +1,6 @@
 // One work-item per workgroup, with a distinct output and completion slot.
 // Builtins lower to instructions; no OpenCL, HIP, or device-library dependency.
-// Used by packet_flood AQL mode and AQL-specific scenarios. Kernargs: output[group] receives the
+// Used by AQL packet_flood and other dispatch scenarios. Kernargs: output[group] receives the
 // LCG result; done[group] receives token after a release fence; seed is XORed with group ID;
 // iterations controls the LCG steps. Runtime CLI parameters belong to the host test.
 // Inspiration: batched small-kernel execution in tinygrad HCQ tests.

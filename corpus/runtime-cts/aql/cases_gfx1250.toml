@@ -1,0 +1,361 @@
+# gfx1250 invocations, with explicit plain and metadata AQL coverage.
+[defaults]
+timeout_seconds = 60
+
+[[case]]
+id = "sdma_flood"
+binary = "aql_sdma_flood_{target}"
+args = ["--iterations", "128", "--queues", "2"]
+
+[[case]]
+id = "sdma_signal64"
+binary = "aql_sdma_signal64_{target}"
+args = ["--iterations", "64"]
+requires = ["sdma_signal64"]
+
+[[case]]
+id = "sdma_event_interrupt"
+binary = "aql_sdma_event_interrupt_{target}"
+args = ["--iterations", "64", "--queues", "2"]
+
+[[case]]
+id = "packet_flood-aql-metadata-off"
+binary = "aql_packet_flood_{target}"
+args = ["--queues", "4", "--iterations", "32", "--seed", "12345", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "packet_flood-aql-metadata-on"
+binary = "aql_packet_flood_{target}"
+args = ["--queues", "4", "--iterations", "32", "--seed", "12345", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "queue_flood-aql-metadata-off"
+binary = "aql_queue_flood_{target}"
+args = ["--queues", "16", "--iterations", "64", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "queue_flood-aql-metadata-on"
+binary = "aql_queue_flood_{target}"
+args = ["--queues", "16", "--iterations", "64", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "queue_churn-aql-metadata-off"
+binary = "aql_queue_churn_{target}"
+args = ["--iterations", "64", "--queues", "1", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "queue_churn-aql-metadata-on"
+binary = "aql_queue_churn_{target}"
+args = ["--iterations", "64", "--queues", "1", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "dependency_chain-aql-metadata-off"
+binary = "aql_dependency_chain_{target}"
+args = ["--iterations", "64", "--queues", "4", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "dependency_chain-aql-metadata-on"
+binary = "aql_dependency_chain_{target}"
+args = ["--iterations", "64", "--queues", "4", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "dependency_diamond-aql-metadata-off"
+binary = "aql_dependency_diamond_{target}"
+args = ["--queues", "2", "--iterations", "32", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "dependency_diamond-aql-metadata-on"
+binary = "aql_dependency_diamond_{target}"
+args = ["--queues", "2", "--iterations", "32", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "engine_pipeline-aql-metadata-off"
+binary = "aql_engine_pipeline_{target}"
+args = ["--iterations", "64", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "engine_pipeline-aql-metadata-on"
+binary = "aql_engine_pipeline_{target}"
+args = ["--iterations", "64", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "concurrent_submit-aql-metadata-off"
+binary = "aql_concurrent_submit_{target}"
+args = ["--queues", "8", "--iterations", "128", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "concurrent_submit-aql-metadata-on"
+binary = "aql_concurrent_submit_{target}"
+args = ["--queues", "8", "--iterations", "128", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "multiprocess-aql-metadata-off"
+binary = "aql_multiprocess_{target}"
+args = ["--queues", "4", "--iterations", "64", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "multiprocess-aql-metadata-on"
+binary = "aql_multiprocess_{target}"
+args = ["--queues", "4", "--iterations", "64", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "random_dag-aql-metadata-off"
+binary = "aql_random_dag_{target}"
+args = ["--queues", "4", "--iterations", "32", "--seed", "12345", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "random_dag-aql-metadata-on"
+binary = "aql_random_dag_{target}"
+args = ["--queues", "4", "--iterations", "32", "--seed", "12345", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "queue_pause_resume-aql-metadata-off"
+binary = "aql_queue_pause_resume_{target}"
+args = ["--iterations", "32", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "queue_pause_resume-aql-metadata-on"
+binary = "aql_queue_pause_resume_{target}"
+args = ["--iterations", "32", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "gpu_ping_pong-aql-metadata-off"
+binary = "aql_gpu_ping_pong_{target}"
+args = ["--iterations", "64", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "gpu_ping_pong-aql-metadata-on"
+binary = "aql_gpu_ping_pong_{target}"
+args = ["--iterations", "64", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "host_gate-aql-metadata-off"
+binary = "aql_host_gate_{target}"
+args = ["--iterations", "16", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "host_gate-aql-metadata-on"
+binary = "aql_host_gate_{target}"
+args = ["--iterations", "16", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "allocation_churn-aql-metadata-off"
+binary = "aql_allocation_churn_{target}"
+args = ["--iterations", "32", "--queues", "16", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "allocation_churn-aql-metadata-on"
+binary = "aql_allocation_churn_{target}"
+args = ["--iterations", "32", "--queues", "16", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "concurrent_queue_churn-aql-metadata-off"
+binary = "aql_concurrent_queue_churn_{target}"
+args = ["--queues", "3", "--iterations", "16", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "concurrent_queue_churn-aql-metadata-on"
+binary = "aql_concurrent_queue_churn_{target}"
+args = ["--queues", "3", "--iterations", "16", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "process_exit_inflight-aql-metadata-off"
+binary = "aql_process_exit_inflight_{target}"
+args = ["--iterations", "16", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "process_exit_inflight-aql-metadata-on"
+binary = "aql_process_exit_inflight_{target}"
+args = ["--iterations", "16", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "dmabuf_process_handoff-aql-metadata-off"
+binary = "aql_dmabuf_process_handoff_{target}"
+args = ["--iterations", "64", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "dmabuf_process_handoff-aql-metadata-on"
+binary = "aql_dmabuf_process_handoff_{target}"
+args = ["--iterations", "64", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "registered_memory-aql-metadata-off"
+binary = "aql_registered_memory_{target}"
+args = ["--iterations", "64", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "registered_memory-aql-metadata-on"
+binary = "aql_registered_memory_{target}"
+args = ["--iterations", "64", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "priority_dependency-aql-metadata-off"
+binary = "aql_priority_dependency_{target}"
+args = ["--iterations", "64", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "priority_dependency-aql-metadata-on"
+binary = "aql_priority_dependency_{target}"
+args = ["--iterations", "64", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql_dispatch_barrier-metadata-off"
+binary = "aql_dispatch_barrier_{target}"
+args = ["--iterations", "32", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql_dispatch_barrier-metadata-on"
+binary = "aql_dispatch_barrier_{target}"
+args = ["--iterations", "32", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql_lds_dispatch-metadata-off"
+binary = "aql_lds_dispatch_{target}"
+args = ["--iterations", "16", "--queues", "4", "--seed", "4321", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql_lds_dispatch-metadata-on"
+binary = "aql_lds_dispatch_{target}"
+args = ["--iterations", "16", "--queues", "4", "--seed", "4321", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql_mixed_dispatch-metadata-off"
+binary = "aql_mixed_dispatch_{target}"
+args = ["--iterations", "64", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql_mixed_dispatch-metadata-on"
+binary = "aql_mixed_dispatch_{target}"
+args = ["--iterations", "64", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql_counted_completion-metadata-off"
+binary = "aql_counted_completion_{target}"
+args = ["--iterations", "16", "--queues", "2", "--seed", "12345", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql_counted_completion-metadata-on"
+binary = "aql_counted_completion_{target}"
+args = ["--iterations", "16", "--queues", "2", "--seed", "12345", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql_dispatch_geometry-metadata-off"
+binary = "aql_dispatch_geometry_{target}"
+args = ["--iterations", "32", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql_dispatch_geometry-metadata-on"
+binary = "aql_dispatch_geometry_{target}"
+args = ["--iterations", "32", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql_cu_mask_switch-metadata-off"
+binary = "aql_cu_mask_switch_{target}"
+requires = ["wgp_placement", "aql_metadata"]
+args = ["--iterations", "16", "--queues", "4", "--aql-metadata", "off"]
+
+[[case]]
+id = "aql_cu_mask_switch-metadata-on"
+binary = "aql_cu_mask_switch_{target}"
+requires = ["wgp_placement", "aql_metadata"]
+args = ["--iterations", "16", "--queues", "4", "--aql-metadata", "on"]
+
+[[case]]
+id = "aql_scratch_dispatch-metadata-off"
+binary = "aql_scratch_dispatch_{target}"
+requires = ["wave32_scratch", "aql_metadata"]
+args = ["--iterations", "32", "--aql-metadata", "off"]
+
+[[case]]
+id = "aql_scratch_dispatch-metadata-on"
+binary = "aql_scratch_dispatch_{target}"
+requires = ["wave32_scratch", "aql_metadata"]
+args = ["--iterations", "32", "--aql-metadata", "on"]
+
+[[case]]
+id = "aql_shader_host_ping_pong-metadata-off"
+binary = "aql_shader_host_ping_pong_{target}"
+args = ["--iterations", "64", "--seed", "12345", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql_shader_host_ping_pong-metadata-on"
+binary = "aql_shader_host_ping_pong_{target}"
+args = ["--iterations", "64", "--seed", "12345", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql_metadata_reuse"
+binary = "aql_metadata_reuse_{target}"
+args = ["--iterations", "64"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql_metadata_nonexec_kernargs"
+binary = "aql_metadata_nonexec_kernargs_{target}"
+args = ["--iterations", "1"]
+status = "SKIP"
+reason = "Investigate: plain-AQL preload faulted with non-executable kernargs on an earlier gfx1250 machine; not rerun on the current machine."
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql-dispatch-oversubscribed-metadata-off"
+binary = "aql_packet_flood_{target}"
+args = ["--queues", "8", "--iterations", "1", "--aql-metadata", "off"]
+status = "SKIP"
+reason = "Investigate sustained AQL oversubscription: intermittent gfx1201 timeouts; short gfx1250 case passed on fw 2380 but remains outside the default run."
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql-dispatch-oversubscribed-metadata-on"
+binary = "aql_packet_flood_{target}"
+args = ["--queues", "8", "--iterations", "1", "--aql-metadata", "on"]
+status = "SKIP"
+reason = "Investigate sustained AQL oversubscription: intermittent gfx1201 timeouts; short gfx1250 case passed on fw 2380 but remains outside the default run."
+requires = ["aql_metadata"]

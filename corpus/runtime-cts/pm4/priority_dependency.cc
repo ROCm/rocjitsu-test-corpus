@@ -5,8 +5,8 @@
 // priorities between retired rounds. No relative-latency guarantee is assumed.
 //
 // Parameters (decimal integers; ranges are inclusive):
-//   --mode pm4|aql: queue protocol; default pm4.
-//   AQL uses ordinary dispatches and completion-signal barriers.
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
+//   --mode pm4: default pm4; use the AQL suite for AQL coverage.
 //   --iterations N: rounds; default 64; range 1..100000.
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
 //   --queues and --seed: accepted by common parser but unused.

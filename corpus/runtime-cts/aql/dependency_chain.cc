@@ -5,6 +5,7 @@
 // system scope. Verify every stage and guards, not just final completion.
 //
 // Parameters (decimal integers; ranges inclusive):
+//   --aql-metadata off|on: gfx1250 only; default off for AQL queues.
 //   Queue protocol: AQL only.
 //   --iterations N: rounds; default 64; range 1..100000.
 //   --queues N: stages; default 4, range 2..4.

@@ -6,6 +6,7 @@
 // as well as memory completion; no polling fallback or retry masks failure.
 //
 // Parameters (decimal integers; ranges are inclusive):
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
 //   --iterations N: rounds; default 64; range 1..100000.
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
 //   --queues N: event-producing queues; default 2; range 1..4.

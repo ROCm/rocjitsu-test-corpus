@@ -1,4 +1,4 @@
-// Purpose: Transform SDMA-uploaded data in VRAM for AQL engine_pipeline/dependency_chain modes.
+// Purpose: Transform SDMA-uploaded data in VRAM for AQL engine_pipeline/dependency_chain tests.
 // Kernargs: input/output pointers, salt, element count, reserved token.
 // One 64-thread workgroup per tile; the host checks all data and guards.
 // Inspiration: tinygrad interleave_compute_and_copy (see host test for URL).

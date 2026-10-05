@@ -15,6 +15,7 @@
 // A host reboot may be needed after a fault. All result checks remain enabled.
 //
 // Parameters (decimal integers; ranges inclusive):
+//   --aql-metadata off|on: gfx1250 only; both queue types are always tested.
 //   --iterations N: batches of 32 dispatch/barrier pairs per queue; default 64;
 //     range 1..100000.
 //   --timeout N: watchdog seconds; default 45; range 1..3600.
@@ -55,7 +56,7 @@ int main(int argc, char** argv) {
   uint16_t preload;
   std::memcpy(&preload, kKernelImage + kDescriptorOffset + 58, sizeof(preload));
   Check((preload & 127) == 30, "metadata kernel must preload exactly 30 dwords");
-  Queue plain(device, 4096, 7, true, false, false), metadata(device, 4096, 7, true);
+  Queue plain(device, 4096, 7, true, false, false), metadata(device, 4096, 7, true, false, true);
   Check(!plain.has_metadata() && metadata.has_metadata(), "metadata queue selection failed");
   Queue* queues[] = {&plain, &metadata};
   for (uint32_t round = 1; round <= rounds; ++round) {

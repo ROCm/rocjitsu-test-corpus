@@ -1,5 +1,4 @@
 // gfx11 and gfx12.0: shared GCR packet layout; no separate gfx12 directory.
-// References and field-level support rationale: ../../REFERENCES.md.
 #pragma once
 #include <cstdint>
 namespace cts::pm4_encoding {

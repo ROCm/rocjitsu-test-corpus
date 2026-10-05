@@ -148,7 +148,9 @@ def discover(
         or any(not NAME.fullmatch(n) for n in names)
     ):
         raise ValueError(f"Invalid CMake executable inventory: {inventory}")
-    defaults_path = ROOT / suite_name / "cases.toml"
+    defaults_path = ROOT / suite_name / f"cases_{target.target}.toml"
+    if not defaults_path.is_file():
+        defaults_path = ROOT / suite_name / "cases.toml"
     feature_file = directory / f"runtime-{target.target}-features.txt"
     features = set(feature_file.read_text().splitlines())
     defaults = load_manifest(defaults_path, target.target)
@@ -226,9 +228,11 @@ def run(case, build_result, context) -> None:
     ]
     started = time.monotonic()
     timed_out = False
-    with log_path.open("w", encoding="utf-8") as log:
-        log.write(shlex.join(command) + "\n")
+    with log_path.open("wb") as log:
+        log.write((shlex.join(command) + "\n").encode("utf-8"))
         log.flush()
+        # Arguments may contain newlines and multibyte characters.
+        output_start = log.tell()
         process = subprocess.Popen(
             command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True
         )
@@ -247,8 +251,10 @@ def run(case, build_result, context) -> None:
             except subprocess.TimeoutExpired:
                 # A kernel-blocked task may not be reapable until host recovery.
                 timed_out = True
-    output = log_path.read_text(encoding="utf-8", errors="replace")
-    status = classify(row, process.returncode, timed_out, output.partition("\n")[2])
+    logged_bytes = log_path.read_bytes()
+    output = logged_bytes.decode("utf-8", errors="replace")
+    process_output = logged_bytes[output_start:].decode("utf-8", errors="replace")
+    status = classify(row, process.returncode, timed_out, process_output)
     record = {
         "case": case.id,
         "command": command,

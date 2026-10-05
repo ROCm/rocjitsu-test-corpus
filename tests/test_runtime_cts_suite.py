@@ -151,20 +151,26 @@ def test_skip_never_launches(tmp_path):
     assert not context.artifact_directory.exists()
 
 
-def test_xfail_matches_output_not_command(tmp_path):
+@pytest.mark.parametrize(
+    "argument", ["signature", "\nsignature", "μ\nsignature", "first\nsignature\nlast"]
+)
+def test_xfail_matches_output_not_command(tmp_path, argument):
     case, build, context = fake_case(tmp_path, "echo other; exit 1\n")
     case.run.update(
         status="XFAIL",
         reason="bug",
         expected_exit_code=1,
         expected_output="signature",
-        args=["signature"],
+        args=suite.load_manifest(manifest(tmp_path, args=json.dumps([argument])))[0]["args"],
     )
     with pytest.raises(pytest.fail.Exception):
         suite.run(case, build, context)
+    result_path = context.artifact_directory / "pm4/gfx1250/fake.json"
+    assert json.loads(result_path.read_text())["status"] == "FAIL"
     build.executable_path.write_text("#!/bin/sh\necho signature; exit 1\n")
     with pytest.raises(suite.ExpectedFailure):
         suite.run(case, build, context)
+    assert json.loads(result_path.read_text())["status"] == "XFAIL"
 
 
 def test_timeout_kills_descendants(tmp_path):
@@ -373,3 +379,63 @@ def test_protocol_suite_boundary(target):
 def test_reject_invalid_feature_gates(tmp_path, requirement):
     with pytest.raises(ValueError, match="feature|requires"):
         suite.load_manifest(manifest(tmp_path, f"requires={requirement}"))
+
+
+@pytest.mark.parametrize("suite_name", ["aql", "pm4"])
+def test_metadata_manifest_entries_preserve_cases(suite_name):
+    common = suite.load_manifest(suite.ROOT / suite_name / "cases.toml", "gfx1250")
+    rows = suite.load_manifest(suite.ROOT / suite_name / "cases_gfx1250.toml", "gfx1250")
+    by_id = {row["id"]: row for row in common}
+    assert all("--aql-metadata" not in row["args"] for row in common)
+    covered, modes = set(), {}
+    for row in rows:
+        if "--aql-metadata" not in row["args"]:
+            assert row == by_id[row["id"]]
+            covered.add(row["id"])
+            continue
+        mode = row["args"][-1]
+        assert mode in ("off", "on")
+        base_id = row["id"].removesuffix(f"-metadata-{mode}")
+        base = by_id[base_id]
+        covered.add(base_id)
+        modes.setdefault(base_id, set()).add(mode)
+        assert row["binary"] == base["binary"]
+        assert row["args"] == [*base["args"], "--aql-metadata", mode]
+        assert set(row["requires"]) == {*base.get("requires", []), "aql_metadata"}
+        for key in ("status", "reason", "timeout_seconds", "expected_exit_code", "expected_output"):
+            assert row.get(key) == base.get(key)
+    assert covered == set(by_id)
+    assert modes and all(values == {"off", "on"} for values in modes.values())
+
+
+@pytest.mark.parametrize("suite_name", ["aql", "pm4"])
+@pytest.mark.parametrize("target", ["gfx1201", "gfx1250"])
+def test_target_manifest_selection(tmp_path, monkeypatch, suite_name, target):
+    root = tmp_path / "corpus" / suite_name
+    root.mkdir(parents=True)
+    common = '[[case]]\nid="plain"\nbinary="sample_{target}"\n'
+    specific = common.replace('id="plain"', 'id="metadata"') + 'args=["--aql-metadata","on"]\n'
+    (root / "cases.toml").write_text(common)
+    (root / "cases_gfx1250.toml").write_text(specific)
+    monkeypatch.setattr(suite, "ROOT", root.parent)
+    binary = tmp_path / f"sample_{target}"
+    binary.write_text("#!/bin/sh\nexit 0\n")
+    binary.chmod(0o755)
+    inventory = tmp_path / f"{suite_name}-{target}-targets.txt"
+    inventory.write_text(binary.name + "\n")
+    (tmp_path / f"runtime-{target}-features.txt").write_text("aql_metadata\n")
+    options = dict(suite_name=suite_name, binary_dir=str(tmp_path), cases_config=None)
+    case, = suite.discover(TargetSpec(target), **options)
+    filename = "cases_gfx1250.toml" if target == "gfx1250" else "cases.toml"
+    assert case.path == root / filename
+    assert case.run["args"] == (["--aql-metadata", "on"] if target == "gfx1250" else [])
+    # Explicit custom selection wins, but selected default coverage is still checked.
+    custom = tmp_path / "custom.toml"
+    custom.write_text(common)
+    options["cases_config"] = str(custom)
+    case, = suite.discover(TargetSpec(target), **options)
+    assert case.path == custom
+    assert case.run["args"] == []
+    (root / filename).write_text(common.replace("sample_{target}", "wrong_{target}"))
+    with pytest.raises(ValueError, match="missing default entries"):
+        suite.discover(TargetSpec(target), **options)

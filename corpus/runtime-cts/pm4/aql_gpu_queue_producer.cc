@@ -6,6 +6,7 @@
 // completion and ring reuse; prepared packets live until both queues retire.
 //
 // Parameters (decimal integers; ranges are inclusive):
+//   --aql-metadata off|on: gfx1250 only; default off for AQL queues.
 //   --iterations N: rounds; default 64; range 1..100000.
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
 //   --queues and --seed: accepted by common parser but unused.

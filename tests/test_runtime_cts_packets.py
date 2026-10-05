@@ -1,6 +1,6 @@
 """CPU checks of public MEC/SDMA layouts; no GPU or ROCm compiler required.
 
-Golden dwords follow pm4/REFERENCES.md and retain the verified gfx12 streams.
+Golden dwords check generation-specific fields and retain the verified gfx12 streams.
 """
 from pathlib import Path
 import shutil

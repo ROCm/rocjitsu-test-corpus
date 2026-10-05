@@ -1,11 +1,10 @@
-// Purpose: Stress repeated GPU-to-GPU handshakes between two PM4 or AQL queues without host gating
-// between turns. Each side waits for its peer's token before incrementing a shared
-// counter in PM4 mode; AQL propagates a per-turn payload through dispatches.
-// Check PM4 totals and every AQL turn, plus all completions.
+// Purpose: Stress repeated GPU-to-GPU handshakes between two PM4 queues without host gating
+// between turns. Each side waits for its peer's token before incrementing a
+// shared counter. Check the total and all completions.
 //
 // Parameters (decimal integers; ranges are inclusive):
-//   --mode pm4|aql: queue protocol; default pm4.
-//   AQL uses ordinary dispatches and completion-signal barriers.
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
+//   --mode pm4: default pm4; use the AQL suite for AQL coverage.
 //   --iterations N: batches of eight turns per queue.
 //     Default 64; range 1..100000.
 //   --timeout N: process watchdog in seconds.

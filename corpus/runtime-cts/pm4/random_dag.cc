@@ -3,12 +3,12 @@
 // every node for stale reads or broken wait/signal ordering.
 //
 // Parameters (decimal integers; ranges are inclusive):
-//   --mode pm4|aql: queue protocol; default pm4.
-//   AQL defaults to 4 queues; PM4 to 16. Seeded parent edges form a tree DAG.
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
+//   --mode pm4: default pm4; use the AQL suite for AQL coverage.
 //   --iterations N: rounds.
 //     Default 32; range 1..100000.
-//   --queues N: PM4 or AQL queues.
-//     Default PM4 16, AQL 4; range 1..64.
+//   --queues N: PM4 queues.
+//     Default 16; range 1..64.
 //   --seed N: seed for the dependency graph.
 //     Default 12345; range 1..4294967295.
 //   --timeout N: process watchdog in seconds.

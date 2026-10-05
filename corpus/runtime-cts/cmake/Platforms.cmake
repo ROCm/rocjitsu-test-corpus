@@ -1,5 +1,4 @@
 # Support groups describe packet layouts, not individual GPU products.
-# Evidence and capability boundaries: ../pm4/REFERENCES.md.
 function(cts_platform arch)
   if(NOT arch MATCHES "^gfx(9|11|12)([0-9a-f])([0-9a-f])$")
     message(FATAL_ERROR "Unsupported target: ${arch}; supported families are gfx9, gfx11, gfx12.0 and gfx12.5")

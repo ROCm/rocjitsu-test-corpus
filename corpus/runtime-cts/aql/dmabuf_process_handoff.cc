@@ -13,6 +13,7 @@
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
 //   --queues and --seed: accepted by common parser but unused.
 //   --worker N seconds: internal exec mode; imports DMA-BUF from inherited FD 3.
+//   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits have a separate 10-second deadline.
 // Inspiration: independent direct-KFD adaptation of public workload patterns.
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/runtimes/rocddi/frontends/libamdf/examples/sdma-dmabuf-copy.c
@@ -79,12 +80,13 @@ static int Worker(uint32_t rounds) {
   return 0;
 }
 int main(int argc, char** argv) {
-  const bool worker = argc == 4 && !std::strcmp(argv[1], "--worker");
+  const bool worker = argc >= 4 && !std::strcmp(argv[1], "--worker");
   if (worker) {
     char iterations_option[] = "--iterations", timeout_option[] = "--timeout";
-    char* worker_argv[] = {argv[0], iterations_option, argv[2], timeout_option, argv[3]};
-    Start(5, worker_argv, "dmabuf_worker");
-    return Worker(Option(5, worker_argv, "--iterations", 64, 100000));
+    std::vector<char*> worker_argv = {argv[0], iterations_option, argv[2], timeout_option, argv[3]};
+    worker_argv.insert(worker_argv.end(), argv + 4, argv + argc);
+    Start(worker_argv.size(), worker_argv.data(), "dmabuf_worker");
+    return Worker(Option(worker_argv.size(), worker_argv.data(), "--iterations", 64, 100000));
   }
   Start(argc, argv, "dmabuf_process_handoff");
   const uint32_t rounds = Option(argc, argv, "--iterations", 64, 100000);
@@ -111,7 +113,10 @@ int main(int argc, char** argv) {
   char path[] = "/proc/self/exe", mode[] = "--worker", iterations[32], timeout[32];
   std::snprintf(iterations, sizeof(iterations), "%u", rounds);
   std::snprintf(timeout, sizeof(timeout), "%u", Option(argc, argv, "--timeout", 45, 3600));
-  char* child_argv[] = {path, mode, iterations, timeout, nullptr};
+  char metadata_option[] = "--aql-metadata";
+  char* child_argv[] = {path, mode, iterations, timeout,
+                       AqlMetadataMode() ? metadata_option : nullptr,
+                       const_cast<char*>(AqlMetadataMode()), nullptr};
   pid_t child;
   Check(posix_spawn(&child, path, &actions, nullptr, child_argv, environ) == 0, "spawn importer");
   posix_spawn_file_actions_destroy(&actions);

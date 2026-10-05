@@ -12,6 +12,7 @@
 //     Default 4321; range 1..4294967295.
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
+//   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits retain their separate 10-second deadline.
 //
 // Inspiration: local-memory reductions/barriers and concurrent queue dispatch.

@@ -8,11 +8,12 @@
 //   --iterations N: rounds.
 //     Default 32; range 1..100000.
 //   --queues N: AQL queues.
-//     Default PM4 16, AQL 4; range 1..64.
+//     Default 4; range 1..64.
 //   --seed N: seed for the dependency graph.
 //     Default 12345; range 1..4294967295.
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
+//   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits retain their separate 10-second deadline.
 //
 // Inspiration: independent native-KFD adaptation of these public test patterns.

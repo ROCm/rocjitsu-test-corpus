@@ -1,5 +1,5 @@
 // Purpose: Stress packet consumption and ring reuse through AQL.
-// AQL (formerly dispatch_flood) varies finite shader work across several queues;
+// AQL varies finite shader work across several queues;
 // check CPU-oracle results, shader markers, firmware completions and guards.
 //
 // Parameters (decimal integers; ranges inclusive):
@@ -8,8 +8,9 @@
 //   --queues N: AQL queues; default 4; range 1..128.
 //   --seed N: AQL shader seed; default 12345; range 1..4294967295.
 //   --timeout N: watchdog seconds; default 45; range 1..3600.
+//   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits retain a separate 10-second deadline.
-// Investigation: --mode aql --queues 8 --iterations 1 has shown intermittent
+// Investigation: --queues 8 --iterations 1 has shown intermittent
 // gfx1201 timeouts but passes on gfx1250 (KFD 1.23, fw 2380). Higher queue counts
 // are not qualified oversubscription coverage.
 //

@@ -4,6 +4,7 @@
 // mapping restoration separately from allocation churn and ordinary copies.
 //
 // Parameters (decimal integers; ranges are inclusive):
+//   --aql-metadata off|on: gfx1250 only; default off for AQL queues.
 //   --mode pm4|aql: observer queue; default pm4. SDMA transport is retained.
 //   The observer copies data through the tested mapping before host verification.
 //   --iterations N: rounds; default 64; range 1..100000.

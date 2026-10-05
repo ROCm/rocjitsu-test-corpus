@@ -1,8 +1,9 @@
-// Shared CLI, deadlines and result checks; no GPU programming policy.
+// Shared CLI, target checks, deadlines and result checks.
 // Process watchdog and monotonic deadline API references:
 // https://pubs.opengroup.org/onlinepubs/9799919799/functions/alarm.html
 // https://pubs.opengroup.org/onlinepubs/9799919799/functions/clock_gettime.html
 #include "common/test.h"
+#include "support/platform.h"
 
 #include <signal.h>
 #include <unistd.h>
@@ -16,6 +17,7 @@
 
 namespace cts {
 namespace {
+const char* aql_metadata_mode = nullptr;
 void Watchdog(int) {
   constexpr char message[] = "FAIL process watchdog expired\n";
   (void)!write(STDERR_FILENO, message, sizeof(message) - 1);
@@ -56,15 +58,27 @@ uint32_t Option(int argc, char** argv, const char* name, uint32_t fallback, uint
   }
   return fallback;
 }
+const char* AqlMetadataMode() { return aql_metadata_mode; }
+bool AqlMetadataEnabled() {
+  return aql_metadata_mode && !std::strcmp(aql_metadata_mode, "on");
+}
 void Start(int argc, char** argv, const char* test, bool modes) {
   for (int i = 1; i < argc; i += 2) {
     const bool known = !std::strcmp(argv[i], "--iterations") || !std::strcmp(argv[i], "--queues") ||
                        !std::strcmp(argv[i], "--timeout") || !std::strcmp(argv[i], "--seed") ||
-                       (modes && !std::strcmp(argv[i], "--mode"));
+                       (modes && !std::strcmp(argv[i], "--mode")) ||
+                       !std::strcmp(argv[i], "--aql-metadata");
     if (!known || i + 1 == argc)
-      Fail("usage: %s [--iterations N] [--queues N] [--timeout seconds] [--seed N]%s", argv[0],
-           modes ? " [--mode pm4|aql]" : "");
+      Fail("usage: %s [--iterations N] [--queues N] [--timeout seconds] [--seed N]%s"
+           " [--aql-metadata off|on]", argv[0], modes ? " [--mode pm4|aql]" : "");
+    if (!std::strcmp(argv[i], "--aql-metadata")) {
+      Check(kGfx125, "--aql-metadata is only supported on gfx12.5 (gfx1250)");
+      Check(!std::strcmp(argv[i + 1], "off") || !std::strcmp(argv[i + 1], "on"),
+            "--aql-metadata expects off or on");
+      aql_metadata_mode = argv[i + 1];
+    }
   }
+  if (kGfx125) std::printf("aql_metadata=%s\n", AqlMetadataEnabled() ? "on" : "off");
   if (modes) std::printf("mode=%s\n", AqlMode(argc, argv) ? "aql" : "pm4");
   signal(SIGALRM, Watchdog);
   alarm(Option(argc, argv, "--timeout", 45, 3600));

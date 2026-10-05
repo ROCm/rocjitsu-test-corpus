@@ -5,6 +5,7 @@
 // reset are used. This covers blocked queue teardown, not live-wave CWSR.
 //
 // Parameters (decimal integers; ranges are inclusive):
+//   --aql-metadata off|on: gfx1250 only; default off for AQL queues.
 //   --mode pm4|aql: blocked queue and survivor protocol; default pm4.
 //   --iterations N: rounds; default 16; range 1..100000.
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
@@ -61,10 +62,11 @@ static int Worker(int argc, char** argv) {
   for (;;) pause();
 }
 int main(int argc, char** argv) {
-  if (argc == 4 && !std::strcmp(argv[1], "--worker")) {
+  if (argc >= 4 && !std::strcmp(argv[1], "--worker")) {
     char mode_option[] = "--mode", timeout_option[] = "--timeout";
-    char* worker_argv[] = {argv[0], mode_option, argv[2], timeout_option, argv[3]};
-    return Worker(5, worker_argv);
+    std::vector<char*> worker_argv = {argv[0], mode_option, argv[2], timeout_option, argv[3]};
+    worker_argv.insert(worker_argv.end(), argv + 4, argv + argc);
+    return Worker(worker_argv.size(), worker_argv.data());
   }
   Start(argc, argv, "process_exit_inflight", true);
   const bool aql = AqlMode(argc, argv);
@@ -86,7 +88,10 @@ int main(int argc, char** argv) {
     char path[] = "/proc/self/exe", worker[] = "--worker";
     char pm4_mode[] = "pm4", aql_mode[] = "aql", timeout[32];
     std::snprintf(timeout, sizeof(timeout), "%u", Option(argc, argv, "--timeout", 45, 3600));
-    char* child_argv[] = {path, worker, aql ? aql_mode : pm4_mode, timeout, nullptr};
+    char metadata_option[] = "--aql-metadata";
+    char* child_argv[] = {path, worker, aql ? aql_mode : pm4_mode, timeout,
+                         AqlMetadataMode() ? metadata_option : nullptr,
+                         const_cast<char*>(AqlMetadataMode()), nullptr};
     pid_t child;
     Check(posix_spawn(&child, path, &actions, nullptr, child_argv, environ) == 0, "spawn worker");
     posix_spawn_file_actions_destroy(&actions);

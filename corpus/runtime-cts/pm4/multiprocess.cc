@@ -3,16 +3,17 @@
 // Check child exit status and propagate failures or skips through the parent.
 //
 // Parameters (decimal integers; ranges are inclusive):
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
 //   --iterations N: queue_flood rounds in each worker process.
 //     Default 64; range 1..100000.
-//   --mode pm4|aql: worker queue protocol; default pm4.
+//   --mode pm4: default pm4; use the AQL suite for AQL coverage.
 //   --queues N: worker processes; each uses four queues.
 //     Default 4; range 1..32.
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --seed: accepted by the common parser but unused here.
 // Progress waits retain their separate 10-second deadline.
-// Keep queue_flood_gfx<arch> beside this binary; --timeout also applies to each worker.
+// Keep pm4_queue_flood_<target> beside this binary; --timeout also applies to each worker.
 //
 // Inspiration: independent native-KFD adaptation of these public test patterns.
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/libhsakmt/tests/kfdtest/src/KFDHWSTest.cpp
@@ -54,7 +55,8 @@ int main(int argc, char** argv) {
     if (pid == 0) {
       if (prctl(PR_SET_PDEATHSIG, SIGKILL) != 0 || getppid() != parent) _exit(126);
       execl(path.c_str(), path.c_str(), "--queues", "4", "--iterations", rounds.c_str(),
-            "--timeout", timeout.c_str(), "--mode", aql ? "aql" : "pm4", nullptr);
+            "--timeout", timeout.c_str(), "--mode", aql ? "aql" : "pm4",
+            AqlMetadataMode() ? "--aql-metadata" : nullptr, AqlMetadataMode(), nullptr);
       _exit(126);
     }
     children.push_back(pid);

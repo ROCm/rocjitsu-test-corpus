@@ -2,7 +2,6 @@
 #error "PM4 packet encoders are forbidden in the AQL suite"
 #endif
 // Shared MEC packets. Version-specific fields are in support/*/packets.h.
-// Public references and capabilities: REFERENCES.md.
 #ifndef CTS_TESTS_SUPPORT_PM4_H_
 #define CTS_TESTS_SUPPORT_PM4_H_
 

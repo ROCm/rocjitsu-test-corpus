@@ -3,6 +3,7 @@
 // Check the entire destination and guards for incorrect lengths or data corruption.
 //
 // Parameters (decimal integers; ranges are inclusive):
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
 //   --iterations N: rounds.
 //     Default 32; range 1..100000.
 //   --timeout N: process watchdog in seconds.

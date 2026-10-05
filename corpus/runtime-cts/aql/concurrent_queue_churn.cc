@@ -8,10 +8,11 @@
 //   --iterations N: rounds.
 //     Default 16; range 1..100000.
 //   --queues N: host threads, each owning a transient queue.
-//     Default PM4 8, AQL 3; range 1..64.
+//     Default 3; range 1..64.
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --seed: accepted by the common parser but unused here.
+//   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits retain their separate 10-second deadline.
 // Mixed-priority gated churn stalled during bring-up; this test uses equal priorities.
 //

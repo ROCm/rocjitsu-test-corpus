@@ -10,6 +10,7 @@
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
 //   --queues and --seed: accepted by common parser but unused.
 //   --worker seconds: internal exec mode; readiness on inherited FD 3.
+//   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits have a separate 10-second deadline.
 // Inspiration: independent direct-KFD adaptation of public workload patterns.
 // https://gitlab.freedesktop.org/drm/igt-gpu-tools/-/blob/26513be3e0f711ed835ec50d5cdcb723ef224105/tests/amdgpu/amd_close_race.c
@@ -51,10 +52,10 @@ static int Worker(int argc, char** argv) {
   for (;;) pause();
 }
 int main(int argc, char** argv) {
-  if (argc == 3 && !std::strcmp(argv[1], "--worker")) {
+  if (argc >= 3 && !std::strcmp(argv[1], "--worker")) {
     char timeout_option[] = "--timeout";
-    char* worker_argv[] = {argv[0], timeout_option, argv[2]};
-    return Worker(3, worker_argv);
+    argv[1] = timeout_option;
+    return Worker(argc, argv);
   }
   Start(argc, argv, "process_exit_inflight");
   const uint32_t rounds = Option(argc, argv, "--iterations", 16, 100000);
@@ -75,7 +76,10 @@ int main(int argc, char** argv) {
     char path[] = "/proc/self/exe", worker[] = "--worker";
     char timeout[32];
     std::snprintf(timeout, sizeof(timeout), "%u", Option(argc, argv, "--timeout", 45, 3600));
-    char* child_argv[] = {path, worker, timeout, nullptr};
+    char metadata_option[] = "--aql-metadata";
+    char* child_argv[] = {path, worker, timeout,
+                         AqlMetadataMode() ? metadata_option : nullptr,
+                         const_cast<char*>(AqlMetadataMode()), nullptr};
     pid_t child;
     Check(posix_spawn(&child, path, &actions, nullptr, child_argv, environ) == 0, "spawn worker");
     posix_spawn_file_actions_destroy(&actions);

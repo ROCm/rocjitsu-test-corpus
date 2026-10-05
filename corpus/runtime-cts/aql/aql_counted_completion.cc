@@ -9,6 +9,7 @@
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
 //   --queues N: AQL producer queues; default 2; range 1..4.
 //   --seed N: input seed; default 12345; range 1..4294967295.
+//   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits have a separate 10-second deadline.
 // Inspiration: independent direct-KFD adaptation of public workload patterns.
 // https://github.com/KhronosGroup/VK-GL-CTS/blob/3905c821f43ded89284713187ffb3c7a1072afdb/external/vulkancts/modules/vulkan/synchronization/vktSynchronizationSignalOrderTests.cpp

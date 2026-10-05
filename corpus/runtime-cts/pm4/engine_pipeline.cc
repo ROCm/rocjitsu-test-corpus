@@ -1,11 +1,11 @@
 // Purpose: Exercise SDMA upload -> compute -> SDMA download through private
 // VRAM. Submit consumers first, with GPU dependencies between stages and no
-// host wait between them. PM4 uses atomics and per-slot GPU fences. AQL
-// (formerly shader_sdma_pipeline) transforms data in a shader and signals
-// firmware dispatch completion to SDMA. Verify payloads and untouched guards.
+// host wait between them. PM4 uses atomics and per-slot GPU fences.
+// Verify payloads and untouched guards.
 //
 // Parameters (decimal integers; ranges inclusive):
-//   --mode pm4|aql: default pm4.
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
+//   --mode pm4: default pm4; use the AQL suite for AQL coverage.
 //   --iterations N: rounds; default 64; range 1..100000.
 //   --timeout N: watchdog seconds; default 45; range 1..3600.
 //   --queues and --seed: accepted but unused.

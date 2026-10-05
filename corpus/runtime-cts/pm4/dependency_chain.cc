@@ -1,9 +1,7 @@
 // Purpose: Submit a cross-queue dependency chain in reverse order and check
-// that every stage observes the producer's current data. PM4 propagates a GTT
-// payload with memory waits/copies. AQL (formerly shader_dependency_chain)
-// transforms VRAM data in shaders, with SDMA upload/download and AQL barriers.
-// AQL alternates agent/system scopes on interior links; transfer edges retain
-// system scope. Verify every stage and guards, not just final completion.
+// that every stage observes the producer's current data. Propagate a GTT
+// payload with PM4 memory waits/copies. Verify every stage and guards,
+// not just final completion.
 // Reproducer: pm4_dependency_chain_no_offload_gfx1250 builds this same scenario
 // with WAIT_REG_MEM optimize_ace_offload_mode clear. Only PM4 is accepted.
 // Reproducer: --queues 8 --iterations 4. On fw 2380 it stalled on round 2 and
@@ -11,9 +9,10 @@
 // remain unresolved; a host reboot may be needed. Checks are identical to smoke.
 //
 // Parameters (decimal integers; ranges inclusive):
-//   --mode pm4|aql: default pm4.
-//   --iterations N: rounds; default PM4 32, AQL 64; range 1..100000.
-//   --queues N: stages; PM4 default 16, range 1..128; AQL default 4, range 2..4.
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
+//   --mode pm4: default pm4; use the AQL suite for AQL coverage.
+//   --iterations N: rounds; default 32; range 1..100000.
+//   --queues N: stages; default 16; range 1..128.
 //   --timeout N: watchdog seconds; default 45; range 1..3600.
 //   --seed: accepted but unused. Progress waits have a 10-second deadline.
 //

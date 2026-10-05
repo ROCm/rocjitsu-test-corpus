@@ -8,6 +8,7 @@
 //   --iterations N: rounds; default 64; range 1..100000.
 //   --timeout N: watchdog seconds; default 45; range 1..3600.
 //   --queues and --seed: accepted but unused.
+//   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits have a separate 10-second deadline.
 //
 // Inspiration: independent direct-KFD adaptations of these public patterns.

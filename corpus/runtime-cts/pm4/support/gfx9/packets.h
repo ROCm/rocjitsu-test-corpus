@@ -1,5 +1,4 @@
 // gfx9 GCN/CDNA: legacy CP_COHER_CNTL, shared by gfx9.0/9.4/9.5.
-// References and field-level support rationale: ../../REFERENCES.md.
 #pragma once
 #include <cstdint>
 namespace cts::pm4_encoding {

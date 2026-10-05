@@ -9,10 +9,11 @@
 //   --iterations N: rounds.
 //     Default 32; range 1..100000.
 //   --queues N: branches; also creates a root and a join queue.
-//     Default PM4 8, AQL 2; range 1..32.
+//     Default 2; range 1..32.
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --seed: accepted by the common parser but unused here.
+//   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits retain their separate 10-second deadline.
 //
 // Inspiration: independent native-KFD adaptation of these public test patterns.

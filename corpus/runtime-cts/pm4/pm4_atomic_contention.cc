@@ -3,6 +3,7 @@
 // and adjacent guards for unintended writes.
 //
 // Parameters (decimal integers; ranges are inclusive):
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
 //   --iterations N: rounds.
 //     Default 64; range 1..100000.
 //   --queues N: PM4 queues.

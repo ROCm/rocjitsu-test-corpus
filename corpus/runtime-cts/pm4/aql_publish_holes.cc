@@ -5,6 +5,7 @@
 // This extends ROCr index-atomicity patterns to actual firmware consumption.
 //
 // Parameters (decimal integers; ranges are inclusive):
+//   --aql-metadata off|on: gfx1250 only; default off for AQL queues.
 //   --iterations N: rounds; default 64; range 1..100000.
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
 //   --queues N: reserved slots/publishers on ONE queue; default 7; range 1..32.

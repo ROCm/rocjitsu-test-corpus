@@ -7,6 +7,7 @@
 // The IB body uses the selected PM4 support implementation.
 //
 // Parameters (decimal integers; ranges inclusive):
+//   --aql-metadata off|on: gfx1250 only; this test always uses a plain queue.
 //   --iterations N: batches of 64 IB/barrier pairs; default 128; range 1..100000.
 //   --timeout N: watchdog seconds; default 45; range 1..3600.
 //   --queues and --seed: accepted by the common parser but unused.

@@ -1,10 +1,10 @@
-// Purpose: Test disabling a PM4 or AQL queue before publishing work, updating priority while
+// Purpose: Test disabling a PM4 queue before publishing work, updating priority while
 // paused, and re-enabling it. Require independent queue progress while pending work stays blocked,
 // then check that resumed work executes exactly once; no live shader is paused.
 //
 // Parameters (decimal integers; ranges are inclusive):
-//   --mode pm4|aql: queue protocol; default pm4.
-//   AQL uses ordinary dispatches and completion-signal barriers.
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
+//   --mode pm4: default pm4; use the AQL suite for AQL coverage.
 //   --iterations N: rounds.
 //     Default 32; range 1..100000.
 //   --timeout N: process watchdog in seconds.

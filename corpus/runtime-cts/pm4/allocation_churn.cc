@@ -3,8 +3,8 @@
 // unmapping/freeing completed allocations; this does not test eviction.
 //
 // Parameters (decimal integers; ranges are inclusive):
-//   --mode pm4|aql: queue protocol; default pm4.
-//   AQL uses ordinary dispatches and completion-signal barriers.
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
+//   --mode pm4: default pm4; use the AQL suite for AQL coverage.
 //   --iterations N: rounds.
 //     Default 32; range 1..100000.
 //   --queues N: buffers per round.

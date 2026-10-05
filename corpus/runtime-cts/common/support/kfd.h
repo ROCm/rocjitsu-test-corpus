@@ -69,8 +69,17 @@ struct Buffer {
 // reserve one dword. Consumption is separate from application completion.
 class Queue {
  public:
+  // On gfx1250 AQL queues, metadata=true accepts only kernel dispatch and
+  // barrier AND/OR packets. SubmitAql, PublishAql and PublishMetadata read
+  // nonzero completion signals, kernel descriptors and preloaded kernarg bytes
+  // on the CPU at their GPU addresses. These addresses must be CPU-readable
+  // during publication; GPU-only backing is invalid. The allocations must
+  // remain valid until their GPU users retire. Use metadata=false for vendor
+  // PM4 indirect-buffer packets.
+  // The default follows --aql-metadata (off when omitted); explicit values override it.
   explicit Queue(Device& device, uint32_t ring_bytes = 4096, uint32_t priority = 7,
-                 bool aql = false, bool multi_producer = false, bool metadata = true);
+                 bool aql = false, bool multi_producer = false,
+                 bool metadata = AqlMetadataEnabled());
   ~Queue();
   Queue(const Queue&) = delete;
   Queue& operator=(const Queue&) = delete;

@@ -9,6 +9,7 @@
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
 //   --seed N: initial shader state; default 12345; range 1..4294967295.
 //   --queues: accepted by common parser but unused.
+//   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits have a separate 10-second deadline.
 // Inspiration: independent direct-KFD adaptation of public workload patterns.
 // https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/libhrx/cts/tests/queue_ops/queue_ops_test.cpp

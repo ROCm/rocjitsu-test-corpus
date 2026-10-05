@@ -1,4 +1,4 @@
-// Shared SDMA packets; generation differences follow ROCr (see pm4/REFERENCES.md).
+// Shared SDMA packets with generation-specific encoding.
 // https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_blit_sdma.cpp
 // https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/core/inc/sdma_registers.h
 #ifndef CTS_TESTS_SUPPORT_SDMA_H_

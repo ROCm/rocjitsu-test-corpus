@@ -5,6 +5,7 @@
 // This is an investigation case, not a qualified CWSR test or part of fast CI.
 //
 // Parameters (decimal integers; ranges are inclusive):
+//   --aql-metadata off|on: gfx1250 only; default off for AQL queues.
 //   --iterations N: shader launches, each with four pause/resume attempts.
 //     Default 32; range 1..100000.
 //   --timeout N: process watchdog in seconds.

@@ -1,10 +1,10 @@
-// Purpose: Stress multiple host producers sharing one PM4 or AQL ring with serialized publication.
+// Purpose: Stress multiple host producers sharing one PM4 ring with serialized publication.
 // Check each producer's payload and completion so ring reuse and host contention
 // cannot silently lose work or mix up results.
 //
 // Parameters (decimal integers; ranges are inclusive):
-//   --mode pm4|aql: queue protocol; default pm4.
-//   Both modes serialize publication; this does not test concurrent AQL reservation.
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
+//   --mode pm4: default pm4; use the AQL suite for AQL coverage.
 //   --iterations N: submissions per producer thread.
 //     Default 128; range 1..100000.
 //   --queues N: host producer threads sharing one queue.

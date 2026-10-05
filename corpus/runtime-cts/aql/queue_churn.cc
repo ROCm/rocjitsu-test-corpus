@@ -4,9 +4,10 @@
 // The public simulator regression is inspiration, not a claimed gfx12 defect.
 //
 // Parameters (decimal integers; ranges inclusive):
+//   --aql-metadata off|on: gfx1250 only; default off for AQL queues.
 //   Queue protocol: AQL only.
 //   --iterations N: rounds; default 64; range 1..100000.
-//   --queues N: transient queues plus one survivor; default PM4 8, AQL 1;
+//   --queues N: transient queues plus one survivor; default 1;
 //     range 1..128. Higher AQL counts are not qualified oversubscription coverage.
 //   --timeout N: watchdog seconds; default 45; range 1..3600.
 //   --seed: accepted but unused. Progress waits have a 10-second deadline.

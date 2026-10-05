@@ -7,6 +7,7 @@
 // completion signal's event ID before submitting its GPU address.
 //
 // Parameters (decimal integers; ranges are inclusive):
+//   --aql-metadata off|on: gfx1250 only; default off for AQL queues.
 //   --mode pm4|aql: parent and child queue protocol; default pm4.
 //   AQL uses two signals per round, initialized before spawning the child.
 //   --iterations N: rounds; default 64; range 1..100000.
@@ -94,14 +95,16 @@ static int Worker(uint32_t rounds, bool aql) {
   return 0;
 }
 int main(int argc, char** argv) {
-  const bool worker = argc == 5 && !std::strcmp(argv[1], "--worker");
+  const bool worker = argc >= 5 && !std::strcmp(argv[1], "--worker");
   if (worker) {
     char iterations_option[] = "--iterations", timeout_option[] = "--timeout",
          mode_option[] = "--mode";
-    char* worker_argv[] = {argv[0], iterations_option, argv[2], timeout_option,
+    std::vector<char*> worker_argv = {argv[0], iterations_option, argv[2], timeout_option,
                            argv[3], mode_option,       argv[4]};
-    Start(7, worker_argv, "dmabuf_worker", true);
-    return Worker(Option(7, worker_argv, "--iterations", 64, 100000), AqlMode(7, worker_argv));
+    worker_argv.insert(worker_argv.end(), argv + 5, argv + argc);
+    Start(worker_argv.size(), worker_argv.data(), "dmabuf_worker", true);
+    return Worker(Option(worker_argv.size(), worker_argv.data(), "--iterations", 64, 100000),
+                  AqlMode(worker_argv.size(), worker_argv.data()));
   }
   Start(argc, argv, "dmabuf_process_handoff", true);
   const bool aql = AqlMode(argc, argv);
@@ -131,7 +134,10 @@ int main(int argc, char** argv) {
   std::snprintf(iterations, sizeof(iterations), "%u", rounds);
   std::snprintf(timeout, sizeof(timeout), "%u", Option(argc, argv, "--timeout", 45, 3600));
   char pm4_mode[] = "pm4", aql_mode[] = "aql";
-  char* child_argv[] = {path, mode, iterations, timeout, aql ? aql_mode : pm4_mode, nullptr};
+  char metadata_option[] = "--aql-metadata";
+  char* child_argv[] = {path, mode, iterations, timeout, aql ? aql_mode : pm4_mode,
+                       AqlMetadataMode() ? metadata_option : nullptr,
+                       const_cast<char*>(AqlMetadataMode()), nullptr};
   pid_t child;
   Check(posix_spawn(&child, path, &actions, nullptr, child_argv, environ) == 0, "spawn importer");
   posix_spawn_file_actions_destroy(&actions);

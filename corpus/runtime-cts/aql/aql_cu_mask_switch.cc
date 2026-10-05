@@ -13,6 +13,7 @@
 //   --queues N: disjoint masks on ONE queue; default 4; range 2..64,
 //     additionally limited by the WGP count per XCC.
 //   --seed: accepted by common parser but unused.
+//   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits have a separate 10-second deadline.
 // Inspiration: independent direct-KFD adaptation of public workload patterns.
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/libhsakmt/tests/kfdtest/src/KFDQMTest.cpp

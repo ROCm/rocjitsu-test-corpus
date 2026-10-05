@@ -1,7 +1,6 @@
 // Purpose: Stress repeated GPU-to-GPU handshakes between two AQL queues without host gating
-// between turns. Each side waits for its peer's token before incrementing a shared
-// counter in PM4 mode; AQL propagates a per-turn payload through dispatches.
-// Check PM4 totals and every AQL turn, plus all completions.
+// between turns. Each side waits for its peer's token, then propagates a
+// per-turn payload through dispatches. Check every turn and all completions.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   Queue protocol: AQL only.
@@ -11,6 +10,7 @@
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --queues and --seed: accepted by the common parser but unused here.
+//   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits retain their separate 10-second deadline.
 //
 // Inspiration: independent native-KFD adaptation of these public test patterns.

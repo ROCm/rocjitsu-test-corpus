@@ -3,6 +3,7 @@
 // Check blocked completion, host/PM4 release, remaining signals and completion underflow.
 //
 // Parameters (decimal integers; ranges are inclusive):
+//   --aql-metadata off|on: gfx1250 only; default off for AQL queues.
 //   --iterations N: rounds.
 //     Default 32; range 1..100000.
 //   --timeout N: process watchdog in seconds.

@@ -1,4 +1,4 @@
-// Purpose: Test ring backpressure while a AQL queue is blocked on a host-controlled gate.
+// Purpose: Test ring backpressure while an AQL queue is blocked on a host-controlled gate.
 // A host producer submits more work than the ring can hold while another queue
 // must progress. Check that gated work stays blocked, then completes exactly once.
 //
@@ -10,6 +10,7 @@
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --queues and --seed: accepted by the common parser but unused here.
+//   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits retain their separate 10-second deadline.
 //
 // Inspiration: independent native-KFD adaptation of these public test patterns.

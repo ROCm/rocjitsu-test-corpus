@@ -3,6 +3,7 @@
 // and untouched guards for missing transfers, corruption or out-of-range writes.
 //
 // Parameters (decimal integers; ranges are inclusive):
+//   --aql-metadata off|on: gfx1250 only; no effect on SDMA queues.
 //   --iterations N: rounds.
 //     Default 128; range 1..100000.
 //   --queues N: SDMA queues.

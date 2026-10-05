@@ -3,12 +3,12 @@
 // Check per-thread completion, exact operation counts, guards and queue retirement.
 //
 // Parameters (decimal integers; ranges are inclusive):
-//   --mode pm4|aql: queue protocol; default pm4.
-//   AQL defaults to 3 transient queues; PM4 to 8; both allow 1..64.
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
+//   --mode pm4: default pm4; use the AQL suite for AQL coverage.
 //   --iterations N: rounds.
 //     Default 16; range 1..100000.
 //   --queues N: host threads, each owning a transient queue.
-//     Default PM4 8, AQL 3; range 1..64.
+//     Default 8; range 1..64.
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --seed: accepted by the common parser but unused here.

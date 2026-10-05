@@ -1,5 +1,4 @@
 // gfx12.5: explicit memory scope, revised GCR fields, dependency-wait offload.
-// References and field-level support rationale: ../../REFERENCES.md.
 #pragma once
 #include <cstdint>
 namespace cts::pm4_encoding {

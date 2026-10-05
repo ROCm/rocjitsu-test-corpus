@@ -4,6 +4,7 @@
 // timeline and the exact operation count.
 //
 // Parameters (decimal integers; ranges are inclusive):
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
 //   --iterations N: graph submission steps.
 //     Default 1024; range 1..1000000.
 //   --queues N: PM4 queues.

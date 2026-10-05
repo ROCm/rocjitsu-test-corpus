@@ -1,18 +1,13 @@
-// Purpose: Stress packet consumption and ring reuse through PM4 or AQL.
+// Purpose: Stress packet consumption and ring reuse through PM4.
 // PM4 varies write-batch lengths across a small ring and checks all payloads.
-// AQL (formerly dispatch_flood) varies finite shader work across several queues;
-// check CPU-oracle results, shader markers, firmware completions and guards.
 //
 // Parameters (decimal integers; ranges inclusive):
-//   --mode pm4|aql: default pm4.
-//   --iterations N: batches/rounds; default PM4 256, AQL 32; range 1..100000.
-//   --queues N: AQL queues; default 4; range 1..128. Unused for PM4.
-//   --seed N: AQL shader seed; default 12345; range 1..4294967295. Unused for PM4.
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
+//   --mode pm4: default pm4; use the AQL suite for AQL coverage.
+//   --iterations N: batches/rounds; default 256; range 1..100000.
+//   --queues and --seed: accepted by the common parser but unused.
 //   --timeout N: watchdog seconds; default 45; range 1..3600.
 // Progress waits retain a separate 10-second deadline.
-// Investigation: --mode aql --queues 8 --iterations 1 has shown intermittent
-// gfx1201 timeouts but passes on gfx1250 (KFD 1.23, fw 2380). Higher queue counts
-// are not qualified oversubscription coverage.
 //
 // Inspiration: independent direct-KFD adaptations of these public patterns.
 // https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/runtime/src/iree/hal/cts/command_buffer/stress_test.cc

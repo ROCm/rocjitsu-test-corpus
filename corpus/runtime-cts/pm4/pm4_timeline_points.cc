@@ -3,6 +3,7 @@
 // an already-satisfied smaller target to complete; check dependent payload visibility.
 //
 // Parameters (decimal integers; ranges are inclusive):
+//   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
 //   --iterations N: rounds.
 //     Default 32; range 1..100000.
 //   --timeout N: process watchdog in seconds.

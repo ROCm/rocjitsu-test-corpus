@@ -5,6 +5,7 @@
 // full-width completion and guards across low-word carry and ring reuse.
 //
 // Parameters (decimal integers; ranges inclusive):
+//   --aql-metadata off|on: gfx1250 only; no effect on SDMA queues.
 //   --iterations N: rounds; default 64; range 1..100000.
 //   --timeout N: watchdog seconds; default 45; range 1..3600.
 //   --queues and --seed: accepted but unused. Progress waits have a 10s deadline.
