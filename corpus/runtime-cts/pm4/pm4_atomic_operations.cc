@@ -105,24 +105,30 @@ int main(int argc, char** argv) {
         values.push_back(expected | (wide ? 0 : 0xcafebabe00000000ull));
         auto& commands = streams[i & 1];
         commands.Wait(memory.address(64), i);
-        commands.Atomic(operation.op, memory.address(), operand, wide, operation.compare & mask);
+        commands.Atomic(operation.op, memory.address(), operand, wide,
+                        operation.compare & mask);
         commands.Barrier();
         commands.Copy(memory.address(), memory.address(128 + i * 8));
         commands.Copy(memory.address(4), memory.address(132 + i * 8));
         commands.Finish(memory.address(64), i + 1);
       }
-      // FIFO edges preserve 0,2,... / 1,3,... ordering despite reverse publication.
+      // FIFO edges preserve 0,2,... / 1,3,... ordering despite reverse
+      // publication.
       queues[1]->Submit(streams[1].words);
       queues[0]->Submit(streams[0].words);
       memory.Wait(16, values.size(), 10000, queues[1]);
       for (uint32_t i = 0; i < values.size(); ++i)
         if (memory.Load64(128 + i * 8) != values[i])
-          Fail("atomic round=%u width=%u step=%u op=%x expected=%llx observed=%llx", round,
-               wide ? 64 : 32, i, cases[i].op, (unsigned long long)values[i],
-               (unsigned long long)memory.Load64(128 + i * 8));
+          Fail(
+              "atomic round=%u width=%u step=%u op=%x expected=%llx "
+              "observed=%llx",
+              round, wide ? 64 : 32, i, cases[i].op,
+              (unsigned long long)values[i],
+              (unsigned long long)memory.Load64(128 + i * 8));
       Check(memory.Load64(0) == values.back(), "atomic final value mismatch");
-      Check(memory.Load64(8) == 0 && memory.Load64(128 + values.size() * 8) == 0,
-            "atomic guard corrupted");
+      Check(
+          memory.Load64(8) == 0 && memory.Load64(128 + values.size() * 8) == 0,
+          "atomic guard corrupted");
       first.Drain();
       second.Drain();
       operations += values.size();

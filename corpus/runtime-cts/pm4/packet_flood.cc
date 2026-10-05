@@ -19,8 +19,8 @@
 #include <memory>
 #include <thread>
 
-#include "support/aql.h"
 #include "pm4.h"
+#include "support/aql.h"
 #include "work_kernel.inc"
 
 using namespace cts;
@@ -36,16 +36,20 @@ static int RunPm4(int argc, char** argv) {
     Pm4 commands;
     // Vary stream length so packet starts migrate across the physical ring end.
     const uint32_t count = kWords - round % 7;
-    for (uint32_t i = 0; i < count; ++i) commands.Write(result.address(i * 4), round * kWords + i);
+    for (uint32_t i = 0; i < count; ++i)
+      commands.Write(result.address(i * 4), round * kWords + i);
     commands.Finish(result.address(2048), round);
     queue.Submit(commands.words);
     result.Wait(512, round);
     for (uint32_t i = 0; i < count; ++i)
-      Check(result.Load(i) == round * kWords + i, "packet lost, reordered, or corrupted");
-    Check(result.Load(kWords) == 0 && result.Load(511) == 0, "packet flood guard overwritten");
+      Check(result.Load(i) == round * kWords + i,
+            "packet lost, reordered, or corrupted");
+    Check(result.Load(kWords) == 0 && result.Load(511) == 0,
+          "packet flood guard overwritten");
   }
   queue.Drain();
-  std::printf("submitted_dwords=%llu ring_wraps=%llu\n", (unsigned long long)queue.producer(),
+  std::printf("submitted_dwords=%llu ring_wraps=%llu\n",
+              (unsigned long long)queue.producer(),
               (unsigned long long)(queue.producer() / 1024));
   Pass("packet_flood", iterations);
   return 0;
@@ -53,9 +57,8 @@ static int RunPm4(int argc, char** argv) {
 
 using namespace cts;
 
-
-
 int main(int argc, char** argv) {
-  Check(!AqlMode(argc, argv), "use the AQL suite for this scenario in AQL mode");
+  Check(!AqlMode(argc, argv),
+        "use the AQL suite for this scenario in AQL mode");
   return RunPm4(argc, argv);
 }

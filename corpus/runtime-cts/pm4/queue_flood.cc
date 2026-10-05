@@ -1,8 +1,9 @@
-// Purpose: Exercise many independent PM4 queues, mixed priorities and priority updates.
-// Submit work to all queues before host waits, then check each queue's payloads
-// and completion for lost work or cross-queue result corruption.
-// Multiprocess workers hold their queues at ready/start and done/release rendezvous.
-// Submission to all queues does not guarantee simultaneous pending work.
+// Purpose: Exercise many independent PM4 queues, mixed priorities and priority
+// updates. Submit work to all queues before host waits, then check each queue's
+// payloads and completion for lost work or cross-queue result corruption.
+// Multiprocess workers hold their queues at ready/start and done/release
+// rendezvous. Submission to all queues does not guarantee simultaneous pending
+// work.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -35,13 +36,15 @@ static int RunPm4(int argc, char** argv) {
   Device device;
   Buffer result(device, count * 4096);
   std::vector<std::unique_ptr<Queue>> queues;
-  for (uint32_t q = 0; q < count; ++q) queues.emplace_back(new Queue(device, 4096, q % 16));
+  for (uint32_t q = 0; q < count; ++q)
+    queues.emplace_back(new Queue(device, 4096, q % 16));
   WorkerPhase('R');
   for (uint32_t round = 1; round <= iterations; ++round) {
     for (uint32_t q = 0; q < count; ++q) {
       Pm4 commands;
       for (uint32_t i = 0; i < 128; ++i)
-        commands.Write(result.address(q * 4096 + i * 4), round * 65536 + q * 128 + i);
+        commands.Write(result.address(q * 4096 + i * 4),
+                       round * 65536 + q * 128 + i);
       commands.Finish(result.address(q * 4096 + 2048), round);
       queues[q]->Submit(commands.words);
     }
@@ -62,6 +65,7 @@ static int RunPm4(int argc, char** argv) {
 }
 
 int main(int argc, char** argv) {
-  Check(!AqlMode(argc, argv), "use the AQL suite for this scenario in AQL mode");
+  Check(!AqlMode(argc, argv),
+        "use the AQL suite for this scenario in AQL mode");
   return RunPm4(argc, argv);
 }

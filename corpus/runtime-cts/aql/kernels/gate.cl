@@ -1,13 +1,13 @@
 // A single live wave retains its LCG state until the host opens a gate.
-// Used by dispatch_barrier and running_queue_pause. Kernargs: output[0:2] receives
-// the final LCG value and step count; seed initializes the value; persistent=0
-// returns immediately, otherwise control[1]==token releases the loop. The loop
-// writes token to control[0] and its progress count to control[2]. Runtime CLI
-// parameters belong to the host tests.
-// Inspired by KFD's persistent CWSR workload and ROCr's barrier-bit test.
+// Used by dispatch_barrier and running_queue_pause. Kernargs: output[0:2]
+// receives the final LCG value and step count; seed initializes the value;
+// persistent=0 returns immediately, otherwise control[1]==token releases the
+// loop. The loop writes token to control[0] and its progress count to
+// control[2]. Runtime CLI parameters belong to the host tests. Inspired by
+// KFD's persistent CWSR workload and ROCr's barrier-bit test.
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/libhsakmt/tests/kfdtest/src/KFDCWSRTest.cpp
-kernel void cts_work(global uint* output, global volatile uint* control, uint seed,
-                         uint persistent, uint token) {
+kernel void cts_work(global uint* output, global volatile uint* control,
+                     uint seed, uint persistent, uint token) {
   uint value = seed, count = 0;
   if (persistent) {
     do {

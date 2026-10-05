@@ -1,6 +1,7 @@
-// Purpose: Test masked PM4 memory waits for LT, LE, EQ, NE, GE and GT comparisons.
-// Require each false condition to block while an independent queue progresses,
-// then change the host value and check completion; masked-off bits deliberately differ.
+// Purpose: Test masked PM4 memory waits for LT, LE, EQ, NE, GE and GT
+// comparisons. Require each false condition to block while an independent queue
+// progresses, then change the host value and check completion; masked-off bits
+// deliberately differ.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.

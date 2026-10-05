@@ -1,7 +1,7 @@
-// Purpose: Test seeded acyclic cross-queue dependency graphs with changing predecessors and
-// fan-out and up to five distinct parents per join. Publish consumers first,
-// hold one root while independent parents finish, observe a reached join,
-// prove descendants remain blocked, then release. Check every
+// Purpose: Test seeded acyclic cross-queue dependency graphs with changing
+// predecessors and fan-out and up to five distinct parents per join. Publish
+// consumers first, hold one root while independent parents finish, observe a
+// reached join, prove descendants remain blocked, then release. Check every
 // input edge (PM4 witnesses) or an ordered hash of all inputs (AQL shader).
 // One node per queue keeps reverse submission acyclic, including FIFO edges.
 //
@@ -57,15 +57,19 @@ int main(int argc, char** argv) {
   Device device;
   Buffer result(device, count * 256), control(device, 4096);
   std::vector<std::unique_ptr<Queue>> queues;
-  for (uint32_t q = 0; q < count; ++q) queues.emplace_back(new Queue(device, 4096, 7, true));
+  for (uint32_t q = 0; q < count; ++q)
+    queues.emplace_back(new Queue(device, 4096, 7, true));
   Buffer code(device, sizeof(kKernelImage), true), args(device, count * 512),
       signals(device, count * 64);
-  Check(kKernargBytes >= sizeof(DagArgs) && kKernargBytes <= 512, "DAG kernarg size");
+  Check(kKernargBytes >= sizeof(DagArgs) && kKernargBytes <= 512,
+        "DAG kernarg size");
   std::memcpy(code.data, kKernelImage, sizeof(kKernelImage));
   for (uint32_t round = 1; round <= rounds; ++round) {
     // The first round reaches the maximum available fan-in. Later rounds keep
-    // two roots, one held and one free, followed by randomized reconverging joins.
-    const uint32_t roots = count < 3 ? 1 : (round == 1 ? std::min(count - 1, 5u) : 2);
+    // two roots, one held and one free, followed by randomized reconverging
+    // joins.
+    const uint32_t roots =
+        count < 3 ? 1 : (round == 1 ? std::min(count - 1, 5u) : 2);
     std::vector<std::array<uint32_t, 5>> parents(count);
     std::vector<uint32_t> fanin(count), tags(count), expected(count);
     for (uint32_t q = 0; q < count; ++q) {
@@ -74,13 +78,14 @@ int main(int argc, char** argv) {
       if (q >= roots) {
         const uint32_t limit = std::min(q, 5u);
         fanin[q] = round == 1 || limit == 1 ? limit : 2 + next() % (limit - 1);
-        parents[q][0] = 0;  // Every join has the held root as a decisive parent.
+        parents[q][0] =
+            0;  // Every join has the held root as a decisive parent.
         for (uint32_t d = 1; d < fanin[q]; ++d) {
           uint32_t parent;
           do {
             parent = next() % q;
-          } while (std::find(parents[q].begin(), parents[q].begin() + d, parent) !=
-                   parents[q].begin() + d);
+          } while (std::find(parents[q].begin(), parents[q].begin() + d,
+                             parent) != parents[q].begin() + d);
           parents[q][d] = parent;
         }
       }
@@ -116,12 +121,14 @@ int main(int argc, char** argv) {
         wait.dependencies[0] = control.address();
       }
       queues[q]->SubmitAql(&wait);
-      Dispatch packet = OneGroup(code.address(kDescriptorOffset), args.address(q * 512),
-                                 signals.address(q * 64), true);
+      Dispatch packet =
+          OneGroup(code.address(kDescriptorOffset), args.address(q * 512),
+                   signals.address(q * 64), true);
       queues[q]->SubmitAql(&packet);
     }
     WaitSignal(control, 64, *queues[0]);
-    for (uint32_t q = 1; q < roots; ++q) WaitSignal(signals, q * 64, *queues[q]);
+    for (uint32_t q = 1; q < roots; ++q)
+      WaitSignal(signals, q * 64, *queues[q]);
     if (roots < count) WaitSignal(control, 128, *queues[roots]);
     const uint64_t deadline = NowNs() + 1000000;
     do {
@@ -135,10 +142,14 @@ int main(int argc, char** argv) {
     control.Store64(8, 0);
     for (uint32_t q = 0; q < count; ++q) {
       WaitSignal(signals, q * 64, *queues[q]);
-      if (result.Load(q * 64) != expected[q] || result.Load(q * 64 + 1) != tags[q]) {
-        std::fprintf(stderr, "seed=%u round=%u queue=%u parents=", seed, round, q);
-        for (uint32_t d = 0; d < fanin[q]; ++d) std::fprintf(stderr, "%u,", parents[q][d]);
-        Fail(" DAG hash expected=%x observed=%x", expected[q], result.Load(q * 64));
+      if (result.Load(q * 64) != expected[q] ||
+          result.Load(q * 64 + 1) != tags[q]) {
+        std::fprintf(stderr, "seed=%u round=%u queue=%u parents=", seed, round,
+                     q);
+        for (uint32_t d = 0; d < fanin[q]; ++d)
+          std::fprintf(stderr, "%u,", parents[q][d]);
+        Fail(" DAG hash expected=%x observed=%x", expected[q],
+             result.Load(q * 64));
       }
       for (uint32_t word = 2; word < 16; ++word)
         Check(result.Load(q * 64 + word) == 0, "DAG output guard corrupted");

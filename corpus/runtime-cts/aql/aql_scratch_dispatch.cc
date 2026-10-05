@@ -28,10 +28,11 @@ int main(int argc, char** argv) {
   Check(kKernargBytes <= 512, "kernel arguments too large");
   const uint32_t lane_bytes = (kPrivateBytes + 15) & ~15u;
   const uint32_t wave_bytes = (lane_bytes * 32 + 255) & ~255u;
-  const uint32_t engines =
-      device.Property("array_count") / device.Property("simd_arrays_per_engine");
+  const uint32_t engines = device.Property("array_count") /
+                           device.Property("simd_arrays_per_engine");
   const uint32_t scratch_bytes = wave_bytes * engines * 16;
-  Buffer first(device, scratch_bytes + 4096), second(device, scratch_bytes + 4096);
+  Buffer first(device, scratch_bytes + 4096),
+      second(device, scratch_bytes + 4096);
   Buffer* backing[] = {&first, &second};
   Buffer code(device, sizeof(kKernelImage), true), args(device, 4096);
   Buffer result(device, kThreads * 8 + 4096), signals(device, 4096);
@@ -42,10 +43,11 @@ int main(int argc, char** argv) {
     for (auto* buffer : backing) std::memset(buffer->data, 0xa5, buffer->size);
     queue.SetScratch(*backing[selected], lane_bytes);
     ResetSignal(signals, 0);
-    Arguments a{result.address(), result.address(kThreads * 4), round * 17, steps, round};
+    Arguments a{result.address(), result.address(kThreads * 4), round * 17,
+                steps, round};
     std::memcpy(args.data, &a, sizeof(a));
-    Dispatch packet =
-        OneGroup(code.address(kDescriptorOffset), args.address(), signals.address(), true);
+    Dispatch packet = OneGroup(code.address(kDescriptorOffset), args.address(),
+                               signals.address(), true);
     packet.workgroup_x = 64;
     packet.grid_x = kThreads;
     packet.private_bytes = kPrivateBytes;
@@ -60,14 +62,17 @@ int main(int argc, char** argv) {
       }
       uint32_t checksum = 0;
       for (uint32_t j = 0; j < 64; ++j) checksum += state[j] * (j + 1);
-      Check(result.Load(thread) == checksum, "private scratch checksum mismatch");
-      Check(result.Load(kThreads + thread) == round, "private scratch marker missing");
+      Check(result.Load(thread) == checksum,
+            "private scratch checksum mismatch");
+      Check(result.Load(kThreads + thread) == round,
+            "private scratch marker missing");
     }
     queue.Drain();
     bool touched = false;
     for (uint32_t word = 0; word < scratch_bytes / 4; ++word) {
       touched |= backing[selected]->Load(word) != kSentinel;
-      Check(backing[selected ^ 1]->Load(word) == kSentinel, "dispatch used stale scratch backing");
+      Check(backing[selected ^ 1]->Load(word) == kSentinel,
+            "dispatch used stale scratch backing");
     }
     Check(touched, "dispatch did not use configured scratch backing");
     for (auto* buffer : backing)

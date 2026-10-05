@@ -11,8 +11,8 @@ static inline void sync_group(void) {
   __builtin_amdgcn_fence(__ATOMIC_ACQUIRE, "workgroup");
 }
 __attribute__((reqd_work_group_size(256, 1, 1))) kernel void cts_work(
-    global uint* output, global volatile uint* done, uint seed, uint iterations, uint token,
-    local uint* arena) {
+    global uint* output, global volatile uint* done, uint seed, uint iterations,
+    uint token, local uint* arena) {
   local uint* a = arena;
   local uint* b = arena + 4096;
   uint group = __builtin_amdgcn_workgroup_id_x();
@@ -20,7 +20,8 @@ __attribute__((reqd_work_group_size(256, 1, 1))) kernel void cts_work(
   for (uint j = lane; j < 4096; j += 256) a[j] = seed ^ (group * 4096 + j);
   sync_group();
   for (uint step = 0; step < iterations; ++step) {
-    for (uint j = lane; j < 4096; j += 256) b[j] = a[(j + 17) & 4095] * 1664525u + 1013904223u;
+    for (uint j = lane; j < 4096; j += 256)
+      b[j] = a[(j + 17) & 4095] * 1664525u + 1013904223u;
     sync_group();
     for (uint j = lane; j < 4096; j += 256) a[j] = b[j];
     sync_group();

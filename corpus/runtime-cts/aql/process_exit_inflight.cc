@@ -30,7 +30,8 @@
 using namespace cts;
 extern char** environ;
 static int Worker(int argc, char** argv) {
-  Check(prctl(PR_SET_PDEATHSIG, SIGKILL) == 0 && getppid() != 1, "worker parent disappeared");
+  Check(prctl(PR_SET_PDEATHSIG, SIGKILL) == 0 && getppid() != 1,
+        "worker parent disappeared");
   Start(argc, argv, "process_exit_worker");
   Device device;
   Buffer memory(device, 4096);
@@ -68,20 +69,29 @@ int main(int argc, char** argv) {
     Check(pipe2(pipefd, O_CLOEXEC) == 0, "create readiness pipe");
     posix_spawn_file_actions_t actions;
     Check(posix_spawn_file_actions_init(&actions) == 0, "spawn actions init");
-    Check(posix_spawn_file_actions_adddup2(&actions, pipefd[1], 3) == 0, "spawn ready descriptor");
+    Check(posix_spawn_file_actions_adddup2(&actions, pipefd[1], 3) == 0,
+          "spawn ready descriptor");
     if (pipefd[0] != 3)
-      Check(posix_spawn_file_actions_addclose(&actions, pipefd[0]) == 0, "spawn close reader");
+      Check(posix_spawn_file_actions_addclose(&actions, pipefd[0]) == 0,
+            "spawn close reader");
     if (pipefd[1] != 3)
-      Check(posix_spawn_file_actions_addclose(&actions, pipefd[1]) == 0, "spawn close writer");
+      Check(posix_spawn_file_actions_addclose(&actions, pipefd[1]) == 0,
+            "spawn close writer");
     char path[] = "/proc/self/exe", worker[] = "--worker";
     char timeout[32];
-    std::snprintf(timeout, sizeof(timeout), "%u", Option(argc, argv, "--timeout", 45, 3600));
+    std::snprintf(timeout, sizeof(timeout), "%u",
+                  Option(argc, argv, "--timeout", 45, 3600));
     char metadata_option[] = "--aql-metadata";
-    char* child_argv[] = {path, worker, timeout,
-                         AqlMetadataMode() ? metadata_option : nullptr,
-                         const_cast<char*>(AqlMetadataMode()), nullptr};
+    char* child_argv[] = {path,
+                          worker,
+                          timeout,
+                          AqlMetadataMode() ? metadata_option : nullptr,
+                          const_cast<char*>(AqlMetadataMode()),
+                          nullptr};
     pid_t child;
-    Check(posix_spawn(&child, path, &actions, nullptr, child_argv, environ) == 0, "spawn worker");
+    Check(
+        posix_spawn(&child, path, &actions, nullptr, child_argv, environ) == 0,
+        "spawn worker");
     posix_spawn_file_actions_destroy(&actions);
     close(pipefd[1]);
     pollfd ready{pipefd[0], POLLIN, 0};
@@ -107,7 +117,8 @@ int main(int argc, char** argv) {
       Check(NowNs() < deadline, "blocked queue process teardown timeout");
       std::this_thread::yield();
     }
-    Check(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL, "worker exited before intended kill");
+    Check(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL,
+          "worker exited before intended kill");
     Queue replacement(device, 4096, 7, true);
     work.Prepare(0, memory.address(), round * 2 + 1);
     work.Prepare(1, memory.address(64), round);

@@ -1,6 +1,7 @@
 // Purpose: Disable, submit to, resume and recreate an SDMA queue.
 // A surviving PM4 queue must progress while SDMA is disabled. Check that copies
-// and completion remain blocked, then validate all data and guards after resume.
+// and completion remain blocked, then validate all data and guards after
+// resume.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -48,7 +49,8 @@ int main(int argc, char** argv) {
     fences.Wait(0, round);
     queue.Drain();
     for (uint32_t word = 0; word < 63; ++word)
-      Check(target.Load(word) == round * 65536 + word, "resumed SDMA copy mismatch");
+      Check(target.Load(word) == round * 65536 + word,
+            "resumed SDMA copy mismatch");
     Check(target.Load(63) == 0, "SDMA copy guard corrupted");
     survivor.Drain();
   }

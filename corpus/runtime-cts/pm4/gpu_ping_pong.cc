@@ -1,6 +1,6 @@
-// Purpose: Stress repeated GPU-to-GPU handshakes between two PM4 queues without host gating
-// between turns. Each side waits for its peer's token before incrementing a
-// shared counter. Check the total and all completions.
+// Purpose: Stress repeated GPU-to-GPU handshakes between two PM4 queues without
+// host gating between turns. Each side waits for its peer's token before
+// incrementing a shared counter. Check the total and all completions.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -19,8 +19,8 @@
 #include <memory>
 #include <thread>
 
-#include "support/aql_payload.h"
 #include "pm4.h"
+#include "support/aql_payload.h"
 using namespace cts;
 
 static int RunPm4(int argc, char** argv) {
@@ -32,7 +32,8 @@ static int RunPm4(int argc, char** argv) {
   uint32_t token = 0;
   for (uint32_t round = 0; round < rounds; ++round) {
     Pm4 ping, pong;
-    // Both command streams fit in their rings. Host submits both before waiting.
+    // Both command streams fit in their rings. Host submits both before
+    // waiting.
     for (uint32_t step = 0; step < 8; ++step) {
       ++token;
       if (token > 1) ping.Wait(result.address(64), token - 1);
@@ -52,7 +53,8 @@ static int RunPm4(int argc, char** argv) {
     a.Submit(ping.words);
     result.Wait(48, round + 1, 10000, &a);
     result.Wait(64, round + 1, 10000, &b);
-    Check(result.Load(32) == token * 2, "GPU handshake skipped or duplicated a turn");
+    Check(result.Load(32) == token * 2,
+          "GPU handshake skipped or duplicated a turn");
   }
   a.Drain();
   b.Drain();
@@ -60,9 +62,8 @@ static int RunPm4(int argc, char** argv) {
   return 0;
 }
 
-
-
 int main(int argc, char** argv) {
-  Check(!AqlMode(argc, argv), "use the AQL suite for this scenario in AQL mode");
+  Check(!AqlMode(argc, argv),
+        "use the AQL suite for this scenario in AQL mode");
   return RunPm4(argc, argv);
 }

@@ -2,9 +2,9 @@
 // signal across multiple queues. Publish each 128-dispatch burst with ONE
 // doorbell; SDMA waits for the final decrement and snapshots all shader output.
 // Hold the last dispatch behind a host gate until all other decrements arrive;
-// require a count of one and no SDMA snapshot before release. Verify every result and untouched
-// guard after the snapshot. Detect lost decrements, premature zero, stale shader stores and
-// ring-reuse errors.
+// require a count of one and no SDMA snapshot before release. Verify every
+// result and untouched guard after the snapshot. Detect lost decrements,
+// premature zero, stale shader stores and ring-reuse errors.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --iterations N: rounds; default 16; range 1..100000.
@@ -32,11 +32,13 @@ int main(int argc, char** argv) {
   const uint32_t slots = count * kBatch;
   Device device;
   Buffer code(device, sizeof(kKernelImage), true), args(device, slots * 512);
-  Buffer output(device, slots * 64), snapshot(device, slots * 64), signals(device, 4096);
+  Buffer output(device, slots * 64), snapshot(device, slots * 64),
+      signals(device, 4096);
   Check(kKernargBytes <= 512, "kernel arguments too large");
   std::memcpy(code.data, kKernelImage, sizeof(kKernelImage));
   std::vector<std::unique_ptr<Queue>> queues;
-  for (uint32_t q = 0; q < count; ++q) queues.emplace_back(new Queue(device, 16384, 7, true));
+  for (uint32_t q = 0; q < count; ++q)
+    queues.emplace_back(new Queue(device, 16384, 7, true));
   SdmaQueue consumer(device);
   for (uint32_t round = 1; round <= rounds; ++round) {
     signals.Store64(0, 1);
@@ -54,11 +56,14 @@ int main(int argc, char** argv) {
         const uint32_t slot = q * kBatch + i;
         output.Store(slot * 16, 0);
         output.Store(slot * 16 + 1, 0);
-        Arguments arguments{output.address(slot * 64), output.address(slot * 64 + 4),
-                            seed ^ (round * 65536 + slot), 3 + slot % 31, round};
-        std::memcpy(static_cast<char*>(args.data) + slot * 512, &arguments, sizeof(arguments));
-        Dispatch packet = OneGroup(code.address(kDescriptorOffset), args.address(slot * 512),
-                                   signals.address(), false);
+        Arguments arguments{
+            output.address(slot * 64), output.address(slot * 64 + 4),
+            seed ^ (round * 65536 + slot), 3 + slot % 31, round};
+        std::memcpy(static_cast<char*>(args.data) + slot * 512, &arguments,
+                    sizeof(arguments));
+        Dispatch packet =
+            OneGroup(code.address(kDescriptorOffset), args.address(slot * 512),
+                     signals.address(), false);
         uint64_t index = first + i;
         if (q == count - 1 && i == kBatch - 1) {
           uint64_t gate[8]{};
@@ -75,18 +80,22 @@ int main(int argc, char** argv) {
     do {
       Check(signals.Load64(8) == 1 && signals.Load(16) == round - 1,
             "counted completion reached zero before held dispatch");
-      Check(output.Load((slots - 1) * 16 + 1) == 0, "held counted dispatch executed early");
+      Check(output.Load((slots - 1) * 16 + 1) == 0,
+            "held counted dispatch executed early");
       std::this_thread::yield();
     } while (NowNs() < deadline);
     signals.Store64(136, 0);
     signals.Wait(16, round);
     Check(signals.Load64(8) == 0, "counted completion underflow");
     for (uint32_t slot = 0; slot < slots; ++slot) {
-      Check(snapshot.Load(slot * 16) == Advance(seed ^ (round * 65536 + slot), 3 + slot % 31),
+      Check(snapshot.Load(slot * 16) ==
+                Advance(seed ^ (round * 65536 + slot), 3 + slot % 31),
             "counted signal released consumer before all shader stores");
-      Check(snapshot.Load(slot * 16 + 1) == round, "counted completion marker missing");
+      Check(snapshot.Load(slot * 16 + 1) == round,
+            "counted completion marker missing");
       for (uint32_t guard = 2; guard < 16; ++guard)
-        Check(snapshot.Load(slot * 16 + guard) == 0, "counted dispatch guard corrupted");
+        Check(snapshot.Load(slot * 16 + guard) == 0,
+              "counted dispatch guard corrupted");
     }
     for (auto& queue : queues) queue->Drain();
     consumer.Drain();

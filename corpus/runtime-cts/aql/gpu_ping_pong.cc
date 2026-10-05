@@ -1,6 +1,7 @@
-// Purpose: Stress repeated GPU-to-GPU handshakes between two AQL queues without host gating
-// between turns. Each side waits for its peer's token, then propagates a
-// per-turn payload through dispatches. Check every turn and all completions.
+// Purpose: Stress repeated GPU-to-GPU handshakes between two AQL queues without
+// host gating between turns. Each side waits for its peer's token, then
+// propagates a per-turn payload through dispatches. Check every turn and all
+// completions.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   Queue protocol: AQL only.
@@ -33,7 +34,8 @@ int main(int argc, char** argv) {
   for (uint32_t round = 1; round <= rounds; ++round) {
     result.Store(0, round * 65536);
     for (uint32_t step = 0; step < 16; ++step)
-      work.Prepare(step, result.address((step + 1) * 4), 1, 1, result.address(step * 4));
+      work.Prepare(step, result.address((step + 1) * 4), 1, 1,
+                   result.address(step * 4));
     // Separate signal/storage per turn: no reset can race a queued consumer.
     for (uint32_t step = 1; step < 16; step += 2) {
       AqlWait(b, work.Signal(step - 1));
@@ -45,7 +47,8 @@ int main(int argc, char** argv) {
     }
     for (uint32_t step = 0; step < 16; ++step) {
       work.Wait(step & 1 ? b : a, step);
-      Check(result.Load(step + 1) == round * 65536 + step + 1, "AQL handshake ordering mismatch");
+      Check(result.Load(step + 1) == round * 65536 + step + 1,
+            "AQL handshake ordering mismatch");
     }
     a.Drain();
     b.Drain();

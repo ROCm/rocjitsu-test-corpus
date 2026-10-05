@@ -1,5 +1,6 @@
 // Direct-KFD SDMA ring publication, doorbells and read-pointer retirement.
-// Queue ABI: https://github.com/torvalds/linux/blob/master/include/uapi/linux/kfd_ioctl.h
+// Queue ABI:
+// https://github.com/torvalds/linux/blob/master/include/uapi/linux/kfd_ioctl.h
 // Public queue programming reference:
 // https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/libhsakmt/src/queues.c
 #include "support/sdma.h"
@@ -41,7 +42,8 @@ void SdmaQueue::Submit(const std::vector<uint32_t>& words) {
   // ROCr requires 256-byte submissions on early gfx9 SDMA engines.
   const size_t alignment = kGfxMajor == 9 ? 256 : 128;
   const size_t bytes = (words.size() * 4 + alignment - 1) & ~(alignment - 1);
-  Check(!words.empty() && !(words.size() & 31) && bytes < ring_.size, "invalid SDMA stream size");
+  Check(!words.empty() && !(words.size() & 31) && bytes < ring_.size,
+        "invalid SDMA stream size");
   const uint64_t deadline = NowNs() + 10000000000ull;
   while (producer_ - Consumed() + bytes >= ring_.size) {
     if (NowNs() >= deadline) Fail("SDMA ring full queue=%u", id_);
@@ -49,7 +51,8 @@ void SdmaQueue::Submit(const std::vector<uint32_t>& words) {
   }
   auto* ring = static_cast<uint32_t*>(ring_.data);
   for (size_t i = 0; i < bytes / 4; ++i)
-    ring[((producer_ / 4) + i) % (ring_.size / 4)] = i < words.size() ? words[i] : 0;
+    ring[((producer_ / 4) + i) % (ring_.size / 4)] =
+        i < words.size() ? words[i] : 0;
   producer_ += bytes;
   pointers_.Store64(64, producer_);
   __asm__ __volatile__("sfence" ::: "memory");

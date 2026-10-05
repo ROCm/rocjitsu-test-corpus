@@ -6,7 +6,8 @@
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   Queue protocol: AQL only.
-//   The observer copies data through the tested mapping before host verification.
+//   The observer copies data through the tested mapping before host
+//   verification.
 //   --iterations N: rounds; default 64; range 1..100000.
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
 //   --queues and --seed: accepted by common parser but unused.
@@ -34,14 +35,16 @@ int main(int argc, char** argv) {
   for (uint32_t round = 1; round <= rounds; ++round) {
     Buffer source(device, kBytes, false, false, true);
     Buffer target(device, kBytes, false, false, true);
-    for (uint32_t word = 0; word < kBytes / 4; ++word) source.Store(word, round * 65536 + word);
+    for (uint32_t word = 0; word < kBytes / 4; ++word)
+      source.Store(word, round * 65536 + word);
     for (uint32_t test = 0; test < 6; ++test) {
       const uint32_t src = test & 1 ? 4093 : 1;
       const uint32_t dst = test & 1 ? 8191 : 3;
       const uint32_t bytes = lengths[test];
       std::memset(target.data, 0xcd, kBytes);
       std::vector<unsigned char> expected(kBytes, 0xcd);
-      std::memcpy(expected.data() + dst, static_cast<char*>(source.data) + src, bytes);
+      std::memcpy(expected.data() + dst, static_cast<char*>(source.data) + src,
+                  bytes);
       Sdma commands(device.gfx);
       commands.Acquire();
       commands.Copy(source.address(src), local.address(), bytes);

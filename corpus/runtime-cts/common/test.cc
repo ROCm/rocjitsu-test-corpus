@@ -3,7 +3,6 @@
 // https://pubs.opengroup.org/onlinepubs/9799919799/functions/alarm.html
 // https://pubs.opengroup.org/onlinepubs/9799919799/functions/clock_gettime.html
 #include "common/test.h"
-#include "support/platform.h"
 
 #include <signal.h>
 #include <unistd.h>
@@ -14,6 +13,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+
+#include "support/platform.h"
 
 namespace cts {
 namespace {
@@ -45,7 +46,8 @@ uint64_t NowNs() {
   Check(clock_gettime(CLOCK_MONOTONIC, &t) == 0, "clock_gettime");
   return uint64_t(t.tv_sec) * 1000000000 + t.tv_nsec;
 }
-uint32_t Option(int argc, char** argv, const char* name, uint32_t fallback, uint32_t maximum) {
+uint32_t Option(int argc, char** argv, const char* name, uint32_t fallback,
+                uint32_t maximum) {
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], name)) continue;
     Check(i + 1 < argc, "missing option value");
@@ -64,13 +66,18 @@ bool AqlMetadataEnabled() {
 }
 void Start(int argc, char** argv, const char* test, bool modes) {
   for (int i = 1; i < argc; i += 2) {
-    const bool known = !std::strcmp(argv[i], "--iterations") || !std::strcmp(argv[i], "--queues") ||
-                       !std::strcmp(argv[i], "--timeout") || !std::strcmp(argv[i], "--seed") ||
+    const bool known = !std::strcmp(argv[i], "--iterations") ||
+                       !std::strcmp(argv[i], "--queues") ||
+                       !std::strcmp(argv[i], "--timeout") ||
+                       !std::strcmp(argv[i], "--seed") ||
                        (modes && !std::strcmp(argv[i], "--mode")) ||
                        !std::strcmp(argv[i], "--aql-metadata");
     if (!known || i + 1 == argc)
-      Fail("usage: %s [--iterations N] [--queues N] [--timeout seconds] [--seed N]%s"
-           " [--aql-metadata off|on]", argv[0], modes ? " [--mode pm4|aql]" : "");
+      Fail(
+          "usage: %s [--iterations N] [--queues N] [--timeout seconds] [--seed "
+          "N]%s"
+          " [--aql-metadata off|on]",
+          argv[0], modes ? " [--mode pm4|aql]" : "");
     if (!std::strcmp(argv[i], "--aql-metadata")) {
       Check(kGfx125, "--aql-metadata is only supported on gfx12.5 (gfx1250)");
       Check(!std::strcmp(argv[i + 1], "off") || !std::strcmp(argv[i + 1], "on"),
@@ -78,7 +85,8 @@ void Start(int argc, char** argv, const char* test, bool modes) {
       aql_metadata_mode = argv[i + 1];
     }
   }
-  if (kGfx125) std::printf("aql_metadata=%s\n", AqlMetadataEnabled() ? "on" : "off");
+  if (kGfx125)
+    std::printf("aql_metadata=%s\n", AqlMetadataEnabled() ? "on" : "off");
   if (modes) std::printf("mode=%s\n", AqlMode(argc, argv) ? "aql" : "pm4");
   signal(SIGALRM, Watchdog);
   alarm(Option(argc, argv, "--timeout", 45, 3600));
@@ -96,7 +104,8 @@ bool AqlMode(int argc, char** argv) {
   return false;
 }
 void Pass(const char* test, uint64_t operations) {
-  std::printf("PASS %s operations=%llu\n", test, (unsigned long long)operations);
+  std::printf("PASS %s operations=%llu\n", test,
+              (unsigned long long)operations);
 }
 
 }  // namespace cts

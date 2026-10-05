@@ -5,8 +5,9 @@
 // Reproducer: pm4_dependency_chain_no_offload_gfx1250 builds this same scenario
 // with WAIT_REG_MEM optimize_ace_offload_mode clear. Only PM4 is accepted.
 // Reproducer: --queues 8 --iterations 4. On fw 2380 it stalled on round 2 and
-// subsequent queue progress/recovery failed. The cause and scheduling guarantees
-// remain unresolved; a host reboot may be needed. Checks are identical to smoke.
+// subsequent queue progress/recovery failed. The cause and scheduling
+// guarantees remain unresolved; a host reboot may be needed. Checks are
+// identical to smoke.
 //
 // Parameters (decimal integers; ranges inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -25,8 +26,8 @@
 #include <memory>
 
 #include "pipeline_kernel.inc"
-#include "support/aql.h"
 #include "pm4.h"
+#include "support/aql.h"
 #include "support/sdma.h"
 
 using namespace cts;
@@ -51,7 +52,8 @@ static int RunPm4(int argc, char** argv) {
       if (q) {
 #ifdef REPRO_PM4_NO_OFFLOAD
         // Identical comparison and poll interval; only ordinal7 bit 31 differs.
-        commands.WaitCompare(result.address((q - 1) * 4096 + 64), round, 3, 0xffffffffu);
+        commands.WaitCompare(result.address((q - 1) * 4096 + 64), round, 3,
+                             0xffffffffu);
 #else
         commands.Wait(result.address((q - 1) * 4096 + 64), round);
 #endif
@@ -84,11 +86,12 @@ struct BarrierPacket {
 };
 static_assert(sizeof(BarrierPacket) == 64);
 
-
 int main(int argc, char** argv) {
 #ifdef REPRO_PM4_NO_OFFLOAD
-  Check(!AqlMode(argc, argv), "non-offloaded wait investigation requires --mode pm4");
+  Check(!AqlMode(argc, argv),
+        "non-offloaded wait investigation requires --mode pm4");
 #endif
-  Check(!AqlMode(argc, argv), "use the AQL suite for this scenario in AQL mode");
+  Check(!AqlMode(argc, argv),
+        "use the AQL suite for this scenario in AQL mode");
   return RunPm4(argc, argv);
 }

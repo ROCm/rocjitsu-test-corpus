@@ -1,9 +1,9 @@
-// Purpose: Stress a seeded streaming graph of 64-bit timeline waits and signals across queues.
-// Wait only on previously published work to avoid cycles, with sparse host waits
-// and timeline values crossing the low-word boundary. Check every payload, final
-// timeline and the exact operation count. Every wait copies its producer
-// payload into an immutable edge witness. A held producer first proves that
-// a reached consumer cannot complete before release.
+// Purpose: Stress a seeded streaming graph of 64-bit timeline waits and signals
+// across queues. Wait only on previously published work to avoid cycles, with
+// sparse host waits and timeline values crossing the low-word boundary. Check
+// every payload, final timeline and the exact operation count. Every wait
+// copies its producer payload into an immutable edge witness. A held producer
+// first proves that a reached consumer cannot complete before release.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -41,7 +41,8 @@ int main(int argc, char** argv) {
     return random;
   };
   Device device;
-  Buffer timelines(device, count * 64), witnesses(device, size_t(steps) * 4 * 4);
+  Buffer timelines(device, count * 64),
+      witnesses(device, size_t(steps) * 4 * 4);
   Buffer control(device, 4096);
   Buffer result(device, (size_t(steps) + count + 1) * 4);
   std::vector<std::unique_ptr<Queue>> queues;
@@ -50,7 +51,8 @@ int main(int argc, char** argv) {
     timelines.Store64(q * 64, values[q]);
     queues.emplace_back(new Queue(device));
   }
-  // A separate pair keeps the controlled negative phase meaningful even with one stream queue.
+  // A separate pair keeps the controlled negative phase meaningful even with
+  // one stream queue.
   Queue held(device), dependent(device);
   Pm4 source;
   source.Write(control.address(64), 1);
@@ -71,7 +73,8 @@ int main(int argc, char** argv) {
   control.Wait(64, 1, 10000, &dependent);
   const uint64_t deadline = NowNs() + 1000000;
   do {
-    Check(control.Load(80) == 0 && control.Load(96) == 0, "held timeline dependency escaped");
+    Check(control.Load(80) == 0 && control.Load(96) == 0,
+          "held timeline dependency escaped");
     std::this_thread::yield();
   } while (NowNs() < deadline);
   control.Store(0, 1);
@@ -79,7 +82,8 @@ int main(int argc, char** argv) {
   Check(control.Load(80) == 0x13579bdf, "timeline dependency data mismatch");
   held.Drain();
   dependent.Drain();
-  std::vector<uint32_t> last(count, steps);  // steps denotes the initialized generation zero.
+  std::vector<uint32_t> last(
+      count, steps);  // steps denotes the initialized generation zero.
   std::vector<std::array<uint32_t, 4>> parents(steps);
   std::vector<uint32_t> fanin(steps);
   for (uint32_t step = 0; step < steps; ++step) {
@@ -92,8 +96,10 @@ int main(int argc, char** argv) {
       commands.Wait64(timelines.address(other * 64), values[other]);
       parents[step][d] = last[other];
       commands.Barrier();
-      // Initial timelines refer to the untouched zero word in control, never the count word.
-      commands.Copy(last[other] == steps ? control.address(448) : result.address(last[other] * 4),
+      // Initial timelines refer to the untouched zero word in control, never
+      // the count word.
+      commands.Copy(last[other] == steps ? control.address(448)
+                                         : result.address(last[other] * 4),
                     witnesses.address((size_t(step) * 4 + d) * 4));
     }
     commands.Write(result.address(step * 4), step + 1);
@@ -123,9 +129,10 @@ int main(int argc, char** argv) {
       const uint32_t expected = parent == steps ? 0 : parent + 1;
       const uint32_t observed = witnesses.Load(size_t(step) * 4 + d);
       if (observed != expected)
-        Fail("timeline edge step=%u edge=%u parent=%u expected=%x observed=%x", step, d, parent,
-             expected, observed);
+        Fail("timeline edge step=%u edge=%u parent=%u expected=%x observed=%x",
+             step, d, parent, expected, observed);
     }
-  Check(result.Load(steps) == steps, "timeline graph lost or duplicated operations");
+  Check(result.Load(steps) == steps,
+        "timeline graph lost or duplicated operations");
   Pass("pm4_timeline_fuzz", steps);
 }

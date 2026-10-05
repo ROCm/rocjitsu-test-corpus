@@ -1,8 +1,9 @@
-// Purpose: Test AQL barrier dependencies and completion signals using five real signal handles.
-// The AND binary must wait for all five; the OR binary must finish after any one.
-// After the barrier, dispatch a shader that copies all AND payloads or only
-// the known OR winner. Check data visibility, blocked completion, remaining
-// signals, completion underflow and untouched output guards.
+// Purpose: Test AQL barrier dependencies and completion signals using five real
+// signal handles. The AND binary must wait for all five; the OR binary must
+// finish after any one. After the barrier, dispatch a shader that copies all
+// AND payloads or only the known OR winner. Check data visibility, blocked
+// completion, remaining signals, completion underflow and untouched output
+// guards.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; default off for AQL queues.
@@ -23,7 +24,8 @@
 using namespace cts;
 
 // AMD AQL barrier packets use five handles to firmware-visible 64-byte signals.
-// All five handles are populated so OR does not accidentally pass on a null slot.
+// All five handles are populated so OR does not accidentally pass on a null
+// slot.
 struct BarrierPacket {
   uint16_t header;
   uint16_t reserved0;
@@ -58,7 +60,8 @@ int main(int argc, char** argv) {
                      payload.address(kAny ? decisive * 4 : 0));
     BarrierPacket packet{};
     packet.header = (kAny ? 5u : 3u) | (1u << 8) | (2u << 9) | (2u << 11);
-    for (uint32_t s = 0; s < 5; ++s) packet.dependencies[s] = signals.address(s * 64);
+    for (uint32_t s = 0; s < 5; ++s)
+      packet.dependencies[s] = signals.address(s * 64);
     packet.completion = signals.address(5 * 64);
     waiter.SubmitAql(&packet);
     consumer.Submit(waiter, 0);
@@ -79,7 +82,8 @@ int main(int argc, char** argv) {
     result.Wait(0, round, 10000, &producer);
     const uint64_t deadline = NowNs() + 1000000;
     while (NowNs() < deadline) {
-      Check(signals.Load64(5 * 64 + 8) == 1, "AQL barrier completed with unsatisfied dependencies");
+      Check(signals.Load64(5 * 64 + 8) == 1,
+            "AQL barrier completed with unsatisfied dependencies");
       std::this_thread::yield();
     }
     if (round & 1) {

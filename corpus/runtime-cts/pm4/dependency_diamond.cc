@@ -1,7 +1,8 @@
-// Purpose: Test cross-queue fan-out and fan-in with the join submitted before its producers.
-// Branches wait for a common root, copy its payload and add their branch index.
-// The join waits for every branch and copies its distinct result. Check for
-// stale data, wrong-branch reads or prematurely satisfied dependencies.
+// Purpose: Test cross-queue fan-out and fan-in with the join submitted before
+// its producers. Branches wait for a common root, copy its payload and add
+// their branch index. The join waits for every branch and copies its distinct
+// result. Check for stale data, wrong-branch reads or prematurely satisfied
+// dependencies.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -22,8 +23,8 @@
 #include <memory>
 #include <thread>
 
-#include "support/aql_payload.h"
 #include "pm4.h"
+#include "support/aql_payload.h"
 
 using namespace cts;
 
@@ -34,13 +35,15 @@ static int RunPm4(int argc, char** argv) {
   Device device;
   Buffer result(device, (width + 2) * 4096);
   std::vector<std::unique_ptr<Queue>> queues;
-  for (uint32_t q = 0; q < width + 2; ++q) queues.emplace_back(new Queue(device));
+  for (uint32_t q = 0; q < width + 2; ++q)
+    queues.emplace_back(new Queue(device));
   for (uint32_t round = 1; round <= iterations; ++round) {
     Pm4 join;
     for (uint32_t q = 1; q <= width; ++q) {
       join.Wait(result.address(q * 4096 + 64), round);
       join.Barrier();
-      join.Copy(result.address(q * 4096), result.address((width + 1) * 4096 + q * 4));
+      join.Copy(result.address(q * 4096),
+                result.address((width + 1) * 4096 + q * 4));
     }
     join.Finish(result.address((width + 1) * 4096 + 2048), round);
     queues.back()->Submit(join.words);
@@ -68,9 +71,8 @@ static int RunPm4(int argc, char** argv) {
   return 0;
 }
 
-
-
 int main(int argc, char** argv) {
-  Check(!AqlMode(argc, argv), "use the AQL suite for this scenario in AQL mode");
+  Check(!AqlMode(argc, argv),
+        "use the AQL suite for this scenario in AQL mode");
   return RunPm4(argc, argv);
 }

@@ -1,6 +1,7 @@
-// Purpose: Exercise repeated allocation, GPU mapping and retirement with one persistent queue.
-// Check writes at both ends of each buffer and untouched interior guards before
-// unmapping/freeing completed allocations; this does not test eviction.
+// Purpose: Exercise repeated allocation, GPU mapping and retirement with one
+// persistent queue. Check writes at both ends of each buffer and untouched
+// interior guards before unmapping/freeing completed allocations; this does not
+// test eviction.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -20,8 +21,8 @@
 #include <memory>
 #include <thread>
 
-#include "support/aql_payload.h"
 #include "pm4.h"
+#include "support/aql_payload.h"
 using namespace cts;
 
 static int RunPm4(int argc, char** argv) {
@@ -37,16 +38,19 @@ static int RunPm4(int argc, char** argv) {
     for (uint32_t i = 0; i < width; ++i) {
       buffers.emplace_back(new Buffer(device, 4096 * (1 + (round + i) % 4)));
       commands.Write(buffers.back()->address(), round * 256 + i);
-      commands.Write(buffers.back()->address(buffers.back()->size - 4), ~(round * 256 + i));
+      commands.Write(buffers.back()->address(buffers.back()->size - 4),
+                     ~(round * 256 + i));
     }
     commands.Finish(completion.address(), round);
     queue.Submit(commands.words);
     completion.Wait(0, round, 10000, &queue);
     queue.Drain();
     // Unmap/free only retired allocations, with a live queue retained across
-    // rounds. Fresh mappings must not expose stale payloads or stale translations.
+    // rounds. Fresh mappings must not expose stale payloads or stale
+    // translations.
     for (uint32_t i = width; i-- > 0;) {
-      Check(buffers[i]->Load(0) == round * 256 + i, "new allocation payload mismatch");
+      Check(buffers[i]->Load(0) == round * 256 + i,
+            "new allocation payload mismatch");
       Check(buffers[i]->Load(buffers[i]->size / 4 - 1) == ~(round * 256 + i),
             "allocation tail mismatch");
       for (size_t word = 1; word + 1 < buffers[i]->size / 4; ++word)
@@ -58,9 +62,8 @@ static int RunPm4(int argc, char** argv) {
   return 0;
 }
 
-
-
 int main(int argc, char** argv) {
-  Check(!AqlMode(argc, argv), "use the AQL suite for this scenario in AQL mode");
+  Check(!AqlMode(argc, argv),
+        "use the AQL suite for this scenario in AQL mode");
   return RunPm4(argc, argv);
 }

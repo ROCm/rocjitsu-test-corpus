@@ -4,8 +4,8 @@
 // gfx1250 obtains SE/AID from a message, not HW_ID1.
 // Public encoding reference (CheckCuMaskIsa):
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/libhsakmt/tests/kfdtest/src/ShaderStore.cpp
-kernel void cts_work(global uint* output, global uint* markers, uint seed, uint iterations,
-                         uint token) {
+kernel void cts_work(global uint* output, global uint* markers, uint seed,
+                     uint iterations, uint token) {
   uint identity, se_aid;
   __asm__ volatile("s_getreg_b32 %0, hwreg(HW_REG_HW_ID1)" : "=s"(identity));
 

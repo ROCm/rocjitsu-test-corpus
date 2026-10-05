@@ -1,6 +1,7 @@
-// Purpose: Test disabling an AQL queue before publishing work, updating priority while
-// paused, and re-enabling it. Require independent queue progress while pending work stays blocked,
-// then check that resumed work executes exactly once; no live shader is paused.
+// Purpose: Test disabling an AQL queue before publishing work, updating
+// priority while paused, and re-enabling it. Require independent queue progress
+// while pending work stays blocked, then check that resumed work executes
+// exactly once; no live shader is paused.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   Queue protocol: AQL only.
@@ -48,7 +49,8 @@ int main(int argc, char** argv) {
     } while (NowNs() < deadline);
     paused.SetEnabled(true);
     work.Wait(paused, 0);
-    Check(result.Load(0) == round && result.Load(16) == round, "AQL resume data mismatch");
+    Check(result.Load(0) == round && result.Load(16) == round,
+          "AQL resume data mismatch");
     paused.Drain();
     active.Drain();
   }

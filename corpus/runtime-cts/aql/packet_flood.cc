@@ -11,8 +11,8 @@
 //   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits retain a separate 10-second deadline.
 // Investigation: --queues 8 --iterations 1 has shown intermittent
-// gfx1201 timeouts but passes on gfx1250 (KFD 1.23, fw 2380). Higher queue counts
-// are not qualified oversubscription coverage.
+// gfx1201 timeouts but passes on gfx1250 (KFD 1.23, fw 2380). Higher queue
+// counts are not qualified oversubscription coverage.
 //
 // Inspiration: independent direct-KFD adaptations of these public patterns.
 // https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/runtime/src/iree/hal/cts/command_buffer/stress_test.cc
@@ -48,7 +48,8 @@ int main(int argc, char** argv) {
   Buffer args(device, count * kBatch * kArgumentBytes);
   Buffer signals(device, count * kBatch * 64);
   std::vector<std::unique_ptr<Queue>> queues;
-  for (uint32_t q = 0; q < count; ++q) queues.emplace_back(new Queue(device, 4096, 7, true));
+  for (uint32_t q = 0; q < count; ++q)
+    queues.emplace_back(new Queue(device, 4096, 7, true));
   for (uint32_t round = 1; round <= rounds; ++round) {
     for (uint32_t q = 0; q < count; ++q) {
       for (uint32_t batch = 0; batch < kBatch; ++batch) {
@@ -56,10 +57,11 @@ int main(int argc, char** argv) {
         signals.Store(slot * 16, 1);      // AMD_SIGNAL_KIND_USER.
         signals.Store(slot * 16 + 2, 1);  // 64-bit value; high half stays zero.
         Arguments arguments{result.address(slot * kSlotBytes),
-                            result.address(slot * kSlotBytes + 512), seed ^ (round * 65536 + slot),
+                            result.address(slot * kSlotBytes + 512),
+                            seed ^ (round * 65536 + slot),
                             1024u + (q % 4) * 4096u, round};
-        std::memcpy(static_cast<char*>(args.data) + slot * kArgumentBytes, &arguments,
-                    sizeof(arguments));
+        std::memcpy(static_cast<char*>(args.data) + slot * kArgumentBytes,
+                    &arguments, sizeof(arguments));
         Dispatch packet{};
         // AQL dispatch, system acquire/release scopes, one-dimensional grid.
         packet.header_setup = 2u | (2u << 9) | (2u << 11) | (1u << 16);
@@ -84,19 +86,23 @@ int main(int argc, char** argv) {
                            signals.Load(other * kBatch * 16 + 2),
                            result.Load(other * kBatch * kSlotBytes / 4 + 128));
             }
-            Fail("dispatch completion timeout round=%u queue=%u batch=%u", round, q, batch);
+            Fail("dispatch completion timeout round=%u queue=%u batch=%u",
+                 round, q, batch);
           }
           std::this_thread::yield();
         }
         Check(signals.Load(slot * 16 + 3) == 0, "completion signal underflow");
         for (uint32_t group = 0; group < kGroups; ++group) {
-          result.Wait(slot * kSlotBytes / 4 + 128 + group, round, 10000, queues[q].get());
+          result.Wait(slot * kSlotBytes / 4 + 128 + group, round, 10000,
+                      queues[q].get());
           uint32_t expected = seed ^ (round * 65536 + slot) ^ group;
           for (uint32_t i = 0; i < 1024u + (q % 4) * 4096u; ++i)
             expected = expected * 1664525u + 1013904223u;
-          Check(result.Load(slot * kSlotBytes / 4 + group) == expected, "dispatch result mismatch");
+          Check(result.Load(slot * kSlotBytes / 4 + group) == expected,
+                "dispatch result mismatch");
         }
-        Check(result.Load(slot * kSlotBytes / 4 + 64) == 0, "dispatch guard corrupted");
+        Check(result.Load(slot * kSlotBytes / 4 + 64) == 0,
+              "dispatch guard corrupted");
       }
       // Do not recycle kernargs until firmware has consumed those dispatches.
       queues[q]->Drain();

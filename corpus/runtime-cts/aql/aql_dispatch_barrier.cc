@@ -1,7 +1,8 @@
-// Purpose: Test whether an AQL dispatch's barrier bit orders it after an earlier live shader.
-// Hold the earlier shader behind a host gate and require the barrier-bit follower
-// to remain incomplete. Also observe optional overlap with the bit clear, then
-// check both outputs and the gated shader's arithmetic state.
+// Purpose: Test whether an AQL dispatch's barrier bit orders it after an
+// earlier live shader. Hold the earlier shader behind a host gate and require
+// the barrier-bit follower to remain incomplete. Also observe optional overlap
+// with the bit clear, then check both outputs and the gated shader's arithmetic
+// state.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --iterations N: paired barrier-set/barrier-clear cases.
@@ -40,37 +41,45 @@ int main(int argc, char** argv) {
       control.Store(2, 0);
       for (uint32_t slot = 0; slot < 2; ++slot) {
         ResetSignal(signals, slot * 64);
-        Arguments a{result.address(slot * 64), control.address(), seed, slot == 0, token};
+        Arguments a{result.address(slot * 64), control.address(), seed,
+                    slot == 0, token};
         std::memcpy(static_cast<char*>(args.data) + slot * 512, &a, sizeof(a));
-        Dispatch p = OneGroup(code.address(kDescriptorOffset), args.address(slot * 512),
-                              signals.address(slot * 64), ordered && slot == 1);
+        Dispatch p =
+            OneGroup(code.address(kDescriptorOffset), args.address(slot * 512),
+                     signals.address(slot * 64), ordered && slot == 1);
         queue.SubmitAql(&p);
       }
       control.Wait(0, token, 10000, &queue);
       if (ordered) {
         const uint64_t deadline = NowNs() + 1000000;
         while (NowNs() < deadline) {
-          Check(signals.Load64(72) == 1, "barrier-bit follower ran before prior dispatch finished");
+          Check(signals.Load64(72) == 1,
+                "barrier-bit follower ran before prior dispatch finished");
           std::this_thread::yield();
         }
       } else {
         // A clear barrier bit permits concurrency but does not require it.
         // Observe this case without making forward progress depend on overlap.
         const uint64_t deadline = NowNs() + 1000000;
-        while (NowNs() < deadline && signals.Load64(72)) std::this_thread::yield();
+        while (NowNs() < deadline && signals.Load64(72))
+          std::this_thread::yield();
         concurrent_followers += signals.Load64(72) == 0;
       }
       Check(signals.Load64(8) == 1, "gated shader finished before gate opened");
       control.Store(1, token);
       WaitSignal(signals, 0, queue);
       WaitSignal(signals, 64, queue);
-      Check(result.Load(1) != 0 && result.Load(0) == Advance(seed, result.Load(1)),
+      Check(result.Load(1) != 0 &&
+                result.Load(0) == Advance(seed, result.Load(1)),
             "gated shader state mismatch");
-      Check(result.Load(16) == seed && result.Load(17) == 0, "follower output mismatch");
-      Check(result.Load(2) == 0 && result.Load(18) == 0, "dispatch guard corrupted");
+      Check(result.Load(16) == seed && result.Load(17) == 0,
+            "follower output mismatch");
+      Check(result.Load(2) == 0 && result.Load(18) == 0,
+            "dispatch guard corrupted");
       queue.Drain();
     }
   }
-  std::printf("unbarriered_followers_completed_early=%u/%u\n", concurrent_followers, rounds);
+  std::printf("unbarriered_followers_completed_early=%u/%u\n",
+              concurrent_followers, rounds);
   Pass("aql_dispatch_barrier", uint64_t(rounds) * 4);
 }

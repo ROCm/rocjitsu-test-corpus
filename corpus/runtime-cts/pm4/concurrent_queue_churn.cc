@@ -1,6 +1,7 @@
-// Purpose: Stress concurrent KFD queue creation, submission and destruction by host threads.
-// Start equal-priority queues behind a host gate while a persistent queue progresses.
-// Check per-thread completion, exact operation counts, guards and queue retirement.
+// Purpose: Stress concurrent KFD queue creation, submission and destruction by
+// host threads. Start equal-priority queues behind a host gate while a
+// persistent queue progresses. Check per-thread completion, exact operation
+// counts, guards and queue retirement.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -13,17 +14,19 @@
 //     Default 45; range 1..3600.
 //   --seed: accepted by the common parser but unused here.
 // Progress waits retain their separate 10-second deadline.
-// Mixed-priority gated churn stalled during bring-up; this test uses equal priorities.
+// Mixed-priority gated churn stalled during bring-up; this test uses equal
+// priorities.
 //
-// Inspiration: concurrent stream creation and enqueue stress, recreated as KFD queues.
+// Inspiration: concurrent stream creation and enqueue stress, recreated as KFD
+// queues.
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/hip-tests/catch/stress/stream/Stress_hipStreamCreate.cc
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/hip-tests/catch/stress/stream/streamEnqueue.cc
 #include <atomic>
 #include <memory>
 #include <thread>
 
-#include "support/aql_payload.h"
 #include "pm4.h"
+#include "support/aql_payload.h"
 using namespace cts;
 static int RunPm4(int argc, char** argv) {
   Start(argc, argv, "concurrent_queue_churn", true);
@@ -54,8 +57,10 @@ static int RunPm4(int argc, char** argv) {
           queue.Submit(stream.words);
           ready.fetch_add(1, std::memory_order_release);
           shared.Wait((id + 2) * 16 + 1, round, 10000, &queue);
-          Check(shared.Load((id + 2) * 16) == round, "threaded queue lost or duplicated work");
-          Check(shared.Load((id + 2) * 16 + 2) == 0, "threaded queue guard corrupted");
+          Check(shared.Load((id + 2) * 16) == round,
+                "threaded queue lost or duplicated work");
+          Check(shared.Load((id + 2) * 16 + 2) == 0,
+                "threaded queue guard corrupted");
           queue.Drain();
         }
         retired.fetch_add(1, std::memory_order_release);
@@ -74,7 +79,8 @@ static int RunPm4(int argc, char** argv) {
     shared.Store(0, round);
     const uint64_t retire_deadline = NowNs() + 10000000000ull;
     while (retired.load(std::memory_order_acquire) < count * round) {
-      if (NowNs() >= retire_deadline) Fail("concurrent queue retirement stalled");
+      if (NowNs() >= retire_deadline)
+        Fail("concurrent queue retirement stalled");
       std::this_thread::yield();
     }
     begin.store(round + 1, std::memory_order_release);
@@ -86,9 +92,8 @@ static int RunPm4(int argc, char** argv) {
   return 0;
 }
 
-
-
 int main(int argc, char** argv) {
-  Check(!AqlMode(argc, argv), "use the AQL suite for this scenario in AQL mode");
+  Check(!AqlMode(argc, argv),
+        "use the AQL suite for this scenario in AQL mode");
   return RunPm4(argc, argv);
 }

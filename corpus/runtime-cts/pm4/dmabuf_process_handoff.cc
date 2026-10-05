@@ -13,7 +13,8 @@
 //   --iterations N: rounds; default 64; range 1..100000.
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
 //   --queues and --seed: accepted by common parser but unused.
-//   --worker N seconds mode: internal exec mode; imports DMA-BUF from inherited FD 3.
+//   --worker N seconds mode: internal exec mode; imports DMA-BUF from inherited
+//   FD 3.
 // Progress waits have a separate 10-second deadline.
 // Inspiration: independent direct-KFD adaptation of public workload patterns.
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/runtimes/rocddi/frontends/libamdf/examples/sdma-dmabuf-copy.c
@@ -31,17 +32,19 @@
 #include <cstring>
 #include <thread>
 
-#include "support/aql_payload.h"
 #include "pm4.h"
+#include "support/aql_payload.h"
 using namespace cts;
 extern char** environ;
 static size_t SharedBytes(uint32_t rounds) {
   return 4096 + ((size_t(rounds) * 128 + 4095) & ~size_t{4095});
 }
 static int Worker(uint32_t rounds, bool aql) {
-  Check(prctl(PR_SET_PDEATHSIG, SIGKILL) == 0 && getppid() != 1, "worker parent disappeared");
+  Check(prctl(PR_SET_PDEATHSIG, SIGKILL) == 0 && getppid() != 1,
+        "worker parent disappeared");
   Device device;
-  void* va = mmap(nullptr, SharedBytes(rounds), PROT_READ | PROT_WRITE, MAP_SHARED, 3, 0);
+  void* va = mmap(nullptr, SharedBytes(rounds), PROT_READ | PROT_WRITE,
+                  MAP_SHARED, 3, 0);
   Check(va != MAP_FAILED, "map DMA-BUF CPU alias for metadata");
   kfd_ioctl_import_dmabuf_args imported{};
   imported.va_addr = reinterpret_cast<uintptr_t>(va);
@@ -61,7 +64,8 @@ static int Worker(uint32_t rounds, bool aql) {
     AqlPayload work(device, 1);
     for (uint32_t round = 1; round <= rounds; ++round) {
       if (aql) {
-        const uint64_t signals = imported.va_addr + 4096 + size_t(round - 1) * 128;
+        const uint64_t signals =
+            imported.va_addr + 4096 + size_t(round - 1) * 128;
         work.Prepare(0, imported.va_addr + 256, 17, 63, imported.va_addr + 256);
         AqlWait(queue, signals);
         work.Submit(queue, 0, signals + 64);
@@ -86,7 +90,8 @@ static int Worker(uint32_t rounds, bool aql) {
   unmap.handle = imported.handle;
   unmap.device_ids_array_ptr = reinterpret_cast<uintptr_t>(&device.gpu_id);
   unmap.n_devices = 1;
-  device.Ioctl(AMDKFD_IOC_UNMAP_MEMORY_FROM_GPU, &unmap, "UNMAP imported DMA-BUF");
+  device.Ioctl(AMDKFD_IOC_UNMAP_MEMORY_FROM_GPU, &unmap,
+               "UNMAP imported DMA-BUF");
   Check(unmap.n_success == 1, "partial DMA-BUF unmapping");
   kfd_ioctl_free_memory_of_gpu_args free{};
   free.handle = imported.handle;
@@ -99,11 +104,13 @@ int main(int argc, char** argv) {
   if (worker) {
     char iterations_option[] = "--iterations", timeout_option[] = "--timeout",
          mode_option[] = "--mode";
-    std::vector<char*> worker_argv = {argv[0], iterations_option, argv[2], timeout_option,
-                           argv[3], mode_option,       argv[4]};
+    std::vector<char*> worker_argv = {
+        argv[0], iterations_option, argv[2], timeout_option,
+        argv[3], mode_option,       argv[4]};
     worker_argv.insert(worker_argv.end(), argv + 5, argv + argc);
     Start(worker_argv.size(), worker_argv.data(), "dmabuf_worker", true);
-    return Worker(Option(worker_argv.size(), worker_argv.data(), "--iterations", 64, 100000),
+    return Worker(Option(worker_argv.size(), worker_argv.data(), "--iterations",
+                         64, 100000),
                   AqlMode(worker_argv.size(), worker_argv.data()));
   }
   Start(argc, argv, "dmabuf_process_handoff", true);
@@ -130,16 +137,24 @@ int main(int argc, char** argv) {
   if (exported.dmabuf_fd != 3)
     Check(posix_spawn_file_actions_addclose(&actions, exported.dmabuf_fd) == 0,
           "spawn close original DMA-BUF");
-  char path[] = "/proc/self/exe", mode[] = "--worker", iterations[32], timeout[32];
+  char path[] = "/proc/self/exe", mode[] = "--worker", iterations[32],
+       timeout[32];
   std::snprintf(iterations, sizeof(iterations), "%u", rounds);
-  std::snprintf(timeout, sizeof(timeout), "%u", Option(argc, argv, "--timeout", 45, 3600));
+  std::snprintf(timeout, sizeof(timeout), "%u",
+                Option(argc, argv, "--timeout", 45, 3600));
   char pm4_mode[] = "pm4", aql_mode[] = "aql";
   char metadata_option[] = "--aql-metadata";
-  char* child_argv[] = {path, mode, iterations, timeout, aql ? aql_mode : pm4_mode,
-                       AqlMetadataMode() ? metadata_option : nullptr,
-                       const_cast<char*>(AqlMetadataMode()), nullptr};
+  char* child_argv[] = {path,
+                        mode,
+                        iterations,
+                        timeout,
+                        aql ? aql_mode : pm4_mode,
+                        AqlMetadataMode() ? metadata_option : nullptr,
+                        const_cast<char*>(AqlMetadataMode()),
+                        nullptr};
   pid_t child;
-  Check(posix_spawn(&child, path, &actions, nullptr, child_argv, environ) == 0, "spawn importer");
+  Check(posix_spawn(&child, path, &actions, nullptr, child_argv, environ) == 0,
+        "spawn importer");
   posix_spawn_file_actions_destroy(&actions);
   close(exported.dmabuf_fd);
   for (uint32_t round = 1; round <= rounds; ++round) {
@@ -162,7 +177,8 @@ int main(int argc, char** argv) {
     for (uint32_t word = 0; word < 63; ++word)
       Check(shared.Load(64 + word) == round * 65536 + word + 17,
             "interprocess GPU handoff mismatch");
-    Check(shared.Load(127) == 0 && shared.Load(63) == 0, "DMA-BUF guard corrupted");
+    Check(shared.Load(127) == 0 && shared.Load(63) == 0,
+          "DMA-BUF guard corrupted");
     queue.Drain();
   }
   const uint64_t deadline = NowNs() + 10000000000ull;
@@ -174,6 +190,7 @@ int main(int argc, char** argv) {
     Check(NowNs() < deadline, "importer teardown timeout");
     std::this_thread::yield();
   }
-  Check(WIFEXITED(status) && WEXITSTATUS(status) == 0, "DMA-BUF importer failed");
+  Check(WIFEXITED(status) && WEXITSTATUS(status) == 0,
+        "DMA-BUF importer failed");
   Pass("dmabuf_process_handoff", rounds);
 }

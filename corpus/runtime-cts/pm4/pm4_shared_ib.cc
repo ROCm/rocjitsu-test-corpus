@@ -1,6 +1,7 @@
-// Purpose: Stress concurrent replay of one immutable PM4 indirect buffer by multiple queues.
-// Patch it only after all prior work retires, then replay with a different addend.
-// Check exact atomic totals and guards for lost, duplicated or stale IB execution.
+// Purpose: Stress concurrent replay of one immutable PM4 indirect buffer by
+// multiple queues. Patch it only after all prior work retires, then replay with
+// a different addend. Check exact atomic totals and guards for lost, duplicated
+// or stale IB execution.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -52,9 +53,12 @@ int main(int argc, char** argv) {
       result.Wait(16 + q, round, 10000, queues[q].get());
       queues[q]->Drain();
     }
-    Check(result.Load(0) == before + addend * count * 32, "IB patch/replay used stale commands");
-    Check(result.Load(2) == round * count * 32, "IB replay lost or duplicated execution");
-    Check(result.Load(1) == 0 && result.Load(3) == 0, "IB replay guard corrupted");
+    Check(result.Load(0) == before + addend * count * 32,
+          "IB patch/replay used stale commands");
+    Check(result.Load(2) == round * count * 32,
+          "IB replay lost or duplicated execution");
+    Check(result.Load(1) == 0 && result.Load(3) == 0,
+          "IB replay guard corrupted");
   }
   Pass("pm4_shared_ib", uint64_t(rounds) * count * 32);
 }

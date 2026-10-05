@@ -30,11 +30,13 @@ int main(int argc, char** argv) {
       queue.Submit(commands.words);
       result.Wait(128, token, 10000, &queue);
       for (uint32_t word = 0; word < 63; ++word)
-        Check(result.Load(word) == token * 256 + word, "counter rollover lost packet data");
+        Check(result.Load(word) == token * 256 + word,
+              "counter rollover lost packet data");
       Check(result.Load(63) == 0, "rollover output guard corrupted");
     }
   }
   queue.Drain();
-  Check(queue.producer() >= (2ull << 32), "test did not cross counter boundary");
+  Check(queue.producer() >= (2ull << 32),
+        "test did not cross counter boundary");
   Pass("pm4_doorbell_rollover", uint64_t(rounds) * 8 * 63);
 }

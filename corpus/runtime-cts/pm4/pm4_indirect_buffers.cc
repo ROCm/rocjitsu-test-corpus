@@ -1,6 +1,6 @@
-// Purpose: Stress execution of many distinct PM4 indirect buffers and return to the ring.
-// Keep each IB immutable until completion and check every IB's distinct output
-// to detect skipped, stale or corrupted command streams.
+// Purpose: Stress execution of many distinct PM4 indirect buffers and return to
+// the ring. Keep each IB immutable until completion and check every IB's
+// distinct output to detect skipped, stale or corrupted command streams.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -34,15 +34,16 @@ int main(int argc, char** argv) {
       // Distinct IBs remain immutable until the final GPU completion.
       commands.Write(result.address(ib * 4), round * 64 + ib);
       commands.Pad();
-      std::memcpy(static_cast<char*>(indirect.data) + ib * 4096, commands.words.data(),
-                  commands.words.size() * 4);
+      std::memcpy(static_cast<char*>(indirect.data) + ib * 4096,
+                  commands.words.data(), commands.words.size() * 4);
       ring.Indirect(indirect.address(ib * 4096), commands.words.size());
     }
     ring.Finish(result.address(2048), round);
     queue.Submit(ring.words);
     result.Wait(512, round);
     for (uint32_t ib = 0; ib < 64; ++ib)
-      Check(result.Load(ib) == round * 64 + ib, "indirect buffer skipped or corrupted");
+      Check(result.Load(ib) == round * 64 + ib,
+            "indirect buffer skipped or corrupted");
   }
   queue.Drain();
   Pass("pm4_indirect_buffers", uint64_t(iterations) * 64);

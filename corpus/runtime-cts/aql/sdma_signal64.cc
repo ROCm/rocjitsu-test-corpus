@@ -8,7 +8,8 @@
 //   --aql-metadata off|on: gfx1250 only; no effect on SDMA queues.
 //   --iterations N: rounds; default 64; range 1..100000.
 //   --timeout N: watchdog seconds; default 45; range 1..3600.
-//   --queues and --seed: accepted but unused. Progress waits have a 10s deadline.
+//   --queues and --seed: accepted but unused. Progress waits have a 10s
+//   deadline.
 // Inspiration/encoding: public ROCr BuildPoll64bCommand / BuildFence64bCommand.
 // https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_blit_sdma.cpp
 // https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/core/inc/sdma_registers.h
@@ -20,7 +21,8 @@ int main(int argc, char** argv) {
   Start(argc, argv, "sdma_signal64");
   const uint32_t rounds = Option(argc, argv, "--iterations", 64, 100000);
   Device device;
-  Buffer source(device, 4096), shared(device, 4096), output(device, 4096), signals(device, 4096);
+  Buffer source(device, 4096), shared(device, 4096), output(device, 4096),
+      signals(device, 4096);
   SdmaQueue producer(device), consumer(device);
   for (uint32_t round = 1; round <= rounds; ++round) {
     const uint64_t token = 0xfffffff0ull + round;
@@ -60,8 +62,10 @@ int main(int argc, char** argv) {
     Check(signals.Load64(0) == token && signals.Load64(64) == token,
           "SDMA full-width fence mismatch");
     for (uint32_t word = 0; word < 63; ++word)
-      Check(output.Load(word) == round * 256 + word, "SDMA 64-bit handoff stale payload");
-    Check(output.Load(63) == 0 && shared.Load(63) == 0, "SDMA handoff guard corrupted");
+      Check(output.Load(word) == round * 256 + word,
+            "SDMA 64-bit handoff stale payload");
+    Check(output.Load(63) == 0 && shared.Load(63) == 0,
+          "SDMA handoff guard corrupted");
     producer.Drain();
     consumer.Drain();
   }

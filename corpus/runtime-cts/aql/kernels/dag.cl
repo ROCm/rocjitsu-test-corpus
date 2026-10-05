@@ -1,7 +1,9 @@
 // Consume every ordered predecessor after a five-handle AQL barrier.
-// Inputs remain immutable until all consumers retire. Output includes a generation marker.
-__kernel void cts_work(__global const uint* p0, __global const uint* p1, __global const uint* p2,
-                       __global const uint* p3, __global const uint* p4, __global uint* target,
+// Inputs remain immutable until all consumers retire. Output includes a
+// generation marker.
+__kernel void cts_work(__global const uint* p0, __global const uint* p1,
+                       __global const uint* p2, __global const uint* p3,
+                       __global const uint* p4, __global uint* target,
                        uint count, uint tag) {
   uint value = tag;
   if (count > 0) value = (value ^ p0[0]) * 16777619u;

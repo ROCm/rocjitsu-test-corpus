@@ -1,9 +1,10 @@
 // Purpose: Publish AQL packets out of order around an INVALID head slot.
-// Independent host threads publish disjoint slots; reservation stays single-threaded.
-// Notify with the hole present, prove later packets remain blocked, then publish
-// the head and repeat the SAME doorbell value. Six-packet batches plus the
-// drain barrier visit every head position in the 64-slot ring, including wrap.
-// This extends ROCr index-atomicity patterns to actual firmware consumption.
+// Independent host threads publish disjoint slots; reservation stays
+// single-threaded. Notify with the hole present, prove later packets remain
+// blocked, then publish the head and repeat the SAME doorbell value. Six-packet
+// batches plus the drain barrier visit every head position in the 64-slot ring,
+// including wrap. This extends ROCr index-atomicity patterns to actual firmware
+// consumption.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; default off for AQL queues.
@@ -27,7 +28,8 @@ int main(int argc, char** argv) {
   const uint32_t count = Option(argc, argv, "--queues", 7, 32);
   Device device;
   Buffer code(device, sizeof(kKernelImage), true), args(device, count * 512);
-  Buffer result(device, count * 64), signals(device, count * 64), heartbeat(device, 4096);
+  Buffer result(device, count * 64), signals(device, count * 64),
+      heartbeat(device, 4096);
   Check(kKernargBytes <= 512, "kernel arguments too large");
   std::memcpy(code.data, kKernelImage, sizeof(kKernelImage));
   Queue queue(device, 4096, 7, true, true), independent(device);
@@ -37,16 +39,20 @@ int main(int argc, char** argv) {
       ResetSignal(signals, slot * 64);
       result.Store(slot * 16, 0xdeadbeef);
       result.Store(slot * 16 + 1, 0);
-      Arguments arguments{result.address(slot * 64), result.address(slot * 64 + 4), round ^ slot,
-                          17, round};
-      std::memcpy(static_cast<char*>(args.data) + slot * 512, &arguments, sizeof(arguments));
-      packets[slot] = OneGroup(code.address(kDescriptorOffset), args.address(slot * 512),
-                               signals.address(slot * 64), false);
+      Arguments arguments{result.address(slot * 64),
+                          result.address(slot * 64 + 4), round ^ slot, 17,
+                          round};
+      std::memcpy(static_cast<char*>(args.data) + slot * 512, &arguments,
+                  sizeof(arguments));
+      packets[slot] =
+          OneGroup(code.address(kDescriptorOffset), args.address(slot * 512),
+                   signals.address(slot * 64), false);
     }
     const uint64_t first = queue.ReserveAql(count);
     std::vector<std::thread> publishers;
     for (uint32_t slot = 1; slot < count; ++slot)
-      publishers.emplace_back([&, slot] { queue.PublishAql(first + slot, &packets[slot]); });
+      publishers.emplace_back(
+          [&, slot] { queue.PublishAql(first + slot, &packets[slot]); });
     for (auto& publisher : publishers) publisher.join();
     queue.NotifyAql();
     Pm4 ping;
@@ -56,8 +62,10 @@ int main(int argc, char** argv) {
     const uint64_t deadline = NowNs() + 1000000;
     do {
       for (uint32_t slot = 0; slot < count; ++slot) {
-        Check(signals.Load64(slot * 64 + 8) == 1, "packet completed beyond unpublished head");
-        Check(result.Load(slot * 16) == 0xdeadbeef && result.Load(slot * 16 + 1) == 0,
+        Check(signals.Load64(slot * 64 + 8) == 1,
+              "packet completed beyond unpublished head");
+        Check(result.Load(slot * 16) == 0xdeadbeef &&
+                  result.Load(slot * 16 + 1) == 0,
               "packet executed beyond unpublished head");
       }
       std::this_thread::yield();
@@ -68,7 +76,8 @@ int main(int argc, char** argv) {
       WaitSignal(signals, slot * 64, queue);
       Check(result.Load(slot * 16) == Advance(round ^ slot, 17),
             "published dispatch result mismatch");
-      Check(result.Load(slot * 16 + 1) == round, "published dispatch marker missing");
+      Check(result.Load(slot * 16 + 1) == round,
+            "published dispatch marker missing");
       Check(result.Load(slot * 16 + 2) == 0, "dispatch guard corrupted");
     }
     queue.Drain();

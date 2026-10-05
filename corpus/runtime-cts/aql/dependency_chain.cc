@@ -42,12 +42,14 @@ int main(int argc, char** argv) {
   const uint32_t bytes = (count + 1) * 4096;
   Device device;
   Buffer code(device, sizeof(kKernelImage), true), args(device, count * 512);
-  Buffer source(device, bytes), snapshot(device, bytes), local(device, bytes, false, true);
+  Buffer source(device, bytes), snapshot(device, bytes),
+      local(device, bytes, false, true);
   Buffer signals(device, 4096);
   Check(kKernargBytes <= 512, "kernel arguments too large");
   std::memcpy(code.data, kKernelImage, sizeof(kKernelImage));
   std::vector<std::unique_ptr<Queue>> queues;
-  for (uint32_t q = 0; q < count; ++q) queues.emplace_back(new Queue(device, 4096, 7, true));
+  for (uint32_t q = 0; q < count; ++q)
+    queues.emplace_back(new Queue(device, 4096, 7, true));
   SdmaQueue upload(device), download(device);
   for (uint32_t round = 1; round <= rounds; ++round) {
     for (uint32_t word = 0; word < bytes / 4; ++word)
@@ -67,12 +69,15 @@ int main(int argc, char** argv) {
       wait.header = 3u | (1u << 8) | (acquire << 9) | (release << 11);
       wait.dependencies[0] = signals.address(q * 64);
       queues[q]->SubmitAql(&wait);
-      PipelineArguments a{local.address(q * 4096), local.address((q + 1) * 4096), round ^ q, kWords,
+      PipelineArguments a{local.address(q * 4096),
+                          local.address((q + 1) * 4096), round ^ q, kWords,
                           round};
       std::memcpy(static_cast<char*>(args.data) + q * 512, &a, sizeof(a));
-      Dispatch packet = OneGroup(code.address(kDescriptorOffset), args.address(q * 512),
-                                 signals.address((q + 1) * 64), true);
-      packet.header_setup = 2u | (1u << 8) | (acquire << 9) | (release << 11) | (1u << 16);
+      Dispatch packet =
+          OneGroup(code.address(kDescriptorOffset), args.address(q * 512),
+                   signals.address((q + 1) * 64), true);
+      packet.header_setup =
+          2u | (1u << 8) | (acquire << 9) | (release << 11) | (1u << 16);
       packet.workgroup_x = 64;
       packet.grid_x = kWords;
       queues[q]->SubmitAql(&packet);
@@ -86,8 +91,10 @@ int main(int argc, char** argv) {
     for (uint32_t word = 0; word < 1024; ++word) {
       uint32_t expected = word < kWords ? round * 65536 + word : kGuard;
       for (uint32_t stage = 0; stage <= count; ++stage) {
-        Check(snapshot.Load(stage * 1024 + word) == expected, "shader chain data/guard mismatch");
-        if (word < kWords && stage < count) expected = Advance(expected ^ (round ^ stage), 3);
+        Check(snapshot.Load(stage * 1024 + word) == expected,
+              "shader chain data/guard mismatch");
+        if (word < kWords && stage < count)
+          expected = Advance(expected ^ (round ^ stage), 3);
       }
     }
     for (uint32_t q = 0; q < count; ++q) {

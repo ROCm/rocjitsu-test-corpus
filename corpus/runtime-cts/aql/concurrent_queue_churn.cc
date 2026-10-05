@@ -1,6 +1,7 @@
-// Purpose: Stress concurrent KFD queue creation, submission and destruction by host threads.
-// Start equal-priority queues behind a host gate while a persistent queue progresses.
-// Check per-thread completion, exact operation counts, guards and queue retirement.
+// Purpose: Stress concurrent KFD queue creation, submission and destruction by
+// host threads. Start equal-priority queues behind a host gate while a
+// persistent queue progresses. Check per-thread completion, exact operation
+// counts, guards and queue retirement.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   Queue protocol: AQL only.
@@ -14,9 +15,11 @@
 //   --seed: accepted by the common parser but unused here.
 //   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits retain their separate 10-second deadline.
-// Mixed-priority gated churn stalled during bring-up; this test uses equal priorities.
+// Mixed-priority gated churn stalled during bring-up; this test uses equal
+// priorities.
 //
-// Inspiration: concurrent stream creation and enqueue stress, recreated as KFD queues.
+// Inspiration: concurrent stream creation and enqueue stress, recreated as KFD
+// queues.
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/hip-tests/catch/stress/stream/Stress_hipStreamCreate.cc
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/hip-tests/catch/stress/stream/streamEnqueue.cc
 #include <atomic>
@@ -41,12 +44,14 @@ int main(int argc, char** argv) {
     for (uint32_t id = 0; id < count; ++id)
       workers.emplace_back([&, id] {
         Queue queue(device, 4096, 7, true);
-        work.Prepare(id, result.address(id * 64), 1, 1, result.address(id * 64));
+        work.Prepare(id, result.address(id * 64), 1, 1,
+                     result.address(id * 64));
         AqlWait(queue, gate.address());
         work.Submit(queue, id);
         ready.fetch_add(1, std::memory_order_release);
         work.Wait(queue, id);
-        Check(result.Load(id * 16) == round, "AQL churn lost or duplicated work");
+        Check(result.Load(id * 16) == round,
+              "AQL churn lost or duplicated work");
         Check(result.Load(id * 16 + 1) == 0, "AQL churn guard corrupted");
         queue.Drain();
       });

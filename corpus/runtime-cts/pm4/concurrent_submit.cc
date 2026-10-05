@@ -1,6 +1,6 @@
-// Purpose: Stress multiple host producers sharing one PM4 ring with serialized publication.
-// Check each producer's payload and completion so ring reuse and host contention
-// cannot silently lose work or mix up results.
+// Purpose: Stress multiple host producers sharing one PM4 ring with serialized
+// publication. Check each producer's payload and completion so ring reuse and
+// host contention cannot silently lose work or mix up results.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -22,8 +22,8 @@
 #include <mutex>
 #include <thread>
 
-#include "support/aql_payload.h"
 #include "pm4.h"
+#include "support/aql_payload.h"
 
 using namespace cts;
 
@@ -48,7 +48,8 @@ static int RunPm4(int argc, char** argv) {
           queue.Submit(commands.words);
         }
         result.Wait(t * 1024 + 16, round);
-        Check(result.Load(t * 1024) == round * 64 + t, "concurrent producer data mismatch");
+        Check(result.Load(t * 1024) == round * 64 + t,
+              "concurrent producer data mismatch");
       }
     });
   for (auto& thread : threads) thread.join();
@@ -57,9 +58,8 @@ static int RunPm4(int argc, char** argv) {
   return 0;
 }
 
-
-
 int main(int argc, char** argv) {
-  Check(!AqlMode(argc, argv), "use the AQL suite for this scenario in AQL mode");
+  Check(!AqlMode(argc, argv),
+        "use the AQL suite for this scenario in AQL mode");
   return RunPm4(argc, argv);
 }

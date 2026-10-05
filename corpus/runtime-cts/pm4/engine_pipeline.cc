@@ -36,7 +36,8 @@ static int RunPm4(int argc, char** argv) {
   const uint32_t rounds = Option(argc, argv, "--iterations", 64, 100000);
   Device device;
   constexpr uint32_t kSlots = 4, kWords = 64;
-  Buffer input(device, kSlots * 4096), output(device, kSlots * 4096), fences(device, 4096);
+  Buffer input(device, kSlots * 4096), output(device, kSlots * 4096),
+      fences(device, 4096);
   Buffer local(device, kSlots * 4096, false, true);
   SdmaQueue upload(device), download(device);
   Queue compute(device);
@@ -46,11 +47,13 @@ static int RunPm4(int argc, char** argv) {
       output.Store(slot * 1024 + word, 0);
     }
     // Download waits on compute; compute waits on upload. Publish in reverse
-    // order, with several slots in flight and no host synchronization between stages.
+    // order, with several slots in flight and no host synchronization between
+    // stages.
     Sdma receive(device.gfx);
     receive.Wait(fences.address(slot * 64 + 4), round);
     receive.Acquire();
-    receive.Copy(local.address(slot * 4096), output.address(slot * 4096), kWords * 4);
+    receive.Copy(local.address(slot * 4096), output.address(slot * 4096),
+                 kWords * 4);
     receive.Finish(fences.address(slot * 64 + 8), round);
     download.Submit(receive.words);
     Pm4 transform;
@@ -62,7 +65,8 @@ static int RunPm4(int argc, char** argv) {
     compute.Submit(transform.words);
     Sdma send(device.gfx);
     send.Acquire();
-    send.Copy(input.address(slot * 4096), local.address(slot * 4096), kWords * 4);
+    send.Copy(input.address(slot * 4096), local.address(slot * 4096),
+              kWords * 4);
     send.Finish(fences.address(slot * 64), round);
     upload.Submit(send.words);
   };
@@ -72,10 +76,13 @@ static int RunPm4(int argc, char** argv) {
       const uint32_t expected = round * 65536 + slot * 256 + word + 17;
       const uint32_t observed = output.Load(slot * 1024 + word);
       if (observed != expected)
-        Fail("SDMA/compute pipeline mismatch round=%u slot=%u word=%u expected=%x observed=%x",
-             round, slot, word, expected, observed);
+        Fail(
+            "SDMA/compute pipeline mismatch round=%u slot=%u word=%u "
+            "expected=%x observed=%x",
+            round, slot, word, expected, observed);
     }
-    Check(output.Load(slot * 1024 + kWords) == 0, "pipeline output guard corrupted");
+    Check(output.Load(slot * 1024 + kWords) == 0,
+          "pipeline output guard corrupted");
   };
 #ifdef STREAMING_PIPELINE
   for (uint64_t step = 0; step < uint64_t(rounds) * kSlots; ++step) {
@@ -111,6 +118,7 @@ struct BarrierPacket {
 static_assert(sizeof(BarrierPacket) == 64);
 
 int main(int argc, char** argv) {
-  Check(!AqlMode(argc, argv), "use the AQL suite for this scenario in AQL mode");
+  Check(!AqlMode(argc, argv),
+        "use the AQL suite for this scenario in AQL mode");
   return RunPm4(argc, argv);
 }

@@ -1,6 +1,7 @@
 // Multiprocess queue lifetime coordination. Workers exec before opening KFD.
-// Ready/start and done/release handshakes retain every VM until all work is checked.
-// A completed worker must not change the runlist while another worker is still active.
+// Ready/start and done/release handshakes retain every VM until all work is
+// checked. A completed worker must not change the runlist while another worker
+// is still active.
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/libhsakmt/tests/kfdtest/src/KFDHWSTest.cpp
 #ifndef CTS_PROCESS_GROUP_H_
 #define CTS_PROCESS_GROUP_H_
@@ -25,7 +26,8 @@ inline void WorkerPhase(char phase) {
   if (!channel) return;
   char* end = nullptr;
   const long fd = std::strtol(channel, &end, 10);
-  Check(*channel && !*end && fd >= 0 && fd <= 0x7fffffff, "invalid worker channel");
+  Check(*channel && !*end && fd >= 0 && fd <= 0x7fffffff,
+        "invalid worker channel");
   Check(send(int(fd), &phase, 1, MSG_NOSIGNAL) == 1, "notify worker phase");
   char release = 0;
   ssize_t n;
@@ -36,12 +38,15 @@ inline void WorkerPhase(char phase) {
 }
 inline int RunProcessGroup(int argc, char** argv, const char* sibling) {
   const uint32_t count = Option(argc, argv, "--queues", 4, 32);
-  const std::string rounds = std::to_string(Option(argc, argv, "--iterations", 64, 100000));
+  const std::string rounds =
+      std::to_string(Option(argc, argv, "--iterations", 64, 100000));
   const uint32_t seconds = Option(argc, argv, "--timeout", 45, 3600);
   const std::string timeout = std::to_string(seconds);
   char executable[4096];
-  const ssize_t length = readlink("/proc/self/exe", executable, sizeof(executable) - 1);
-  Check(length > 0 && size_t(length) < sizeof(executable) - 1, "resolve executable path");
+  const ssize_t length =
+      readlink("/proc/self/exe", executable, sizeof(executable) - 1);
+  Check(length > 0 && size_t(length) < sizeof(executable) - 1,
+        "resolve executable path");
   executable[length] = 0;
   std::string path(executable);
   path = path.substr(0, path.find_last_of('/') + 1) + sibling;
@@ -54,7 +59,8 @@ inline int RunProcessGroup(int argc, char** argv, const char* sibling) {
   };
   std::vector<Child> children;
   const pid_t parent = getpid();
-  // The supervisor owns cleanup. Its deadline replaces the exit-only process watchdog.
+  // The supervisor owns cleanup. Its deadline replaces the exit-only process
+  // watchdog.
   alarm(0);
   const uint64_t deadline = NowNs() + uint64_t(seconds) * 1000000000;
   bool failed = false;
@@ -74,12 +80,14 @@ inline int RunProcessGroup(int argc, char** argv, const char* sibling) {
     if (!pid) {
       close(channel[0]);
       for (const auto& child : children) close(child.fd);
-      if (prctl(PR_SET_PDEATHSIG, SIGKILL) != 0 || getppid() != parent) _exit(126);
+      if (prctl(PR_SET_PDEATHSIG, SIGKILL) != 0 || getppid() != parent)
+        _exit(126);
       const std::string fd = std::to_string(channel[1]);
       if (setenv("CTS_WORKER_CHANNEL", fd.c_str(), 1) != 0) _exit(126);
-      execl(path.c_str(), path.c_str(), "--queues", "4", "--iterations", rounds.c_str(),
-            "--timeout", timeout.c_str(), AqlMetadataMode() ? "--aql-metadata" : nullptr,
-            AqlMetadataMode(), nullptr);
+      execl(path.c_str(), path.c_str(), "--queues", "4", "--iterations",
+            rounds.c_str(), "--timeout", timeout.c_str(),
+            AqlMetadataMode() ? "--aql-metadata" : nullptr, AqlMetadataMode(),
+            nullptr);
       _exit(126);
     }
     close(channel[1]);
@@ -104,7 +112,8 @@ inline int RunProcessGroup(int argc, char** argv, const char* sibling) {
           child.phase = phase;
           break;
         }
-        // EOF can be an unsupported-device skip before ready; preserve that result.
+        // EOF can be an unsupported-device skip before ready; preserve that
+        // result.
         if (n == 0 && phase == 'R') {
           pid_t reaped;
           do {
@@ -112,7 +121,8 @@ inline int RunProcessGroup(int argc, char** argv, const char* sibling) {
           } while (reaped < 0 && errno == EINTR);
           if (reaped == 0) continue;
           child.reaped = reaped == child.pid;
-          if (child.reaped && WIFEXITED(child.status) && WEXITSTATUS(child.status) == 77) {
+          if (child.reaped && WIFEXITED(child.status) &&
+              WEXITSTATUS(child.status) == 77) {
             ++skipped;
             break;
           }
@@ -156,20 +166,24 @@ inline int RunProcessGroup(int argc, char** argv, const char* sibling) {
   bool unreaped = false;
   for (const auto& child : children) {
     if (!child.reaped) {
-      std::fprintf(stderr, "worker pid=%d last_phase=%c exit deadline expired\n", child.pid,
-                   child.phase ? child.phase : '-');
+      std::fprintf(stderr,
+                   "worker pid=%d last_phase=%c exit deadline expired\n",
+                   child.pid, child.phase ? child.phase : '-');
       kill(child.pid, SIGKILL);
       failed = unreaped = true;
     }
   }
   if (unreaped) reap_until(NowNs() + 2000000000ull);
   for (const auto& child : children) {
-    const bool skipped_before_ready =
-        child.phase == 0 && WIFEXITED(child.status) && WEXITSTATUS(child.status) == 77;
+    const bool skipped_before_ready = child.phase == 0 &&
+                                      WIFEXITED(child.status) &&
+                                      WEXITSTATUS(child.status) == 77;
     if (!child.reaped || !WIFEXITED(child.status) ||
         (WEXITSTATUS(child.status) != 0 && !skipped_before_ready)) {
-      std::fprintf(stderr, "worker pid=%d last_phase=%c reaped=%d wait_status=%x\n", child.pid,
-                   child.phase ? child.phase : '-', child.reaped, child.status);
+      std::fprintf(stderr,
+                   "worker pid=%d last_phase=%c reaped=%d wait_status=%x\n",
+                   child.pid, child.phase ? child.phase : '-', child.reaped,
+                   child.status);
       failed = true;
     }
   }

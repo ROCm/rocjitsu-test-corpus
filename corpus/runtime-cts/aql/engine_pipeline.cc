@@ -42,7 +42,8 @@ int main(int argc, char** argv) {
 #endif
   Start(argc, argv, name);
   const uint32_t rounds = Option(argc, argv, "--iterations", 64, 100000);
-  constexpr uint32_t kSlots = 4, kWords = 256, kStride = 8192, kGuard = 0xdeadbeef;
+  constexpr uint32_t kSlots = 4, kWords = 256, kStride = 8192,
+                     kGuard = 0xdeadbeef;
   Device device;
   Buffer code(device, sizeof(kKernelImage), true), args(device, kSlots * 512);
   Buffer source(device, kSlots * kStride), result(device, kSlots * kStride);
@@ -54,7 +55,8 @@ int main(int argc, char** argv) {
   auto submit = [&](uint32_t slot, uint32_t round) {
     const uint32_t base = slot * kStride;
     for (uint32_t word = 0; word < kStride / 4; ++word) {
-      source.Store(base / 4 + word, word < kWords ? round * 65536 + slot * 256 + word : kGuard);
+      source.Store(base / 4 + word,
+                   word < kWords ? round * 65536 + slot * 256 + word : kGuard);
       result.Store(base / 4 + word, 0);
     }
     ResetSignal(signals, slot * 192);
@@ -69,11 +71,13 @@ int main(int argc, char** argv) {
     wait.header = 3u | (1u << 8) | (2u << 9) | (2u << 11);
     wait.dependencies[0] = signals.address(slot * 192);
     compute.SubmitAql(&wait);
-    PipelineArguments arguments{local.address(base), local.address(base + 4096), round ^ slot,
-                                kWords, round};
-    std::memcpy(static_cast<char*>(args.data) + slot * 512, &arguments, sizeof(arguments));
-    Dispatch packet = OneGroup(code.address(kDescriptorOffset), args.address(slot * 512),
-                               signals.address(slot * 192 + 64), true);
+    PipelineArguments arguments{local.address(base), local.address(base + 4096),
+                                round ^ slot, kWords, round};
+    std::memcpy(static_cast<char*>(args.data) + slot * 512, &arguments,
+                sizeof(arguments));
+    Dispatch packet =
+        OneGroup(code.address(kDescriptorOffset), args.address(slot * 512),
+                 signals.address(slot * 192 + 64), true);
     packet.workgroup_x = 64;
     packet.grid_x = kWords;
     compute.SubmitAql(&packet);
@@ -90,7 +94,8 @@ int main(int argc, char** argv) {
       uint32_t expected = kGuard;
       if (word < kWords) expected = round * 65536 + slot * 256 + word;
       if (word >= 1024 && word < 1024 + kWords)
-        expected = Advance((round * 65536 + slot * 256 + word - 1024) ^ (round ^ slot), 3);
+        expected = Advance(
+            (round * 65536 + slot * 256 + word - 1024) ^ (round ^ slot), 3);
       Check(result.Load(slot * kStride / 4 + word) == expected,
             "shader/SDMA pipeline data or guard mismatch");
     }

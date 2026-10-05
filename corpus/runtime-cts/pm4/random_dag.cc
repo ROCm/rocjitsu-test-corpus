@@ -1,7 +1,7 @@
-// Purpose: Test seeded acyclic cross-queue dependency graphs with changing predecessors and
-// fan-out and up to five distinct parents per join. Publish consumers first,
-// hold one root while independent parents finish, observe a reached join,
-// prove descendants remain blocked, then release. Check every
+// Purpose: Test seeded acyclic cross-queue dependency graphs with changing
+// predecessors and fan-out and up to five distinct parents per join. Publish
+// consumers first, hold one root while independent parents finish, observe a
+// reached join, prove descendants remain blocked, then release. Check every
 // input edge (PM4 witnesses) or an ordered hash of all inputs (AQL shader).
 // One node per queue keeps reverse submission acyclic, including FIFO edges.
 //
@@ -30,7 +30,8 @@
 #include "pm4.h"
 using namespace cts;
 int main(int argc, char** argv) {
-  Check(!AqlMode(argc, argv), "use the AQL suite for this scenario in AQL mode");
+  Check(!AqlMode(argc, argv),
+        "use the AQL suite for this scenario in AQL mode");
   Start(argc, argv, "random_dag", true);
   const uint32_t count = Option(argc, argv, "--queues", 16, 64);
   const uint32_t rounds = Option(argc, argv, "--iterations", 32, 100000);
@@ -50,8 +51,10 @@ int main(int argc, char** argv) {
 
   for (uint32_t round = 1; round <= rounds; ++round) {
     // The first round reaches the maximum available fan-in. Later rounds keep
-    // two roots, one held and one free, followed by randomized reconverging joins.
-    const uint32_t roots = count < 3 ? 1 : (round == 1 ? std::min(count - 1, 5u) : 2);
+    // two roots, one held and one free, followed by randomized reconverging
+    // joins.
+    const uint32_t roots =
+        count < 3 ? 1 : (round == 1 ? std::min(count - 1, 5u) : 2);
     std::vector<std::array<uint32_t, 5>> parents(count);
     std::vector<uint32_t> fanin(count), tags(count);
     for (uint32_t q = 0; q < count; ++q) {
@@ -59,13 +62,14 @@ int main(int argc, char** argv) {
       if (q >= roots) {
         const uint32_t limit = std::min(q, 5u);
         fanin[q] = round == 1 || limit == 1 ? limit : 2 + next() % (limit - 1);
-        parents[q][0] = 0;  // Every join has the held root as a decisive parent.
+        parents[q][0] =
+            0;  // Every join has the held root as a decisive parent.
         for (uint32_t d = 1; d < fanin[q]; ++d) {
           uint32_t parent;
           do {
             parent = next() % q;
-          } while (std::find(parents[q].begin(), parents[q].begin() + d, parent) !=
-                   parents[q].begin() + d);
+          } while (std::find(parents[q].begin(), parents[q].begin() + d,
+                             parent) != parents[q].begin() + d);
           parents[q][d] = parent;
         }
       }
@@ -83,14 +87,16 @@ int main(int argc, char** argv) {
         const uint32_t parent = parents[q][d];
         commands.Wait(result.address(parent * 256 + 64), round);
         commands.Barrier();
-        commands.Copy(result.address(parent * 256), result.address(q * 256 + 4 + d * 4));
+        commands.Copy(result.address(parent * 256),
+                      result.address(q * 256 + 4 + d * 4));
       }
       commands.Write(result.address(q * 256), tags[q]);
       commands.Finish(result.address(q * 256 + 64), round);
       queues[q]->Submit(commands.words);
     }
     control.Wait(16, round, 10000, queues[0].get());
-    for (uint32_t q = 1; q < roots; ++q) result.Wait(q * 64 + 16, round, 10000, queues[q].get());
+    for (uint32_t q = 1; q < roots; ++q)
+      result.Wait(q * 64 + 16, round, 10000, queues[q].get());
     if (roots < count) control.Wait(32, round, 10000, queues[roots].get());
     const uint64_t deadline = NowNs() + 1000000;
     do {
@@ -109,8 +115,10 @@ int main(int argc, char** argv) {
         const uint32_t parent = parents[q][d];
         const uint32_t observed = result.Load(q * 64 + 1 + d);
         if (observed != tags[parent])
-          Fail("DAG seed=%u round=%u queue=%u edge=%u parent=%u expected=%x observed=%x", seed,
-               round, q, d, parent, tags[parent], observed);
+          Fail(
+              "DAG seed=%u round=%u queue=%u edge=%u parent=%u expected=%x "
+              "observed=%x",
+              seed, round, q, d, parent, tags[parent], observed);
       }
       for (uint32_t word = 1 + fanin[q]; word < 16; ++word)
         Check(result.Load(q * 64 + word) == 0, "DAG output guard corrupted");

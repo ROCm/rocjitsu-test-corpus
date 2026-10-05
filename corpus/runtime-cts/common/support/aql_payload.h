@@ -18,7 +18,8 @@ struct AqlBarrier {
   uint64_t reserved = 0, completion = 0;
 };
 static_assert(sizeof(AqlBarrier) == 64);
-inline void AqlWait(Queue& queue, uint64_t dependency, uint64_t completion = 0) {
+inline void AqlWait(Queue& queue, uint64_t dependency,
+                    uint64_t completion = 0) {
   AqlBarrier packet;
   packet.dependencies[0] = dependency;
   packet.completion = completion;
@@ -39,20 +40,26 @@ class AqlPayload {
           "payload kernarg size mismatch");
     std::memcpy(code.data, kKernelImage, sizeof(kKernelImage));
   }
-  void Prepare(uint32_t slot, uint64_t target, uint32_t value, uint32_t count = 1,
-               uint64_t source = 0) {
+  void Prepare(uint32_t slot, uint64_t target, uint32_t value,
+               uint32_t count = 1, uint64_t source = 0) {
     Check(slot < slots_, "payload slot out of range");
     ResetSignal(signals, size_t(slot) * 64);
     PayloadArgs a{source, target, value, count};
-    std::memcpy(static_cast<char*>(args.data) + size_t(slot) * 512, &a, sizeof(a));
+    std::memcpy(static_cast<char*>(args.data) + size_t(slot) * 512, &a,
+                sizeof(a));
   }
-  uint64_t Signal(uint32_t slot) const { return signals.address(size_t(slot) * 64); }
+  uint64_t Signal(uint32_t slot) const {
+    return signals.address(size_t(slot) * 64);
+  }
   void Submit(Queue& queue, uint32_t slot, uint64_t completion = 0) {
-    auto packet = OneGroup(code.address(kDescriptorOffset), args.address(size_t(slot) * 512),
+    auto packet = OneGroup(code.address(kDescriptorOffset),
+                           args.address(size_t(slot) * 512),
                            completion ? completion : Signal(slot), true);
     queue.SubmitAql(&packet);
   }
-  void Wait(Queue& queue, uint32_t slot) { WaitSignal(signals, size_t(slot) * 64, queue); }
+  void Wait(Queue& queue, uint32_t slot) {
+    WaitSignal(signals, size_t(slot) * 64, queue);
+  }
   Buffer code, args, signals;
 
  private:

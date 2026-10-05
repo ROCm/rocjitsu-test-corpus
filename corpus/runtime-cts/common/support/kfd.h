@@ -1,5 +1,6 @@
 // Direct-KFD buffer and queue interfaces; scenarios own GPU lifetimes.
-// ABI reference: https://github.com/torvalds/linux/blob/master/include/uapi/linux/kfd_ioctl.h
+// ABI reference:
+// https://github.com/torvalds/linux/blob/master/include/uapi/linux/kfd_ioctl.h
 // Queue layout reference:
 // https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/inc/amd_hsa_queue.h
 #ifndef CTS_TESTS_SUPPORT_KFD_H_
@@ -47,8 +48,8 @@ struct Device {
 // CPU and GPU virtual addresses. Private VRAM is GPU-only.
 // Backing must outlive every command referring to it.
 struct Buffer {
-  Buffer(Device& device, size_t bytes, bool executable = false, bool local = false,
-         bool userptr = false);
+  Buffer(Device& device, size_t bytes, bool executable = false,
+         bool local = false, bool userptr = false);
   ~Buffer();
   Buffer(const Buffer&) = delete;
   Buffer& operator=(const Buffer&) = delete;
@@ -57,7 +58,8 @@ struct Buffer {
   void Store(size_t word, uint32_t value);
   uint64_t Load64(size_t byte_offset) const;
   void Store64(size_t byte_offset, uint64_t value);
-  void Wait(size_t word, uint32_t value, uint32_t timeout_ms = 10000, Queue* queue = nullptr) const;
+  void Wait(size_t word, uint32_t value, uint32_t timeout_ms = 10000,
+            Queue* queue = nullptr) const;
   Device& device;
   void* data = nullptr;
   size_t size = 0;
@@ -77,9 +79,11 @@ class Queue {
   // during publication; GPU-only backing is invalid. The allocations must
   // remain valid until their GPU users retire. Use metadata=false for vendor
   // PM4 indirect-buffer packets.
-  // The default follows --aql-metadata (off when omitted); explicit values override it.
-  explicit Queue(Device& device, uint32_t ring_bytes = 4096, uint32_t priority = 7,
-                 bool aql = false, bool multi_producer = false,
+  // The default follows --aql-metadata (off when omitted); explicit values
+  // override it.
+  explicit Queue(Device& device, uint32_t ring_bytes = 4096,
+                 uint32_t priority = 7, bool aql = false,
+                 bool multi_producer = false,
                  bool metadata = AqlMetadataEnabled());
   ~Queue();
   Queue(const Queue&) = delete;
@@ -107,7 +111,9 @@ class Queue {
   void SetScratch(Buffer& backing, uint32_t bytes_per_lane);
   void SetEnabled(bool enabled);
   // Monotonic count of capacity checks that observed insufficient ring space.
-  uint64_t backpressure_count() const { return backpressure_.load(std::memory_order_acquire); }
+  uint64_t backpressure_count() const {
+    return backpressure_.load(std::memory_order_acquire);
+  }
   uint64_t producer() const { return producer_; }
   uint64_t consumed();
   void Dump();

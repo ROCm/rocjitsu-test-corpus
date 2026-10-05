@@ -15,8 +15,8 @@
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/libhsakmt/tests/kfdtest/src/KFDQMTest.cpp
 #include <cstring>
 
-#include "support/aql.h"
 #include "pm4.h"
+#include "support/aql.h"
 #include "work_kernel.inc"
 using namespace cts;
 int main(int argc, char** argv) {
@@ -31,10 +31,11 @@ int main(int argc, char** argv) {
   const uint64_t doorbell = target.GpuDoorbellAddress();
   for (uint32_t round = 1; round <= rounds; ++round) {
     ResetSignal(signals, 0);
-    Arguments arguments{result.address(), result.address(256), round * 17, 31, round};
+    Arguments arguments{result.address(), result.address(256), round * 17, 31,
+                        round};
     std::memcpy(args.data, &arguments, sizeof(arguments));
-    Dispatch packet =
-        OneGroup(code.address(kDescriptorOffset), args.address(), signals.address(), false);
+    Dispatch packet = OneGroup(code.address(kDescriptorOffset), args.address(),
+                               signals.address(), false);
     packet.grid_x = 63;
     std::memcpy(packets.data, &packet, sizeof(packet));
     const uint64_t index = target.ReserveAql(1);
@@ -54,9 +55,11 @@ int main(int argc, char** argv) {
     for (uint32_t group = 0; group < 63; ++group) {
       Check(result.Load(group) == Advance((round * 17) ^ group, 31),
             "GPU-produced dispatch mismatch");
-      Check(result.Load(64 + group) == round, "GPU-produced shader marker missing");
+      Check(result.Load(64 + group) == round,
+            "GPU-produced shader marker missing");
     }
-    Check(result.Load(63) == 0 && result.Load(127) == 0, "GPU-produced dispatch guard corrupted");
+    Check(result.Load(63) == 0 && result.Load(127) == 0,
+          "GPU-produced dispatch guard corrupted");
     target.Drain();
     producer.Drain();
   }

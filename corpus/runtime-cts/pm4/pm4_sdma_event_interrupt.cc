@@ -52,19 +52,23 @@ int main(int argc, char** argv) {
       event.event_type = KFD_IOC_EVENT_SIGNAL;
       event.auto_reset = 1;
       device.Ioctl(AMDKFD_IOC_CREATE_EVENT, &event, "CREATE_EVENT");
-      Check(event.event_slot_index < KFD_SIGNAL_EVENT_LIMIT, "event slot outside signal page");
+      Check(event.event_slot_index < KFD_SIGNAL_EVENT_LIMIT,
+            "event slot outside signal page");
       waits[q].event_id = event.event_id;
     }
     kfd_ioctl_wait_events_args wait{};
     wait.events_ptr = reinterpret_cast<uintptr_t>(waits.data());
     wait.num_events = count;
     wait.wait_for_all = 1;
-    // An event must start unsignaled, and auto-reset after each successful wait.
+    // An event must start unsignaled, and auto-reset after each successful
+    // wait.
     for (uint32_t phase = 0; phase < 2; ++phase) {
       wait.timeout = 0;
       wait.wait_for_all = 0;
-      device.Ioctl(AMDKFD_IOC_WAIT_EVENTS, &wait, "WAIT_EVENTS initially unsignaled");
-      Check(wait.wait_result == KFD_IOC_WAIT_RESULT_TIMEOUT, "new or consumed event is signaled");
+      device.Ioctl(AMDKFD_IOC_WAIT_EVENTS, &wait,
+                   "WAIT_EVENTS initially unsignaled");
+      Check(wait.wait_result == KFD_IOC_WAIT_RESULT_TIMEOUT,
+            "new or consumed event is signaled");
       for (uint32_t q = 0; q < count; ++q) {
         const uint32_t token = round * 65536 + phase * 4096 + q * 256;
         for (uint32_t word = 0; word < 63; ++word) {
@@ -76,7 +80,8 @@ int main(int argc, char** argv) {
         if (kSdma) {
           Sdma commands(device.gfx);
           commands.Acquire();
-          commands.Copy(source.address(q * 4096), result.address(q * 4096), 63 * 4);
+          commands.Copy(source.address(q * 4096), result.address(q * 4096),
+                        63 * 4);
           commands.Finish(address, id);
           commands.words.insert(commands.words.end(), {6, id & 0x0fffffffu});
           commands.words.resize((commands.words.size() + 31) & ~size_t{31}, 0);
@@ -96,19 +101,24 @@ int main(int argc, char** argv) {
       if (wait.wait_result != KFD_IOC_WAIT_RESULT_COMPLETE) {
         for (uint32_t q = 0; q < count; ++q) {
           if (!kSdma) pm4[q]->Dump();
-          std::fprintf(stderr, "round=%u phase=%u event=%u trigger=%u slot=%u value=%llu data=%u\n",
-                       round, phase, events[q].event_id, events[q].event_trigger_data,
-                       events[q].event_slot_index,
-                       (unsigned long long)page.Load64(events[q].event_slot_index * 8),
-                       result.Load(q * 1024));
+          std::fprintf(
+              stderr,
+              "round=%u phase=%u event=%u trigger=%u slot=%u value=%llu "
+              "data=%u\n",
+              round, phase, events[q].event_id, events[q].event_trigger_data,
+              events[q].event_slot_index,
+              (unsigned long long)page.Load64(events[q].event_slot_index * 8),
+              result.Load(q * 1024));
         }
         Fail("GPU event interrupt timeout");
       }
       for (uint32_t q = 0; q < count; ++q) {
         for (uint32_t word = 0; word < 63; ++word)
-          Check(result.Load(q * 1024 + word) == round * 65536 + phase * 4096 + q * 256 + word,
+          Check(result.Load(q * 1024 + word) ==
+                    round * 65536 + phase * 4096 + q * 256 + word,
                 "event signaled before payload became visible");
-        Check(result.Load(q * 1024 + 63) == 0, "interrupt payload guard corrupted");
+        Check(result.Load(q * 1024 + 63) == 0,
+              "interrupt payload guard corrupted");
         if (kSdma)
           sdma[q]->Drain();
         else
@@ -118,7 +128,8 @@ int main(int argc, char** argv) {
     wait.timeout = 0;
     wait.wait_for_all = 0;
     device.Ioctl(AMDKFD_IOC_WAIT_EVENTS, &wait, "WAIT_EVENTS auto-reset");
-    Check(wait.wait_result == KFD_IOC_WAIT_RESULT_TIMEOUT, "auto-reset left an event signaled");
+    Check(wait.wait_result == KFD_IOC_WAIT_RESULT_TIMEOUT,
+          "auto-reset left an event signaled");
     for (auto& event : events) {
       kfd_ioctl_destroy_event_args destroy{};
       destroy.event_id = event.event_id;

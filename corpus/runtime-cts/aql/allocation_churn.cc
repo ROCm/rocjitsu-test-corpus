@@ -1,6 +1,7 @@
-// Purpose: Exercise repeated allocation, GPU mapping and retirement with one persistent queue.
-// Check writes at both ends of each buffer and untouched interior guards before
-// unmapping/freeing completed allocations; this does not test eviction.
+// Purpose: Exercise repeated allocation, GPU mapping and retirement with one
+// persistent queue. Check writes at both ends of each buffer and untouched
+// interior guards before unmapping/freeing completed allocations; this does not
+// test eviction.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   Queue protocol: AQL only.
@@ -44,7 +45,8 @@ int main(int argc, char** argv) {
     for (uint32_t i = 0; i < width * 2; ++i) work.Wait(queue, i);
     queue.Drain();
     for (uint32_t i = width; i-- > 0;) {
-      Check(buffers[i]->Load(0) == round * 256 + i, "new allocation payload mismatch");
+      Check(buffers[i]->Load(0) == round * 256 + i,
+            "new allocation payload mismatch");
       Check(buffers[i]->Load(buffers[i]->size / 4 - 1) == ~(round * 256 + i),
             "allocation tail mismatch");
       for (size_t word = 1; word + 1 < buffers[i]->size / 4; ++word)

@@ -10,7 +10,8 @@ namespace cts {
 [[noreturn]] void Fail(const char* format, ...);
 void Check(bool condition, const char* message);
 uint64_t NowNs();
-uint32_t Option(int argc, char** argv, const char* name, uint32_t fallback, uint32_t maximum);
+uint32_t Option(int argc, char** argv, const char* name, uint32_t fallback,
+                uint32_t maximum);
 void Start(int argc, char** argv, const char* test, bool modes = false);
 // Null means no explicit override; AQL metadata defaults to off.
 const char* AqlMetadataMode();

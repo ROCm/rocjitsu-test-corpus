@@ -1,6 +1,6 @@
-// Purpose: Stress multiple host producers sharing one AQL ring with serialized publication.
-// Check each producer's payload and completion so ring reuse and host contention
-// cannot silently lose work or mix up results.
+// Purpose: Stress multiple host producers sharing one AQL ring with serialized
+// publication. Check each producer's payload and completion so ring reuse and
+// host contention cannot silently lose work or mix up results.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   Queue protocol: AQL only.
@@ -45,10 +45,12 @@ int main(int argc, char** argv) {
           std::lock_guard<std::mutex> lock(producer);
           work.Submit(queue, t);
         }
-        // Wait without Queue diagnostics: its software counters belong to producer.
+        // Wait without Queue diagnostics: its software counters belong to
+        // producer.
         work.signals.Wait((t * 64 + 8) / 4, 0);
         Check(work.signals.Load64(t * 64 + 8) == 0, "completion underflow");
-        Check(result.Load(t * 1024) == round * 64 + t, "AQL producer data mismatch");
+        Check(result.Load(t * 1024) == round * 64 + t,
+              "AQL producer data mismatch");
       }
     });
   for (auto& thread : threads) thread.join();

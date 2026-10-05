@@ -1,7 +1,8 @@
-// Purpose: Test ring backpressure while a PM4 queue is blocked on a host-controlled gate.
-// A host producer submits more work than the ring can hold while another queue
-// must progress. Observe an actual full-ring reservation before the negative
-// phase; then release and verify all payloads or exact operation counts.
+// Purpose: Test ring backpressure while a PM4 queue is blocked on a
+// host-controlled gate. A host producer submits more work than the ring can
+// hold while another queue must progress. Observe an actual full-ring
+// reservation before the negative phase; then release and verify all payloads
+// or exact operation counts.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -67,14 +68,16 @@ static int RunPm4(int argc, char** argv) {
     result.Wait(64, round, 10000, &independent);
     const uint64_t deadline = NowNs() + 1000000;
     while (NowNs() < deadline) {
-      Check(!finished.load(std::memory_order_acquire), "producer overran a blocked ring");
+      Check(!finished.load(std::memory_order_acquire),
+            "producer overran a blocked ring");
       Check(result.Load(32) == (round - 1) * 256, "work escaped the host gate");
       std::this_thread::yield();
     }
     result.Store(0, round);
     producer.join();
     result.Wait(48, round, 10000, &blocked);
-    Check(result.Load(32) == round * 256, "backpressure lost or duplicated queued work");
+    Check(result.Load(32) == round * 256,
+          "backpressure lost or duplicated queued work");
     blocked.Drain();
   }
   independent.Drain();
@@ -83,6 +86,7 @@ static int RunPm4(int argc, char** argv) {
 }
 
 int main(int argc, char** argv) {
-  Check(!AqlMode(argc, argv), "use the AQL suite for this scenario in AQL mode");
+  Check(!AqlMode(argc, argv),
+        "use the AQL suite for this scenario in AQL mode");
   return RunPm4(argc, argv);
 }

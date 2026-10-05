@@ -29,12 +29,14 @@ int main(int argc, char** argv) {
   Start(argc, argv, "aql_dispatch_geometry");
   const uint32_t rounds = Option(argc, argv, "--iterations", 32, 100000);
   constexpr Geometry cases[] = {
-      {1, 1, 1, 1, 63, 1, 1},   {1, 31, 1, 1, 97, 1, 1},  {1, 256, 1, 1, 513, 1, 1},
-      {2, 17, 3, 1, 35, 7, 1},  {3, 7, 3, 2, 35, 7, 5},   {3, 4, 4, 4, 9, 9, 9},
-      {1, 32, 1, 1, 65, 1, 1},  {1, 33, 1, 1, 67, 1, 1},  {1, 63, 1, 1, 127, 1, 1},
-      {1, 64, 1, 1, 129, 1, 1}, {1, 65, 1, 1, 131, 1, 1}, {1, 1024, 1, 1, 1025, 1, 1}};
-  constexpr uint32_t kCount = sizeof(cases) / sizeof(cases[0]), kWords = 2048, kStride = kWords * 8,
-                     kGuard = 0xdeadbeef;
+      {1, 1, 1, 1, 63, 1, 1},    {1, 31, 1, 1, 97, 1, 1},
+      {1, 256, 1, 1, 513, 1, 1}, {2, 17, 3, 1, 35, 7, 1},
+      {3, 7, 3, 2, 35, 7, 5},    {3, 4, 4, 4, 9, 9, 9},
+      {1, 32, 1, 1, 65, 1, 1},   {1, 33, 1, 1, 67, 1, 1},
+      {1, 63, 1, 1, 127, 1, 1},  {1, 64, 1, 1, 129, 1, 1},
+      {1, 65, 1, 1, 131, 1, 1},  {1, 1024, 1, 1, 1025, 1, 1}};
+  constexpr uint32_t kCount = sizeof(cases) / sizeof(cases[0]), kWords = 2048,
+                     kStride = kWords * 8, kGuard = 0xdeadbeef;
   Device device;
   Buffer code(device, sizeof(kKernelImage), true), args(device, kCount * 512);
   Buffer result(device, kCount * kStride), signals(device, kCount * 64);
@@ -60,9 +62,11 @@ int main(int argc, char** argv) {
                           g.gz,
                           round};
       std::memcpy(static_cast<char*>(args.data) + slot * 512, &a, sizeof(a));
-      Dispatch packet = OneGroup(code.address(kDescriptorOffset), args.address(slot * 512),
-                                 signals.address(slot * 64), true);
-      packet.header_setup = (packet.header_setup & 0xffffu) | (g.dimensions << 16);
+      Dispatch packet =
+          OneGroup(code.address(kDescriptorOffset), args.address(slot * 512),
+                   signals.address(slot * 64), true);
+      packet.header_setup =
+          (packet.header_setup & 0xffffu) | (g.dimensions << 16);
       packet.workgroup_x = g.wx;
       packet.workgroup_y = g.wy;
       packet.workgroup_z = g.wz;
@@ -78,14 +82,16 @@ int main(int argc, char** argv) {
         const bool active = word < g.gx * g.gy * g.gz;
         uint32_t expected = kGuard;
         if (active) {
-          const uint32_t x = word % g.gx, y = (word / g.gx) % g.gy, z = word / (g.gx * g.gy);
-          expected = Advance((round * 17 + slot) ^ word ^ ((x / g.wx) << 16) ^ ((y / g.wy) << 20) ^
-                                 ((z / g.wz) << 24),
+          const uint32_t x = word % g.gx, y = (word / g.gx) % g.gy,
+                         z = word / (g.gx * g.gy);
+          expected = Advance((round * 17 + slot) ^ word ^ ((x / g.wx) << 16) ^
+                                 ((y / g.wy) << 20) ^ ((z / g.wz) << 24),
                              3);
         }
         Check(result.Load(slot * kStride / 4 + word) == expected,
               "dispatch geometry result/guard mismatch");
-        Check(result.Load(slot * kStride / 4 + kWords + word) == (active ? round : 0),
+        Check(result.Load(slot * kStride / 4 + kWords + word) ==
+                  (active ? round : 0),
               "dispatch geometry marker mismatch");
       }
     }

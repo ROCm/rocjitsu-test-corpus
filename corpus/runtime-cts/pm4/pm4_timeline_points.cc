@@ -1,7 +1,7 @@
-// Purpose: Test unsigned 64-bit timeline waits across a low-word carry and signal overshoot.
-// Three reached waiters use distinct thresholds. An overshoot releases two
-// while the largest remains blocked; a second signal releases the last. Check
-// each payload snapshot and an already-satisfied smaller target.
+// Purpose: Test unsigned 64-bit timeline waits across a low-word carry and
+// signal overshoot. Three reached waiters use distinct thresholds. An overshoot
+// releases two while the largest remains blocked; a second signal releases the
+// last. Check each payload snapshot and an already-satisfied smaller target.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -39,12 +39,14 @@ int main(int argc, char** argv) {
       commands.Finish(result.address(128 + q * 64 + 8), round);
       waiters[q]->Submit(commands.words);
     }
-    for (uint32_t q = 0; q < 3; ++q) result.Wait(32 + q * 16, round, 10000, waiters[q]);
+    for (uint32_t q = 0; q < 3; ++q)
+      result.Wait(32 + q * 16, round, 10000, waiters[q]);
     auto held = [&](uint32_t begin) {
       const uint64_t deadline = NowNs() + 1000000;
       do {
         for (uint32_t q = begin; q < 3; ++q)
-          Check(result.Load(34 + q * 16) == round - 1, "timeline threshold released too early");
+          Check(result.Load(34 + q * 16) == round - 1,
+                "timeline threshold released too early");
         std::this_thread::yield();
       } while (NowNs() < deadline);
     };
@@ -58,7 +60,8 @@ int main(int argc, char** argv) {
     result.Wait(96, round, 10000, &producer);
     for (uint32_t q = 0; q < 2; ++q) {
       result.Wait(34 + q * 16, round, 10000, waiters[q]);
-      Check(result.Load(33 + q * 16) == round * 31337, "timeline overshoot payload mismatch");
+      Check(result.Load(33 + q * 16) == round * 31337,
+            "timeline overshoot payload mismatch");
     }
     held(2);
     Pm4 later;
@@ -69,7 +72,8 @@ int main(int argc, char** argv) {
     producer.Submit(later.words);
     result.Wait(66, round, 10000, &third);
     result.Wait(112, round, 10000, &producer);
-    Check(result.Load(65) == round * 31337 + 1, "last timeline payload mismatch");
+    Check(result.Load(65) == round * 31337 + 1,
+          "last timeline payload mismatch");
     Check(result.Load64(0) == target + 21, "final timeline value mismatch");
     Pm4 past;
     past.Wait64(result.address(), target - 1);

@@ -18,7 +18,8 @@ int main(int argc, char** argv) {
   Start(argc, argv, "pm4_vram_command_fetch");
   const uint32_t rounds = Option(argc, argv, "--iterations", 64, 100000);
   Device device;
-  Buffer staging(device, 4096), local(device, 4096, true, true), result(device, 4096);
+  Buffer staging(device, 4096), local(device, 4096, true, true),
+      result(device, 4096);
   Queue queue(device);
   for (uint32_t round = 1; round <= rounds; ++round) {
     Pm4 ib;
@@ -28,14 +29,16 @@ int main(int argc, char** argv) {
     std::memcpy(staging.data, ib.words.data(), ib.words.size() * 4);
     const uint32_t offset = (round & 1) * 2048;
     Pm4 commands;
-    commands.DmaCopy(staging.address(), local.address(offset), ib.words.size() * 4);
+    commands.DmaCopy(staging.address(), local.address(offset),
+                     ib.words.size() * 4);
     commands.Barrier();
     commands.Indirect(local.address(offset), ib.words.size());
     commands.Finish(result.address(256), round);
     queue.Submit(commands.words);
     result.Wait(64, round, 10000, &queue);
     for (uint32_t word = 0; word < 31; ++word)
-      Check(result.Load(word) == round * 65536 + word, "VRAM IB data missing or stale");
+      Check(result.Load(word) == round * 65536 + word,
+            "VRAM IB data missing or stale");
     Check(result.Load(31) == 0, "IB output guard corrupted");
     queue.Drain();
   }

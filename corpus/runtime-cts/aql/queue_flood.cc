@@ -1,8 +1,9 @@
-// Purpose: Exercise many independent AQL queues, mixed priorities and priority updates.
-// Submit work to all queues before host waits, then check each queue's payloads
-// and completion for lost work or cross-queue result corruption.
-// Multiprocess workers hold their queues at ready/start and done/release rendezvous.
-// Submission to all queues does not guarantee simultaneous pending work.
+// Purpose: Exercise many independent AQL queues, mixed priorities and priority
+// updates. Submit work to all queues before host waits, then check each queue's
+// payloads and completion for lost work or cross-queue result corruption.
+// Multiprocess workers hold their queues at ready/start and done/release
+// rendezvous. Submission to all queues does not guarantee simultaneous pending
+// work.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   Queue protocol: AQL only.
@@ -36,7 +37,8 @@ int main(int argc, char** argv) {
   Buffer result(device, count * 4096);
   AqlPayload work(device, count);
   std::vector<std::unique_ptr<Queue>> queues;
-  for (uint32_t q = 0; q < count; ++q) queues.emplace_back(new Queue(device, 4096, q % 16, true));
+  for (uint32_t q = 0; q < count; ++q)
+    queues.emplace_back(new Queue(device, 4096, q % 16, true));
   WorkerPhase('R');
   for (uint32_t round = 1; round <= rounds; ++round) {
     for (uint32_t q = 0; q < count; ++q) {

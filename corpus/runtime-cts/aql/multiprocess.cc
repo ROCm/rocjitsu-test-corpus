@@ -1,8 +1,9 @@
-// Purpose: Stress independent KFD processes/VMs with multiple active queues in each process.
-// Run queue_flood workers concurrently so each validates its own payloads and completion.
-// Workers rendezvous after queue creation and retain their queues/VMs until
-// every worker reports checked completion. A parent deadline records phases,
-// terminates failed groups and propagates child failures or device skips.
+// Purpose: Stress independent KFD processes/VMs with multiple active queues in
+// each process. Run queue_flood workers concurrently so each validates its own
+// payloads and completion. Workers rendezvous after queue creation and retain
+// their queues/VMs until every worker reports checked completion. A parent
+// deadline records phases, terminates failed groups and propagates child
+// failures or device skips.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --iterations N: queue_flood rounds in each worker process.
@@ -15,7 +16,8 @@
 //   --seed: accepted by the common parser but unused here.
 //   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits retain their separate 10-second deadline.
-// Keep aql_queue_flood_<target> beside this binary; --timeout also applies to each worker.
+// Keep aql_queue_flood_<target> beside this binary; --timeout also applies to
+// each worker.
 //
 // Inspiration: independent native-KFD adaptation of these public test patterns.
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/libhsakmt/tests/kfdtest/src/KFDHWSTest.cpp

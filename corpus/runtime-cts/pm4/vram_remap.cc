@@ -6,7 +6,8 @@
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; default off for AQL queues.
 //   --mode pm4|aql: observer queue; default pm4. SDMA transport is retained.
-//   The observer copies data through the tested mapping before host verification.
+//   The observer copies data through the tested mapping before host
+//   verification.
 //   --iterations N: rounds; default 64; range 1..100000.
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
 //   --queues and --seed: accepted by common parser but unused.
@@ -15,8 +16,8 @@
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/libhsakmt/tests/kfdtest/src/KFDLocalMemoryTest.cpp
 #include <linux/kfd_ioctl.h>
 
-#include "support/aql_payload.h"
 #include "pm4.h"
+#include "support/aql_payload.h"
 #include "support/sdma.h"
 using namespace cts;
 int main(int argc, char** argv) {
@@ -25,7 +26,8 @@ int main(int argc, char** argv) {
   const uint32_t rounds = Option(argc, argv, "--iterations", 64, 100000);
   constexpr uint32_t kBytes = 65536;
   Device device;
-  Buffer source(device, kBytes), output(device, kBytes), local(device, kBytes, false, true);
+  Buffer source(device, kBytes), output(device, kBytes),
+      local(device, kBytes, false, true);
   Buffer fences(device, 4096);
   SdmaQueue transfer(device);
   Queue survivor(device);
@@ -48,7 +50,8 @@ int main(int argc, char** argv) {
     unmap.handle = local.handle;
     unmap.device_ids_array_ptr = reinterpret_cast<uintptr_t>(&device.gpu_id);
     unmap.n_devices = 1;
-    device.Ioctl(AMDKFD_IOC_UNMAP_MEMORY_FROM_GPU, &unmap, "UNMAP retained VRAM");
+    device.Ioctl(AMDKFD_IOC_UNMAP_MEMORY_FROM_GPU, &unmap,
+                 "UNMAP retained VRAM");
     Check(unmap.n_success == 1, "partial retained VRAM unmap");
     Pm4 ping;
     ping.Finish(fences.address(64), round);
@@ -80,9 +83,9 @@ int main(int argc, char** argv) {
     }
     observer.Drain();
     for (uint32_t word = 0; word < kBytes / 4; ++word)
-      Check(
-          output.Load(word) == round * 65536 + word && snapshot.Load(word) == round * 65536 + word,
-          "VRAM contents changed across remapping");
+      Check(output.Load(word) == round * 65536 + word &&
+                snapshot.Load(word) == round * 65536 + word,
+            "VRAM contents changed across remapping");
     transfer.Drain();
     survivor.Drain();
   }

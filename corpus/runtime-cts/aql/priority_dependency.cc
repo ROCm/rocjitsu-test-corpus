@@ -27,7 +27,8 @@ int main(int argc, char** argv) {
   Device device;
   Buffer result(device, 4096), gate(device, 4096);
   AqlPayload work(device, 3);
-  Queue low(device, 4096, 0, true), high(device, 4096, 15, true), medium(device, 4096, 7, true);
+  Queue low(device, 4096, 0, true), high(device, 4096, 15, true),
+      medium(device, 4096, 7, true);
   for (uint32_t round = 1; round <= rounds; ++round) {
     low.SetPriority(round & 1 ? 0 : 1);
     high.SetPriority(round & 1 ? 15 : 14);
@@ -52,7 +53,8 @@ int main(int argc, char** argv) {
     work.Wait(low, 0);
     Check(result.Load(16) == round * 17, "AQL priority dependency stale data");
     for (uint32_t i = 0; i < 63; ++i)
-      Check(result.Load(128 + i) == round + i, "AQL medium priority data mismatch");
+      Check(result.Load(128 + i) == round + i,
+            "AQL medium priority data mismatch");
     Check(result.Load(191) == 0, "AQL priority guard corrupted");
     low.Drain();
     high.Drain();

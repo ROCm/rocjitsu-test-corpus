@@ -1,7 +1,8 @@
-// Purpose: Test ring backpressure while an AQL queue is blocked on a host-controlled gate.
-// A host producer submits more work than the ring can hold while another queue
-// must progress. Observe an actual full-ring reservation before the negative
-// phase; then release and verify all payloads or exact operation counts.
+// Purpose: Test ring backpressure while an AQL queue is blocked on a
+// host-controlled gate. A host producer submits more work than the ring can
+// hold while another queue must progress. Observe an actual full-ring
+// reservation before the negative phase; then release and verify all payloads
+// or exact operation counts.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   Queue protocol: AQL only.
@@ -33,7 +34,8 @@ int main(int argc, char** argv) {
   Queue blocked(device, 4096, 7, true), independent(device, 4096, 7, true);
   for (uint32_t round = 1; round <= rounds; ++round) {
     ResetSignal(gate, 0);
-    for (uint32_t i = 0; i < 256; ++i) work.Prepare(i, result.address(i * 4), round * 256 + i);
+    for (uint32_t i = 0; i < 256; ++i)
+      work.Prepare(i, result.address(i * 4), round * 256 + i);
     AqlWait(blocked, gate.address());
     const uint64_t initial_backpressure = blocked.backpressure_count();
     std::atomic<bool> entered{false}, finished{false};
@@ -53,9 +55,11 @@ int main(int argc, char** argv) {
     work.Wait(independent, 256);
     const uint64_t deadline = NowNs() + 1000000;
     do {
-      Check(!finished.load(std::memory_order_acquire), "AQL producer overran blocked ring");
+      Check(!finished.load(std::memory_order_acquire),
+            "AQL producer overran blocked ring");
       for (uint32_t i = 0; i < 256; ++i)
-        Check(work.signals.Load64(i * 64 + 8) == 1, "AQL work escaped host gate");
+        Check(work.signals.Load64(i * 64 + 8) == 1,
+              "AQL work escaped host gate");
       std::this_thread::yield();
     } while (NowNs() < deadline);
     gate.Store64(8, 0);

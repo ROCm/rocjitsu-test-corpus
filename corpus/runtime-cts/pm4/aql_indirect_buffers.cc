@@ -8,7 +8,8 @@
 //
 // Parameters (decimal integers; ranges inclusive):
 //   --aql-metadata off|on: gfx1250 only; this test always uses a plain queue.
-//   --iterations N: batches of 64 IB/barrier pairs; default 128; range 1..100000.
+//   --iterations N: batches of 64 IB/barrier pairs; default 128;
+//   range 1..100000.
 //   --timeout N: watchdog seconds; default 45; range 1..3600.
 //   --queues and --seed: accepted by the common parser but unused.
 // Progress waits have a separate 10-second deadline.
@@ -16,8 +17,8 @@
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_aql_queue.cpp
 #include <cstring>
 
-#include "support/aql.h"
 #include "pm4.h"
+#include "support/aql.h"
 using namespace cts;
 struct VendorIb {
   uint16_t header, format;
@@ -33,7 +34,8 @@ int main(int argc, char** argv) {
   Start(argc, argv, "aql_indirect_buffers");
   const uint32_t rounds = Option(argc, argv, "--iterations", 128, 100000);
   Device device;
-  Buffer result(device, 4096), indirect(device, 64 * 4096, true), signals(device, 128 * 64);
+  Buffer result(device, 4096), indirect(device, 64 * 4096, true),
+      signals(device, 128 * 64);
   Queue queue(device, 4096, 7, true, false, false);
   for (uint32_t round = 1; round <= rounds; ++round) {
     for (uint32_t ib = 0; ib < 64; ++ib) {
@@ -42,13 +44,14 @@ int main(int argc, char** argv) {
       Pm4 body;
       body.Write(result.address(ib * 4), round * 64 + ib);
       body.Pad();
-      std::memcpy(static_cast<char*>(indirect.data) + ib * 4096, body.words.data(),
-                  body.words.size() * 4);
+      std::memcpy(static_cast<char*>(indirect.data) + ib * 4096,
+                  body.words.data(), body.words.size() * 4);
       Pm4 jump;
       jump.Indirect(indirect.address(ib * 4096), body.words.size());
       VendorIb packet{};
-      packet.header = (2u << 9) | (2u << 11);  // VENDOR_SPECIFIC=0, system fences.
-      packet.format = 1;                       // AMD_AQL_FORMAT_PM4_IB.
+      packet.header =
+          (2u << 9) | (2u << 11);  // VENDOR_SPECIFIC=0, system fences.
+      packet.format = 1;           // AMD_AQL_FORMAT_PM4_IB.
       std::memcpy(packet.jump, jump.words.data(), sizeof(packet.jump));
       packet.remaining = 0xa;
       packet.completion = signals.address(ib * 128);
@@ -62,7 +65,8 @@ int main(int argc, char** argv) {
     for (uint32_t ib = 0; ib < 64; ++ib) {
       WaitSignal(signals, ib * 128 + 64, queue);
       WaitSignal(signals, ib * 128, queue);
-      Check(result.Load(ib) == round * 64 + ib, "AQL vendor IB lost or corrupted data");
+      Check(result.Load(ib) == round * 64 + ib,
+            "AQL vendor IB lost or corrupted data");
     }
     Check(result.Load(64) == 0, "AQL vendor IB guard corrupted");
     queue.Drain();

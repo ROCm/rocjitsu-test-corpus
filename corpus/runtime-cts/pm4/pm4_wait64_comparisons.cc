@@ -24,7 +24,8 @@ int main(int argc, char** argv) {
   Queue waiter(device), independent(device);
   const uint64_t mask = 0xffff00000000ffffull;
   const uint64_t ref = 0x8000000000000010ull, step = 1ull << 48;
-  const uint64_t blocked[] = {ref + step, ref + step, ref + step, ref, ref - step, ref};
+  const uint64_t blocked[] = {ref + step, ref + step, ref + step,
+                              ref,        ref - step, ref};
   const uint64_t ready[] = {ref - step, ref, ref, ref + step, ref, ref + step};
   uint32_t token = 0;
   for (uint32_t round = 0; round < rounds; ++round) {
@@ -44,7 +45,8 @@ int main(int argc, char** argv) {
       memory.Wait(32, token, 10000, &independent);
       const uint64_t deadline = NowNs() + 1000000;
       do {
-        Check(memory.Load(16) == token - 1, "64-bit comparison passed while false");
+        Check(memory.Load(16) == token - 1,
+              "64-bit comparison passed while false");
         std::this_thread::yield();
       } while (NowNs() < deadline);
       memory.Store64(0, ready[function - 1] | 0x0000fedcba980000ull);

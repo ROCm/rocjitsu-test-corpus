@@ -1,6 +1,7 @@
-// Purpose: Test disabling a PM4 queue before publishing work, updating priority while
-// paused, and re-enabling it. Require independent queue progress while pending work stays blocked,
-// then check that resumed work executes exactly once; no live shader is paused.
+// Purpose: Test disabling a PM4 queue before publishing work, updating priority
+// while paused, and re-enabling it. Require independent queue progress while
+// pending work stays blocked, then check that resumed work executes exactly
+// once; no live shader is paused.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -18,8 +19,8 @@
 #include <memory>
 #include <thread>
 
-#include "support/aql_payload.h"
 #include "pm4.h"
+#include "support/aql_payload.h"
 using namespace cts;
 
 static int RunPm4(int argc, char** argv) {
@@ -46,7 +47,8 @@ static int RunPm4(int argc, char** argv) {
     while (NowNs() < deadline) {
       Check(result.Load(0) == round - 1 && result.Load(16) == round - 1,
             "disabled queue executed pending work");
-      Check(paused.consumed() == stopped, "disabled queue advanced its read pointer");
+      Check(paused.consumed() == stopped,
+            "disabled queue advanced its read pointer");
       std::this_thread::yield();
     }
     paused.SetEnabled(true);
@@ -59,9 +61,8 @@ static int RunPm4(int argc, char** argv) {
   return 0;
 }
 
-
-
 int main(int argc, char** argv) {
-  Check(!AqlMode(argc, argv), "use the AQL suite for this scenario in AQL mode");
+  Check(!AqlMode(argc, argv),
+        "use the AQL suite for this scenario in AQL mode");
   return RunPm4(argc, argv);
 }

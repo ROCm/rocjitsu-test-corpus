@@ -1,7 +1,8 @@
-// Purpose: Stress contended 32-bit and 64-bit PM4 atomic increments from multiple queues.
-// Check exact totals for lost/duplicate operations, carry across the low 32-bit word,
-// and adjacent guards for unintended writes. Submit every queue behind a
-// shared start gate, observe a reached marker and unchanged counters, then release.
+// Purpose: Stress contended 32-bit and 64-bit PM4 atomic increments from
+// multiple queues. Check exact totals for lost/duplicate operations, carry
+// across the low 32-bit word, and adjacent guards for unintended writes. Submit
+// every queue behind a shared start gate, observe a reached marker and
+// unchanged counters, then release.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -51,17 +52,21 @@ int main(int argc, char** argv) {
     const uint64_t held = uint64_t(round - 1) * count * kAdds;
     const uint64_t deadline = NowNs() + 1000000;
     do {
-      Check(result.Load(0) == uint32_t(held) && result.Load64(8) == 0xfffffff0ull + held,
+      Check(result.Load(0) == uint32_t(held) &&
+                result.Load64(8) == 0xfffffff0ull + held,
             "atomic work escaped start gate");
       std::this_thread::yield();
     } while (NowNs() < deadline);
     result.Store(512, round);
     for (uint32_t q = 0; q < count; ++q) result.Wait(16 + q, round);
     uint64_t expected = uint64_t(round) * count * kAdds;
-    Check(result.Load(0) == uint32_t(expected), "32-bit atomics lost or duplicated");
+    Check(result.Load(0) == uint32_t(expected),
+          "32-bit atomics lost or duplicated");
     const uint64_t wide = result.Load(2) | (uint64_t(result.Load(3)) << 32);
-    Check(wide == 0xfffffff0ull + expected, "64-bit atomics lost, duplicated, or bad carry");
-    Check(result.Load(1) == 0 && result.Load(4) == 0, "atomic guard overwritten");
+    Check(wide == 0xfffffff0ull + expected,
+          "64-bit atomics lost, duplicated, or bad carry");
+    Check(result.Load(1) == 0 && result.Load(4) == 0,
+          "atomic guard overwritten");
   }
   for (auto& queue : queues) queue->Drain();
   Pass("pm4_atomic_contention", uint64_t(rounds) * count * kAdds * 2);

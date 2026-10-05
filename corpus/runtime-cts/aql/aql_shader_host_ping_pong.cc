@@ -31,14 +31,15 @@ int main(int argc, char** argv) {
   ResetSignal(signals, 0);
   Arguments a{result.address(), control.address(), seed, rounds, 1};
   std::memcpy(args.data, &a, sizeof(a));
-  Dispatch packet =
-      OneGroup(code.address(kDescriptorOffset), args.address(), signals.address(), true);
+  Dispatch packet = OneGroup(code.address(kDescriptorOffset), args.address(),
+                             signals.address(), true);
   queue.SubmitAql(&packet);
   uint32_t expected = seed;
   for (uint32_t round = 1; round <= rounds; ++round) {
     control.Wait(0, round, 10000, &queue);
     for (uint32_t word = 0; word < 32; ++word) {
-      Check(control.Load(64 + word) == (expected ^ word), "shader request payload stale");
+      Check(control.Load(64 + word) == (expected ^ word),
+            "shader request payload stale");
       control.Store(128 + word, (expected ^ word) + round);
     }
     // The GPU folds reply words into its previous state in order.
