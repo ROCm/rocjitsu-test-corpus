@@ -14,7 +14,7 @@ corpus/
   semantics/  Standalone target-specific HIP semantic programs.
   llama/      llama.cpp test-backend-ops cases and vendored GGML sources.
   vulkan/     Pinned Vulkan compute and texel-buffer CTS selections.
-  runtime-torture/ Direct-KFD aql/ and capability-gated pm4/ suites.
+  runtime-cts/ Direct-KFD aql/ and capability-gated pm4/ suites.
   tensile/    gfx1250 TensileLite configs and generated artifacts.
   benchmarks/ Parameterized Triton benchmarks and reused upstream kernels.
 
@@ -55,9 +55,9 @@ CI orchestration and simulator configurations remain in rocm-systems.
   that the runtime test executes.
 - `corpus/vulkan/`: pinned Vulkan CTS compute and buffer cases for RDNA3/RDNA4
   through Mesa RADV. See the [build and local smoke-test guide](corpus/vulkan/README.md).
-- `corpus/runtime-torture/`: standalone direct-KFD queue, packet, dependency,
+- `corpus/runtime-cts/`: standalone direct-KFD queue, packet, dependency,
   SDMA and shader stress tests with gfx9, gfx11 and gfx12 support. Run binaries directly or
-  through the manifest-based pytest adapter (`--suite aql` or `--suite pm4`); see the [build instructions](corpus/runtime-torture/README.md).
+  through the manifest-based pytest adapter (`--suite aql` or `--suite pm4`); see the [build instructions](corpus/runtime-cts/README.md).
 - `corpus/semantics/`: standalone HIP programs with deterministic inputs,
   source-ISA coverage, and typed results that can be captured under any
   externally selected launch configuration.

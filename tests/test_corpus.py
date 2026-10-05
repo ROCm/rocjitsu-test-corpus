@@ -23,7 +23,7 @@ from test_suites import (
     iree,
     kernels,
     llama,
-    runtime_torture,
+    runtime_cts,
     semantics,
     vulkan,
 )
@@ -37,8 +37,8 @@ SUITE_MODULES = {
     "semantics": semantics,
     "llama": llama,
     "vulkan": vulkan,
-    "aql": runtime_torture,
-    "pm4": runtime_torture,
+    "aql": runtime_cts,
+    "pm4": runtime_cts,
 }
 DEFAULT_TARGET = "gfx1201"
 DEFAULT_SUITES = ("iree", "kernels", "cts")
@@ -80,7 +80,7 @@ def pytest_generate_tests(metafunc):
             try:
                 if suite in ("aql", "pm4"):
                     target_cases.extend(
-                        runtime_torture.discover(
+                        runtime_cts.discover(
                             target,
                             suite_name=suite,
                             binary_dir=config.getoption("binary_dir"),
@@ -141,7 +141,7 @@ def pytest_generate_tests(metafunc):
                 marks.append(
                     pytest.mark.xfail(
                         strict=True,
-                        raises=runtime_torture.ExpectedFailure,
+                        raises=runtime_cts.ExpectedFailure,
                         reason=case.run["reason"],
                     )
                 )
