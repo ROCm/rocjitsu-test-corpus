@@ -31,7 +31,7 @@ class ExpectedFailure(RuntimeError):
     """Only a manifest-matching failure may satisfy a strict pytest xfail."""
 
 
-def load_manifest(path: Path) -> list[dict]:
+def load_manifest(path: Path, target: str | None = None) -> list[dict]:
     with path.open("rb") as stream:
         data = tomllib.load(stream)
     if set(data) - {"defaults", "case"}:
@@ -53,10 +53,19 @@ def load_manifest(path: Path) -> list[dict]:
             "reason",
             "expected_exit_code",
             "expected_output",
+            "requires",
         }
         if not isinstance(row, dict) or set(row) - allowed:
             raise ValueError(f"Unknown case fields: {row}")
         case = {"args": [], "status": "", **defaults, **row}
+        if target is not None and isinstance(case.get("binary"), str):
+            case["binary"] = case["binary"].replace("{target}", target)
+        required = case.get("requires", [])
+        if not isinstance(required, list) or any(not isinstance(v, str) for v in required):
+            raise ValueError("requires must be an array of feature names")
+        if set(required) - {"aql_metadata", "sdma_signal64", "wave32_scratch", "wgp_placement",
+                            "pm4", "pm4_wait64", "pm4_release_mem", "aql_pm4_ib", "pm4_wait_offload"}:
+            raise ValueError("Unknown required feature")
         for key in ("id", "binary"):
             if not isinstance(case.get(key), str) or not NAME.fullmatch(case[key]):
                 raise ValueError(f"Case {key} must be a simple nonempty name: {row}")
@@ -115,12 +124,13 @@ def validate_inventory(
 def discover(
     target,
     *,
+    suite_name: str,
     binary_dir: str | None,
     cases_config: str | None,
     run_wrapper: str | None = None,
 ) -> list[CorpusCase]:
-    if target.target not in ("gfx1201", "gfx1250"):
-        raise ValueError("runtime-torture supports gfx1201 and gfx1250")
+    if suite_name not in ("aql", "pm4"):
+        raise ValueError("Expected aql or pm4 suite")
     if not binary_dir:
         raise ValueError(
             "runtime-torture requires --binary-dir pointing to a configured build"
@@ -130,7 +140,7 @@ def discover(
         if not wrapper or shutil.which(wrapper[0]) is None:
             raise ValueError(f"Run wrapper executable is unavailable: {run_wrapper!r}")
     directory = Path(binary_dir).expanduser().resolve()
-    inventory = directory / f"runtime-torture-{target.target}-targets.txt"
+    inventory = directory / f"{suite_name}-{target.target}-targets.txt"
     names = inventory.read_text().splitlines()
     if (
         not names
@@ -138,11 +148,25 @@ def discover(
         or any(not NAME.fullmatch(n) for n in names)
     ):
         raise ValueError(f"Invalid CMake executable inventory: {inventory}")
-    defaults_path = ROOT / target.target / "cases.toml"
-    defaults = load_manifest(defaults_path)
+    defaults_path = ROOT / suite_name / "cases.toml"
+    feature_file = directory / f"runtime-{target.target}-features.txt"
+    features = set(feature_file.read_text().splitlines())
+    defaults = load_manifest(defaults_path, target.target)
     path = Path(cases_config).expanduser().resolve() if cases_config else defaults_path
-    rows = load_manifest(path) if cases_config else defaults
-    validate_inventory(defaults, rows, set(names))
+    rows = load_manifest(path, target.target) if cases_config else defaults
+    known = set(names) | {row["binary"] for row in defaults if row.get("requires")}
+    validate_inventory(defaults, rows, known)
+    runnable = []
+    for row in rows:
+        missing = set(row.get("requires", [])) - features
+        if missing:
+            row.update(
+                status="SKIP",
+                reason=f"Platform lacks required features: {', '.join(sorted(missing))}",
+            )
+        else:
+            runnable.append(row)
+    validate_inventory(defaults, runnable, set(names))
     # Check the complete build, including helper binaries used by selected cases.
     for name in names:
         binary = directory / name
@@ -150,8 +174,8 @@ def discover(
             raise ValueError(f"Missing executable: {binary}; build the suite first")
     return [
         CorpusCase(
-            id=f"runtime-torture.{target.target}.{row['id']}",
-            suite="runtime-torture",
+            id=f"{suite_name}.{target.target}.{row['id']}",
+            suite=suite_name,
             target=target.target,
             collection=None,
             backend=None,
@@ -192,7 +216,7 @@ def run(case, build_result, context) -> None:
         pytest.skip(row["reason"])
     if context.skip_all_runs:
         pytest.skip("--skip-all-runs: prebuilt binary validated; not executed")
-    directory = context.artifact_directory / "runtime-torture" / case.target
+    directory = context.artifact_directory / case.suite / case.target
     directory.mkdir(parents=True, exist_ok=True)
     log_path = directory / f"{row['id']}.log"
     command = [

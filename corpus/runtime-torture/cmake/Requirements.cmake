@@ -47,8 +47,8 @@ function(torture_check_kernel_toolchain arch kernel)
   file(MAKE_DIRECTORY "${probe_dir}")
   torture_check_command("AMDGPU clang support for ${arch}"
     "${AMDGPU_LLVM_BIN}/clang" -x cl --target=amdgcn-amd-amdhsa
-    -mcpu=${arch} -mno-wavefrontsize64 -nogpulib -O2 ${ARGN} -c
-    "${PROJECT_SOURCE_DIR}/${arch}/kernels/${kernel}.cl" -o "${probe_dir}/kernel.o")
+    -mcpu=${arch} ${kernel_wave_option} -nogpulib -O2 ${ARGN} -c
+    "${PROJECT_SOURCE_DIR}/aql/kernels/${kernel}.cl" -o "${probe_dir}/kernel.o")
   torture_check_command("AMDGPU ld.lld support for ${arch}"
     "${AMDGPU_LLVM_BIN}/ld.lld" -shared --build-id=none
     "${probe_dir}/kernel.o" -o "${probe_dir}/kernel.co")

@@ -1,0 +1,247 @@
+# Shared PM4 scenarios; capabilities are supplied by the selected support group.
+[defaults]
+timeout_seconds = 60
+
+[[case]]
+id = "pm4_atomic_contention"
+binary = "pm4_atomic_contention_{target}"
+args = ["--queues", "16", "--iterations", "64"]
+requires = ["pm4"]
+
+[[case]]
+id = "pm4_atomic_operations"
+binary = "pm4_atomic_operations_{target}"
+args = ["--iterations", "64"]
+requires = ["pm4"]
+
+[[case]]
+id = "pm4_wait_comparisons"
+binary = "pm4_wait_comparisons_{target}"
+args = ["--iterations", "8"]
+requires = ["pm4"]
+
+[[case]]
+id = "pm4_wait64_comparisons"
+binary = "pm4_wait64_comparisons_{target}"
+args = ["--iterations", "64"]
+requires = ["pm4", "pm4_wait64"]
+
+[[case]]
+id = "pm4_timeline_points"
+binary = "pm4_timeline_points_{target}"
+args = ["--iterations", "32"]
+requires = ["pm4", "pm4_wait64"]
+
+[[case]]
+id = "pm4_timeline_fuzz"
+binary = "pm4_timeline_fuzz_{target}"
+args = ["--queues", "8", "--iterations", "1024", "--seed", "1337"]
+requires = ["pm4", "pm4_wait64"]
+
+[[case]]
+id = "pm4_private_dma"
+binary = "pm4_private_dma_{target}"
+args = ["--iterations", "32"]
+requires = ["pm4"]
+
+[[case]]
+id = "pm4_indirect_buffers"
+binary = "pm4_indirect_buffers_{target}"
+args = ["--iterations", "128"]
+requires = ["pm4"]
+
+[[case]]
+id = "pm4_shared_ib"
+binary = "pm4_shared_ib_{target}"
+args = ["--iterations", "64", "--queues", "8"]
+requires = ["pm4"]
+
+[[case]]
+id = "pm4_vram_command_fetch"
+binary = "pm4_vram_command_fetch_{target}"
+args = ["--iterations", "64"]
+requires = ["pm4"]
+
+[[case]]
+id = "pm4_doorbell_rollover"
+binary = "pm4_doorbell_rollover_{target}"
+args = ["--iterations", "64"]
+requires = ["pm4"]
+
+[[case]]
+id = "sdma_queue_lifecycle"
+binary = "pm4_sdma_queue_lifecycle_{target}"
+args = ["--iterations", "64"]
+requires = ["pm4"]
+
+[[case]]
+id = "aql_indirect_buffers"
+binary = "pm4_aql_indirect_buffers_{target}"
+args = ["--iterations", "128"]
+requires = ["pm4", "aql_pm4_ib"]
+
+[[case]]
+id = "pm4_event_interrupt"
+binary = "pm4_event_interrupt_{target}"
+args = ["--iterations", "64", "--queues", "2"]
+requires = ["pm4", "pm4_release_mem"]
+
+[[case]]
+id = "aql_barrier_and"
+binary = "pm4_aql_barrier_and_{target}"
+args = ["--iterations", "32"]
+requires = ["pm4"]
+
+[[case]]
+id = "aql_barrier_or"
+binary = "pm4_aql_barrier_or_{target}"
+args = ["--iterations", "32"]
+requires = ["pm4"]
+
+[[case]]
+id = "packet_flood-pm4"
+binary = "pm4_packet_flood_{target}"
+args = ["--mode", "pm4", "--iterations", "256"]
+requires = ["pm4"]
+
+[[case]]
+id = "queue_flood-pm4"
+binary = "pm4_queue_flood_{target}"
+args = ["--mode", "pm4", "--queues", "16", "--iterations", "64"]
+requires = ["pm4"]
+
+[[case]]
+id = "queue_churn-pm4"
+binary = "pm4_queue_churn_{target}"
+args = ["--mode", "pm4", "--queues", "8", "--iterations", "32"]
+requires = ["pm4"]
+
+[[case]]
+id = "dependency_chain-pm4"
+binary = "pm4_dependency_chain_{target}"
+args = ["--mode", "pm4", "--queues", "16", "--iterations", "32"]
+requires = ["pm4"]
+
+[[case]]
+id = "dependency_diamond-pm4"
+binary = "pm4_dependency_diamond_{target}"
+args = ["--mode", "pm4", "--queues", "8", "--iterations", "32"]
+requires = ["pm4"]
+
+[[case]]
+id = "engine_pipeline-pm4"
+binary = "pm4_engine_pipeline_{target}"
+args = ["--mode", "pm4", "--iterations", "64"]
+requires = ["pm4"]
+
+[[case]]
+id = "concurrent_submit-pm4"
+binary = "pm4_concurrent_submit_{target}"
+args = ["--mode", "pm4", "--queues", "8", "--iterations", "128"]
+requires = ["pm4"]
+
+[[case]]
+id = "multiprocess-pm4"
+binary = "pm4_multiprocess_{target}"
+args = ["--mode", "pm4", "--queues", "4", "--iterations", "64"]
+requires = ["pm4"]
+
+[[case]]
+id = "random_dag-pm4"
+binary = "pm4_random_dag_{target}"
+args = ["--mode", "pm4", "--queues", "16", "--iterations", "32", "--seed", "12345"]
+requires = ["pm4"]
+
+[[case]]
+id = "queue_pause_resume-pm4"
+binary = "pm4_queue_pause_resume_{target}"
+args = ["--mode", "pm4", "--iterations", "32"]
+requires = ["pm4"]
+
+[[case]]
+id = "gpu_ping_pong-pm4"
+binary = "pm4_gpu_ping_pong_{target}"
+args = ["--mode", "pm4", "--iterations", "64"]
+requires = ["pm4"]
+
+[[case]]
+id = "host_gate-pm4"
+binary = "pm4_host_gate_{target}"
+args = ["--mode", "pm4", "--iterations", "16"]
+requires = ["pm4"]
+
+[[case]]
+id = "allocation_churn-pm4"
+binary = "pm4_allocation_churn_{target}"
+args = ["--mode", "pm4", "--iterations", "32", "--queues", "16"]
+requires = ["pm4"]
+
+[[case]]
+id = "concurrent_queue_churn-pm4"
+binary = "pm4_concurrent_queue_churn_{target}"
+args = ["--mode", "pm4", "--queues", "8", "--iterations", "16"]
+requires = ["pm4"]
+
+[[case]]
+id = "process_exit_inflight-pm4"
+binary = "pm4_process_exit_inflight_{target}"
+args = ["--mode", "pm4", "--iterations", "16"]
+requires = ["pm4"]
+
+[[case]]
+id = "dmabuf_process_handoff-pm4"
+binary = "pm4_dmabuf_process_handoff_{target}"
+args = ["--mode", "pm4", "--iterations", "64"]
+requires = ["pm4"]
+
+[[case]]
+id = "registered_memory-pm4"
+binary = "pm4_registered_memory_{target}"
+args = ["--mode", "pm4", "--iterations", "64"]
+requires = ["pm4"]
+
+[[case]]
+id = "priority_dependency-pm4"
+binary = "pm4_priority_dependency_{target}"
+args = ["--mode", "pm4", "--iterations", "64"]
+requires = ["pm4"]
+
+[[case]]
+id = "vram_remap-pm4"
+binary = "pm4_vram_remap_{target}"
+args = ["--mode", "pm4", "--iterations", "64"]
+requires = ["pm4"]
+
+[[case]]
+id = "vram_remap-aql"
+binary = "pm4_vram_remap_{target}"
+args = ["--mode", "aql", "--iterations", "64"]
+requires = ["pm4"]
+
+[[case]]
+id = "aql_running_queue_pause"
+binary = "pm4_aql_running_queue_pause_{target}"
+args = ["--iterations", "32"]
+status = "SKIP"
+reason = "Investigate live-wave pause: UPDATE_QUEUE EACCES; trap/preemption setup unresolved and host recovery may be needed."
+requires = ["pm4"]
+
+[[case]]
+id = "aql_publish_holes"
+binary = "pm4_aql_publish_holes_{target}"
+args = ["--iterations", "64", "--queues", "7"]
+requires = ["pm4"]
+
+[[case]]
+id = "aql_gpu_queue_producer"
+binary = "pm4_aql_gpu_queue_producer_{target}"
+args = ["--iterations", "64"]
+requires = ["pm4", "pm4_release_mem"]
+
+[[case]]
+id = "pm4_dependency_chain_no_offload"
+binary = "pm4_dependency_chain_no_offload_{target}"
+args = ["--queues", "8", "--iterations", "4"]
+status = "SKIP"
+reason = "Investigate: ACE-offload bit clear stalls on round 2 with fw 2380; subsequent GPU recovery failed."
+requires = ["pm4", "pm4_wait_offload"]

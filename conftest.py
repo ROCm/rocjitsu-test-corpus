@@ -28,7 +28,7 @@ def pytest_addoption(parser):
         action="append",
         default=[],
         help=(
-            "Suite selector (iree, kernels, cts, dbt, semantics, llama, vulkan, runtime-torture). "
+            "Suite selector (iree, kernels, cts, dbt, semantics, llama, vulkan, aql, pm4). "
             "Repeat or pass "
             "comma-separated values."
         ),
@@ -123,12 +123,12 @@ def pytest_addoption(parser):
     parser.addoption(
         "--cases-config",
         default=None,
-        help="Replacement runtime-torture TOML manifest.",
+        help="Replacement AQL/PM4 TOML manifest.",
     )
     parser.addoption(
         "--binary-dir",
         default=None,
-        help="Prebuilt runtime-torture binaries and CMake target inventory.",
+        help="Prebuilt AQL/PM4 binaries and CMake target inventories.",
     )
     dbt.add_pytest_options(parser)
 
@@ -136,16 +136,16 @@ def pytest_addoption(parser):
 # Pytest hook: called during configuration before collection starts.
 def pytest_configure(config):
     selected = parse_csv_values(config.getoption("suite"))
-    if "runtime-torture" in selected:
-        if selected != ("runtime-torture",):
-            raise pytest.UsageError("Run runtime-torture separately from other suites")
+    if set(selected) & {"aql", "pm4"}:
+        if set(selected) - {"aql", "pm4"}:
+            raise pytest.UsageError("Run aql/pm4 separately from other suites")
         if getattr(config.option, "numprocesses", None) not in (None, 0, "0"):
-            raise pytest.UsageError("runtime-torture must run sequentially; use -n 0")
+            raise pytest.UsageError("aql/pm4 must run sequentially; use -n 0")
         # A failed KFD case can leave the GPU unusable. Stop before cascading failures.
         config.option.maxfail = 1
     elif config.getoption("cases_config") or config.getoption("binary_dir"):
         raise pytest.UsageError(
-            "--cases-config/--binary-dir require --suite runtime-torture"
+            "--cases-config/--binary-dir require --suite aql or pm4"
         )
     _validate_comparison_options(config)
     _configure_xdist_loadgroup(config)

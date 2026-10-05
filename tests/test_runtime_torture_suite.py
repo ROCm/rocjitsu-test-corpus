@@ -76,7 +76,7 @@ def test_missing_default_and_unknown_custom():
 
 
 def test_custom_subset_still_checks_default_coverage(tmp_path, monkeypatch):
-    root = tmp_path / "corpus" / "gfx1250"
+    root = tmp_path / "corpus" / "pm4"
     root.mkdir(parents=True)
     source = manifest(tmp_path)
     (root / "cases.toml").write_text(source.read_text())
@@ -84,16 +84,17 @@ def test_custom_subset_still_checks_default_coverage(tmp_path, monkeypatch):
     binary = tmp_path / "sample_gfx1250"
     binary.write_text("#!/bin/sh\nexit 0\n")
     binary.chmod(0o755)
-    inv = tmp_path / "runtime-torture-gfx1250-targets.txt"
+    (tmp_path / "runtime-gfx1250-features.txt").write_text("pm4\n")
+    inv = tmp_path / "pm4-gfx1250-targets.txt"
     inv.write_text("sample_gfx1250\n")
     cases = suite.discover(
-        TargetSpec("gfx1250"), binary_dir=str(tmp_path), cases_config=str(source)
+        TargetSpec("gfx1250"), suite_name="pm4", binary_dir=str(tmp_path), cases_config=str(source)
     )
     assert len(cases) == 1
     inv.write_text("sample_gfx1250\nforgotten_gfx1250\n")
     with pytest.raises(ValueError, match="forgotten_gfx1250"):
         suite.discover(
-            TargetSpec("gfx1250"), binary_dir=str(tmp_path), cases_config=str(source)
+            TargetSpec("gfx1250"), suite_name="pm4", binary_dir=str(tmp_path), cases_config=str(source)
         )
 
 
@@ -115,8 +116,8 @@ def fake_case(tmp_path, script, **overrides):
         id="fake", binary="fake", args=[], status="", timeout_seconds=2, **overrides
     )
     case = CorpusCase(
-        "runtime-torture.gfx1250.fake",
-        "runtime-torture",
+        "pm4.gfx1250.fake",
+        "pm4",
         "gfx1250",
         None,
         None,
@@ -136,7 +137,7 @@ def test_run_literal_args_and_result(tmp_path):
     suite.run(case, build, context)
     assert not (Path.cwd() / "SHOULD_NOT_EXIST").exists()
     record = json.loads(
-        (context.artifact_directory / "runtime-torture/gfx1250/fake.json").read_text()
+        (context.artifact_directory / "pm4/gfx1250/fake.json").read_text()
     )
     assert record["status"] == "PASS"
     assert record["command"][-1] == case.run["args"][0]
@@ -217,12 +218,13 @@ def test_pytest_adapter_status_and_failfast(
     import sys
 
     repo = Path(__file__).resolve().parents[1]
-    binary = tmp_path / "packet_flood_gfx1250"
+    binary = tmp_path / "pm4_packet_flood_gfx1250"
     binary.write_text(
         '#!/bin/sh\ncase "$1" in fail) echo "known defect"; exit 1;; wrong) echo other; exit 1;; esac\nexit 0\n'
     )
     binary.chmod(0o755)
-    (tmp_path / "runtime-torture-gfx1250-targets.txt").write_text(binary.name + "\n")
+    (tmp_path / "runtime-gfx1250-features.txt").write_text("pm4\n")
+    (tmp_path / "pm4-gfx1250-targets.txt").write_text(binary.name + "\n")
     config = tmp_path / "custom.toml"
     config.write_text(f'''[[case]]
 id="first"
@@ -245,7 +247,7 @@ binary="{binary.name}"
                 "pytest",
                 "tests/test_corpus.py",
                 "--suite",
-                "runtime-torture",
+                "pm4",
                 "--target",
                 "gfx1250",
                 "--binary-dir",
@@ -265,7 +267,7 @@ binary="{binary.name}"
         output = result.stdout + result.stderr
         assert result.returncode == returncode, output
         assert summary in output
-        assert (artifacts / "runtime-torture/gfx1250/second.json").exists() == (
+        assert (artifacts / "pm4/gfx1250/second.json").exists() == (
             returncode == 0
         )
     finally:
@@ -275,7 +277,7 @@ binary="{binary.name}"
 def test_unavailable_wrapper_rejected_before_discovery(tmp_path):
     with pytest.raises(ValueError, match="wrapper executable is unavailable"):
         suite.discover(
-            TargetSpec("gfx1250"),
+            TargetSpec("gfx1250"), suite_name="pm4",
             binary_dir=str(tmp_path),
             cases_config=None,
             run_wrapper="/nonexistent/runtime-torture-wrapper",
@@ -283,7 +285,7 @@ def test_unavailable_wrapper_rejected_before_discovery(tmp_path):
 
 
 def test_custom_subset_requires_helper_binaries(tmp_path, monkeypatch):
-    root = tmp_path / "corpus" / "gfx1250"
+    root = tmp_path / "corpus" / "pm4"
     root.mkdir(parents=True)
     source = manifest(tmp_path)
     defaults = source.read_text() + '\n[[case]]\nid="helper"\nbinary="helper_gfx1250"\n'
@@ -292,10 +294,82 @@ def test_custom_subset_requires_helper_binaries(tmp_path, monkeypatch):
     binary = tmp_path / "sample_gfx1250"
     binary.write_text("#!/bin/sh\nexit 0\n")
     binary.chmod(0o755)
-    (tmp_path / "runtime-torture-gfx1250-targets.txt").write_text(
+    (tmp_path / "runtime-gfx1250-features.txt").write_text("pm4\n")
+    (tmp_path / "pm4-gfx1250-targets.txt").write_text(
         "sample_gfx1250\nhelper_gfx1250\n"
     )
     with pytest.raises(ValueError, match="Missing executable: .*helper_gfx1250"):
         suite.discover(
-            TargetSpec("gfx1250"), binary_dir=str(tmp_path), cases_config=str(source)
+            TargetSpec("gfx1250"), suite_name="pm4", binary_dir=str(tmp_path), cases_config=str(source)
         )
+
+
+@pytest.mark.parametrize("suite_name, feature", [("aql", "sdma_signal64"), ("pm4", "pm4_wait_offload")])
+@pytest.mark.parametrize("target", ["gfx900", "gfx942", "gfx1100", "gfx1201", "gfx1250"])
+def test_shared_manifest_and_feature_gates(tmp_path, monkeypatch, target, suite_name, feature):
+    root = tmp_path / "corpus"
+    (root / suite_name).mkdir(parents=True)
+    (root / suite_name / "cases.toml").write_text('''[[case]]
+id="copy"
+binary="aql_copy_{target}"
+
+[[case]]
+id="signal64"
+binary="aql_signal64_{target}"
+requires=["FEATURE"]
+'''.replace("aql_", f"{suite_name}_").replace("FEATURE", feature))
+    monkeypatch.setattr(suite, "ROOT", root)
+    names = [f"{suite_name}_copy_{target}"]
+    features = ""
+    if target == "gfx1250":
+        features = feature + "\n"
+        names.append(f"{suite_name}_signal64_{target}")
+    (tmp_path / f"runtime-{target}-features.txt").write_text(features)
+    (tmp_path / f"{suite_name}-{target}-targets.txt").write_text("\n".join(names) + "\n")
+    for name in names:
+        binary = tmp_path / name
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+    cases = suite.discover(
+        TargetSpec(target), suite_name=suite_name, binary_dir=str(tmp_path), cases_config=None
+    )
+    assert [case.suite for case in cases] == [suite_name, suite_name]
+    assert cases[0].run["status"] == ""
+    assert cases[1].run["status"] == ("" if features else "SKIP")
+    # A custom manifest cannot disguise an unknown binary as a gated feature.
+    custom = tmp_path / "custom.toml"
+    custom.write_text('''[[case]]
+id="unknown"
+binary="unknown"
+requires=["FEATURE"]
+'''.replace("aql_", f"{suite_name}_").replace("FEATURE", feature))
+    with pytest.raises(ValueError, match="unknown selected binaries"):
+        suite.discover(
+            TargetSpec(target), suite_name=suite_name, binary_dir=str(tmp_path),
+            cases_config=str(custom),
+        )
+
+
+@pytest.mark.parametrize("target", ["gfx1201", "gfx1250"])
+def test_protocol_suite_boundary(target):
+    aql = suite.load_manifest(suite.ROOT / "aql/cases.toml", target)
+    pm4 = suite.load_manifest(suite.ROOT / "pm4/cases.toml", target)
+    aql_ids = {row["id"] for row in aql}
+    pm4_ids = {row["id"] for row in pm4}
+    assert not aql_ids & pm4_ids
+    assert {"sdma_flood", "sdma_signal64", "sdma_event_interrupt", "engine_pipeline-aql"} <= aql_ids
+    assert {
+        "aql_indirect_buffers", "aql_gpu_queue_producer", "aql_publish_holes",
+        "aql_barrier_and", "aql_barrier_or", "sdma_queue_lifecycle", "vram_remap-aql",
+    } <= pm4_ids
+    assert all("--mode" not in row["args"] for row in aql)
+    for source in (suite.ROOT / "aql").glob("*.cc"):
+        assert '"pm4.h"' not in source.read_text()
+        assert '"support/pm4.h"' not in source.read_text()
+        assert "Pm4 " not in source.read_text()
+
+
+@pytest.mark.parametrize("requirement", ['"sdma_signal64"', '["typo"]', '[1]'])
+def test_reject_invalid_feature_gates(tmp_path, requirement):
+    with pytest.raises(ValueError, match="feature|requires"):
+        suite.load_manifest(manifest(tmp_path, f"requires={requirement}"))

@@ -1,0 +1,172 @@
+# Default invocations; references and checks are in each source header.
+[defaults]
+timeout_seconds = 60
+
+[[case]]
+id = "sdma_flood"
+binary = "aql_sdma_flood_{target}"
+args = ["--iterations", "128", "--queues", "2"]
+
+[[case]]
+id = "sdma_signal64"
+binary = "aql_sdma_signal64_{target}"
+args = ["--iterations", "64"]
+requires = ["sdma_signal64"]
+
+[[case]]
+id = "sdma_event_interrupt"
+binary = "aql_sdma_event_interrupt_{target}"
+args = ["--iterations", "64", "--queues", "2"]
+
+[[case]]
+id = "packet_flood-aql"
+binary = "aql_packet_flood_{target}"
+args = ["--queues", "4", "--iterations", "32", "--seed", "12345"]
+
+[[case]]
+id = "queue_flood-aql"
+binary = "aql_queue_flood_{target}"
+args = ["--queues", "16", "--iterations", "64"]
+
+[[case]]
+id = "queue_churn-aql"
+binary = "aql_queue_churn_{target}"
+args = ["--iterations", "64", "--queues", "1"]
+
+[[case]]
+id = "dependency_chain-aql"
+binary = "aql_dependency_chain_{target}"
+args = ["--iterations", "64", "--queues", "4"]
+
+[[case]]
+id = "dependency_diamond-aql"
+binary = "aql_dependency_diamond_{target}"
+args = ["--queues", "2", "--iterations", "32"]
+
+[[case]]
+id = "engine_pipeline-aql"
+binary = "aql_engine_pipeline_{target}"
+args = ["--iterations", "64"]
+
+[[case]]
+id = "concurrent_submit-aql"
+binary = "aql_concurrent_submit_{target}"
+args = ["--queues", "8", "--iterations", "128"]
+
+[[case]]
+id = "multiprocess-aql"
+binary = "aql_multiprocess_{target}"
+args = ["--queues", "4", "--iterations", "64"]
+
+[[case]]
+id = "random_dag-aql"
+binary = "aql_random_dag_{target}"
+args = ["--queues", "4", "--iterations", "32", "--seed", "12345"]
+
+[[case]]
+id = "queue_pause_resume-aql"
+binary = "aql_queue_pause_resume_{target}"
+args = ["--iterations", "32"]
+
+[[case]]
+id = "gpu_ping_pong-aql"
+binary = "aql_gpu_ping_pong_{target}"
+args = ["--iterations", "64"]
+
+[[case]]
+id = "host_gate-aql"
+binary = "aql_host_gate_{target}"
+args = ["--iterations", "16"]
+
+[[case]]
+id = "allocation_churn-aql"
+binary = "aql_allocation_churn_{target}"
+args = ["--iterations", "32", "--queues", "16"]
+
+[[case]]
+id = "concurrent_queue_churn-aql"
+binary = "aql_concurrent_queue_churn_{target}"
+args = ["--queues", "3", "--iterations", "16"]
+
+[[case]]
+id = "process_exit_inflight-aql"
+binary = "aql_process_exit_inflight_{target}"
+args = ["--iterations", "16"]
+
+[[case]]
+id = "dmabuf_process_handoff-aql"
+binary = "aql_dmabuf_process_handoff_{target}"
+args = ["--iterations", "64"]
+
+[[case]]
+id = "registered_memory-aql"
+binary = "aql_registered_memory_{target}"
+args = ["--iterations", "64"]
+
+[[case]]
+id = "priority_dependency-aql"
+binary = "aql_priority_dependency_{target}"
+args = ["--iterations", "64"]
+
+[[case]]
+id = "aql_dispatch_barrier"
+binary = "aql_dispatch_barrier_{target}"
+args = ["--iterations", "32"]
+
+[[case]]
+id = "aql_lds_dispatch"
+binary = "aql_lds_dispatch_{target}"
+args = ["--iterations", "16", "--queues", "4", "--seed", "4321"]
+
+[[case]]
+id = "aql_mixed_dispatch"
+binary = "aql_mixed_dispatch_{target}"
+args = ["--iterations", "64"]
+
+[[case]]
+id = "aql_counted_completion"
+binary = "aql_counted_completion_{target}"
+args = ["--iterations", "16", "--queues", "2", "--seed", "12345"]
+
+[[case]]
+id = "aql_dispatch_geometry"
+binary = "aql_dispatch_geometry_{target}"
+args = ["--iterations", "32"]
+
+[[case]]
+id = "aql_cu_mask_switch"
+binary = "aql_cu_mask_switch_{target}"
+requires = ["wgp_placement"]
+args = ["--iterations", "16", "--queues", "4"]
+
+[[case]]
+id = "aql_scratch_dispatch"
+binary = "aql_scratch_dispatch_{target}"
+requires = ["wave32_scratch"]
+args = ["--iterations", "32"]
+
+[[case]]
+id = "aql_shader_host_ping_pong"
+binary = "aql_shader_host_ping_pong_{target}"
+args = ["--iterations", "64", "--seed", "12345"]
+
+[[case]]
+id = "aql_metadata_reuse"
+binary = "aql_metadata_reuse_{target}"
+args = ["--iterations", "64"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql_metadata_nonexec_kernargs"
+binary = "aql_metadata_nonexec_kernargs_{target}"
+args = ["--iterations", "1"]
+status = "SKIP"
+reason = "Investigate: plain-AQL preload faulted with non-executable kernargs on an earlier gfx1250 machine; not rerun on the current machine."
+requires = ["aql_metadata"]
+
+[[case]]
+id = "aql-dispatch-oversubscribed"
+binary = "aql_packet_flood_{target}"
+args = ["--queues", "8", "--iterations", "1"]
+status = "SKIP"
+reason = "Investigate sustained AQL oversubscription: intermittent gfx1201 timeouts; short gfx1250 case passed on fw 2380 but remains outside the default run."

@@ -37,7 +37,8 @@ SUITE_MODULES = {
     "semantics": semantics,
     "llama": llama,
     "vulkan": vulkan,
-    "runtime-torture": runtime_torture,
+    "aql": runtime_torture,
+    "pm4": runtime_torture,
 }
 DEFAULT_TARGET = "gfx1201"
 DEFAULT_SUITES = ("iree", "kernels", "cts")
@@ -77,10 +78,11 @@ def pytest_generate_tests(metafunc):
         for suite in selected_suites:
             suite_module = SUITE_MODULES[suite]
             try:
-                if suite == "runtime-torture":
+                if suite in ("aql", "pm4"):
                     target_cases.extend(
                         runtime_torture.discover(
                             target,
+                            suite_name=suite,
                             binary_dir=config.getoption("binary_dir"),
                             cases_config=config.getoption("cases_config"),
                             run_wrapper=config.getoption("run_wrapper"),
@@ -132,7 +134,7 @@ def pytest_generate_tests(metafunc):
     params = []
     for case in cases:
         marks = []
-        if case.suite == "runtime-torture":
+        if case.suite in ("aql", "pm4"):
             if case.run["status"] == "SKIP":
                 marks.append(pytest.mark.skip(reason=case.run["reason"]))
             elif case.run["status"] == "XFAIL":
