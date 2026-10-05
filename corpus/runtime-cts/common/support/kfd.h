@@ -1,4 +1,8 @@
 // Direct-KFD buffer and queue interfaces; scenarios own GPU lifetimes.
+// This support code exists to let runtime CTS tests submit work to the driver
+// and validate runtime behavior. Performance and a general-purpose reusable
+// interface are not goals. Keep the implementation simple and focused on the
+// needs of these tests.
 // ABI reference:
 // https://github.com/torvalds/linux/blob/master/include/uapi/linux/kfd_ioctl.h
 // Queue layout reference:
