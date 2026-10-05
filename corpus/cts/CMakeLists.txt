@@ -87,6 +87,9 @@ if(NOT TARGET GTest::gtest_main)
     FetchContent_MakeAvailable(googletest)
 endif()
 
+# Keep test assertions active in optimized configurations too.
+add_compile_options(-UNDEBUG)
+
 set(FPSAN_TESTS_THIRD_PARTY_DIR "${CMAKE_CURRENT_LIST_DIR}/third_party")
 
 set(FPSAN_TESTS_INCLUDE_DIR "${FPSAN_TESTS_THIRD_PARTY_DIR}/hip-fpsan/include")
