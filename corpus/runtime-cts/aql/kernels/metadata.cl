@@ -1,14 +1,13 @@
 // Kernel ABI and kernarg preload reference:
 // https://llvm.org/docs/AMDGPUUsage.html
-// Purpose: Consume scalar kernargs spanning two 15-dword metadata preload blocks.
-// Request 29 arguments (one pointer plus 28 scalars = 30 dwords); the host checks
-// the actual descriptor. Two user SGPRs remain reserved for the kernarg pointer.
-// All arguments vary each dispatch so stale companion data changes the result.
-__kernel void cts_work(__global uint* output, uint a0, uint a1, uint a2, uint a3, uint a4,
-                           uint a5, uint a6, uint a7, uint a8, uint a9, uint a10, uint a11,
-                           uint a12, uint a13, uint a14, uint a15, uint a16, uint a17, uint a18,
-                           uint a19, uint a20, uint a21, uint a22, uint a23, uint a24, uint a25,
-                           uint a26, uint a27, uint a28, uint a29, uint a30, uint a31, uint token) {
+// Purpose: Consume 32 changing scalar arguments across preload block boundaries.
+// Build with 0, 1, 15, 16, 29 or 30 preloaded dwords. Scalars precede the output
+// pointer so a one-dword preload is legal. The host verifies each descriptor.
+__kernel void cts_work(uint a0, uint a1, uint a2, uint a3, uint a4, uint a5, uint a6, uint a7,
+                       uint a8, uint a9, uint a10, uint a11, uint a12, uint a13, uint a14, uint a15,
+                       uint a16, uint a17, uint a18, uint a19, uint a20, uint a21, uint a22,
+                       uint a23, uint a24, uint a25, uint a26, uint a27, uint a28, uint a29,
+                       uint a30, uint a31, __global uint* output, uint token) {
   output[0] = a0 + token * 1u;
   output[1] = a1 + token * 2u;
   output[2] = a2 + token * 3u;

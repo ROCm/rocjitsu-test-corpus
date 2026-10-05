@@ -59,10 +59,12 @@ class Pm4 {
                   uint32_t(target >> 32), bytes});
   }
   void Add(uint64_t address, uint64_t value, bool wide) { Atomic(0x0f, address, value, wide); }
-  void Atomic(uint32_t operation, uint64_t address, uint64_t value, bool wide) {
+  void Atomic(uint32_t operation, uint64_t address, uint64_t value, bool wide,
+              uint64_t compare = 0) {
     Check(!(address & (wide ? 7 : 3)), "misaligned atomic");
-    Packet(0x1e, {operation + (wide ? 0x20u : 0u), uint32_t(address), uint32_t(address >> 32),
-                  uint32_t(value), uint32_t(value >> 32), 0, 0, 0});
+    Packet(0x1e,
+           {operation + (wide ? 0x20u : 0u), uint32_t(address), uint32_t(address >> 32),
+            uint32_t(value), uint32_t(value >> 32), uint32_t(compare), uint32_t(compare >> 32), 0});
   }
   void Barrier() {
     Packet(0x46, {7u | (4u << 8)});  // CS_PARTIAL_FLUSH.

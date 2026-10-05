@@ -1,6 +1,7 @@
 // Purpose: Exercise many independent PM4 queues, mixed priorities and priority updates.
 // Submit work to all queues before host waits, then check each queue's payloads
 // and completion for lost work or cross-queue result corruption.
+// Multiprocess workers hold their queues at ready/start and done/release rendezvous.
 // Submission to all queues does not guarantee simultaneous pending work.
 //
 // Parameters (decimal integers; ranges are inclusive):
@@ -22,9 +23,9 @@
 #include <memory>
 #include <thread>
 
-#include "support/aql_payload.h"
 #include "pm4.h"
-
+#include "support/aql_payload.h"
+#include "support/process_group.h"
 using namespace cts;
 
 static int RunPm4(int argc, char** argv) {
@@ -35,6 +36,7 @@ static int RunPm4(int argc, char** argv) {
   Buffer result(device, count * 4096);
   std::vector<std::unique_ptr<Queue>> queues;
   for (uint32_t q = 0; q < count; ++q) queues.emplace_back(new Queue(device, 4096, q % 16));
+  WorkerPhase('R');
   for (uint32_t round = 1; round <= iterations; ++round) {
     for (uint32_t q = 0; q < count; ++q) {
       Pm4 commands;
@@ -54,11 +56,10 @@ static int RunPm4(int argc, char** argv) {
     }
   }
   for (auto& queue : queues) queue->Drain();
+  WorkerPhase('D');
   Pass("queue_flood", uint64_t(count) * iterations * 128);
   return 0;
 }
-
-
 
 int main(int argc, char** argv) {
   Check(!AqlMode(argc, argv), "use the AQL suite for this scenario in AQL mode");

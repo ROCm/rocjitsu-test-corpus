@@ -365,6 +365,7 @@ Queue::Queue(Device& device, uint32_t ring_bytes, uint32_t priority, bool aql, b
   __asm__ __volatile__("sfence" ::: "memory");
   device.Ioctl(_IOWR('K', 0x02, CreateQueueArgs), &create, "CREATE_QUEUE");
   id_ = create.queue_id;
+  doorbell_offset_ = create.doorbell_offset;
   doorbell_ = device.Doorbell(create.doorbell_offset);
 }
 Queue::~Queue() {
@@ -417,6 +418,7 @@ void Queue::Submit(const std::vector<uint32_t>& words) {
   Check(!words.empty() && words.size() < capacity, "submission exceeds ring capacity");
   const uint64_t deadline = NowNs() + kTimeoutNs;
   while (producer_ - consumed() + words.size() >= capacity) {
+    backpressure_.fetch_add(1, std::memory_order_release);
     if (NowNs() >= deadline)
       Fail("ring full queue=%u producer=%llu consumed=%llu", id_, (unsigned long long)producer_,
            (unsigned long long)consumed_);
@@ -441,6 +443,7 @@ uint64_t Queue::ReserveAql(uint32_t count) {
   Check(count && count <= capacity, "invalid AQL reservation size");
   const uint64_t deadline = NowNs() + kTimeoutNs;
   while (producer_ - std::max(consumed(), drained_aql_) + count > capacity) {
+    backpressure_.fetch_add(1, std::memory_order_release);
     if (NowNs() >= deadline) Fail("AQL ring full queue=%u", id_);
     std::this_thread::yield();
   }

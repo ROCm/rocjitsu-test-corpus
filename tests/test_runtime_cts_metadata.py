@@ -19,8 +19,11 @@ def metadata_programs(tmp_path_factory, request):
     worker = directory / "worker.cc"
     worker.write_text('''#include <cstdio>
 #include "support/kfd.h"
+#include "support/process_group.h"
 int main(int argc, char** argv) {
   cts::Start(argc, argv, "worker", true);
+  cts::WorkerPhase('R');
+  cts::WorkerPhase('D');
   std::printf("worker_metadata=%d\\n", cts::kGfx125 && cts::AqlMetadataEnabled());
 }
 ''')
@@ -32,13 +35,15 @@ int main(int argc, char** argv) {
             f'-DCTS_TARGET_NAME="{target}"', "-I", str(ROOT), "-I", str(ROOT / "common"),
             str(source), str(ROOT / "common/test.cc"), "-o", str(binary),
         ], check=True, capture_output=True, text=True)
-    return parent, version
+    return parent, version, suite
 
 
 @pytest.mark.parametrize("mode", [None, "on", "off", "invalid", "missing"])
 def test_metadata_cli_and_worker_propagation(metadata_programs, mode):
-    parent, version = metadata_programs
+    parent, version, suite = metadata_programs
     args = [str(parent), "--queues", "1", "--iterations", "1"]
+    if suite == "pm4":
+        args += ["--mode", "pm4"]
     if mode is not None:
         args.append("--aql-metadata")
         if mode != "missing":

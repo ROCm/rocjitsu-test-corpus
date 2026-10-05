@@ -1,7 +1,8 @@
 // Purpose: Exercise masked 64-bit WAIT_REG_MEM64 comparisons.
 // Check LT/LE/EQ/NE/GE/GT both blocked and satisfied, with decisive bits in
 // the HIGH word and deliberately different ignored bits. A separate queue
-// must progress before the host releases each wait with a 64-bit store.
+// must progress after a pre-wait reached marker and before host release.
+// Verify the false phase, released completion and operand guards.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -32,9 +33,11 @@ int main(int argc, char** argv) {
       memory.Store64(0, blocked[function - 1] | 0x0000123456780000ull);
       Pm4 wait;
       const uint64_t address = memory.address();
+      wait.Write(memory.address(192), token);
       wait.Wait64Compare(address, ref, function, mask);
       wait.Finish(memory.address(64), token);
       waiter.Submit(wait.words);
+      memory.Wait(48, token, 10000, &waiter);
       Pm4 ping;
       ping.Finish(memory.address(128), token);
       independent.Submit(ping.words);

@@ -1,7 +1,8 @@
 // Purpose: Alternate kernel descriptors, workgroup sizes and LDS requirements
 // on the SAME AQL queue without host waits between packets. LDS and scalar
 // kernels use different arguments and output extents. Change group counts and
-// LDS offsets each round; verify every output, completion, marker and guard.
+// LDS sizes cross 32 KiB allocation boundaries and reach 64 KiB before
+// returning to zero on the next scalar dispatch; verify every output, completion, marker and guard.
 // Scratch remains disabled; this does not claim scratch-switch coverage.
 //
 // Parameters (decimal integers; ranges are inclusive):
@@ -43,7 +44,8 @@ int main(int argc, char** argv) {
     for (uint32_t slot = 0; slot < kSlots; ++slot) {
       const bool large = (round + slot) & 1;
       const uint32_t groups = large ? 1 + (round + slot) % 3 : 1 + (round + slot) % 31;
-      const uint32_t offset = (round % 4) * 256;
+      constexpr uint32_t offsets[] = {0, 256, 32768};
+      const uint32_t offset = offsets[(round + slot) % 3];
       ResetSignal(signals, slot * 64);
       for (uint32_t word = 0; word < kStride / 4; ++word)
         result.Store(slot * kStride / 4 + word, kGuard);

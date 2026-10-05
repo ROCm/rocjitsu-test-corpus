@@ -1,6 +1,7 @@
 // Purpose: Stress contended 32-bit and 64-bit PM4 atomic increments from multiple queues.
 // Check exact totals for lost/duplicate operations, carry across the low 32-bit word,
-// and adjacent guards for unintended writes.
+// and adjacent guards for unintended writes. Submit every queue behind a
+// shared start gate, observe a reached marker and unchanged counters, then release.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -16,6 +17,7 @@
 // Inspiration: independent native-KFD adaptation of these public test patterns.
 // https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/runtime/src/iree/hal/cts/queue/queue_atomic_test.cc
 #include <memory>
+#include <thread>
 
 #include "pm4.h"
 
@@ -33,8 +35,11 @@ int main(int argc, char** argv) {
   // Cross the 32-bit boundary in the 64-bit counter on the first round.
   result.Store(2, 0xfffffff0u);
   for (uint32_t round = 1; round <= rounds; ++round) {
+    result.Store(512, 0);
     for (uint32_t q = 0; q < count; ++q) {
       Pm4 commands;
+      commands.Write(result.address(1024 + q * 4), round);
+      commands.Wait(result.address(2048), round);
       for (uint32_t i = 0; i < kAdds; ++i) {
         commands.Add(result.address(), 1, false);
         commands.Add(result.address(8), 1, true);
@@ -42,6 +47,15 @@ int main(int argc, char** argv) {
       commands.Finish(result.address(64 + q * 4), round);
       queues[q]->Submit(commands.words);
     }
+    result.Wait(256, round, 10000, queues[0].get());
+    const uint64_t held = uint64_t(round - 1) * count * kAdds;
+    const uint64_t deadline = NowNs() + 1000000;
+    do {
+      Check(result.Load(0) == uint32_t(held) && result.Load64(8) == 0xfffffff0ull + held,
+            "atomic work escaped start gate");
+      std::this_thread::yield();
+    } while (NowNs() < deadline);
+    result.Store(512, round);
     for (uint32_t q = 0; q < count; ++q) result.Wait(16 + q, round);
     uint64_t expected = uint64_t(round) * count * kAdds;
     Check(result.Load(0) == uint32_t(expected), "32-bit atomics lost or duplicated");

@@ -1,6 +1,7 @@
 // Purpose: Test ring backpressure while an AQL queue is blocked on a host-controlled gate.
 // A host producer submits more work than the ring can hold while another queue
-// must progress. Check that gated work stays blocked, then completes exactly once.
+// must progress. Observe an actual full-ring reservation before the negative
+// phase; then release and verify all payloads or exact operation counts.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   Queue protocol: AQL only.
@@ -34,6 +35,7 @@ int main(int argc, char** argv) {
     ResetSignal(gate, 0);
     for (uint32_t i = 0; i < 256; ++i) work.Prepare(i, result.address(i * 4), round * 256 + i);
     AqlWait(blocked, gate.address());
+    const uint64_t initial_backpressure = blocked.backpressure_count();
     std::atomic<bool> entered{false}, finished{false};
     std::thread producer([&] {
       entered.store(true, std::memory_order_release);
@@ -41,6 +43,11 @@ int main(int argc, char** argv) {
       finished.store(true, std::memory_order_release);
     });
     while (!entered.load(std::memory_order_acquire)) std::this_thread::yield();
+    const uint64_t full_deadline = NowNs() + 10000000000ull;
+    while (blocked.backpressure_count() == initial_backpressure) {
+      Check(NowNs() < full_deadline, "producer did not reach ring capacity");
+      std::this_thread::yield();
+    }
     work.Prepare(256, result.address(2048), round);
     work.Submit(independent, 256);
     work.Wait(independent, 256);

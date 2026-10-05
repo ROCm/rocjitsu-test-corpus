@@ -1,6 +1,7 @@
 // Purpose: Test ring backpressure while a PM4 queue is blocked on a host-controlled gate.
 // A host producer submits more work than the ring can hold while another queue
-// must progress. Check that gated work stays blocked, then completes exactly once.
+// must progress. Observe an actual full-ring reservation before the negative
+// phase; then release and verify all payloads or exact operation counts.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -19,8 +20,8 @@
 #include <memory>
 #include <thread>
 
-#include "support/aql_payload.h"
 #include "pm4.h"
+#include "support/aql_payload.h"
 using namespace cts;
 
 static int RunPm4(int argc, char** argv) {
@@ -37,6 +38,7 @@ static int RunPm4(int argc, char** argv) {
     head.Pad();
     blocked.Submit(head.words);
     result.Wait(16, round, 10000, &blocked);
+    const uint64_t initial_backpressure = blocked.backpressure_count();
     std::atomic<bool> entered{false}, finished{false};
     // More work than a ring can hold forces real producer backpressure while
     // the GPU is waiting. Only this thread uses the blocked queue until join.
@@ -54,6 +56,11 @@ static int RunPm4(int argc, char** argv) {
       finished.store(true, std::memory_order_release);
     });
     while (!entered.load(std::memory_order_acquire)) std::this_thread::yield();
+    const uint64_t full_deadline = NowNs() + 10000000000ull;
+    while (blocked.backpressure_count() == initial_backpressure) {
+      Check(NowNs() < full_deadline, "producer did not reach ring capacity");
+      std::this_thread::yield();
+    }
     Pm4 control;
     control.Finish(result.address(256), round);
     independent.Submit(control.words);
@@ -74,8 +81,6 @@ static int RunPm4(int argc, char** argv) {
   Pass("host_gate", rounds * 256);
   return 0;
 }
-
-
 
 int main(int argc, char** argv) {
   Check(!AqlMode(argc, argv), "use the AQL suite for this scenario in AQL mode");

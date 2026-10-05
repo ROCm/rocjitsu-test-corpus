@@ -31,7 +31,7 @@ void Print(const std::vector<uint32_t>& words) {
 }
 int main() {
   constexpr uint64_t address = 0x1234567890ull;
-  Pm4 barrier, release, write, wait, wait64, dma, atomic;
+  Pm4 barrier, release, write, wait, wait64, dma, atomic, cas32, cas64;
   barrier.Barrier(); Print(barrier.words);
   release.Release64(address, 0xfedcba9876543210ull); Print(release.words);
   write.Write(address, 42); Print(write.words);
@@ -44,6 +44,9 @@ int main() {
   sdma.Copy(address, address + 128, 65); Print(sdma.words); sdma.words.clear();
   sdma.Wait(address, 42); Print(sdma.words); sdma.words.clear();
   sdma.Finish(address, 42); Print(sdma.words);
+  cas32.Atomic(8, address, 0xabcdef01, false, 0x76543210); Print(cas32.words);
+  cas64.Atomic(8, address, 0xabcdef0198765432ull, true, 0xfedcba9876543210ull);
+  Print(cas64.words);
 }
 ''')
     binary = tmp_path / "packets"
@@ -83,3 +86,8 @@ int main() {
                           0x3fff0004 if scoped else 0x0fff0004]
     finish = [*sdma_release, fence, 0x34567890, 0x12, 42]
     assert packets[10] == finish + [0] * (32 - len(finish))
+
+    assert packets[11] == [0xc0071e00, 8, 0x34567890, 0x12, 0xabcdef01, 0,
+                           0x76543210, 0, 0]
+    assert packets[12] == [0xc0071e00, 0x28, 0x34567890, 0x12, 0x98765432, 0xabcdef01,
+                           0x76543210, 0xfedcba98, 0]

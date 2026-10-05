@@ -245,3 +245,30 @@ args = ["--queues", "8", "--iterations", "4"]
 status = "SKIP"
 reason = "Investigate: ACE-offload bit clear stalls on round 2 with fw 2380; subsequent GPU recovery failed."
 requires = ["pm4", "pm4_wait_offload"]
+
+[[case]]
+id = "aql_publish_holes-all-slots"
+binary = "pm4_aql_publish_holes_{target}"
+args = ["--iterations", "64", "--queues", "6"]
+requires = ["pm4"]
+
+[[case]]
+id = "engine_pipeline_window-pm4"
+binary = "pm4_engine_pipeline_window_{target}"
+args = ["--iterations", "64"]
+
+[[case]]
+id = "random_dag-fanin2-pm4"
+binary = "pm4_random_dag_{target}"
+args = ["--queues", "3", "--iterations", "32", "--seed", "12345"]
+
+[[case]]
+id = "random_dag-fanin5-pm4"
+binary = "pm4_random_dag_{target}"
+args = ["--queues", "6", "--iterations", "32", "--seed", "12345"]
+
+[[case]]
+id = "pm4_private_dma_boundaries"
+binary = "pm4_private_dma_boundaries_{target}"
+args = ["--iterations", "3", "--timeout", "150"]
+timeout_seconds = 180

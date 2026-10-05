@@ -359,3 +359,44 @@ args = ["--queues", "8", "--iterations", "1", "--aql-metadata", "on"]
 status = "SKIP"
 reason = "Investigate sustained AQL oversubscription: intermittent gfx1201 timeouts; short gfx1250 case passed on fw 2380 but remains outside the default run."
 requires = ["aql_metadata"]
+
+[[case]]
+id = "engine_pipeline_window-aql-metadata-off"
+binary = "aql_engine_pipeline_window_{target}"
+args = ["--iterations", "64", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "engine_pipeline_window-aql-metadata-on"
+binary = "aql_engine_pipeline_window_{target}"
+args = ["--iterations", "64", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "random_dag-fanin2-aql-metadata-off"
+binary = "aql_random_dag_{target}"
+args = ["--queues", "3", "--iterations", "32", "--seed", "12345", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "random_dag-fanin2-aql-metadata-on"
+binary = "aql_random_dag_{target}"
+args = ["--queues", "3", "--iterations", "32", "--seed", "12345", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "random_dag-fanin5-aql-metadata-off"
+binary = "aql_random_dag_{target}"
+args = ["--queues", "6", "--iterations", "32", "--seed", "12345", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "random_dag-fanin5-aql-metadata-on"
+binary = "aql_random_dag_{target}"
+args = ["--queues", "6", "--iterations", "32", "--seed", "12345", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+[[case]]
+id = "sdma_copy_boundaries"
+binary = "aql_sdma_copy_boundaries_{target}"
+args = ["--iterations", "3", "--queues", "2"]

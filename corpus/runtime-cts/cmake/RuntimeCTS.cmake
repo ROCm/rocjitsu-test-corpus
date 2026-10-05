@@ -15,6 +15,10 @@ function(cts_test name source)
 endfunction()
 
 function(cts_kernel name)
+  set(kernel_source ${name})
+  if(name MATCHES "^metadata_[0-9]+$")
+    set(kernel_source metadata)
+  endif()
   file(MAKE_DIRECTORY ${kernel_dir})
   set(embed_options)
   if(name STREQUAL "scratch")
@@ -23,12 +27,12 @@ function(cts_kernel name)
   add_custom_command(OUTPUT ${kernel_dir}/${name}_kernel.inc
     COMMAND ${AMDGPU_LLVM_BIN}/clang -x cl --target=amdgcn-amd-amdhsa
       -mcpu=${arch} ${kernel_wave_option} -nogpulib -O2 ${ARGN} -c
-      ${PROJECT_SOURCE_DIR}/aql/kernels/${name}.cl -o ${kernel_dir}/${name}.o
+      ${PROJECT_SOURCE_DIR}/aql/kernels/${kernel_source}.cl -o ${kernel_dir}/${name}.o
     COMMAND ${AMDGPU_LLVM_BIN}/ld.lld -shared --build-id=none
       ${kernel_dir}/${name}.o -o ${kernel_dir}/${name}.co
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/common/embed_kernel.py
       ${kernel_dir}/${name}.co ${kernel_dir}/${name}_kernel.inc ${embed_options}
-    DEPENDS ${PROJECT_SOURCE_DIR}/aql/kernels/${name}.cl ${PROJECT_SOURCE_DIR}/common/embed_kernel.py VERBATIM)
+    DEPENDS ${PROJECT_SOURCE_DIR}/aql/kernels/${kernel_source}.cl ${PROJECT_SOURCE_DIR}/common/embed_kernel.py VERBATIM)
   add_custom_target(kernel_${name}_${arch} DEPENDS ${kernel_dir}/${name}_kernel.inc)
 endfunction()
 

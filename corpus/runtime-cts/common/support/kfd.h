@@ -5,6 +5,7 @@
 #ifndef CTS_TESTS_SUPPORT_KFD_H_
 #define CTS_TESTS_SUPPORT_KFD_H_
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -105,9 +106,13 @@ class Queue {
   // Queue must be retired. Backing includes a final 4 KiB guard page.
   void SetScratch(Buffer& backing, uint32_t bytes_per_lane);
   void SetEnabled(bool enabled);
+  // Monotonic count of capacity checks that observed insufficient ring space.
+  uint64_t backpressure_count() const { return backpressure_.load(std::memory_order_acquire); }
   uint64_t producer() const { return producer_; }
   uint64_t consumed();
   void Dump();
+  uint32_t id() const { return id_; }
+  uint64_t doorbell_offset() const { return doorbell_offset_; }
 
  private:
   Device& device_;
@@ -118,9 +123,11 @@ class Queue {
   uint32_t ring_bytes_ = 0;
   uint32_t id_ = 0;
   uint64_t* doorbell_ = nullptr;
+  uint64_t doorbell_offset_ = 0;
   uint64_t producer_ = 0;
   uint64_t consumed_ = 0;
   uint64_t drained_aql_ = 0;
+  std::atomic<uint64_t> backpressure_{0};
   bool aql_ = false;
   bool metadata_ = false;
   uint32_t priority_ = 7;

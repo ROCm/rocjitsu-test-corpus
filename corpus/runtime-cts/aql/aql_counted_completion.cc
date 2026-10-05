@@ -1,8 +1,10 @@
 // Purpose: Submit deep AQL bursts with one shared counted completion
 // signal across multiple queues. Publish each 128-dispatch burst with ONE
 // doorbell; SDMA waits for the final decrement and snapshots all shader output.
-// Verify every result and untouched guard after the snapshot. Detect lost
-// decrements, premature zero, stale shader stores and ring-reuse errors.
+// Hold the last dispatch behind a host gate until all other decrements arrive;
+// require a count of one and no SDMA snapshot before release. Verify every result and untouched
+// guard after the snapshot. Detect lost decrements, premature zero, stale shader stores and
+// ring-reuse errors.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --iterations N: rounds; default 16; range 1..100000.
@@ -15,6 +17,7 @@
 // https://github.com/KhronosGroup/VK-GL-CTS/blob/3905c821f43ded89284713187ffb3c7a1072afdb/external/vulkancts/modules/vulkan/synchronization/vktSynchronizationSignalOrderTests.cpp
 #include <cstring>
 #include <memory>
+#include <thread>
 
 #include "support/aql.h"
 #include "support/sdma.h"
@@ -38,6 +41,7 @@ int main(int argc, char** argv) {
   for (uint32_t round = 1; round <= rounds; ++round) {
     signals.Store64(0, 1);
     signals.Store64(8, slots);
+    ResetSignal(signals, 128);
     Sdma copy(device.gfx);
     copy.Wait(signals.address(8), 0);
     copy.Acquire();
@@ -45,7 +49,7 @@ int main(int argc, char** argv) {
     copy.Finish(signals.address(64), round);
     consumer.Submit(copy.words);
     for (uint32_t q = 0; q < count; ++q) {
-      const uint64_t first = queues[q]->ReserveAql(kBatch);
+      const uint64_t first = queues[q]->ReserveAql(kBatch + (q == count - 1));
       for (uint32_t i = 0; i < kBatch; ++i) {
         const uint32_t slot = q * kBatch + i;
         output.Store(slot * 16, 0);
@@ -55,10 +59,26 @@ int main(int argc, char** argv) {
         std::memcpy(static_cast<char*>(args.data) + slot * 512, &arguments, sizeof(arguments));
         Dispatch packet = OneGroup(code.address(kDescriptorOffset), args.address(slot * 512),
                                    signals.address(), false);
-        queues[q]->PublishAql(first + i, &packet);
+        uint64_t index = first + i;
+        if (q == count - 1 && i == kBatch - 1) {
+          uint64_t gate[8]{};
+          gate[0] = 3u | (1u << 8) | (2u << 9) | (2u << 11);
+          gate[1] = signals.address(128);
+          queues[q]->PublishAql(index++, gate);
+        }
+        queues[q]->PublishAql(index, &packet);
       }
       queues[q]->NotifyAql();
     }
+    signals.Wait(2, 1);
+    const uint64_t deadline = NowNs() + 1000000;
+    do {
+      Check(signals.Load64(8) == 1 && signals.Load(16) == round - 1,
+            "counted completion reached zero before held dispatch");
+      Check(output.Load((slots - 1) * 16 + 1) == 0, "held counted dispatch executed early");
+      std::this_thread::yield();
+    } while (NowNs() < deadline);
+    signals.Store64(136, 0);
     signals.Wait(16, round);
     Check(signals.Load64(8) == 0, "counted completion underflow");
     for (uint32_t slot = 0; slot < slots; ++slot) {

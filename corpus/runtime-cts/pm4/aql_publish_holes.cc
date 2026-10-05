@@ -1,7 +1,8 @@
 // Purpose: Publish AQL packets out of order around an INVALID head slot.
 // Independent host threads publish disjoint slots; reservation stays single-threaded.
 // Notify with the hole present, prove later packets remain blocked, then publish
-// the head and repeat the SAME doorbell value. Sweep holes across ring wrap.
+// the head and repeat the SAME doorbell value. Six-packet batches plus the
+// drain barrier visit every head position in the 64-slot ring, including wrap.
 // This extends ROCr index-atomicity patterns to actual firmware consumption.
 //
 // Parameters (decimal integers; ranges are inclusive):
@@ -16,8 +17,8 @@
 #include <cstring>
 #include <thread>
 
-#include "support/aql.h"
 #include "pm4.h"
+#include "support/aql.h"
 #include "work_kernel.inc"
 using namespace cts;
 int main(int argc, char** argv) {

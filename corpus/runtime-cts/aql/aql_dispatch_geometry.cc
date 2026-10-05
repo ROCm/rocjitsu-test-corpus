@@ -1,5 +1,6 @@
 // Purpose: Alternate 1D/2D/3D AQL dispatch geometry on one queue.
-// Use non-power-of-two workgroups, partial final groups and multi-wave groups.
+// Use 31/32/33 and 63/64/65-thread wave boundaries, 1024-thread maximum
+// groups, non-power-of-two 2D/3D groups and partial final groups.
 // Kernels encode workgroup coordinates into every result; check all active
 // elements and untouched tails. This reaches dimension/setup and partial-group
 // paths absent from the fixed 1D scalar and 256-thread LDS workloads.
@@ -27,10 +28,13 @@ struct GeometryArguments {
 int main(int argc, char** argv) {
   Start(argc, argv, "aql_dispatch_geometry");
   const uint32_t rounds = Option(argc, argv, "--iterations", 32, 100000);
-  constexpr Geometry cases[] = {{1, 1, 1, 1, 63, 1, 1},    {1, 31, 1, 1, 97, 1, 1},
-                                {1, 256, 1, 1, 513, 1, 1}, {2, 17, 3, 1, 35, 7, 1},
-                                {3, 7, 3, 2, 35, 7, 5},    {3, 4, 4, 4, 9, 9, 9}};
-  constexpr uint32_t kCount = 6, kWords = 2048, kStride = kWords * 8, kGuard = 0xdeadbeef;
+  constexpr Geometry cases[] = {
+      {1, 1, 1, 1, 63, 1, 1},   {1, 31, 1, 1, 97, 1, 1},  {1, 256, 1, 1, 513, 1, 1},
+      {2, 17, 3, 1, 35, 7, 1},  {3, 7, 3, 2, 35, 7, 5},   {3, 4, 4, 4, 9, 9, 9},
+      {1, 32, 1, 1, 65, 1, 1},  {1, 33, 1, 1, 67, 1, 1},  {1, 63, 1, 1, 127, 1, 1},
+      {1, 64, 1, 1, 129, 1, 1}, {1, 65, 1, 1, 131, 1, 1}, {1, 1024, 1, 1, 1025, 1, 1}};
+  constexpr uint32_t kCount = sizeof(cases) / sizeof(cases[0]), kWords = 2048, kStride = kWords * 8,
+                     kGuard = 0xdeadbeef;
   Device device;
   Buffer code(device, sizeof(kKernelImage), true), args(device, kCount * 512);
   Buffer result(device, kCount * kStride), signals(device, kCount * 64);

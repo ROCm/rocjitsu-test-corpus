@@ -170,3 +170,23 @@ binary = "aql_packet_flood_{target}"
 args = ["--queues", "8", "--iterations", "1"]
 status = "SKIP"
 reason = "Investigate sustained AQL oversubscription: intermittent gfx1201 timeouts; short gfx1250 case passed on fw 2380 but remains outside the default run."
+
+[[case]]
+id = "engine_pipeline_window-aql"
+binary = "aql_engine_pipeline_window_{target}"
+args = ["--iterations", "64"]
+
+[[case]]
+id = "random_dag-fanin2-aql"
+binary = "aql_random_dag_{target}"
+args = ["--queues", "3", "--iterations", "32", "--seed", "12345"]
+
+[[case]]
+id = "random_dag-fanin5-aql"
+binary = "aql_random_dag_{target}"
+args = ["--queues", "6", "--iterations", "32", "--seed", "12345"]
+
+[[case]]
+id = "sdma_copy_boundaries"
+binary = "aql_sdma_copy_boundaries_{target}"
+args = ["--iterations", "3", "--queues", "2"]

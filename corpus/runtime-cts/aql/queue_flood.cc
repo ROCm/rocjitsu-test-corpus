@@ -1,6 +1,7 @@
 // Purpose: Exercise many independent AQL queues, mixed priorities and priority updates.
 // Submit work to all queues before host waits, then check each queue's payloads
 // and completion for lost work or cross-queue result corruption.
+// Multiprocess workers hold their queues at ready/start and done/release rendezvous.
 // Submission to all queues does not guarantee simultaneous pending work.
 //
 // Parameters (decimal integers; ranges are inclusive):
@@ -24,7 +25,7 @@
 #include <thread>
 
 #include "support/aql_payload.h"
-
+#include "support/process_group.h"
 using namespace cts;
 
 int main(int argc, char** argv) {
@@ -36,6 +37,7 @@ int main(int argc, char** argv) {
   AqlPayload work(device, count);
   std::vector<std::unique_ptr<Queue>> queues;
   for (uint32_t q = 0; q < count; ++q) queues.emplace_back(new Queue(device, 4096, q % 16, true));
+  WorkerPhase('R');
   for (uint32_t round = 1; round <= rounds; ++round) {
     for (uint32_t q = 0; q < count; ++q) {
       work.Prepare(q, result.address(q * 4096), round * 65536 + q * 128, 128);
@@ -51,6 +53,7 @@ int main(int argc, char** argv) {
       if (!(round % 8)) queues[q]->SetPriority((q + round / 8) % 16);
     }
   }
+  WorkerPhase('D');
   Pass("queue_flood", uint64_t(count) * rounds * 128);
   return 0;
 }

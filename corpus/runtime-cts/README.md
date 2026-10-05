@@ -68,3 +68,44 @@ requires = ["aql_metadata"]
   if skipped. Coverage and executable checks also apply with custom manifests.
 - `--case`, `--exclude-case`, `--artifact-directory`, `--run-wrapper` and
   `--junitxml` are supported by the pytest runner.
+
+## Runtime stress test acceptance
+
+Tests in `corpus/runtime-cts` exercise compute runtime mechanisms: GPU queues,
+command processing, firmware, memory management, synchronization and process
+lifetime. Keep each test focused on one mechanism. Graphics workloads are out
+of scope.
+
+- State the failure mechanism and the observed milestones that establish the
+  intended state. Many queue objects do not by themselves prove oversubscription;
+  a large allocation does not prove eviction; pausing an idle queue does not
+  prove live-wave save/restore.
+- Check data that depends on the operation under test. A dependency test must
+  consume the producer's payload. A completion flag alone cannot establish that
+  a wait or memory handoff worked. Check guards and exact execution counts where
+  lost, duplicated or out-of-range work could otherwise pass.
+- For a blocked-state test, establish a reached or full-capacity milestone
+  before checking that later work has not completed. Verify independent progress,
+  then release the operation and check its positive result. A sleep alone does
+  not establish the state.
+- Distinguish packet consumption, shader completion and safe resource retirement.
+  Keep buffers, signals, arguments and command storage alive until every user
+  retires. Validate dependency acyclicity including each queue's FIFO ordering.
+- Use a few deliberate boundaries rather than a Cartesian product of parameters.
+  Preserve deterministic seeds and immutable generations needed to reproduce
+  failures. Do not require a performance threshold or scheduling order that the
+  API does not guarantee.
+- Bound waits and process lifetimes. Timeouts fail; unsupported capabilities skip
+  before triggering the scenario. Report the target, feature mode, seed, iteration,
+  queue/process, expected and observed values, and last reached milestone where
+  relevant. Multiprocess tests must propagate failures and reap their children.
+- Validate new stress scenarios on a supported native target before enabling
+  them in normal manifests. Record which architectures and capabilities were
+  exercised, which were only built, and any limitations. During
+  development, demonstrate that an isolated mutation such as an omitted dependency,
+  stale generation or suppressed execution makes the result check fail. Keep such
+  mutations out of production binaries and manifest options.
+- Update the source header with the purpose, parameters, checks, support limits
+  and primary references. Explain which pattern is adapted and validate the
+  actual API contract; an upstream test using a different API is not a packet
+  specification. Keep build inventories and manifests consistent.
