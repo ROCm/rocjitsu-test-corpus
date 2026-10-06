@@ -19,7 +19,7 @@ python -m pytest tests/test_corpus.py --suite aql,pm4 --target gfx1250 \
   --binary-dir build/runtime-cts -v -ra
 ```
 
-Use `'-DCTS_ARCHS=gfx942;gfx950;gfx1101;gfx1201;gfx1250'` to build multiple targets.
+Use `'-DCTS_ARCHS=gfx942;gfx950;gfx1100;gfx1201;gfx1250'` to build multiple targets.
 Both suites build by default. `-DCTS_SUITES=aql` selects AQL/SDMA tests;
 `-DCTS_SUITES=pm4` selects tests that may combine PM4, AQL and SDMA.
 Use `--suite aql` or `--suite pm4` to run one suite. Run sequentially, without
@@ -39,7 +39,7 @@ copying and unregistration; concurrent page migration is outside their scope.
 
 ## Manifests
 
-Each suite has an explicit `cases_<target>.toml` for gfx942, gfx950, gfx1101,
+Each suite has an explicit `cases_<target>.toml` for gfx942, gfx950, gfx1100,
 gfx1201 and gfx1250. There is no default manifest or fallback for unverified
 targets. Each manifest includes only executables built for its target; unsupported
 packet/shader profiles are omitted instead of copied as investigation skips.
@@ -88,6 +88,9 @@ requires = ["aql_metadata"]
   if skipped. Coverage and executable checks also apply with custom manifests.
 - `--case`, `--exclude-case`, `--artifact-directory`, `--run-wrapper` and
   `--junitxml` are supported by the pytest runner.
+
+The gfx1100 manifests use the gfx1101 case selection for simulator runs with
+the existing gfx1100 config. Native measurements below remain gfx1101 results.
 
 ## Validated architectures
 

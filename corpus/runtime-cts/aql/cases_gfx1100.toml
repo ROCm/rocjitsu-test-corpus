@@ -1,4 +1,4 @@
-# gfx1101 invocations; includes only this target's implemented cases.
+# gfx1100 invocations (using the gfx1101 case selection); includes only this target's implemented cases.
 # References and checks are in each source header.
 [defaults]
 timeout_seconds = 60

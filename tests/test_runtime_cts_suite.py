@@ -443,7 +443,7 @@ def test_target_manifest_selection(tmp_path, monkeypatch, suite_name, target):
         suite.discover(TargetSpec(target), **options)
 
 
-@pytest.mark.parametrize("target", ["gfx942", "gfx950", "gfx1101", "gfx1201", "gfx1250"])
+@pytest.mark.parametrize("target", ["gfx942", "gfx950", "gfx1100", "gfx1201", "gfx1250"])
 @pytest.mark.parametrize("suite_name", ["aql", "pm4"])
 def test_every_slow_case_has_quick_counterpart(target, suite_name):
     rows = suite.load_manifest(suite.ROOT / suite_name / f"cases_{target}.toml", target)
@@ -474,7 +474,7 @@ def test_missing_target_manifest_has_no_fallback(tmp_path, monkeypatch):
         suite.discover(TargetSpec("gfx1100"), suite_name="pm4", binary_dir=str(tmp_path), cases_config=None)
 
 
-@pytest.mark.parametrize("target", ["gfx942", "gfx950", "gfx1101", "gfx1201", "gfx1250"])
+@pytest.mark.parametrize("target", ["gfx942", "gfx950", "gfx1100", "gfx1201", "gfx1250"])
 def test_target_manifests_match_cmake_build_inventory(tmp_path, target):
     import re
     import shutil
