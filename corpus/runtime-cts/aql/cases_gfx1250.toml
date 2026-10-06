@@ -49,25 +49,25 @@ requires = ["aql_metadata"]
 [[case]]
 id = "queue_churn-aql-metadata-off"
 binary = "aql_queue_churn_{target}"
-args = ["--iterations", "2", "--aql-metadata", "off"]
+args = ["--iterations", "2", "--aql-metadata", "off", "--timeout", "60"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "queue_churn-aql-metadata-on"
 binary = "aql_queue_churn_{target}"
-args = ["--iterations", "2", "--aql-metadata", "on"]
+args = ["--iterations", "2", "--aql-metadata", "on", "--timeout", "60"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "dependency_chain-aql-metadata-off"
 binary = "aql_dependency_chain_{target}"
-args = ["--iterations", "64", "--aql-metadata", "off"]
+args = ["--iterations", "64", "--aql-metadata", "off", "--timeout", "60"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "dependency_chain-aql-metadata-on"
 binary = "aql_dependency_chain_{target}"
-args = ["--iterations", "64", "--aql-metadata", "on"]
+args = ["--iterations", "64", "--aql-metadata", "on", "--timeout", "60"]
 requires = ["aql_metadata"]
 
 [[case]]
