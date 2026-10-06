@@ -205,9 +205,19 @@ void Device::MapDoorbellsForGpu() {
   alloc.va_addr = reinterpret_cast<uintptr_t>(doorbells_);
   alloc.size = kDoorbellBytes;
   alloc.gpu_id = gpu_id;
+  // Doorbells are MMIO: request MTYPE_UC explicitly. COHERENT alone selects
+  // MTYPE_NC on gfx950; gfx12.0 also requires UNCACHED, and gfx12.5 has
+  // revision-dependent defaults. UNCACHED preserves the UC mapping on
+  // gfx942 and gfx11. Linux maps this KFD flag to AMDGPU_GEM_CREATE_UNCACHED;
+  // see gmc_v9_0/gmc_v12_1_get_coherence_flags and gmc_v11_0/gmc_v12_0_get_vm_pte:
+  // https://github.com/torvalds/linux/blob/67f0943b394d920b6c142aad8c6af94340342ae7/drivers/gpu/drm/amd/amdgpu/gmc_v9_0.c
+  // https://github.com/torvalds/linux/blob/67f0943b394d920b6c142aad8c6af94340342ae7/drivers/gpu/drm/amd/amdgpu/gmc_v11_0.c
+  // https://github.com/torvalds/linux/blob/67f0943b394d920b6c142aad8c6af94340342ae7/drivers/gpu/drm/amd/amdgpu/gmc_v12_0.c
+  // https://github.com/torvalds/linux/blob/67f0943b394d920b6c142aad8c6af94340342ae7/drivers/gpu/drm/amd/amdgpu/gmc_v12_1.c
   alloc.flags = KFD_IOC_ALLOC_MEM_FLAGS_DOORBELL |
                 KFD_IOC_ALLOC_MEM_FLAGS_WRITABLE |
-                KFD_IOC_ALLOC_MEM_FLAGS_COHERENT;
+                KFD_IOC_ALLOC_MEM_FLAGS_COHERENT |
+                KFD_IOC_ALLOC_MEM_FLAGS_UNCACHED;
   Ioctl(AMDKFD_IOC_ALLOC_MEMORY_OF_GPU, &alloc, "ALLOC doorbell GPU aperture");
   doorbell_handle_ = alloc.handle;
   kfd_ioctl_map_memory_to_gpu_args map{};

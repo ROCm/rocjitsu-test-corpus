@@ -26,6 +26,15 @@ checks. Keep the generated `<suite>-<target>-targets.txt` and
 `runtime-<target>-features.txt` inventories beside the binaries for pytest.
 Logs and JSON results go under `.pytest-artifacts/<suite>/<target>/`.
 
+For native validation on NUMA hosts, follow the public
+[ROCm system setup guidance](https://rocm.docs.amd.com/en/docs-7.2.0/how-to/rocm-for-ai/system-setup/prerequisite-system-validation.html#disable-numa-auto-balancing)
+and disable automatic NUMA balancing for the run. Save the original value of
+`/proc/sys/kernel/numa_balancing`, use `sudo sysctl -w kernel.numa_balancing=0`,
+and restore the saved value afterward. The USERPTR tests exercise registration,
+copying and unregistration; concurrent page migration is outside their scope.
+On a native gfx1250 host, both AQL `registered_memory` variants faulted in the
+driver's trap-handler region with balancing enabled and passed with it disabled.
+
 ## Manifests
 
 Each suite uses `cases.toml`, unless `cases_<target>.toml` exists for the selected
@@ -109,3 +118,10 @@ of scope.
   and primary references. Explain which pattern is adapted and validate the
   actual API contract; an upstream test using a different API is not a packet
   specification. Keep build inventories and manifests consistent.
+
+## Validated architectures
+
+The default AQL and PM4 test suites have been validated on native gfx942,
+gfx950, gfx1101, gfx1201 and gfx1250 machines using TheRock
+`10.2.0a20261005`. All enabled tests passed; existing feature and reproducer
+skips remain. Native gfx1250 validation used the NUMA setup described above.

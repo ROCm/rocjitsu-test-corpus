@@ -4,6 +4,10 @@
 // Alternate two queues through GPU dependencies; snapshot each intermediate
 // result before the next owner changes it. Include overflow, borrow and high
 // bits, and verify narrow operations do not modify the adjacent guard word.
+// Use device-local memory for the full opcode set. Uncached host atomics on
+// PCIe can support only add, swap and compare-swap; other operations may NOP.
+// Copy each result and its guard to host-visible memory for verification.
+// https://rocm.docs.amd.com/en/docs-7.2.1/reference/gpu-atomics-operation.html
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
@@ -26,6 +30,7 @@ int main(int argc, char** argv) {
   const uint32_t rounds = Option(argc, argv, "--iterations", 64, 100000);
   Device device;
   Buffer memory(device, 4096);
+  Buffer atomic(device, 4096, false, true);
   Queue first(device), second(device);
   Queue* queues[] = {&first, &second};
   uint64_t operations = 0;
@@ -63,6 +68,9 @@ int main(int argc, char** argv) {
       std::vector<uint64_t> values;
       uint64_t expected = 0;
       Pm4 streams[2];
+      // CP_SYNC retires initialization before the first atomic. The other
+      // queue remains behind the timeline dependency until ownership passes.
+      streams[0].DmaCopy(memory.address(), atomic.address(), 16);
       for (uint32_t i = 0; i < std::size(cases); ++i) {
         const auto& operation = cases[i];
         const uint64_t operand = operation.source & mask;
@@ -105,11 +113,13 @@ int main(int argc, char** argv) {
         values.push_back(expected | (wide ? 0 : 0xcafebabe00000000ull));
         auto& commands = streams[i & 1];
         commands.Wait(memory.address(64), i);
-        commands.Atomic(operation.op, memory.address(), operand, wide,
+        commands.Atomic(operation.op, atomic.address(), operand, wide,
                         operation.compare & mask);
         commands.Barrier();
-        commands.Copy(memory.address(), memory.address(128 + i * 8));
-        commands.Copy(memory.address(4), memory.address(132 + i * 8));
+        commands.Copy(atomic.address(), memory.address(128 + i * 8));
+        commands.Copy(atomic.address(4), memory.address(132 + i * 8));
+        if (i + 1 == std::size(cases))
+          commands.DmaCopy(atomic.address(), memory.address(), 16);
         commands.Finish(memory.address(64), i + 1);
       }
       // FIFO edges preserve 0,2,... / 1,3,... ordering despite reverse
