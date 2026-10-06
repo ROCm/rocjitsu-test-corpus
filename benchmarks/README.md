@@ -39,10 +39,15 @@ It applies the suite's thread policy, removes the simulation tick limit, and
 adds the selected plugin and report paths. With `num_threads = "default"`,
 the runner preserves the native allocation policy and records the allocation
 reported by `--thread-budget-table`. Base configs must not enable plugins or sinks.
-With the default thread policy, resolved engine, dispatch, helper, and total
+With `num_threads = "single"`, the runner sets the CPU budget to one and overrides
+engine, dispatch, and helper counts to 1/1/0. It verifies that the native CLI
+resolves exactly one total worker. Setting the integer `num_threads = 1` alone
+only limits simulator engines; dispatch and helper workers can still run in parallel.
+With either named thread policy, resolved engine, dispatch, helper, and total
 worker counts are included in `run.json` and the published environment.
-Comparisons reject different allocations or a mix of results with and without
-allocation metadata.
+Plugin comparisons reject different allocations or a mix of results with and
+without allocation metadata. Historical Default runs remain comparable when
+native allocation changes across revisions.
 
 The runner checks the Release configuration, disabled LTO/sanitizers,
 source root, SDK, and selected plugin binaries. The wrapper must select the
@@ -66,6 +71,19 @@ fixed launch settings: Triton tiles 128 × 128 × 64 with four warps and two sta
 DeepSeek tiles 64 × 64 × 128 with eight warps, three stages, and unit scales.
 Nightly uses one warmup and three samples after compile-only preparation, with
 Rocjitsu's default CPU thread budget and the caller's CPU affinity.
+
+`benchmarks/suites/nightly-single.toml` uses the same sampling settings and a
+single CPU worker. It selects five cases per target (10 target/case combinations):
+full causal attention, persistent matmul, grouped GEMM, the smaller DeepSeek W1
+projection, and BF16 TensileLite. All shapes and kernel settings match their
+default-threaded counterparts. This keeps all four libraries while excluding
+the large issue 12611 cases, windowed attention, W2 projections, and MX variants.
+The issue's later measurements put the large W1/W2 cases near 14 minutes per
+single-threaded launch; those cases remain in the default suite only.
+The trimmed suite's end-to-end runtime has not been measured.
+
+Run both manifests separately with different output directories. Keep their
+dashboard run IDs and environment IDs distinct so both histories are retained.
 
 Use `--manifest benchmarks/suites/smoke.toml` for a short suite, repeated
 `--case` and `--target` flags for subsets, and `--warmups`/`--samples` for
@@ -116,7 +134,7 @@ case using an existing workload; no Python change is needed:
 
 ```toml
 [[cases]]
-id = "triton.copy_fp32_32m.threads8"
+id = "triton.copy_fp32_32m.default"
 workload = "copy"
 suite = "Triton"
 name = "32 MiB contiguous FP32 copy"
@@ -126,8 +144,10 @@ params = { dtype = "fp32", elements = 8388608 }
 
 `workload` selects the preparation function; `id` identifies the case in
 `--case` selection and dashboard history. Give different parameter variants
-distinct IDs. Thread count is recorded in the published environment; nightly IDs end in
-`.default` for native allocation, while fixed-thread suites retain `.threads8` IDs.
+distinct IDs. Published suite IDs end in `.default` for native allocation or
+`.single` for one total CPU worker. Smoke and plugin-overhead use the default
+policy too. Custom numeric-thread manifests remain runnable locally, but cannot
+be published because they do not identify a supported threading policy.
 Repeat the complete definition in each suite that uses it.
 Dimensions, dtypes, and operation parameters belong in TOML; launch settings
 such as tile sizes, warps, and stages stay in code and are recorded in results.
@@ -191,15 +211,25 @@ Published files follow the [dashboard contract](https://github.com/ROCm/rocm-sys
 `metadata.json`, `index.json`, `test-catalogs/catalog-<hash>.json`, and
 `runs/<run-id>.json` under the supplied data directory. Catalogs describe the
 selected matrix exactly, including failed or interrupted cells. Catalogs and
-runs are immutable; the index is updated last. Existing legacy datasets are
-rejected: use a fresh directory rather than mixing the two formats.
+runs are immutable; the index is updated last. Named policies add
+`configuration.threadingMode` to raw results and top-level `threadingMode`
+(`"default"` or `"single"`) to published runs, retaining schema version 1.
+The publisher requires an explicit mode for each new run.
+
+Existing runs without `threadingMode` remain in the dataset and index, but
+are excluded from dashboard histories and publication compatibility checks.
+Their catalogs are not loaded. Present but invalid modes remain errors.
+Existing files cannot be replaced, including skipped legacy runs and catalogs.
 
 The baseline profile is published as `vanilla`. For local plugin comparisons,
 run the same suite and sampling settings on the same machine, then publish each
 profile with a distinct `--run-id` and the same `--comparison-id`. The latter
 defaults to the run ID, so unrelated executions are never grouped implicitly.
-Catalog, source, machine, environment, trigger, and targets must match within a
-comparison. Recorded package versions are published as `package.<name>` environment
+Threading mode, catalog, source, machine, environment, trigger, and targets
+must match within a plugin comparison. Resolved worker counts and configuration
+hashes remain strict compatibility checks for these plugin experiments.
+Default historical comparisons span revisions and do not require equal worker
+allocations or configuration hashes; the dashboard displays those as context. Recorded package versions are published as `package.<name>` environment
 entries and participate in these compatibility checks. Packages recorded as
 unavailable are omitted. Existing published runs remain immutable; runs with
 package entries cannot join comparisons that lack those entries.
@@ -209,7 +239,7 @@ benchmark runner's name. `--is-beta` controls the site's Beta label.
 Consumer CI must provide the nightly dependencies and allow the manifest sampling
 defaults to take effect. A fresh dataset requires a valid Vanilla run, which can
 contain failed or timed-out results. Publish each comparison's Vanilla baseline
-before its instrumented runs. All runs in a dataset must use the same machine.
+before its instrumented runs. All supported runs in a dataset must use the same machine.
 
 Run the benchmark harness tests through the repository's pytest configuration,
 without ROCm dependencies. pytest-xdist supplies the plugin used by the root

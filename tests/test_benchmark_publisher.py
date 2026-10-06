@@ -69,6 +69,7 @@ def _raw(
         "configuration": {
             "id": "plugins-none-v1",
             "pluginProfile": "none",
+            "threadingMode": "default",
             "plugins": [],
             "targetConfigSha256": {"gfx950": "b" * 64},
         },
@@ -129,6 +130,7 @@ def test_contract_and_idempotent_publication(publisher_context):
     assert set(run) == {
         "id",
         "comparisonId",
+        "threadingMode",
         "testCatalog",
         "plugin",
         "source",
@@ -474,11 +476,11 @@ def test_conflicting_run_id_rejected(publisher_context):
         _publish(publisher_context, raw)
 
 
-def test_legacy_dataset_rejected_without_changes(publisher_context):
+def test_unsupported_index_shape_rejected_without_changes(publisher_context):
     publisher_context.data.mkdir(parents=True)
     old = '{"schemaVersion": 1, "runs": [], "catalog": "old.json"}'
     (publisher_context.data / "index.json").write_text(old)
-    with pytest.raises(publisher.PublishError, match="fresh data directory"):
+    with pytest.raises(publisher.PublishError, match="unsupported dashboard index"):
         _publish(publisher_context)
     assert (publisher_context.data / "index.json").read_text() == old
 
@@ -610,3 +612,140 @@ def test_plugin_requires_its_own_vanilla_baseline(
     with pytest.raises(publisher.PublishError, match="Vanilla baseline"):
         _publish(publisher_context, raw, run_id="logging")
     assert not (publisher_context.data / "runs/logging.json").exists()
+
+
+@pytest.mark.parametrize("mode", ["default", "single"])
+def test_explicit_threading_mode_is_published(publisher_context, mode):
+    raw = _raw(publisher_context)
+    raw["configuration"]["threadingMode"] = mode
+    result = _publish(publisher_context, raw)
+    assert publisher.load_json_document(result["run"])["threadingMode"] == mode
+
+
+@pytest.mark.parametrize("mode", [None, "", "threads8", 1, [], {}])
+def test_invalid_threading_mode_rejected_before_writes(publisher_context, mode):
+    raw = _raw(publisher_context)
+    raw["configuration"]["threadingMode"] = mode
+    with pytest.raises(publisher.PublishError, match="threadingMode"):
+        _publish(publisher_context, raw)
+    assert not publisher_context.data.exists()
+
+
+def test_numeric_suite_cannot_be_published_without_mode(publisher_context):
+    raw = _raw(publisher_context)
+    del raw["configuration"]["threadingMode"]
+    with pytest.raises(publisher.PublishError, match="threadingMode"):
+        _publish(publisher_context, raw)
+    assert not publisher_context.data.exists()
+
+
+def test_modes_cannot_share_plugin_comparison(publisher_context):
+    _publish(publisher_context, comparison_id="experiment")
+    raw = _raw(publisher_context)
+    raw["configuration"].update(threadingMode="single", pluginProfile="logging")
+    with pytest.raises(publisher.PublishError, match="incompatible comparison"):
+        _publish(publisher_context, raw, run_id="single", comparison_id="experiment")
+
+
+def test_default_history_accepts_changed_allocation(publisher_context):
+    _publish(publisher_context)
+    raw = _raw(publisher_context)
+    raw["configuration"]["targetConfigSha256"]["gfx950"] = "c" * 64
+    raw["configuration"]["targetThreadAllocation"] = {
+        "gfx950": {"engine": 8, "dispatch": 9, "helpers": 0, "total": 16}
+    }
+    raw["tests"][0]["numThreads"] = 8
+    _publish(publisher_context, raw, run_id="new-default")
+
+
+@pytest.mark.parametrize("catalog_state", ["conflicting", "missing", "malformed"])
+def test_legacy_runs_remain_immutable_and_do_not_constrain_publication(
+    publisher_context, catalog_state
+):
+    result = _publish(publisher_context, run_id="legacy")
+    path = Path(result["run"])
+    legacy = publisher.load_json_document(path)
+    del legacy["threadingMode"]
+    # Neither publication policy nor source consistency applies to skipped runs.
+    legacy["source"].update(branch="old-topic", committedAt="1999-01-01T00:00:00Z")
+    legacy["execution"]["machine"] = "old-machine"
+    path.write_text(json.dumps(legacy))
+    catalog_path = Path(result["catalog"])
+    if catalog_state == "missing":
+        catalog_path.unlink()
+    elif catalog_state == "malformed":
+        catalog_path.write_text("{not json")
+    before = {p: p.read_bytes() for p in publisher_context.data.rglob("*.json")}
+    raw = _raw(publisher_context)
+    raw["tests"][0]["name"] = "New definition for an old ID"
+    _publish(publisher_context, raw, run_id="supported")
+    for old_path, content in before.items():
+        if old_path.name != "index.json":
+            assert old_path.read_bytes() == content
+    index = publisher.load_json_document(result["index"])
+    assert index["runFiles"] == ["runs/legacy.json", "runs/supported.json"]
+    with pytest.raises(publisher.PublishError, match="immutable"):
+        _publish(publisher_context, raw, run_id="legacy")
+
+
+@pytest.mark.parametrize("mode", [None, "", "unknown", []])
+def test_existing_invalid_mode_is_not_legacy(publisher_context, mode):
+    result = _publish(publisher_context)
+    path = Path(result["run"])
+    run = publisher.load_json_document(path)
+    run["threadingMode"] = mode
+    path.write_text(json.dumps(run))
+    with pytest.raises(publisher.PublishError, match="threadingMode"):
+        _publish(publisher_context, run_id="new")
+
+
+def test_legacy_vanilla_cannot_supply_supported_plugin_baseline(publisher_context):
+    result = _publish(publisher_context, comparison_id="experiment")
+    path = Path(result["run"])
+    run = publisher.load_json_document(path)
+    del run["threadingMode"]
+    path.write_text(json.dumps(run))
+    raw = _raw(publisher_context)
+    raw["configuration"]["pluginProfile"] = "logging"
+    with pytest.raises(publisher.PublishError, match="Vanilla baseline"):
+        _publish(publisher_context, raw, run_id="logging", comparison_id="experiment")
+
+
+@pytest.mark.parametrize("damage", ["filename", "duplicate", "unsafe", "json", "array"])
+def test_legacy_exclusion_preserves_index_and_json_validation(publisher_context, damage):
+    result = _publish(publisher_context, run_id="legacy")
+    path = Path(result["run"])
+    run = publisher.load_json_document(path)
+    del run["threadingMode"]
+    if damage == "filename":
+        run["id"] = "different"
+    path.write_text(json.dumps(run))
+    index_path = Path(result["index"])
+    index = publisher.load_json_document(index_path)
+    if damage == "duplicate":
+        index["runFiles"] *= 2
+    elif damage == "unsafe":
+        index["runFiles"] = ["../legacy.json"]
+    elif damage == "json":
+        path.write_text("{bad json")
+    elif damage == "array":
+        path.write_text("[]")
+    index_path.write_text(json.dumps(index))
+    before = index_path.read_bytes()
+    with pytest.raises(publisher.PublishError):
+        _publish(publisher_context, run_id="supported")
+    assert index_path.read_bytes() == before
+    assert not (publisher_context.data / "runs/supported.json").exists()
+
+
+def test_skipping_legacy_does_not_allow_catalog_replacement(publisher_context):
+    result = _publish(publisher_context, run_id="legacy")
+    path = Path(result["run"])
+    run = publisher.load_json_document(path)
+    del run["threadingMode"]
+    path.write_text(json.dumps(run))
+    catalog = Path(result["catalog"])
+    catalog.write_text('{"immutable": "old content"}')
+    with pytest.raises(publisher.PublishError, match="immutable resource"):
+        _publish(publisher_context, run_id="supported")
+    assert catalog.read_text() == '{"immutable": "old content"}'

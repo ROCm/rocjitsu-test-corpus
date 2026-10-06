@@ -243,8 +243,8 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
         warmups=_integer(value["warmups"], "warmups", allow_zero=True),
         samples=_sample_count(value["samples"]),
         num_threads=(
-            "default"
-            if value["num_threads"] == "default"
+            value["num_threads"]
+            if value["num_threads"] in ("default", "single")
             else _integer(value["num_threads"], "num_threads", allow_zero=False)
         ),
         timeout_seconds=float(timeout),
@@ -462,7 +462,7 @@ def validate_build(
 
 def _load_target_configuration(
     path: Path,
-    num_threads: int | None = None,
+    num_threads: int | str | None = None,
 ) -> tuple[dict[str, Any], str]:
     try:
         encoded = path.read_bytes()
@@ -483,7 +483,15 @@ def _load_target_configuration(
     result = dict(value)
     # Benchmarks must finish the workload without a simulation tick limit.
     result["max_ticks"] = 0
-    if num_threads is not None:
+    if num_threads == "single":
+        # A single engine alone still permits parallel dispatch and helpers.
+        result.update(
+            cpu_thread_budget=1,
+            num_threads=1,
+            cpu_dispatch_threads=1,
+            async_helper_threads=0,
+        )
+    elif num_threads is not None:
         result["num_threads"] = num_threads
     encoded = (
         json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n"
@@ -511,14 +519,17 @@ def _target_metadata(
     )
 
 
-def _default_target_metadata(
+def _native_target_metadata(
     path: Path,
     target: str,
     output: Path,
     wrapper: Sequence[str],
+    thread_policy: str,
 ) -> TargetMetadata:
-    """Resolve automatic workers using the same native CLI and CPU affinity."""
-    value, digest = _load_target_configuration(path)
+    """Resolve workers using the same native CLI and CPU affinity as the run."""
+    value, digest = _load_target_configuration(
+        path, "single" if thread_policy == "single" else None
+    )
     directory = output / "thread-policy" / target
     directory.mkdir(parents=True)
     snapshot = directory / "config.json"
@@ -533,7 +544,7 @@ def _default_target_metadata(
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise RunnerError(
-            f"cannot resolve default worker policy; use a native Rocjitsu CLI supporting --thread-budget-table: {error}"
+            f"cannot resolve {thread_policy} worker policy; use a native Rocjitsu CLI supporting --thread-budget-table: {error}"
         ) from error
     raw = _captured_text(completed.stdout)
     (directory / "policy.txt").write_text(raw)
@@ -545,12 +556,16 @@ def _default_target_metadata(
     )
     if completed.returncode or len(rows) != 1:
         raise RunnerError(
-            "cannot resolve default worker policy; use a native Rocjitsu CLI supporting --thread-budget-table with one Configured row; see "
+            f"cannot resolve {thread_policy} worker policy; use a native Rocjitsu CLI supporting --thread-budget-table with one Configured row; see "
             + str(directory)
         )
     engine, dispatch, helpers, total = map(int, rows[0])
     if engine < 1 or dispatch < 1 or total != engine + dispatch - 1 + helpers:
         raise RunnerError(f"invalid native worker allocation; see {directory}")
+    if thread_policy == "single" and (engine, dispatch, helpers, total) != (1, 1, 0, 1):
+        raise RunnerError(
+            f"single-thread policy requires allocation 1/1/0, total 1; see {directory}"
+        )
     allocation = {
         "engine": engine,
         "dispatch": dispatch,
@@ -934,7 +949,7 @@ def run_suite(
         raise RunnerError(f"missing --target-config for selected targets: {missing}")
     target_metadata = (
         {}
-        if suite.num_threads == "default"
+        if isinstance(suite.num_threads, str)
         else {
             target: _target_metadata(target_configs[target], suite.num_threads)
             for target in targets
@@ -946,10 +961,10 @@ def run_suite(
     corpus = _source_info(CORPUS_ROOT)
     environment = _environment_info()
     output_path.mkdir(parents=True)
-    if suite.num_threads == "default":
+    if isinstance(suite.num_threads, str):
         target_metadata = {
-            target: _default_target_metadata(
-                target_configs[target], target, output_path, wrapper
+            target: _native_target_metadata(
+                target_configs[target], target, output_path, wrapper, suite.num_threads
             )
             for target in targets
         }
@@ -1001,6 +1016,8 @@ def run_suite(
             for cell in matrix
         ],
     }
+    if suite.num_threads in ("default", "single"):
+        run["configuration"]["threadingMode"] = suite.num_threads
     allocations = {
         target: metadata.thread_allocation
         for target, metadata in target_metadata.items()

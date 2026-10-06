@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 import types
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
@@ -102,6 +103,16 @@ def runner_context(tmp_path, monkeypatch):
     monkeypatch.setattr(runner, "_installed_rocm_path", lambda: ctx.rocm)
     ctx.suite = harness_suite()
     return ctx
+
+
+@pytest.fixture
+def named_runner_context(runner_context, monkeypatch):
+    runner_context.suite = replace(runner_context.suite, num_threads="default")
+    monkeypatch.setattr(
+        runner, "_native_target_metadata",
+        lambda path, *_args: runner._target_metadata(path, 8),
+    )
+    return runner_context
 
 
 def _write_cache(runner_context, **overrides: str) -> None:
@@ -247,10 +258,10 @@ def test_smoke_manifest_has_single_triton_case(runner_context) -> None:
     smoke = runner.load_manifest(runner.BENCHMARK_ROOT / "suites" / "smoke.toml")
     assert smoke.name == "smoke"
     assert smoke.targets == ("gfx950",)
-    assert tuple(case.id for case in smoke.cases) == ("triton.rmsnorm_bf16.threads8",)
+    assert tuple(case.id for case in smoke.cases) == ("triton.rmsnorm_bf16.default",)
     assert smoke.warmups == 1
     assert smoke.samples == 3
-    assert smoke.num_threads == 8
+    assert smoke.num_threads == "default"
     assert smoke.timeout_seconds == 60
 
 
@@ -708,8 +719,9 @@ def test_initial_checkpoint_is_a_running_v1_run(runner_context) -> None:
 
 
 def test_first_partial_run_publishes_and_failed_case_can_later_succeed(
-    runner_context,
+    named_runner_context,
 ) -> None:
+    runner_context = named_runner_context
     failed_id = "triton.gpt_oss_attention_bf16.threads8"
     matrix = _matrix(
         runner_context,
@@ -1172,8 +1184,9 @@ def test_interrupt_survives_failure_to_drain_output(runner_context) -> None:
 
 @pytest.mark.parametrize("artifacts_written", [False, True])
 def test_interruption_retains_completed_and_unrun_matrix_cells(
-    runner_context, artifacts_written
+    named_runner_context, artifacts_written
 ) -> None:
+    runner_context = named_runner_context
     matrix = _matrix(
         runner_context,
         "triton.rmsnorm_bf16.threads8",
@@ -1272,6 +1285,8 @@ def test_signal_preserves_flushed_workload_output(runner_context, signum) -> Non
     child.write_text(
         "import os, signal, sys\n"
         "from pathlib import Path\n"
+        "if sys.argv[-1] == '--thread-budget-table':\n"
+        "    print('Configured | 8 | 1 | 0 | 8'); sys.exit(0)\n"
         "print('flushed stdout', flush=True)\n"
         "print('flushed stderr', file=sys.stderr, flush=True)\n"
         "ready = Path(sys.argv[1])\n"
@@ -1307,7 +1322,7 @@ def test_signal_preserves_flushed_workload_output(runner_context, signum) -> Non
             "--manifest",
             str(runner.BENCHMARK_ROOT / "suites" / "smoke.toml"),
             "--case",
-            "triton.rmsnorm_bf16.threads8",
+            "triton.rmsnorm_bf16.default",
             "--run-wrapper",
             shlex.join(
                 [sys.executable, str(child), str(ready), "--config", "{config}", "--"]
@@ -1595,11 +1610,15 @@ def test_missing_wrapper_executable_fails_cell(runner_context):
     assert "No such file" in result["tests"][0]["error"]
 
 
-def test_default_threads_preserve_policy_and_record_native_allocation(runner_context):
+@pytest.mark.parametrize("thread_policy", ["default", "single"])
+@pytest.mark.parametrize("scalar_overrides", [False, True])
+def test_thread_policy_and_recorded_native_allocation(
+    runner_context, thread_policy, scalar_overrides
+):
     import dataclasses
 
     runner_context.suite = dataclasses.replace(
-        runner_context.suite, num_threads="default"
+        runner_context.suite, num_threads=thread_policy
     )
     policy = {
         "exec_mode": "functional",
@@ -1608,7 +1627,19 @@ def test_default_threads_preserve_policy_and_record_native_allocation(runner_con
             {"num_threads": 8, "cpu_dispatch_threads": 25, "async_helper_threads": 16}
         ],
     }
+    if scalar_overrides:
+        policy.update(num_threads=8, cpu_dispatch_threads=25, async_helper_threads=16)
     runner_context.configs["gfx950"].write_text(json.dumps(policy))
+    expected_config = {**policy, "max_ticks": 0}
+    allocation = (8, 25, 16, 48)
+    if thread_policy == "single":
+        expected_config.update(
+            cpu_thread_budget=1,
+            num_threads=1,
+            cpu_dispatch_threads=1,
+            async_helper_threads=0,
+        )
+        allocation = (1, 1, 0, 1)
     commands = []
 
     def execute(argv, **kwargs):
@@ -1616,18 +1647,19 @@ def test_default_threads_preserve_policy_and_record_native_allocation(runner_con
         if argv[-1] == "--thread-budget-table":
             assert "--" not in argv
             snapshot = json.loads(Path(argv[argv.index("--config") + 1]).read_text())
-            assert snapshot == {**policy, "max_ticks": 0}
+            assert snapshot == expected_config
             return subprocess.CompletedProcess(
                 argv,
                 0,
-                "Budget | num_threads | cpu_dispatch_threads per GPU | async_helper_threads | Total\nConfigured | 8 | 25 | 16 | 48\n",
+                "Configured | " + " | ".join(map(str, allocation)) + "\n",
                 "",
             )
         return _successful_process(runner_context, argv, **kwargs)
 
     matrix = _matrix(runner_context, runner_context.suite.cases[0].id)
-    output, result = _run(runner_context, matrix, "default", process=execute)
-    assert result["tests"][0]["numThreads"] == 8
+    output, result = _run(runner_context, matrix, thread_policy, process=execute)
+    assert result["configuration"]["threadingMode"] == thread_policy
+    assert result["tests"][0]["numThreads"] == allocation[0]
     assert (
         commands[0][0]
         == commands[1][0]
@@ -1635,12 +1667,10 @@ def test_default_threads_preserve_policy_and_record_native_allocation(runner_con
     )
     assert not (output / "cpu-affinity.json").exists()
     saved = json.loads((output / "thread-policy/gfx950/allocation.json").read_text())
-    assert {k: saved[k] for k in ("engine", "dispatch", "helpers", "total")} == {
-        "engine": 8,
-        "dispatch": 25,
-        "helpers": 16,
-        "total": 48,
-    }
+    assert (
+        tuple(saved[k] for k in ("engine", "dispatch", "helpers", "total"))
+        == allocation
+    )
     assert result["configuration"]["targetThreadAllocation"] == {
         "gfx950": {k: saved[k] for k in ("engine", "dispatch", "helpers", "total")}
     }
@@ -1648,7 +1678,57 @@ def test_default_threads_preserve_policy_and_record_native_allocation(runner_con
     snapshot = json.loads(
         (output / result["tests"][0]["artifacts"]["config"]).read_text()
     )
-    assert snapshot == {**policy, "max_ticks": 0}
+    assert snapshot == expected_config
+    assert json.loads(runner_context.configs["gfx950"].read_text()) == policy
+
+
+@pytest.mark.parametrize(
+    "allocation", ["1 | 25 | 16 | 41", "1 | 1 | 1 | 2", "2 | 1 | 0 | 2"]
+)
+def test_single_thread_policy_rejects_parallel_native_allocation(
+    runner_context, allocation
+):
+    import dataclasses
+
+    runner_context.suite = dataclasses.replace(
+        runner_context.suite, num_threads="single"
+    )
+    with pytest.raises(runner.RunnerError, match="single-thread policy requires"):
+        _run(
+            runner_context,
+            _matrix(runner_context, runner_context.suite.cases[0].id),
+            "bad-single",
+            process=lambda argv, **kw: subprocess.CompletedProcess(
+                argv, 0, f"Configured | {allocation}\n", ""
+            ),
+        )
+
+
+def test_single_thread_suite_is_fixed_subset_with_library_coverage():
+    nightly = runner.load_manifest()
+    single = runner.load_manifest(runner.BENCHMARK_ROOT / "suites/nightly-single.toml")
+    assert single.num_threads == "single"
+    assert single.warmups == nightly.warmups
+    assert single.samples == nightly.samples
+    default_cases = {case.id: case for case in nightly.cases}
+    for case in single.cases:
+        assert case.id.endswith(".single")
+        original = default_cases[case.id.removesuffix(".single") + ".default"]
+        assert (case.workload, case.params, case.targets) == (
+            original.workload,
+            original.params,
+            original.targets,
+        )
+        assert case.params.get("configuration") != "issue12611"
+    for target in nightly.targets:
+        matrix = runner.select_matrix(single, targets=[target])
+        assert len(matrix) == 5
+        assert {cell.definition.suite for cell in matrix} == {
+            "GPT-OSS",
+            "Triton",
+            "DeepSeek",
+            "TensileLite",
+        }
 
 
 @pytest.mark.parametrize(
@@ -1723,3 +1803,25 @@ def test_tensile_candidate_command_and_provider(runner_context, tmp_path):
         runner.validate_workload(command.workload_path, cell, 3)["timing"]["median"]
         == 2
     )
+
+
+def test_numeric_suite_stays_local_without_inferred_mode(runner_context):
+    _, raw = _run(runner_context, _matrix(runner_context), "numeric")
+    assert "threadingMode" not in raw["configuration"]
+    with pytest.raises(dashboard_publish.PublishError, match="threadingMode"):
+        dashboard_publish.normalize_run(
+            raw, run_id="numeric", trigger="manual", branch="develop",
+            environment_id="test",
+        )
+
+
+def test_plugin_overhead_manifest_uses_default_policy():
+    suite = runner.load_manifest(runner.BENCHMARK_ROOT / "suites/plugin-overhead.toml")
+    assert suite.num_threads == "default"
+    assert (suite.warmups, suite.samples, suite.timeout_seconds) == (3, 21, 300)
+    assert {case.id for case in suite.cases} == {
+        "triton.copy_fp32_32m.default",
+        "triton.softmax_fp16_boundary.default",
+        "triton.gemm_bf16_aligned.default",
+        "triton.gpt_oss_attention_bf16.default",
+    }
