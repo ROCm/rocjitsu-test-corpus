@@ -37,9 +37,14 @@ int main(int argc, char** argv) {
   Device device;
   Buffer result(device, (width + 2) * 4096);
   AqlPayload work(device, width * 2 + 1);
+  // The join is submitted before its producers, so all branch waits and
+  // dispatches must fit without waiting for the first dependency to complete.
+  uint32_t join_ring_bytes = 4096;
+  while (join_ring_bytes < width * 2 * 64) join_ring_bytes *= 2;
   std::vector<std::unique_ptr<Queue>> queues;
   for (uint32_t q = 0; q < width + 2; ++q)
-    queues.emplace_back(new Queue(device, 4096, 7, true));
+    queues.emplace_back(new Queue(device, q == width + 1 ? join_ring_bytes : 4096,
+                                  7, true));
   for (uint32_t round = 1; round <= rounds; ++round) {
     work.Prepare(0, result.address(), round * 17);
     for (uint32_t q = 1; q <= width; ++q) {
