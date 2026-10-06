@@ -3,8 +3,9 @@
 // child VA, and close export FDs after import. Parent writes and signals;
 // child waits, transforms through its alias and signals back. Verify data
 // and guards each round, then retire both processes before freeing backing.
-// The imported alias is CPU-readable too: metadata publication reads the
-// completion signal's event ID before submitting its GPU address.
+// Only metadata-enabled AQL uses a CPU-readable imported alias: publication
+// reads the completion signal's event ID. Other modes retain a GPU-only
+// anonymous PROT_NONE reservation, without a CPU mapping retaining the FD.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; default off for AQL queues.
@@ -34,6 +35,7 @@
 
 #include "pm4.h"
 #include "support/aql_payload.h"
+#include "support/dmabuf.h"
 using namespace cts;
 extern char** environ;
 static size_t SharedBytes(uint32_t rounds) {
@@ -43,9 +45,7 @@ static int Worker(uint32_t rounds, bool aql) {
   Check(prctl(PR_SET_PDEATHSIG, SIGKILL) == 0 && getppid() != 1,
         "worker parent disappeared");
   Device device;
-  void* va = mmap(nullptr, SharedBytes(rounds), PROT_READ | PROT_WRITE,
-                  MAP_SHARED, 3, 0);
-  Check(va != MAP_FAILED, "map DMA-BUF CPU alias for metadata");
+  void* va = ReserveDmabufImport(SharedBytes(rounds), 3, aql);
   kfd_ioctl_import_dmabuf_args imported{};
   imported.va_addr = reinterpret_cast<uintptr_t>(va);
   imported.gpu_id = device.gpu_id;

@@ -1,7 +1,9 @@
 // Purpose: Reuse plain/metadata AQL rings with 0, 1, 15, 16, 29 and 30
 // preloaded kernarg dwords. Alternate descriptors and AND/OR barriers, change
 // every argument generation, and check full output and guards. Inspect all four
-// companion headers after each completed dispatch/barrier and before reuse.
+// dispatch companion headers after completion and before reuse. Barrier
+// completion and output are checked, but barrier companion invalidation is
+// deferred until its contract is established.
 // Each descriptor's preload length/offset is checked against the compiled
 // variant. Kernarg pointers occupy two user SGPRs; the final two-dword
 // companion block and nonzero preload offsets are not exercised by these
@@ -21,7 +23,12 @@
 //   --queues and --seed: accepted but unused. Progress waits have a 10s
 //   deadline.
 // Inspiration/ABI: public ROCr metadata companion ring and dispatch/barrier
-// layouts.
+// layouts. CLR MetaDataPreloader::SetPacket for barriers writes only header0
+// and the event ID (or the first 64-byte block with MOVDIR64B).
+// https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/clr/rocclr/device/rocm/rocvirtual.hpp
+// The ROCr metadata_prefetch test checks all four headers after
+// dispatch completion; it does not establish the same rule for barriers.
+// https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/rocrtst/suites/functional/metadata_prefetch.cc
 // https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa_ext_amd.h
 // https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_aql_queue.cpp
 #include <cstdio>
@@ -102,7 +109,7 @@ int main(int argc, char** argv) {
   }
   Buffer args(device, slots * 256, executable_args);
   Buffer result(device, slots * 256), signals(device, slots * 128);
-  uint64_t metadata_slots[batch * 2]{};
+  uint64_t metadata_slots[batch]{};
   Queue plain(device, 4096, 7, true, false, false),
       metadata(device, 4096, 7, true, false, true);
   Check(!plain.has_metadata() && metadata.has_metadata(),
@@ -128,19 +135,16 @@ int main(int argc, char** argv) {
         Dispatch p = OneGroup(
             code[variant]->address(kernels[variant].descriptor),
             args.address(slot * 256), signals.address(slot * 128), true);
-        uint64_t index = queues[q]->producer();
+        const uint64_t index = queues[q]->producer();
         queues[q]->SubmitAql(&p);
-        if (q) metadata_slots[i * 2] = queues[q]->AqlMetadataSlotAddress(index);
+        if (q) metadata_slots[i] = queues[q]->AqlMetadataSlotAddress(index);
         MetadataBarrier after{};
         after.header =
             (((round + i) & 1) ? 5u : 3u) | (1u << 8) | (2u << 9) | (2u << 11);
         for (auto& dependency : after.dependencies)
           dependency = signals.address(slot * 128);
         after.completion = signals.address(slot * 128 + 64);
-        index = queues[q]->producer();
         queues[q]->SubmitAql(&after);
-        if (q)
-          metadata_slots[i * 2 + 1] = queues[q]->AqlMetadataSlotAddress(index);
       }
     }
     for (uint32_t q = 0; q < 2; ++q) {
@@ -148,17 +152,18 @@ int main(int argc, char** argv) {
         const uint32_t slot = q * batch + i, token = round * batch + i;
         WaitSignal(signals, slot * 128 + 64, *queues[q]);
         WaitSignal(signals, slot * 128, *queues[q]);
+        // Check the dispatch companion only. All-four-block invalidation of
+        // barrier companions is not established by the public reference.
         if (q)
-          for (uint32_t packet = 0; packet < 2; ++packet)
-            for (uint32_t block = 0; block < 4; ++block) {
-              const auto* header = reinterpret_cast<const uint32_t*>(
-                  metadata_slots[i * 2 + packet] + block * 64);
-              if ((__atomic_load_n(header, __ATOMIC_ACQUIRE) & 0xff) != 1)
-                Fail(
-                    "metadata not invalidated round=%u slot=%u packet=%u "
-                    "block=%u",
-                    round, i, packet, block);
-            }
+          for (uint32_t block = 0; block < 4; ++block) {
+            const auto* header = reinterpret_cast<const uint32_t*>(
+                metadata_slots[i] + block * 64);
+            if ((__atomic_load_n(header, __ATOMIC_ACQUIRE) & 0xff) != 1)
+              Fail(
+                  "dispatch metadata not invalidated round=%u slot=%u "
+                  "block=%u",
+                  round, i, block);
+          }
         for (uint32_t word = 0; word < 32; ++word)
           Check(result.Load(slot * 64 + word) ==
                     (token ^ (word * 31337)) + token * (word + 1),

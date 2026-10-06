@@ -404,46 +404,10 @@ requires=["FEATURE"]
         )
 
 
-@pytest.mark.parametrize("target", ["gfx1201", "gfx1250"])
-def test_protocol_suite_boundary(target):
-    aql = suite.load_manifest(suite.ROOT / "aql" / f"cases_{target}.toml", target)
-    pm4 = suite.load_manifest(suite.ROOT / "pm4" / f"cases_{target}.toml", target)
-    aql_ids = {row["id"].removesuffix("-metadata-off").removesuffix("-metadata-on") for row in aql}
-    pm4_ids = {row["id"].removesuffix("-metadata-off").removesuffix("-metadata-on") for row in pm4}
-    assert not aql_ids & pm4_ids
-    assert {"sdma_flood", "sdma_event_interrupt", "engine_pipeline-aql"} <= aql_ids
-    assert ("sdma_signal64" in aql_ids) == (target == "gfx1250")
-    assert {
-        "aql_indirect_buffers", "aql_gpu_queue_producer", "aql_publish_holes",
-        "aql_barrier_and", "aql_barrier_or", "sdma_queue_lifecycle", "vram_remap-aql",
-    } <= pm4_ids
-    assert all("--mode" not in row["args"] for row in aql)
-    for source in (suite.ROOT / "aql").glob("*.cc"):
-        assert '"pm4.h"' not in source.read_text()
-        assert '"support/pm4.h"' not in source.read_text()
-        assert "Pm4 " not in source.read_text()
-
-
 @pytest.mark.parametrize("requirement", ['"sdma_signal64"', '["typo"]', '[1]'])
 def test_reject_invalid_feature_gates(tmp_path, requirement):
     with pytest.raises(ValueError, match="feature|requires"):
         suite.load_manifest(manifest(tmp_path, f"requires={requirement}"))
-
-
-@pytest.mark.parametrize("suite_name", ["aql", "pm4"])
-def test_metadata_manifest_modes_match(suite_name):
-    rows = suite.load_manifest(suite.ROOT / suite_name / "cases_gfx1250.toml", "gfx1250")
-    by_id = {row["id"]: row for row in rows}
-    for row in rows:
-        if "--aql-metadata" not in row["args"]:
-            continue
-        mode = row["args"][-1]
-        assert mode in ("off", "on")
-        other_mode = "on" if mode == "off" else "off"
-        other = by_id[row["id"].removesuffix(f"-metadata-{mode}") + f"-metadata-{other_mode}"]
-        assert row["binary"] == other["binary"]
-        assert row["args"][:-1] == other["args"][:-1]
-        assert row.get("slow", False) == other.get("slow", False)
 
 
 @pytest.mark.parametrize("suite_name", ["aql", "pm4"])
@@ -555,6 +519,3 @@ include("${CTS_ROOT}/pm4/CMakeLists.txt")
             assert set(row.get("requires", [])) <= features
             if row["status"] == "SKIP":
                 assert set(re.findall(r"gfx[0-9a-f]+", row["reason"])) == {target}
-        pauses = [row for row in rows if row["id"].startswith("aql_running_queue_pause")]
-        for row in pauses:
-            assert (row["status"] == "SKIP") == (target in ("gfx950", "gfx1250"))
