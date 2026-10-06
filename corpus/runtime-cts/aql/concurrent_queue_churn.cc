@@ -15,7 +15,8 @@
 //     Default 45; range 1..3600.
 //   --seed: accepted by the common parser but unused here.
 //   --aql-metadata off|on: gfx1250 only; default off.
-// Progress waits retain their separate 10-second deadline.
+// Concurrent creation and gated worker waits use the process watchdog budget.
+// Other progress waits retain their separate 10-second deadline.
 // Mixed-priority gated churn stalled during bring-up; this test uses equal
 // priorities.
 //
@@ -34,6 +35,7 @@ int main(int argc, char** argv) {
   Start(argc, argv, "concurrent_queue_churn");
   const uint32_t count = QueueCount(argc, argv, 1);
   const uint32_t rounds = Option(argc, argv, "--iterations", 2, 100000);
+  const uint32_t timeout = Option(argc, argv, "--timeout", 45, 3600);
   Device device;
   Buffer result(device, (count + 1) * 64), gate(device, 4096);
   AqlPayload work(device, count + 1);
@@ -50,15 +52,19 @@ int main(int argc, char** argv) {
         AqlWait(queue, gate.address());
         work.Submit(queue, id);
         ready.fetch_add(1, std::memory_order_release);
-        work.Wait(queue, id);
+        work.signals.Wait(id * 16 + 2, 0, timeout * 1000, &queue);
+        Check(work.signals.Load64(id * 64 + 8) == 0,
+              "completion signal underflow");
         Check(result.Load(id * 16) == round,
               "AQL churn lost or duplicated work");
         Check(result.Load(id * 16 + 1) == 0, "AQL churn guard corrupted");
         queue.Drain();
       });
-    const uint64_t deadline = NowNs() + 10000000000ull;
+    const uint64_t deadline = NowNs() + uint64_t(timeout) * 1000000000;
     while (ready.load(std::memory_order_acquire) != count) {
-      Check(NowNs() < deadline, "AQL concurrent creation stalled");
+      if (NowNs() >= deadline)
+        Fail("AQL concurrent creation stalled: %u/%u queues ready",
+             ready.load(std::memory_order_acquire), count);
       std::this_thread::yield();
     }
     work.Prepare(count, result.address(count * 64), round);
