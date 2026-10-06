@@ -6,7 +6,7 @@
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   Queue protocol: AQL only.
-//   --iterations N: rounds; default 16; range 1..100000.
+//   --iterations N: rounds; default 2; range 1..100000.
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
 //   --queues and --seed: accepted by common parser but unused.
 //   --worker seconds: internal exec mode; readiness on inherited FD 3.
@@ -59,7 +59,7 @@ int main(int argc, char** argv) {
     return Worker(argc, argv);
   }
   Start(argc, argv, "process_exit_inflight");
-  const uint32_t rounds = Option(argc, argv, "--iterations", 16, 100000);
+  const uint32_t rounds = Option(argc, argv, "--iterations", 2, 100000);
   Device device;
   Buffer memory(device, 4096);
   Queue survivor(device, 4096, 7, true);

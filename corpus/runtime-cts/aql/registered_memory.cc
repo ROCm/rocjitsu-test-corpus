@@ -8,7 +8,7 @@
 //   Queue protocol: AQL only.
 //   The observer copies data through the tested mapping before host
 //   verification.
-//   --iterations N: rounds; default 64; range 1..100000.
+//   --iterations N: rounds; default 2; range 1..100000.
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
 //   --queues and --seed: accepted by common parser but unused.
 //   --aql-metadata off|on: gfx1250 only; default off.
@@ -23,7 +23,7 @@
 using namespace cts;
 int main(int argc, char** argv) {
   Start(argc, argv, "registered_memory");
-  const uint32_t rounds = Option(argc, argv, "--iterations", 64, 100000);
+  const uint32_t rounds = Option(argc, argv, "--iterations", 2, 100000);
   Device device;
   constexpr uint32_t kBytes = 32768;
   Buffer local(device, kBytes, false, true), fence(device, 4096);

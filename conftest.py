@@ -126,6 +126,12 @@ def pytest_addoption(parser):
         help="Replacement AQL/PM4 TOML manifest.",
     )
     parser.addoption(
+        "--run-slow",
+        action="store_true",
+        default=False,
+        help="Include runtime CTS cases marked slow in their manifest.",
+    )
+    parser.addoption(
         "--binary-dir",
         default=None,
         help="Prebuilt AQL/PM4 binaries and CMake target inventories.",
@@ -135,6 +141,7 @@ def pytest_addoption(parser):
 
 # Pytest hook: called during configuration before collection starts.
 def pytest_configure(config):
+    config.addinivalue_line("markers", "slow: runtime CTS case measured above two seconds on its native target")
     selected = parse_csv_values(config.getoption("suite"))
     if set(selected) & {"aql", "pm4"}:
         if set(selected) - {"aql", "pm4"}:

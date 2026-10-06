@@ -25,6 +25,14 @@ namespace cts {
 inline constexpr uint32_t kCuMaskBitsPerWgp = kGfx125 ? 1 : 2;
 class Queue;
 
+// Native topology limits, read before allocating queues. AQL and PM4 share
+// num_cp_queues; ordinary SDMA excludes the separate XGMI engines.
+uint32_t QueueCapacity(bool sdma = false);
+// Default to all available slots, accounting for fixed companion queues.
+// Explicit counts above that budget fail before any queues are created.
+uint32_t QueueCount(int argc, char** argv, uint32_t reserved = 0,
+                    bool sdma = false);
+
 // One native VM per process. Tests fork/exec before constructing a Device.
 struct Device {
   Device();
@@ -35,6 +43,8 @@ struct Device {
   uint64_t Property(const char* name) const;
   uint64_t* Doorbell(uint64_t offset);
   void MapDoorbellsForGpu();
+  void ClaimQueue(bool sdma = false);
+  void ReleaseQueue(bool sdma = false);
   int kfd = -1;
   int drm = -1;
   uint32_t gpu_id = 0;
@@ -43,6 +53,7 @@ struct Device {
   std::map<std::string, uint64_t> properties;
 
  private:
+  std::atomic<uint32_t> live_cp_queues_{0}, live_sdma_queues_{0};
   void* doorbells_ = nullptr;
   uint64_t doorbell_offset_ = 0;
   uint64_t doorbell_handle_ = 0;

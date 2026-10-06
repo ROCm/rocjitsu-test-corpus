@@ -7,7 +7,7 @@
 //   Queue protocol: AQL only.
 //   AQL uses ordinary dispatches and completion-signal barriers.
 //   --iterations N: rounds.
-//     Default 32; range 1..100000.
+//     Default 2; range 1..100000.
 //   --queues N: buffers per round.
 //     Default 16; range 1..64.
 //   --timeout N: process watchdog in seconds.
@@ -27,7 +27,7 @@ using namespace cts;
 
 int main(int argc, char** argv) {
   Start(argc, argv, "allocation_churn");
-  const uint32_t rounds = Option(argc, argv, "--iterations", 32, 100000);
+  const uint32_t rounds = Option(argc, argv, "--iterations", 2, 100000);
   const uint32_t width = Option(argc, argv, "--queues", 16, 64);
   Device device;
   AqlPayload work(device, width * 2);

@@ -6,12 +6,14 @@
 // allocator choice. Change the first submission extent each generation. The
 // public simulator regression is inspiration, not a claimed gfx12 defect.
 //
+// Queue count defaults to the native CP capacity minus companion queues.
+// Explicit --queues above that budget fails before queue creation.
 // Parameters (decimal integers; ranges inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
 //   --mode pm4: default pm4; use the AQL suite for AQL coverage.
 //   --iterations N: rounds; default 32; range 1..100000.
-//   --queues N: transient queues plus one survivor; default 8;
-//     range 1..128.
+//   --queues N: transient queues plus one survivor.
+//     Default/maximum: native capacity minus one survivor.
 //   --timeout N: watchdog seconds; default 45; range 1..3600.
 //   --seed: accepted but unused. Progress waits have a 10-second deadline.
 //
@@ -32,7 +34,7 @@ using namespace cts;
 
 static int RunPm4(int argc, char** argv) {
   Start(argc, argv, "queue_churn", true);
-  const uint32_t count = Option(argc, argv, "--queues", 8, 128);
+  const uint32_t count = QueueCount(argc, argv, 1);
   const uint32_t iterations = Option(argc, argv, "--iterations", 32, 100000);
   Device device;
   Buffer result(device, (count + 1) * 4096);

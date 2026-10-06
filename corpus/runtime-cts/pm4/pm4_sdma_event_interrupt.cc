@@ -9,7 +9,7 @@
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
 //   --iterations N: rounds; default 64; range 1..100000.
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
-//   --queues N: event-producing queues; default 2; range 1..4.
+//   --queues N: event-producing queues.
 //   --seed: accepted by common parser but unused.
 // Progress waits have a separate 10-second deadline.
 // Inspiration: independent direct-KFD adaptation of public workload patterns.
@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
   const char* name = kSdma ? "sdma_event_interrupt" : "pm4_event_interrupt";
   Start(argc, argv, name);
   const uint32_t rounds = Option(argc, argv, "--iterations", 64, 100000);
-  const uint32_t count = Option(argc, argv, "--queues", 2, 4);
+  const uint32_t count = QueueCount(argc, argv, 0, kSdma);
   Device device;
   // KFD retains its signal-page BO until process teardown and rejects FREE
   // even after all events are destroyed. Keep this one bounded allocation

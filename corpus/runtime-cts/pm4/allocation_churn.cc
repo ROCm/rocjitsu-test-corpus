@@ -7,7 +7,7 @@
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
 //   --mode pm4: default pm4; use the AQL suite for AQL coverage.
 //   --iterations N: rounds.
-//     Default 32; range 1..100000.
+//     Default 2; range 1..100000.
 //   --queues N: buffers per round.
 //     Default 16; range 1..64.
 //   --timeout N: process watchdog in seconds.
@@ -27,7 +27,7 @@ using namespace cts;
 
 static int RunPm4(int argc, char** argv) {
   Start(argc, argv, "allocation_churn", true);
-  const uint32_t rounds = Option(argc, argv, "--iterations", 32, 100000);
+  const uint32_t rounds = Option(argc, argv, "--iterations", 2, 100000);
   const uint32_t width = Option(argc, argv, "--queues", 16, 64);
   Device device;
   Buffer completion(device, 4096);

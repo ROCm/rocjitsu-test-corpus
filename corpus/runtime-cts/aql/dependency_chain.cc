@@ -4,11 +4,13 @@
 // AQL alternates agent/system scopes on interior links; transfer edges retain
 // system scope. Verify every stage and guards, not just final completion.
 //
+// Queue count defaults to the native CP capacity minus companion queues.
+// Explicit --queues above that budget fails before queue creation.
 // Parameters (decimal integers; ranges inclusive):
 //   --aql-metadata off|on: gfx1250 only; default off for AQL queues.
 //   Queue protocol: AQL only.
 //   --iterations N: rounds; default 64; range 1..100000.
-//   --queues N: stages; default 4, range 2..4.
+//   --queues N: stages.
 //   --timeout N: watchdog seconds; default 45; range 1..3600.
 //   --seed: accepted but unused. Progress waits have a 10-second deadline.
 //
@@ -36,7 +38,7 @@ static_assert(sizeof(BarrierPacket) == 64);
 int main(int argc, char** argv) {
   Start(argc, argv, "dependency_chain");
   const uint32_t rounds = Option(argc, argv, "--iterations", 64, 100000);
-  const uint32_t count = Option(argc, argv, "--queues", 4, 4);
+  const uint32_t count = QueueCount(argc, argv, 0);
   Check(count >= 2, "shader chain requires at least two queues");
   constexpr uint32_t kWords = 256, kGuard = 0xdeadbeef;
   const uint32_t bytes = (count + 1) * 4096;
@@ -44,7 +46,8 @@ int main(int argc, char** argv) {
   Buffer code(device, sizeof(kKernelImage), true), args(device, count * 512);
   Buffer source(device, bytes), snapshot(device, bytes),
       local(device, bytes, false, true);
-  Buffer signals(device, 4096);
+  const uint32_t done_offset = (count + 1) * 64;
+  Buffer signals(device, done_offset + 64);
   Check(kKernargBytes <= 512, "kernel arguments too large");
   std::memcpy(code.data, kKernelImage, sizeof(kKernelImage));
   std::vector<std::unique_ptr<Queue>> queues;
@@ -59,7 +62,7 @@ int main(int argc, char** argv) {
     receive.Wait(signals.address(count * 64 + 8), 0);
     receive.Acquire();
     receive.Copy(local.address(), snapshot.address(), bytes);
-    receive.Finish(signals.address(1024), round);
+    receive.Finish(signals.address(done_offset), round);
     download.Submit(receive.words);
     for (uint32_t remaining = count; remaining; --remaining) {
       const uint32_t q = remaining - 1;
@@ -87,7 +90,7 @@ int main(int argc, char** argv) {
     send.Copy(source.address(), local.address(), bytes);
     send.Finish(signals.address(8), 0);
     upload.Submit(send.words);
-    signals.Wait(256, round);
+    signals.Wait(done_offset / 4, round);
     for (uint32_t word = 0; word < 1024; ++word) {
       uint32_t expected = word < kWords ? round * 65536 + word : kGuard;
       for (uint32_t stage = 0; stage <= count; ++stage) {

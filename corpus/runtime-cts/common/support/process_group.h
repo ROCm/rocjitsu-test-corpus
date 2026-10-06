@@ -12,13 +12,14 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <vector>
 
-#include "common/test.h"
+#include "support/kfd.h"
 namespace cts {
 // Private exec channel. Standalone queue_flood has no rendezvous.
 inline void WorkerPhase(char phase) {
@@ -37,9 +38,18 @@ inline void WorkerPhase(char phase) {
   Check(n == 1 && release == phase, "parent did not release worker phase");
 }
 inline int RunProcessGroup(int argc, char** argv, const char* sibling) {
-  const uint32_t count = Option(argc, argv, "--queues", 4, 32);
+  // Read sysfs only: the supervisor never opens KFD before fork/exec. Split
+  // one machine-wide resident queue budget across the workers, including any
+  // remainder, rather than multiplying a per-process maximum.
+  const uint32_t capacity = QueueCapacity();
+  const uint32_t count =
+      Option(argc, argv, "--queues", std::min(4u, capacity), capacity);
+  Check(count >= 2, "multiprocess test needs at least two worker processes");
+  std::printf("queue_budget engine=CP capacity=%u workers=%u total_queues=%u\n",
+              capacity, count, capacity);
+  std::fflush(stdout);
   const std::string rounds =
-      std::to_string(Option(argc, argv, "--iterations", 64, 100000));
+      std::to_string(Option(argc, argv, "--iterations", 2, 100000));
   const uint32_t seconds = Option(argc, argv, "--timeout", 45, 3600);
   const std::string timeout = std::to_string(seconds);
   char executable[4096];
@@ -65,6 +75,8 @@ inline int RunProcessGroup(int argc, char** argv, const char* sibling) {
   const uint64_t deadline = NowNs() + uint64_t(seconds) * 1000000000;
   bool failed = false;
   for (uint32_t i = 0; i < count; ++i) {
+    const std::string worker_queues =
+        std::to_string(capacity / count + (i < capacity % count));
     int channel[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, channel) != 0) {
       failed = true;
@@ -84,8 +96,8 @@ inline int RunProcessGroup(int argc, char** argv, const char* sibling) {
         _exit(126);
       const std::string fd = std::to_string(channel[1]);
       if (setenv("CTS_WORKER_CHANNEL", fd.c_str(), 1) != 0) _exit(126);
-      execl(path.c_str(), path.c_str(), "--queues", "4", "--iterations",
-            rounds.c_str(), "--timeout", timeout.c_str(),
+      execl(path.c_str(), path.c_str(), "--queues", worker_queues.c_str(),
+            "--iterations", rounds.c_str(), "--timeout", timeout.c_str(),
             AqlMetadataMode() ? "--aql-metadata" : nullptr, AqlMetadataMode(),
             nullptr);
       _exit(126);

@@ -19,6 +19,7 @@
 #include <linux/kfd_ioctl.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -93,9 +94,9 @@ void ContextSizes(Device& device) {
 }
 }  // namespace
 
-Device::Device() {
-  Check(sizeof(void*) == 8 && sysconf(_SC_PAGESIZE) == 4096,
-        "requires 64-bit Linux and 4 KiB pages");
+namespace {
+void ReadTopology(uint32_t& gpu_id,
+                  std::map<std::string, uint64_t>& properties) {
   const uint32_t wanted = kGfxVersion;
   const char* root = "/sys/class/kfd/kfd/topology/nodes";
   DIR* nodes = opendir(root);
@@ -121,7 +122,47 @@ Device::Device() {
     std::printf("SKIP no %s GPU\n", CTS_TARGET_NAME);
     std::exit(77);
   }
-  gfx = wanted;
+}
+}  // namespace
+
+uint32_t QueueCapacity(bool sdma) {
+  uint32_t gpu_id = 0;
+  std::map<std::string, uint64_t> props;
+  ReadTopology(gpu_id, props);
+  // KFD exports the available CP bitmap weight and SDMA slots after reserved
+  // queues are subtracted. These are resident capacities, not the larger
+  // software queue limit supported by KFD scheduling.
+  // https://github.com/torvalds/linux/blob/67f0943b394d920b6c142aad8c6af94340342ae7/drivers/gpu/drm/amd/amdkfd/kfd_topology.c
+  // https://github.com/torvalds/linux/blob/67f0943b394d920b6c142aad8c6af94340342ae7/drivers/gpu/drm/amd/amdkfd/kfd_device_queue_manager.c
+  const uint64_t limit =
+      sdma ? props["num_sdma_engines"] * props["num_sdma_queues_per_engine"]
+           : props["num_cp_queues"];
+  Check(limit && limit <= 128, "unsupported native queue capacity (1..128)");
+  return static_cast<uint32_t>(limit);
+}
+
+uint32_t QueueCount(int argc, char** argv, uint32_t reserved, bool sdma) {
+  const uint32_t capacity = QueueCapacity(sdma);
+  Check(reserved < capacity, "no queue capacity left after companion queues");
+  const uint32_t count =
+      Option(argc, argv, "--queues", capacity - reserved, 0xffffffffu);
+  if (count > capacity - reserved)
+    Fail(
+        "--queues=%u plus %u companion queues exceeds %s queue capacity=%u "
+        "for %s (maximum --queues=%u)",
+        count, reserved, sdma ? "SDMA" : "CP", capacity, CTS_TARGET_NAME,
+        capacity - reserved);
+  std::printf("queue_budget engine=%s capacity=%u selected=%u companions=%u\n",
+              sdma ? "SDMA" : "CP", capacity, count, reserved);
+  std::fflush(stdout);
+  return count;
+}
+
+Device::Device() {
+  Check(sizeof(void*) == 8 && sysconf(_SC_PAGESIZE) == 4096,
+        "requires 64-bit Linux and 4 KiB pages");
+  ReadTopology(gpu_id, properties);
+  gfx = kGfxVersion;
   Check(Property("wave_front_size") == kWaveSize,
         "unexpected target wave size");
   ContextSizes(*this);
@@ -143,6 +184,16 @@ Device::Device() {
   kfd_ioctl_runtime_enable_args runtime{};
   runtime.mode_mask = KFD_RUNTIME_ENABLE_MODE_ENABLE_MASK;
   Ioctl(AMDKFD_IOC_RUNTIME_ENABLE, &runtime, "RUNTIME_ENABLE");
+  utsname host{};
+  Check(uname(&host) == 0, "read host kernel version");
+  std::string driver = "unknown";
+  std::ifstream("/sys/module/amdgpu/version") >> driver;
+  std::printf(
+      "HOST kernel=%s amdgpu=%s sdma_engines=%llu "
+      "sdma_queues_per_engine=%llu\n",
+      host.release, driver.c_str(),
+      (unsigned long long)Property("num_sdma_engines"),
+      (unsigned long long)Property("num_sdma_queues_per_engine"));
   std::printf("GPU %s gpu_id=%u KFD=%u.%u fw=%llu cp_queues=%llu\n",
               CTS_TARGET_NAME, gpu_id, version.major_version,
               version.minor_version, (unsigned long long)Property("fw_version"),
@@ -166,6 +217,22 @@ Device::~Device() {
     Check(munmap(doorbells_, kDoorbellBytes) == 0, "unmap doorbells");
   if (drm >= 0) close(drm);
   if (kfd >= 0) close(kfd);
+}
+void Device::ClaimQueue(bool sdma) {
+  const uint64_t capacity = sdma ? Property("num_sdma_engines") *
+                                       Property("num_sdma_queues_per_engine")
+                                 : Property("num_cp_queues");
+  auto& live = sdma ? live_sdma_queues_ : live_cp_queues_;
+  const uint32_t previous = live.fetch_add(1, std::memory_order_relaxed);
+  if (previous >= capacity)
+    Fail("creating %s queue %u exceeds native capacity=%llu for %s",
+         sdma ? "SDMA" : "CP", previous + 1, (unsigned long long)capacity,
+         CTS_TARGET_NAME);
+}
+void Device::ReleaseQueue(bool sdma) {
+  auto& live = sdma ? live_sdma_queues_ : live_cp_queues_;
+  Check(live.fetch_sub(1, std::memory_order_relaxed) != 0,
+        "queue accounting underflow");
 }
 uint64_t Device::Property(const char* name) const {
   auto it = properties.find(name);
@@ -209,15 +276,15 @@ void Device::MapDoorbellsForGpu() {
   // MTYPE_NC on gfx950; gfx12.0 also requires UNCACHED, and gfx12.5 has
   // revision-dependent defaults. UNCACHED preserves the UC mapping on
   // gfx942 and gfx11. Linux maps this KFD flag to AMDGPU_GEM_CREATE_UNCACHED;
-  // see gmc_v9_0/gmc_v12_1_get_coherence_flags and gmc_v11_0/gmc_v12_0_get_vm_pte:
+  // see gmc_v9_0/gmc_v12_1_get_coherence_flags and
+  // gmc_v11_0/gmc_v12_0_get_vm_pte:
   // https://github.com/torvalds/linux/blob/67f0943b394d920b6c142aad8c6af94340342ae7/drivers/gpu/drm/amd/amdgpu/gmc_v9_0.c
   // https://github.com/torvalds/linux/blob/67f0943b394d920b6c142aad8c6af94340342ae7/drivers/gpu/drm/amd/amdgpu/gmc_v11_0.c
   // https://github.com/torvalds/linux/blob/67f0943b394d920b6c142aad8c6af94340342ae7/drivers/gpu/drm/amd/amdgpu/gmc_v12_0.c
   // https://github.com/torvalds/linux/blob/67f0943b394d920b6c142aad8c6af94340342ae7/drivers/gpu/drm/amd/amdgpu/gmc_v12_1.c
-  alloc.flags = KFD_IOC_ALLOC_MEM_FLAGS_DOORBELL |
-                KFD_IOC_ALLOC_MEM_FLAGS_WRITABLE |
-                KFD_IOC_ALLOC_MEM_FLAGS_COHERENT |
-                KFD_IOC_ALLOC_MEM_FLAGS_UNCACHED;
+  alloc.flags =
+      KFD_IOC_ALLOC_MEM_FLAGS_DOORBELL | KFD_IOC_ALLOC_MEM_FLAGS_WRITABLE |
+      KFD_IOC_ALLOC_MEM_FLAGS_COHERENT | KFD_IOC_ALLOC_MEM_FLAGS_UNCACHED;
   Ioctl(AMDKFD_IOC_ALLOC_MEMORY_OF_GPU, &alloc, "ALLOC doorbell GPU aperture");
   doorbell_handle_ = alloc.handle;
   kfd_ioctl_map_memory_to_gpu_args map{};
@@ -338,6 +405,7 @@ Queue::Queue(Device& device, uint32_t ring_bytes, uint32_t priority, bool aql,
       aql_(aql),
       metadata_(aql && metadata && kGfx125),
       priority_(priority) {
+  device.ClaimQueue();
   Check(
       ring_bytes >= 4096 && !(ring_bytes & (ring_bytes - 1)) && priority <= 15,
       "invalid queue configuration");
@@ -429,6 +497,7 @@ Queue::~Queue() {
   kfd_ioctl_destroy_queue_args destroy{};
   destroy.queue_id = id_;
   device_.Ioctl(AMDKFD_IOC_DESTROY_QUEUE, &destroy, "DESTROY_QUEUE");
+  device_.ReleaseQueue();
 }
 uint64_t Queue::consumed() {
   const uint64_t mask = ring_bytes_ / 4 - 1;

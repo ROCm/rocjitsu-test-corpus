@@ -1,5 +1,9 @@
 # Runtime CTS
 
+These tests stress the GPU and may crash the GPU or leave the host requiring a
+reboot. Run them on a remote machine that you can reboot, with recovery access
+that remains available if the host stops responding (for example, BMC access).
+
 ## Build and run
 
 Requires Linux x86-64, 4 KiB pages, C++17, Linux KFD headers, Python 3.11+,
@@ -15,7 +19,7 @@ python -m pytest tests/test_corpus.py --suite aql,pm4 --target gfx1250 \
   --binary-dir build/runtime-cts -v -ra
 ```
 
-Use `'-DCTS_ARCHS=gfx942;gfx1100;gfx1201;gfx1250'` to build multiple targets.
+Use `'-DCTS_ARCHS=gfx942;gfx950;gfx1101;gfx1201;gfx1250'` to build multiple targets.
 Both suites build by default. `-DCTS_SUITES=aql` selects AQL/SDMA tests;
 `-DCTS_SUITES=pm4` selects tests that may combine PM4, AQL and SDMA.
 Use `--suite aql` or `--suite pm4` to run one suite. Run sequentially, without
@@ -32,13 +36,14 @@ and disable automatic NUMA balancing for the run. Save the original value of
 `/proc/sys/kernel/numa_balancing`, use `sudo sysctl -w kernel.numa_balancing=0`,
 and restore the saved value afterward. The USERPTR tests exercise registration,
 copying and unregistration; concurrent page migration is outside their scope.
-On a native gfx1250 host, both AQL `registered_memory` variants faulted in the
-driver's trap-handler region with balancing enabled and passed with it disabled.
 
 ## Manifests
 
-Each suite uses `cases.toml`, unless `cases_<target>.toml` exists for the selected
-`--target`. Both suites provide `cases_gfx1250.toml`, with explicit
+Each suite has an explicit `cases_<target>.toml` for gfx942, gfx950, gfx1101,
+gfx1201 and gfx1250. There is no default manifest or fallback for unverified
+targets. Each manifest includes only executables built for its target; unsupported
+packet/shader profiles are omitted instead of copied as investigation skips.
+Both suites provide `cases_gfx1250.toml`, with explicit
 `--aql-metadata off` and `--aql-metadata on` cases for AQL scenarios. Metadata
 defaults to off. Either explicit value is rejected on targets other than
 gfx1250. SDMA-only and PM4-only scenarios run once; the metadata comparison
@@ -55,22 +60,28 @@ timeout_seconds = 60
 [[case]]
 id = "queue-flood-plain"
 binary = "aql_queue_flood_{target}"
-args = ["--queues", "4", "--iterations", "32"]
+args = ["--iterations", "9"]
 
 [[case]]
 id = "queue-flood-metadata"
 binary = "aql_queue_flood_{target}"
-args = ["--queues", "4", "--iterations", "32", "--aql-metadata", "on"]
+args = ["--iterations", "9", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
 ```
 
 - IDs must be unique. Arguments are strings, passed without shell expansion.
+- Case-specific validation notes, failure details and workarounds belong in
+  comments beside the case. Keep `reason` concise for the test runner's skip report.
 - `requires` lists capabilities from the build's feature inventory. Missing
   capabilities cause a SKIP. Existing reproducer skips remain in both modes.
 - Omit `status` to run normally. `status = "SKIP"` requires a `reason` and never
   executes the case. `status = "XFAIL"` requires a `reason`, `expected_exit_code`
   and `expected_output` substring matching the subprocess output. Unexpected
   passes fail; timeouts cannot be xfailed.
+- `slow = true` marks cases measured above two seconds on native hardware
+  for that target. They are skipped
+  by default; `--run-slow` includes them and `--run-slow -m slow` selects only
+  them. This does not override feature requirements or explicit `SKIP` status.
 - Cases may override `timeout_seconds`. The binary's `--timeout` watchdog
   defaults to 45 seconds; the runner timeout defaults to 60 seconds.
 - Every built executable must appear in the selected default manifest, even
@@ -78,50 +89,10 @@ requires = ["aql_metadata"]
 - `--case`, `--exclude-case`, `--artifact-directory`, `--run-wrapper` and
   `--junitxml` are supported by the pytest runner.
 
-## Runtime stress test acceptance
-
-Tests in `corpus/runtime-cts` exercise compute runtime mechanisms: GPU queues,
-command processing, firmware, memory management, synchronization and process
-lifetime. Keep each test focused on one mechanism. Graphics workloads are out
-of scope.
-
-- State the failure mechanism and the observed milestones that establish the
-  intended state. Many queue objects do not by themselves prove oversubscription;
-  a large allocation does not prove eviction; pausing an idle queue does not
-  prove live-wave save/restore.
-- Check data that depends on the operation under test. A dependency test must
-  consume the producer's payload. A completion flag alone cannot establish that
-  a wait or memory handoff worked. Check guards and exact execution counts where
-  lost, duplicated or out-of-range work could otherwise pass.
-- For a blocked-state test, establish a reached or full-capacity milestone
-  before checking that later work has not completed. Verify independent progress,
-  then release the operation and check its positive result. A sleep alone does
-  not establish the state.
-- Distinguish packet consumption, shader completion and safe resource retirement.
-  Keep buffers, signals, arguments and command storage alive until every user
-  retires. Validate dependency acyclicity including each queue's FIFO ordering.
-- Use a few deliberate boundaries rather than a Cartesian product of parameters.
-  Preserve deterministic seeds and immutable generations needed to reproduce
-  failures. Do not require a performance threshold or scheduling order that the
-  API does not guarantee.
-- Bound waits and process lifetimes. Timeouts fail; unsupported capabilities skip
-  before triggering the scenario. Report the target, feature mode, seed, iteration,
-  queue/process, expected and observed values, and last reached milestone where
-  relevant. Multiprocess tests must propagate failures and reap their children.
-- Validate new stress scenarios on a supported native target before enabling
-  them in normal manifests. Record which architectures and capabilities were
-  exercised, which were only built, and any limitations. During
-  development, demonstrate that an isolated mutation such as an omitted dependency,
-  stale generation or suppressed execution makes the result check fail. Keep such
-  mutations out of production binaries and manifest options.
-- Update the source header with the purpose, parameters, checks, support limits
-  and primary references. Explain which pattern is adapted and validate the
-  actual API contract; an upstream test using a different API is not a packet
-  specification. Keep build inventories and manifests consistent.
-
 ## Validated architectures
 
-The default AQL and PM4 test suites have been validated on native gfx942,
-gfx950, gfx1101, gfx1201 and gfx1250 machines using TheRock
-`10.2.0a20261005`. All enabled tests passed; existing feature and reproducer
-skips remain. Native gfx1250 validation used the NUMA setup described above.
+The AQL and PM4 suites have been validated on native gfx942, gfx950, gfx1101,
+gfx1201 and gfx1250 using TheRock `10.2.0a20261005`. Validation qualifications,
+required environment workarounds and investigation details are documented beside
+the relevant cases in each target's TOML manifest. Explicit `SKIP` reasons remain
+the authority for cases that are not yet qualified.

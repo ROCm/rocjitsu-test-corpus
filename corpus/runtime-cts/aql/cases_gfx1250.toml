@@ -5,7 +5,7 @@ timeout_seconds = 60
 [[case]]
 id = "sdma_flood"
 binary = "aql_sdma_flood_{target}"
-args = ["--iterations", "128", "--queues", "2"]
+args = ["--iterations", "8"]
 
 [[case]]
 id = "sdma_signal64"
@@ -16,66 +16,66 @@ requires = ["sdma_signal64"]
 [[case]]
 id = "sdma_event_interrupt"
 binary = "aql_sdma_event_interrupt_{target}"
-args = ["--iterations", "64", "--queues", "2"]
+args = ["--iterations", "64"]
 
 [[case]]
 id = "packet_flood-aql-metadata-off"
 binary = "aql_packet_flood_{target}"
-args = ["--queues", "4", "--iterations", "32", "--seed", "12345", "--aql-metadata", "off"]
+args = ["--iterations", "8", "--seed", "12345", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "packet_flood-aql-metadata-on"
 binary = "aql_packet_flood_{target}"
-args = ["--queues", "4", "--iterations", "32", "--seed", "12345", "--aql-metadata", "on"]
+args = ["--iterations", "8", "--seed", "12345", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "queue_flood-aql-metadata-off"
 binary = "aql_queue_flood_{target}"
-args = ["--queues", "16", "--iterations", "64", "--aql-metadata", "off"]
+args = ["--iterations", "9", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "queue_flood-aql-metadata-on"
 binary = "aql_queue_flood_{target}"
-args = ["--queues", "16", "--iterations", "64", "--aql-metadata", "on"]
+args = ["--iterations", "9", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "queue_churn-aql-metadata-off"
 binary = "aql_queue_churn_{target}"
-args = ["--iterations", "64", "--queues", "1", "--aql-metadata", "off"]
+args = ["--iterations", "2", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "queue_churn-aql-metadata-on"
 binary = "aql_queue_churn_{target}"
-args = ["--iterations", "64", "--queues", "1", "--aql-metadata", "on"]
+args = ["--iterations", "2", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "dependency_chain-aql-metadata-off"
 binary = "aql_dependency_chain_{target}"
-args = ["--iterations", "64", "--queues", "4", "--aql-metadata", "off"]
+args = ["--iterations", "64", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "dependency_chain-aql-metadata-on"
 binary = "aql_dependency_chain_{target}"
-args = ["--iterations", "64", "--queues", "4", "--aql-metadata", "on"]
+args = ["--iterations", "64", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "dependency_diamond-aql-metadata-off"
 binary = "aql_dependency_diamond_{target}"
-args = ["--queues", "2", "--iterations", "32", "--aql-metadata", "off"]
+args = ["--iterations", "32", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "dependency_diamond-aql-metadata-on"
 binary = "aql_dependency_diamond_{target}"
-args = ["--queues", "2", "--iterations", "32", "--aql-metadata", "on"]
+args = ["--iterations", "32", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
 
 [[case]]
@@ -105,25 +105,25 @@ requires = ["aql_metadata"]
 [[case]]
 id = "multiprocess-aql-metadata-off"
 binary = "aql_multiprocess_{target}"
-args = ["--queues", "4", "--iterations", "64", "--aql-metadata", "off"]
+args = ["--iterations", "2", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "multiprocess-aql-metadata-on"
 binary = "aql_multiprocess_{target}"
-args = ["--queues", "4", "--iterations", "64", "--aql-metadata", "on"]
+args = ["--iterations", "2", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "random_dag-aql-metadata-off"
 binary = "aql_random_dag_{target}"
-args = ["--queues", "4", "--iterations", "32", "--seed", "12345", "--aql-metadata", "off"]
+args = ["--iterations", "32", "--seed", "12345", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "random_dag-aql-metadata-on"
 binary = "aql_random_dag_{target}"
-args = ["--queues", "4", "--iterations", "32", "--seed", "12345", "--aql-metadata", "on"]
+args = ["--iterations", "32", "--seed", "12345", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
 
 [[case]]
@@ -165,37 +165,37 @@ requires = ["aql_metadata"]
 [[case]]
 id = "allocation_churn-aql-metadata-off"
 binary = "aql_allocation_churn_{target}"
-args = ["--iterations", "32", "--queues", "16", "--aql-metadata", "off"]
+args = ["--iterations", "2", "--queues", "16", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "allocation_churn-aql-metadata-on"
 binary = "aql_allocation_churn_{target}"
-args = ["--iterations", "32", "--queues", "16", "--aql-metadata", "on"]
+args = ["--iterations", "2", "--queues", "16", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "concurrent_queue_churn-aql-metadata-off"
 binary = "aql_concurrent_queue_churn_{target}"
-args = ["--queues", "3", "--iterations", "16", "--aql-metadata", "off"]
+args = ["--iterations", "2", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "concurrent_queue_churn-aql-metadata-on"
 binary = "aql_concurrent_queue_churn_{target}"
-args = ["--queues", "3", "--iterations", "16", "--aql-metadata", "on"]
+args = ["--iterations", "2", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "process_exit_inflight-aql-metadata-off"
 binary = "aql_process_exit_inflight_{target}"
-args = ["--iterations", "16", "--aql-metadata", "off"]
+args = ["--iterations", "2", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "process_exit_inflight-aql-metadata-on"
 binary = "aql_process_exit_inflight_{target}"
-args = ["--iterations", "16", "--aql-metadata", "on"]
+args = ["--iterations", "2", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
 
 [[case]]
@@ -212,14 +212,22 @@ requires = ["aql_metadata"]
 
 [[case]]
 id = "registered_memory-aql-metadata-off"
+# Native qualification requires automatic NUMA balancing disabled. Both metadata
+# modes faulted in the driver trap-handler region with balancing enabled and
+# passed with it disabled. USERPTR registration/copy/unregistration is covered;
+# concurrent page migration is outside this case's scope. See README setup.
 binary = "aql_registered_memory_{target}"
-args = ["--iterations", "64", "--aql-metadata", "off"]
+args = ["--iterations", "2", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "registered_memory-aql-metadata-on"
+# Native qualification requires automatic NUMA balancing disabled. Both metadata
+# modes faulted in the driver trap-handler region with balancing enabled and
+# passed with it disabled. USERPTR registration/copy/unregistration is covered;
+# concurrent page migration is outside this case's scope. See README setup.
 binary = "aql_registered_memory_{target}"
-args = ["--iterations", "64", "--aql-metadata", "on"]
+args = ["--iterations", "2", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
 
 [[case]]
@@ -249,13 +257,13 @@ requires = ["aql_metadata"]
 [[case]]
 id = "aql_lds_dispatch-metadata-off"
 binary = "aql_lds_dispatch_{target}"
-args = ["--iterations", "16", "--queues", "4", "--seed", "4321", "--aql-metadata", "off"]
+args = ["--iterations", "16", "--seed", "4321", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "aql_lds_dispatch-metadata-on"
 binary = "aql_lds_dispatch_{target}"
-args = ["--iterations", "16", "--queues", "4", "--seed", "4321", "--aql-metadata", "on"]
+args = ["--iterations", "16", "--seed", "4321", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
 
 [[case]]
@@ -273,13 +281,13 @@ requires = ["aql_metadata"]
 [[case]]
 id = "aql_counted_completion-metadata-off"
 binary = "aql_counted_completion_{target}"
-args = ["--iterations", "16", "--queues", "2", "--seed", "12345", "--aql-metadata", "off"]
+args = ["--iterations", "2", "--seed", "12345", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "aql_counted_completion-metadata-on"
 binary = "aql_counted_completion_{target}"
-args = ["--iterations", "16", "--queues", "2", "--seed", "12345", "--aql-metadata", "on"]
+args = ["--iterations", "2", "--seed", "12345", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
 
 [[case]]
@@ -298,13 +306,13 @@ requires = ["aql_metadata"]
 id = "aql_cu_mask_switch-metadata-off"
 binary = "aql_cu_mask_switch_{target}"
 requires = ["wgp_placement", "aql_metadata"]
-args = ["--iterations", "16", "--queues", "4", "--aql-metadata", "off"]
+args = ["--iterations", "2", "--aql-metadata", "off"]
 
 [[case]]
 id = "aql_cu_mask_switch-metadata-on"
 binary = "aql_cu_mask_switch_{target}"
 requires = ["wgp_placement", "aql_metadata"]
-args = ["--iterations", "16", "--queues", "4", "--aql-metadata", "on"]
+args = ["--iterations", "2", "--aql-metadata", "on"]
 
 [[case]]
 id = "aql_scratch_dispatch-metadata-off"
@@ -333,7 +341,7 @@ requires = ["aql_metadata"]
 [[case]]
 id = "aql_metadata_reuse"
 binary = "aql_metadata_reuse_{target}"
-args = ["--iterations", "64"]
+args = ["--iterations", "2"]
 requires = ["aql_metadata"]
 
 [[case]]
@@ -341,23 +349,7 @@ id = "aql_metadata_nonexec_kernargs"
 binary = "aql_metadata_nonexec_kernargs_{target}"
 args = ["--iterations", "1"]
 status = "SKIP"
-reason = "Investigate: plain-AQL preload faulted with non-executable kernargs on an earlier gfx1250 machine; not rerun on the current machine."
-requires = ["aql_metadata"]
-
-[[case]]
-id = "aql-dispatch-oversubscribed-metadata-off"
-binary = "aql_packet_flood_{target}"
-args = ["--queues", "8", "--iterations", "1", "--aql-metadata", "off"]
-status = "SKIP"
-reason = "Investigate sustained AQL oversubscription: intermittent gfx1201 timeouts; short gfx1250 case passed on fw 2380 but remains outside the default run."
-requires = ["aql_metadata"]
-
-[[case]]
-id = "aql-dispatch-oversubscribed-metadata-on"
-binary = "aql_packet_flood_{target}"
-args = ["--queues", "8", "--iterations", "1", "--aql-metadata", "on"]
-status = "SKIP"
-reason = "Investigate sustained AQL oversubscription: intermittent gfx1201 timeouts; short gfx1250 case passed on fw 2380 but remains outside the default run."
+reason = "Investigate: gfx1250 KFD 1.23/fw 2390 reproduces a CP instruction-fetch permission fault at the non-executable kernarg address; preload permission contract unresolved."
 requires = ["aql_metadata"]
 
 [[case]]
@@ -375,28 +367,205 @@ requires = ["aql_metadata"]
 [[case]]
 id = "random_dag-fanin2-aql-metadata-off"
 binary = "aql_random_dag_{target}"
-args = ["--queues", "3", "--iterations", "32", "--seed", "12345", "--aql-metadata", "off"]
+args = ["--fan-in", "2", "--iterations", "32", "--seed", "12345", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "random_dag-fanin2-aql-metadata-on"
 binary = "aql_random_dag_{target}"
-args = ["--queues", "3", "--iterations", "32", "--seed", "12345", "--aql-metadata", "on"]
+args = ["--fan-in", "2", "--iterations", "32", "--seed", "12345", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
 
 [[case]]
-id = "random_dag-fanin5-aql-metadata-off"
+id = "random_dag-native-fanin-aql-metadata-off"
 binary = "aql_random_dag_{target}"
-args = ["--queues", "6", "--iterations", "32", "--seed", "12345", "--aql-metadata", "off"]
+args = ["--iterations", "32", "--seed", "4321", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
 
 [[case]]
-id = "random_dag-fanin5-aql-metadata-on"
+id = "random_dag-native-fanin-aql-metadata-on"
 binary = "aql_random_dag_{target}"
-args = ["--queues", "6", "--iterations", "32", "--seed", "12345", "--aql-metadata", "on"]
+args = ["--iterations", "32", "--seed", "4321", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "sdma_copy_boundaries"
 binary = "aql_sdma_copy_boundaries_{target}"
-args = ["--iterations", "3", "--queues", "2"]
+args = ["--iterations", "3"]
+
+# Higher-iteration variants; matching quick cases appear above.
+# Only entries with slow = true require --run-slow (>2s measured natively).
+# The historical -slow ID suffix does not control selection.
+
+[[case]]
+id = "sdma_flood-slow"
+binary = "aql_sdma_flood_{target}"
+args = ["--timeout", "240", "--iterations", "128"]
+timeout_seconds = 300
+
+[[case]]
+id = "packet_flood-aql-slow-metadata-off"
+binary = "aql_packet_flood_{target}"
+args = ["--timeout", "240", "--iterations", "32", "--seed", "12345", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+# Native gfx1250: 4.021s; slow threshold is >2s.
+slow = true
+timeout_seconds = 300
+
+[[case]]
+id = "packet_flood-aql-slow-metadata-on"
+binary = "aql_packet_flood_{target}"
+args = ["--timeout", "240", "--iterations", "32", "--seed", "12345", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+# Native gfx1250: 4.021s; slow threshold is >2s.
+slow = true
+timeout_seconds = 300
+
+[[case]]
+id = "queue_flood-aql-slow-metadata-off"
+binary = "aql_queue_flood_{target}"
+args = ["--timeout", "240", "--iterations", "64", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+timeout_seconds = 300
+
+[[case]]
+id = "queue_flood-aql-slow-metadata-on"
+binary = "aql_queue_flood_{target}"
+args = ["--timeout", "240", "--iterations", "64", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+timeout_seconds = 300
+
+[[case]]
+id = "queue_churn-aql-slow-metadata-off"
+binary = "aql_queue_churn_{target}"
+args = ["--timeout", "240", "--iterations", "64", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+
+timeout_seconds = 300
+# Native gfx1250: 46.007s; slow threshold is >2s.
+slow = true
+
+[[case]]
+id = "queue_churn-aql-slow-metadata-on"
+binary = "aql_queue_churn_{target}"
+args = ["--timeout", "240", "--iterations", "64", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+
+timeout_seconds = 300
+# Native gfx1250: 46.009s; slow threshold is >2s.
+slow = true
+
+[[case]]
+id = "multiprocess-aql-slow-metadata-off"
+binary = "aql_multiprocess_{target}"
+args = ["--timeout", "240", "--iterations", "64", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+timeout_seconds = 300
+
+[[case]]
+id = "multiprocess-aql-slow-metadata-on"
+binary = "aql_multiprocess_{target}"
+args = ["--timeout", "240", "--iterations", "64", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+timeout_seconds = 300
+
+[[case]]
+id = "allocation_churn-aql-slow-metadata-off"
+binary = "aql_allocation_churn_{target}"
+args = ["--timeout", "240", "--iterations", "32", "--queues", "16", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+timeout_seconds = 300
+
+[[case]]
+id = "allocation_churn-aql-slow-metadata-on"
+binary = "aql_allocation_churn_{target}"
+args = ["--timeout", "240", "--iterations", "32", "--queues", "16", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+timeout_seconds = 300
+
+[[case]]
+id = "concurrent_queue_churn-aql-slow-metadata-off"
+binary = "aql_concurrent_queue_churn_{target}"
+args = ["--timeout", "240", "--iterations", "16", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+# Native gfx1250: 4.925s; slow threshold is >2s.
+slow = true
+timeout_seconds = 300
+
+[[case]]
+id = "concurrent_queue_churn-aql-slow-metadata-on"
+binary = "aql_concurrent_queue_churn_{target}"
+args = ["--timeout", "240", "--iterations", "16", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+# Native gfx1250: 4.925s; slow threshold is >2s.
+slow = true
+timeout_seconds = 300
+
+[[case]]
+id = "process_exit_inflight-aql-slow-metadata-off"
+binary = "aql_process_exit_inflight_{target}"
+args = ["--timeout", "240", "--iterations", "16", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+timeout_seconds = 300
+
+[[case]]
+id = "process_exit_inflight-aql-slow-metadata-on"
+binary = "aql_process_exit_inflight_{target}"
+args = ["--timeout", "240", "--iterations", "16", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+timeout_seconds = 300
+
+[[case]]
+id = "registered_memory-aql-slow-metadata-off"
+# Same NUMA qualification as registered_memory-aql-metadata-off above.
+binary = "aql_registered_memory_{target}"
+args = ["--timeout", "240", "--iterations", "64", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+# Native gfx1250: 3.019s; slow threshold is >2s.
+slow = true
+timeout_seconds = 300
+
+[[case]]
+id = "registered_memory-aql-slow-metadata-on"
+# Same NUMA qualification as registered_memory-aql-metadata-on above.
+binary = "aql_registered_memory_{target}"
+args = ["--timeout", "240", "--iterations", "64", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+# Native gfx1250: 3.169s; slow threshold is >2s.
+slow = true
+timeout_seconds = 300
+
+[[case]]
+id = "aql_counted_completion-slow-metadata-off"
+binary = "aql_counted_completion_{target}"
+args = ["--timeout", "240", "--iterations", "16", "--seed", "12345", "--aql-metadata", "off"]
+requires = ["aql_metadata"]
+timeout_seconds = 300
+
+[[case]]
+id = "aql_counted_completion-slow-metadata-on"
+binary = "aql_counted_completion_{target}"
+args = ["--timeout", "240", "--iterations", "16", "--seed", "12345", "--aql-metadata", "on"]
+requires = ["aql_metadata"]
+timeout_seconds = 300
+
+[[case]]
+id = "aql_cu_mask_switch-slow-metadata-off"
+binary = "aql_cu_mask_switch_{target}"
+requires = ["wgp_placement", "aql_metadata"]
+args = ["--timeout", "240", "--iterations", "16", "--aql-metadata", "off"]
+timeout_seconds = 300
+
+[[case]]
+id = "aql_cu_mask_switch-slow-metadata-on"
+binary = "aql_cu_mask_switch_{target}"
+requires = ["wgp_placement", "aql_metadata"]
+args = ["--timeout", "240", "--iterations", "16", "--aql-metadata", "on"]
+timeout_seconds = 300
+
+[[case]]
+id = "aql_metadata_reuse-slow"
+binary = "aql_metadata_reuse_{target}"
+args = ["--timeout", "240", "--iterations", "64"]
+requires = ["aql_metadata"]
+timeout_seconds = 300

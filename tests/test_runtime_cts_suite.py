@@ -40,6 +40,8 @@ def test_multiple_invocations_and_defaults(tmp_path):
         "timeout_seconds=nan",
         "timeout_seconds=true",
         "typo=1",
+        'slow="yes"',
+        "slow=1",
         'status="XFAIL"\nreason="bug"',
         'status="XFAIL"\nreason="bug"\nexpected_exit_code=124\nexpected_output="watchdog"',
         "expected_exit_code=1",
@@ -79,7 +81,7 @@ def test_custom_subset_still_checks_default_coverage(tmp_path, monkeypatch):
     root = tmp_path / "corpus" / "pm4"
     root.mkdir(parents=True)
     source = manifest(tmp_path)
-    (root / "cases.toml").write_text(source.read_text())
+    (root / "cases_gfx1250.toml").write_text(source.read_text())
     monkeypatch.setattr(suite, "ROOT", root.parent)
     binary = tmp_path / "sample_gfx1250"
     binary.write_text("#!/bin/sh\nexit 0\n")
@@ -290,12 +292,58 @@ def test_unavailable_wrapper_rejected_before_discovery(tmp_path):
         )
 
 
+@pytest.mark.parametrize(
+    "options, summary, fast_runs, slow_runs",
+    [
+        ([], "1 passed, 2 skipped", True, False),
+        (["--run-slow"], "2 passed, 1 skipped", True, True),
+        (["--run-slow", "-m", "slow"], "1 passed, 1 skipped, 1 deselected", False, True),
+    ],
+)
+def test_slow_cases_require_opt_in(tmp_path, options, summary, fast_runs, slow_runs):
+    import shutil
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parents[1]
+    binary = tmp_path / "pm4_packet_flood_gfx1250"
+    binary.write_text("#!/bin/sh\necho PASS\n")
+    binary.chmod(0o755)
+    (tmp_path / "pm4-gfx1250-targets.txt").write_text(binary.name + "\n")
+    (tmp_path / "runtime-gfx1250-features.txt").write_text("pm4\n")
+    config = tmp_path / "custom.toml"
+    config.write_text(
+        f'[[case]]\nid="fast"\nbinary="{binary.name}"\n'
+        f'[[case]]\nid="extended"\nbinary="{binary.name}"\nslow=true\n'
+        f'[[case]]\nid="unqualified"\nbinary="{binary.name}"\nslow=true\n'
+        'status="SKIP"\nreason="unresolved reproducer"\n'
+    )
+    artifacts = repo / ".pytest-artifacts" / ("slow-unit-" + tmp_path.name)
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "tests/test_corpus.py",
+             "--suite", "pm4", "--target", "gfx1250",
+             "--binary-dir", str(tmp_path), "--cases-config", str(config),
+             "--artifact-directory", str(artifacts), "-q", "-rs", *options],
+            cwd=repo, capture_output=True, text=True, timeout=20,
+        )
+        output = result.stdout + result.stderr
+        assert result.returncode == 0, output
+        assert summary in output
+        assert (artifacts / "pm4/gfx1250/fast.json").exists() == fast_runs
+        assert (artifacts / "pm4/gfx1250/extended.json").exists() == slow_runs
+        assert not (artifacts / "pm4/gfx1250/unqualified.json").exists()
+        assert "unresolved reproducer" in output
+    finally:
+        shutil.rmtree(artifacts, ignore_errors=True)
+
+
 def test_custom_subset_requires_helper_binaries(tmp_path, monkeypatch):
     root = tmp_path / "corpus" / "pm4"
     root.mkdir(parents=True)
     source = manifest(tmp_path)
     defaults = source.read_text() + '\n[[case]]\nid="helper"\nbinary="helper_gfx1250"\n'
-    (root / "cases.toml").write_text(defaults)
+    (root / "cases_gfx1250.toml").write_text(defaults)
     monkeypatch.setattr(suite, "ROOT", root.parent)
     binary = tmp_path / "sample_gfx1250"
     binary.write_text("#!/bin/sh\nexit 0\n")
@@ -312,10 +360,10 @@ def test_custom_subset_requires_helper_binaries(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("suite_name, feature", [("aql", "sdma_signal64"), ("pm4", "pm4_wait_offload")])
 @pytest.mark.parametrize("target", ["gfx900", "gfx942", "gfx1100", "gfx1201", "gfx1250"])
-def test_shared_manifest_and_feature_gates(tmp_path, monkeypatch, target, suite_name, feature):
+def test_target_manifest_and_feature_gates(tmp_path, monkeypatch, target, suite_name, feature):
     root = tmp_path / "corpus"
     (root / suite_name).mkdir(parents=True)
-    (root / suite_name / "cases.toml").write_text('''[[case]]
+    (root / suite_name / f"cases_{target}.toml").write_text('''[[case]]
 id="copy"
 binary="aql_copy_{target}"
 
@@ -358,12 +406,13 @@ requires=["FEATURE"]
 
 @pytest.mark.parametrize("target", ["gfx1201", "gfx1250"])
 def test_protocol_suite_boundary(target):
-    aql = suite.load_manifest(suite.ROOT / "aql/cases.toml", target)
-    pm4 = suite.load_manifest(suite.ROOT / "pm4/cases.toml", target)
-    aql_ids = {row["id"] for row in aql}
-    pm4_ids = {row["id"] for row in pm4}
+    aql = suite.load_manifest(suite.ROOT / "aql" / f"cases_{target}.toml", target)
+    pm4 = suite.load_manifest(suite.ROOT / "pm4" / f"cases_{target}.toml", target)
+    aql_ids = {row["id"].removesuffix("-metadata-off").removesuffix("-metadata-on") for row in aql}
+    pm4_ids = {row["id"].removesuffix("-metadata-off").removesuffix("-metadata-on") for row in pm4}
     assert not aql_ids & pm4_ids
-    assert {"sdma_flood", "sdma_signal64", "sdma_event_interrupt", "engine_pipeline-aql"} <= aql_ids
+    assert {"sdma_flood", "sdma_event_interrupt", "engine_pipeline-aql"} <= aql_ids
+    assert ("sdma_signal64" in aql_ids) == (target == "gfx1250")
     assert {
         "aql_indirect_buffers", "aql_gpu_queue_producer", "aql_publish_holes",
         "aql_barrier_and", "aql_barrier_or", "sdma_queue_lifecycle", "vram_remap-aql",
@@ -382,30 +431,19 @@ def test_reject_invalid_feature_gates(tmp_path, requirement):
 
 
 @pytest.mark.parametrize("suite_name", ["aql", "pm4"])
-def test_metadata_manifest_entries_preserve_cases(suite_name):
-    common = suite.load_manifest(suite.ROOT / suite_name / "cases.toml", "gfx1250")
+def test_metadata_manifest_modes_match(suite_name):
     rows = suite.load_manifest(suite.ROOT / suite_name / "cases_gfx1250.toml", "gfx1250")
-    by_id = {row["id"]: row for row in common}
-    assert all("--aql-metadata" not in row["args"] for row in common)
-    covered, modes = set(), {}
+    by_id = {row["id"]: row for row in rows}
     for row in rows:
         if "--aql-metadata" not in row["args"]:
-            assert row == by_id[row["id"]]
-            covered.add(row["id"])
             continue
         mode = row["args"][-1]
         assert mode in ("off", "on")
-        base_id = row["id"].removesuffix(f"-metadata-{mode}")
-        base = by_id[base_id]
-        covered.add(base_id)
-        modes.setdefault(base_id, set()).add(mode)
-        assert row["binary"] == base["binary"]
-        assert row["args"] == [*base["args"], "--aql-metadata", mode]
-        assert set(row["requires"]) == {*base.get("requires", []), "aql_metadata"}
-        for key in ("status", "reason", "timeout_seconds", "expected_exit_code", "expected_output"):
-            assert row.get(key) == base.get(key)
-    assert covered == set(by_id)
-    assert modes and all(values == {"off", "on"} for values in modes.values())
+        other_mode = "on" if mode == "off" else "off"
+        other = by_id[row["id"].removesuffix(f"-metadata-{mode}") + f"-metadata-{other_mode}"]
+        assert row["binary"] == other["binary"]
+        assert row["args"][:-1] == other["args"][:-1]
+        assert row.get("slow", False) == other.get("slow", False)
 
 
 @pytest.mark.parametrize("suite_name", ["aql", "pm4"])
@@ -415,7 +453,7 @@ def test_target_manifest_selection(tmp_path, monkeypatch, suite_name, target):
     root.mkdir(parents=True)
     common = '[[case]]\nid="plain"\nbinary="sample_{target}"\n'
     specific = common.replace('id="plain"', 'id="metadata"') + 'args=["--aql-metadata","on"]\n'
-    (root / "cases.toml").write_text(common)
+    (root / "cases_gfx1201.toml").write_text(common)
     (root / "cases_gfx1250.toml").write_text(specific)
     monkeypatch.setattr(suite, "ROOT", root.parent)
     binary = tmp_path / f"sample_{target}"
@@ -426,7 +464,7 @@ def test_target_manifest_selection(tmp_path, monkeypatch, suite_name, target):
     (tmp_path / f"runtime-{target}-features.txt").write_text("aql_metadata\n")
     options = dict(suite_name=suite_name, binary_dir=str(tmp_path), cases_config=None)
     case, = suite.discover(TargetSpec(target), **options)
-    filename = "cases_gfx1250.toml" if target == "gfx1250" else "cases.toml"
+    filename = f"cases_{target}.toml"
     assert case.path == root / filename
     assert case.run["args"] == (["--aql-metadata", "on"] if target == "gfx1250" else [])
     # Explicit custom selection wins, but selected default coverage is still checked.
@@ -439,3 +477,84 @@ def test_target_manifest_selection(tmp_path, monkeypatch, suite_name, target):
     (root / filename).write_text(common.replace("sample_{target}", "wrong_{target}"))
     with pytest.raises(ValueError, match="missing default entries"):
         suite.discover(TargetSpec(target), **options)
+
+
+@pytest.mark.parametrize("target", ["gfx942", "gfx950", "gfx1101", "gfx1201", "gfx1250"])
+@pytest.mark.parametrize("suite_name", ["aql", "pm4"])
+def test_every_slow_case_has_quick_counterpart(target, suite_name):
+    rows = suite.load_manifest(suite.ROOT / suite_name / f"cases_{target}.toml", target)
+    by_id = {row["id"]: row for row in rows}
+    for row in rows:
+        if not row.get("slow", False):
+            continue
+        quick = by_id[row["id"].replace("-slow", "")]
+        assert not quick.get("slow", False)
+        assert quick["status"] == row["status"] == ""
+        assert quick["binary"] == row["binary"]
+        assert quick.get("requires", []) == row.get("requires", [])
+        args = dict(zip(row["args"][::2], row["args"][1::2]))
+        quick_args = dict(zip(quick["args"][::2], quick["args"][1::2]))
+        assert int(quick_args.pop("--iterations")) < int(args.pop("--iterations"))
+        args.pop("--timeout", None)
+        quick_args.pop("--timeout", None)
+        assert args == quick_args
+
+
+def test_missing_target_manifest_has_no_fallback(tmp_path, monkeypatch):
+    root = tmp_path / "corpus" / "pm4"
+    root.mkdir(parents=True)
+    (root / "cases.toml").write_text('[[case]]\nid="sample"\nbinary="sample_gfx1100"\n')
+    monkeypatch.setattr(suite, "ROOT", root.parent)
+    (tmp_path / "pm4-gfx1100-targets.txt").write_text("sample_gfx1100\n")
+    with pytest.raises(ValueError, match="No verified runtime CTS manifest for gfx1100"):
+        suite.discover(TargetSpec("gfx1100"), suite_name="pm4", binary_dir=str(tmp_path), cases_config=None)
+
+
+@pytest.mark.parametrize("target", ["gfx942", "gfx950", "gfx1101", "gfx1201", "gfx1250"])
+def test_target_manifests_match_cmake_build_inventory(tmp_path, target):
+    import re
+    import shutil
+    import subprocess
+
+    cmake = shutil.which("cmake")
+    if cmake is None:
+        pytest.skip("CMake required to evaluate the actual target build inventory")
+    script = tmp_path / "inventory.cmake"
+    script.write_text('''
+cmake_minimum_required(VERSION 3.20)
+include("${CTS_ROOT}/cmake/RuntimeCTS.cmake")
+function(add_executable)
+endfunction()
+function(set_target_properties target properties output_name binary)
+  file(APPEND "${OUTPUT}/${suite}-targets.txt" "${binary}\\n")
+endfunction()
+function(target_include_directories)
+endfunction()
+function(target_link_libraries)
+endfunction()
+function(target_compile_definitions)
+endfunction()
+function(add_dependencies)
+endfunction()
+function(cts_inventory)
+endfunction()
+include("${CTS_ROOT}/cmake/Platforms.cmake")
+cts_platform(${arch})
+file(WRITE "${OUTPUT}/features.txt" "${platform_features}")
+include("${CTS_ROOT}/aql/CMakeLists.txt")
+include("${CTS_ROOT}/pm4/CMakeLists.txt")
+''')
+    subprocess.run([cmake, f"-DCTS_ROOT={suite.ROOT}", f"-DOUTPUT={tmp_path}",
+                    f"-Darch={target}", "-P", str(script)], check=True, capture_output=True, text=True)
+    features = set((tmp_path / "features.txt").read_text().split(";"))
+    for suite_name in ("aql", "pm4"):
+        rows = suite.load_manifest(suite.ROOT / suite_name / f"cases_{target}.toml", target)
+        binaries = set((tmp_path / f"{suite_name}-targets.txt").read_text().splitlines())
+        assert {row["binary"] for row in rows} == binaries
+        for row in rows:
+            assert set(row.get("requires", [])) <= features
+            if row["status"] == "SKIP":
+                assert set(re.findall(r"gfx[0-9a-f]+", row["reason"])) == {target}
+        pauses = [row for row in rows if row["id"].startswith("aql_running_queue_pause")]
+        for row in pauses:
+            assert (row["status"] == "SKIP") == (target in ("gfx950", "gfx1250"))

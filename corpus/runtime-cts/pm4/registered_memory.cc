@@ -9,7 +9,7 @@
 //   --mode pm4|aql: observer queue; default pm4. SDMA transport is retained.
 //   The observer copies data through the tested mapping before host
 //   verification.
-//   --iterations N: rounds; default 64; range 1..100000.
+//   --iterations N: rounds; default 2; range 1..100000.
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
 //   --queues and --seed: accepted by common parser but unused.
 // Progress waits have a separate 10-second deadline.
@@ -25,7 +25,7 @@ using namespace cts;
 int main(int argc, char** argv) {
   Start(argc, argv, "registered_memory", true);
   const bool aql = AqlMode(argc, argv);
-  const uint32_t rounds = Option(argc, argv, "--iterations", 64, 100000);
+  const uint32_t rounds = Option(argc, argv, "--iterations", 2, 100000);
   Device device;
   constexpr uint32_t kBytes = 32768;
   Buffer local(device, kBytes, false, true), fence(device, 4096);

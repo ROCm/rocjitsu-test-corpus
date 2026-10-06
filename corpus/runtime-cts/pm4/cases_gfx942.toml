@@ -1,4 +1,4 @@
-# gfx1250 invocations, with explicit plain and metadata AQL coverage.
+# Shared PM4 scenarios; capabilities are supplied by the selected support group.
 [defaults]
 timeout_seconds = 60
 
@@ -87,28 +87,16 @@ args = ["--iterations", "64"]
 requires = ["pm4", "pm4_release_mem"]
 
 [[case]]
-id = "aql_barrier_and-metadata-off"
+id = "aql_barrier_and"
 binary = "pm4_aql_barrier_and_{target}"
-args = ["--iterations", "32", "--aql-metadata", "off"]
-requires = ["pm4", "aql_metadata"]
+args = ["--iterations", "32"]
+requires = ["pm4"]
 
 [[case]]
-id = "aql_barrier_and-metadata-on"
-binary = "pm4_aql_barrier_and_{target}"
-args = ["--iterations", "32", "--aql-metadata", "on"]
-requires = ["pm4", "aql_metadata"]
-
-[[case]]
-id = "aql_barrier_or-metadata-off"
+id = "aql_barrier_or"
 binary = "pm4_aql_barrier_or_{target}"
-args = ["--iterations", "32", "--aql-metadata", "off"]
-requires = ["pm4", "aql_metadata"]
-
-[[case]]
-id = "aql_barrier_or-metadata-on"
-binary = "pm4_aql_barrier_or_{target}"
-args = ["--iterations", "32", "--aql-metadata", "on"]
-requires = ["pm4", "aql_metadata"]
+args = ["--iterations", "32"]
+requires = ["pm4"]
 
 [[case]]
 id = "packet_flood-pm4"
@@ -225,76 +213,35 @@ args = ["--mode", "pm4", "--iterations", "64"]
 requires = ["pm4"]
 
 [[case]]
-id = "vram_remap-aql-metadata-off"
+id = "vram_remap-aql"
 binary = "pm4_vram_remap_{target}"
-args = ["--mode", "aql", "--iterations", "64", "--aql-metadata", "off"]
-requires = ["pm4", "aql_metadata"]
+args = ["--mode", "aql", "--iterations", "64"]
+requires = ["pm4"]
 
 [[case]]
-id = "vram_remap-aql-metadata-on"
-binary = "pm4_vram_remap_{target}"
-args = ["--mode", "aql", "--iterations", "64", "--aql-metadata", "on"]
-requires = ["pm4", "aql_metadata"]
-
-[[case]]
-id = "aql_running_queue_pause-metadata-off"
+id = "aql_running_queue_pause"
 binary = "pm4_aql_running_queue_pause_{target}"
-args = ["--iterations", "32", "--aql-metadata", "off"]
-status = "SKIP"
-reason = "Investigate: gfx1250 metadata-off live-wave pause faults at the kernel trap-handler address with KFD 1.23 / firmware 2390. ROCr-initialized controls pass; direct KFD setup remains unqualified."
-requires = ["pm4", "aql_metadata"]
+# Native gfx942: 32 iterations / 128 pause operations passed (KFD 1.23 / firmware 194).
+args = ["--iterations", "32"]
+requires = ["pm4"]
 
 [[case]]
-id = "aql_running_queue_pause-metadata-on"
-binary = "pm4_aql_running_queue_pause_{target}"
-args = ["--iterations", "32", "--aql-metadata", "on"]
-status = "SKIP"
-reason = "Investigate: gfx1250 metadata-on live-wave pause remains unqualified for direct KFD setup. Runtime-initialized controls pass, but a clean direct metadata-on qualification on KFD 1.23 / firmware 2390 has not been recorded. The related metadata-off case faults."
-requires = ["pm4", "aql_metadata"]
-
-[[case]]
-id = "aql_publish_holes-metadata-off"
+id = "aql_publish_holes"
 binary = "pm4_aql_publish_holes_{target}"
-args = ["--iterations", "64", "--queues", "7", "--aql-metadata", "off"]
-requires = ["pm4", "aql_metadata"]
+args = ["--iterations", "64", "--queues", "7"]
+requires = ["pm4"]
 
 [[case]]
-id = "aql_publish_holes-metadata-on"
-binary = "pm4_aql_publish_holes_{target}"
-args = ["--iterations", "64", "--queues", "7", "--aql-metadata", "on"]
-requires = ["pm4", "aql_metadata"]
-
-[[case]]
-id = "aql_gpu_queue_producer-metadata-off"
+id = "aql_gpu_queue_producer"
 binary = "pm4_aql_gpu_queue_producer_{target}"
-args = ["--iterations", "64", "--aql-metadata", "off"]
-requires = ["pm4", "pm4_release_mem", "aql_metadata"]
+args = ["--iterations", "64"]
+requires = ["pm4", "pm4_release_mem"]
 
 [[case]]
-id = "aql_gpu_queue_producer-metadata-on"
-binary = "pm4_aql_gpu_queue_producer_{target}"
-args = ["--iterations", "64", "--aql-metadata", "on"]
-requires = ["pm4", "pm4_release_mem", "aql_metadata"]
-
-[[case]]
-id = "pm4_dependency_chain_no_offload"
-binary = "pm4_dependency_chain_no_offload_{target}"
-args = ["--iterations", "4"]
-status = "SKIP"
-reason = "Investigate: gfx1250 fw 2390 also stalls with ACE wait offload disabled at the native queue budget; forward-progress contract unresolved. Earlier fw 2380 recovery failed."
-requires = ["pm4", "pm4_wait_offload"]
-
-[[case]]
-id = "aql_publish_holes-all-slots-metadata-off"
+id = "aql_publish_holes-all-slots"
 binary = "pm4_aql_publish_holes_{target}"
-args = ["--iterations", "64", "--queues", "6", "--aql-metadata", "off"]
-requires = ["pm4", "aql_metadata"]
-
-[[case]]
-id = "aql_publish_holes-all-slots-metadata-on"
-binary = "pm4_aql_publish_holes_{target}"
-args = ["--iterations", "64", "--queues", "6", "--aql-metadata", "on"]
-requires = ["pm4", "aql_metadata"]
+args = ["--iterations", "64", "--queues", "6"]
+requires = ["pm4"]
 
 [[case]]
 id = "engine_pipeline_window-pm4"
@@ -342,7 +289,7 @@ args = ["--timeout", "240", "--mode", "pm4", "--iterations", "32"]
 requires = ["pm4"]
 
 timeout_seconds = 300
-# Native gfx1250: 23.161s; slow threshold is >2s.
+# Native gfx942: 20.912s; slow threshold is >2s.
 slow = true
 
 [[case]]
@@ -364,7 +311,7 @@ id = "concurrent_queue_churn-pm4-slow"
 binary = "pm4_concurrent_queue_churn_{target}"
 args = ["--timeout", "240", "--mode", "pm4", "--iterations", "16"]
 requires = ["pm4"]
-# Native gfx1250: 4.974s; slow threshold is >2s.
+# Native gfx942: 5.880s; slow threshold is >2s.
 slow = true
 timeout_seconds = 300
 

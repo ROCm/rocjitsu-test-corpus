@@ -16,6 +16,11 @@ def metadata_programs(tmp_path_factory, request):
     suite, version = request.param
     target = "gfx1250" if version == 120500 else "gfx1201"
     directory = tmp_path_factory.mktemp(f"metadata-{suite}-{target}")
+    topology = directory / "topology.cc"
+    topology.write_text(
+        '#include "support/kfd.h"\n'
+        'namespace cts { uint32_t QueueCapacity(bool) { return 4; } }\n'
+    )
     worker = directory / "worker.cc"
     worker.write_text('''#include <cstdio>
 #include "support/kfd.h"
@@ -33,7 +38,7 @@ int main(int argc, char** argv) {
         subprocess.run([
             compiler, "-std=c++17", "-pthread", f"-DCTS_GFX_VERSION={version}",
             f'-DCTS_TARGET_NAME="{target}"', "-I", str(ROOT), "-I", str(ROOT / "common"),
-            str(source), str(ROOT / "common/test.cc"), "-o", str(binary),
+            str(source), str(ROOT / "common/test.cc"), str(topology), "-o", str(binary),
         ], check=True, capture_output=True, text=True)
     return parent, version, suite
 
@@ -41,7 +46,7 @@ int main(int argc, char** argv) {
 @pytest.mark.parametrize("mode", [None, "on", "off", "invalid", "missing"])
 def test_metadata_cli_and_worker_propagation(metadata_programs, mode):
     parent, version, suite = metadata_programs
-    args = [str(parent), "--queues", "1", "--iterations", "1"]
+    args = [str(parent), "--queues", "2", "--iterations", "1"]
     if suite == "pm4":
         args += ["--mode", "pm4"]
     if mode is not None:

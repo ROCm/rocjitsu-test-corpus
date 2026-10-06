@@ -5,13 +5,15 @@
 // rendezvous. Submission to all queues does not guarantee simultaneous pending
 // work.
 //
+// Queue count defaults to the native CP capacity minus companion queues.
+// Explicit --queues above that budget fails before queue creation.
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
 //   --mode pm4: default pm4; use the AQL suite for AQL coverage.
 //   --iterations N: rounds.
-//     Default 64; range 1..100000.
+//     Default 9; range 1..100000.
 //   --queues N: PM4 queues.
-//     Default 16; range 1..128.
+//     Default/maximum: native capacity minus companion queues.
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --seed: accepted by the common parser but unused here.
@@ -31,8 +33,8 @@ using namespace cts;
 
 static int RunPm4(int argc, char** argv) {
   Start(argc, argv, "queue_flood", true);
-  const uint32_t count = Option(argc, argv, "--queues", 16, 128);
-  const uint32_t iterations = Option(argc, argv, "--iterations", 64, 100000);
+  const uint32_t count = QueueCount(argc, argv, 0);
+  const uint32_t iterations = Option(argc, argv, "--iterations", 9, 100000);
   Device device;
   Buffer result(device, count * 4096);
   std::vector<std::unique_ptr<Queue>> queues;

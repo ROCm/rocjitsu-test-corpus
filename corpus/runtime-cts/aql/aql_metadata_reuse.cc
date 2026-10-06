@@ -8,14 +8,14 @@
 // compiler-generated kernels. Kernarg backing is executable for plain-queue
 // preload fetches. Reproducer: aql_metadata_nonexec_kernargs_<target> uses the
 // 30-dword variant without executable kernarg backing. Plain-AQL preload
-// previously caused a CP fetch fault on a different gfx1250 machine; not rerun
-// on the current machine. This preserves the permission difference for
+// reproduced a CP fetch permission fault on gfx1250 KFD 1.23/fw 2390.
+// This preserves the permission difference for
 // diagnosis, not a confirmed bug. A host reboot may be needed after a fault.
 // All result checks remain enabled.
 //
 // Parameters (decimal integers; ranges inclusive):
 //   --aql-metadata off|on: gfx1250 only; both queue types are always tested.
-//   --iterations N: batches of 32 dispatch/barrier pairs per queue; default 64;
+//   --iterations N: batches of 32 dispatch/barrier pairs per queue; default 2;
 //     range 1..100000.
 //   --timeout N: watchdog seconds; default 45; range 1..3600.
 //   --queues and --seed: accepted but unused. Progress waits have a 10s
@@ -59,7 +59,7 @@ struct MetadataBarrier {
 static_assert(sizeof(MetadataBarrier) == 64);
 int main(int argc, char** argv) {
   Start(argc, argv, "aql_metadata_reuse");
-  const uint32_t rounds = Option(argc, argv, "--iterations", 64, 100000);
+  const uint32_t rounds = Option(argc, argv, "--iterations", 2, 100000);
   constexpr uint32_t batch = 32, slots = batch * 2;
   Device device;
 #ifdef REPRO_NONEXEC_KERNARGS

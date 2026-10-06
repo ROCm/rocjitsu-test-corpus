@@ -4,13 +4,15 @@
 // result. Check for stale data, wrong-branch reads or prematurely satisfied
 // dependencies.
 //
+// Queue count defaults to the native CP capacity minus companion queues.
+// Explicit --queues above that budget fails before queue creation.
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
 //   --mode pm4: default pm4; use the AQL suite for AQL coverage.
 //   --iterations N: rounds.
 //     Default 32; range 1..100000.
 //   --queues N: branches; also creates a root and a join queue.
-//     Default 8; range 1..32.
+//     Default/maximum: native capacity minus companion queues.
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --seed: accepted by the common parser but unused here.
@@ -30,7 +32,7 @@ using namespace cts;
 
 static int RunPm4(int argc, char** argv) {
   Start(argc, argv, "dependency_diamond", true);
-  const uint32_t width = Option(argc, argv, "--queues", 8, 32);
+  const uint32_t width = QueueCount(argc, argv, 2);
   const uint32_t iterations = Option(argc, argv, "--iterations", 32, 100000);
   Device device;
   Buffer result(device, (width + 2) * 4096);

@@ -5,12 +5,14 @@
 // copies its producer payload into an immutable edge witness. A held producer
 // first proves that a reached consumer cannot complete before release.
 //
+// Queue count defaults to the native CP capacity minus companion queues.
+// Explicit --queues above that budget fails before queue creation.
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
 //   --iterations N: graph submission steps.
-//     Default 1024; range 1..1000000.
+//     Default 64; range 1..1000000.
 //   --queues N: PM4 queues.
-//     Default 8; range 1..64.
+//     Default/maximum: native capacity minus companion queues.
 //   --seed N: seed for the dependency graph.
 //     Default 1337; range 1..4294967295.
 //   --timeout N: process watchdog in seconds.
@@ -30,8 +32,8 @@ using namespace cts;
 
 int main(int argc, char** argv) {
   Start(argc, argv, "pm4_timeline_fuzz");
-  const uint32_t count = Option(argc, argv, "--queues", 8, 64);
-  const uint32_t steps = Option(argc, argv, "--iterations", 1024, 1000000);
+  const uint32_t count = QueueCount(argc, argv, 2);
+  const uint32_t steps = Option(argc, argv, "--iterations", 64, 1000000);
   uint32_t random = Option(argc, argv, "--seed", 1337, 0xffffffffu);
   std::printf("seed=%u queues=%u steps=%u\n", random, count, steps);
   auto next = [&] {

@@ -3,7 +3,9 @@
 // still running. Check that shader progress stops while an independent queue
 // advances, then resumes with intact arithmetic state. Live-queue update failed
 // on gfx1201 and gfx1250. This is an investigation case, not a qualified CWSR
-// test or part of fast CI.
+// test or part of fast CI. Later gfx942/gfx1101/gfx1201 reruns passed;
+// gfx1250 KFD 1.23/fw 2390 still faults. ROCr-initialized controls pass, so
+// direct process setup remains under investigation, not a proven driver bug.
 //
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; default off for AQL queues.

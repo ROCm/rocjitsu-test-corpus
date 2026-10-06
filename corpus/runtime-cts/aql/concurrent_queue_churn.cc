@@ -3,13 +3,14 @@
 // persistent queue progresses. Check per-thread completion, exact operation
 // counts, guards and queue retirement.
 //
+// Queue count defaults to the native CP capacity minus companion queues.
+// Explicit --queues above that budget fails before queue creation.
 // Parameters (decimal integers; ranges are inclusive):
 //   Queue protocol: AQL only.
-//   Defaults to 3 transient queues; allows 1..64.
 //   --iterations N: rounds.
-//     Default 16; range 1..100000.
+//     Default 2; range 1..100000.
 //   --queues N: host threads, each owning a transient queue.
-//     Default 3; range 1..64.
+//     Default/maximum: native capacity minus companion queues.
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --seed: accepted by the common parser but unused here.
@@ -31,8 +32,8 @@ using namespace cts;
 
 int main(int argc, char** argv) {
   Start(argc, argv, "concurrent_queue_churn");
-  const uint32_t count = Option(argc, argv, "--queues", 3, 64);
-  const uint32_t rounds = Option(argc, argv, "--iterations", 16, 100000);
+  const uint32_t count = QueueCount(argc, argv, 1);
+  const uint32_t rounds = Option(argc, argv, "--iterations", 2, 100000);
   Device device;
   Buffer result(device, (count + 1) * 64), gate(device, 4096);
   AqlPayload work(device, count + 1);

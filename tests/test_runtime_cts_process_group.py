@@ -18,10 +18,17 @@ def supervisor(tmp_path_factory):
         pytest.skip("C++ compiler required")
     directory = tmp_path_factory.mktemp("process-group")
     parent = directory / "multiprocess"
+    # Exercise an uneven machine budget without opening KFD in the supervisor.
+    topology = directory / "topology.cc"
+    topology.write_text(
+        '#include "support/kfd.h"\n'
+        'namespace cts { uint32_t QueueCapacity(bool) { return 5; } }\n'
+    )
     subprocess.run([
         compiler, "-std=c++17", "-pthread", "-DCTS_GFX_VERSION=120001",
         '-DCTS_TARGET_NAME="gfx1201"', "-I", str(ROOT), "-I", str(ROOT / "common"),
         str(ROOT / "aql/multiprocess.cc"), str(ROOT / "common/test.cc"),
+        str(topology),
         "-o", str(parent),
     ], check=True, capture_output=True, text=True)
     worker = directory / "aql_queue_flood_gfx1201"
@@ -29,6 +36,7 @@ def supervisor(tmp_path_factory):
 import os
 from pathlib import Path
 import socket
+import sys
 import time
 
 directory = Path(os.environ["WORKER_TEST_DIRECTORY"])
@@ -43,6 +51,7 @@ log = os.open(directory / "events", os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o60
 def event(phase):
     os.write(log, f"{index} {os.getpid()} {phase}\n".encode())
 event("CREATED")
+event("QUEUES=" + sys.argv[sys.argv.index("--queues") + 1])
 channel = socket.socket(fileno=int(os.environ["CTS_WORKER_CHANNEL"]))
 if scenario == "skip" or (scenario == "mixed-skip" and index == 1):
     raise SystemExit(77)
@@ -96,5 +105,18 @@ def test_rendezvous_and_cleanup(supervisor, tmp_path, scenario, code):
         assert max(i for i, phase in enumerate(phases) if phase == "READY") < phases.index("STARTED")
         assert max(i for i, phase in enumerate(phases) if phase == "DONE") < phases.index("RELEASED")
         assert phases.count("RELEASED") == 2
+        assert sorted(phase for phase in phases if phase.startswith("QUEUES=")) == [
+            "QUEUES=2", "QUEUES=3",
+        ]
     elif code == 1:
         assert "multiprocess worker or rendezvous failed" in result.stderr
+
+
+def test_worker_count_above_capacity_fails_before_fork(supervisor, tmp_path):
+    result = subprocess.run([
+        str(supervisor), "--queues", "6",
+    ], env={**os.environ, "WORKER_TEST_DIRECTORY": str(tmp_path),
+            "WORKER_TEST_SCENARIO": "normal"}, capture_output=True, text=True, timeout=6)
+    assert result.returncode == 1
+    assert "FAIL" in result.stderr
+    assert not (tmp_path / "events").exists()

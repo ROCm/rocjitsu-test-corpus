@@ -8,10 +8,12 @@
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
 //   --iterations N: queue_flood rounds in each worker process.
-//     Default 64; range 1..100000.
+//     Default 2; range 1..100000.
 //   --mode pm4: default pm4; use the AQL suite for AQL coverage.
-//   --queues N: worker processes; each uses four queues.
-//     Default 4; range 1..32.
+//   --queues N: worker processes; default min(4, native CP capacity).
+//     Range 2..native CP capacity. Workers split the full machine queue
+//     capacity, distributing any remainder; their combined count never exceeds
+//     it.
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --seed: accepted by the common parser but unused here.

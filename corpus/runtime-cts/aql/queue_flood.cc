@@ -5,13 +5,15 @@
 // rendezvous. Submission to all queues does not guarantee simultaneous pending
 // work.
 //
+// Queue count defaults to the native CP capacity minus companion queues.
+// Explicit --queues above that budget fails before queue creation.
 // Parameters (decimal integers; ranges are inclusive):
 //   Queue protocol: AQL only.
 //   AQL uses ordinary dispatches and completion-signal barriers.
 //   --iterations N: rounds.
-//     Default 64; range 1..100000.
+//     Default 9; range 1..100000.
 //   --queues N: AQL queues.
-//     Default 16; range 1..128.
+//     Default/maximum: native capacity minus companion queues.
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --seed: accepted by the common parser but unused here.
@@ -31,8 +33,8 @@ using namespace cts;
 
 int main(int argc, char** argv) {
   Start(argc, argv, "queue_flood");
-  const uint32_t count = Option(argc, argv, "--queues", 16, 128);
-  const uint32_t rounds = Option(argc, argv, "--iterations", 64, 100000);
+  const uint32_t count = QueueCount(argc, argv, 0);
+  const uint32_t rounds = Option(argc, argv, "--iterations", 9, 100000);
   Device device;
   Buffer result(device, count * 4096);
   AqlPayload work(device, count);

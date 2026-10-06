@@ -68,6 +68,7 @@ void Start(int argc, char** argv, const char* test, bool modes) {
   for (int i = 1; i < argc; i += 2) {
     const bool known = !std::strcmp(argv[i], "--iterations") ||
                        !std::strcmp(argv[i], "--queues") ||
+                       !std::strcmp(argv[i], "--fan-in") ||
                        !std::strcmp(argv[i], "--timeout") ||
                        !std::strcmp(argv[i], "--seed") ||
                        (modes && !std::strcmp(argv[i], "--mode")) ||
@@ -75,7 +76,7 @@ void Start(int argc, char** argv, const char* test, bool modes) {
     if (!known || i + 1 == argc)
       Fail(
           "usage: %s [--iterations N] [--queues N] [--timeout seconds] [--seed "
-          "N]%s"
+          "N] [--fan-in N]%s"
           " [--aql-metadata off|on]",
           argv[0], modes ? " [--mode pm4|aql]" : "");
     if (!std::strcmp(argv[i], "--aql-metadata")) {

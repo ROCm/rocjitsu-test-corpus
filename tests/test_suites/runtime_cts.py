@@ -54,10 +54,13 @@ def load_manifest(path: Path, target: str | None = None) -> list[dict]:
             "expected_exit_code",
             "expected_output",
             "requires",
+            "slow",
         }
         if not isinstance(row, dict) or set(row) - allowed:
             raise ValueError(f"Unknown case fields: {row}")
         case = {"args": [], "status": "", **defaults, **row}
+        if type(case.get("slow", False)) is not bool:
+            raise ValueError("slow must be a boolean")
         if target is not None and isinstance(case.get("binary"), str):
             case["binary"] = case["binary"].replace("{target}", target)
         required = case.get("requires", [])
@@ -150,7 +153,7 @@ def discover(
         raise ValueError(f"Invalid CMake executable inventory: {inventory}")
     defaults_path = ROOT / suite_name / f"cases_{target.target}.toml"
     if not defaults_path.is_file():
-        defaults_path = ROOT / suite_name / "cases.toml"
+        raise ValueError(f"No verified runtime CTS manifest for {target.target}: {defaults_path}")
     feature_file = directory / f"runtime-{target.target}-features.txt"
     features = set(feature_file.read_text().splitlines())
     defaults = load_manifest(defaults_path, target.target)

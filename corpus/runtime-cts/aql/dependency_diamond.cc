@@ -4,13 +4,15 @@
 // result. Check for stale data, wrong-branch reads or prematurely satisfied
 // dependencies.
 //
+// Queue count defaults to the native CP capacity minus companion queues.
+// Explicit --queues above that budget fails before queue creation.
 // Parameters (decimal integers; ranges are inclusive):
 //   Queue protocol: AQL only.
-//   Defaults to 2 branches (4 queues); allows 1..32.
+//   Branches use the native CP budget minus the root and sink queues.
 //   --iterations N: rounds.
 //     Default 32; range 1..100000.
 //   --queues N: branches; also creates a root and a join queue.
-//     Default 2; range 1..32.
+//     Default/maximum: native capacity minus companion queues.
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --seed: accepted by the common parser but unused here.
@@ -30,7 +32,7 @@ using namespace cts;
 
 int main(int argc, char** argv) {
   Start(argc, argv, "dependency_diamond");
-  const uint32_t width = Option(argc, argv, "--queues", 2, 32);
+  const uint32_t width = QueueCount(argc, argv, 2);
   const uint32_t rounds = Option(argc, argv, "--iterations", 32, 100000);
   Device device;
   Buffer result(device, (width + 2) * 4096);

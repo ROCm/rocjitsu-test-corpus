@@ -8,9 +8,9 @@
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on SDMA queues.
 //   --iterations N: rounds.
-//     Default 128 (3 for sdma_copy_boundaries); range 1..100000.
+//     Default 8 (3 for sdma_copy_boundaries); range 1..100000.
 //   --queues N: SDMA queues.
-//     Default 2; range 1..4.
+//     Default/maximum: native capacity minus companion queues.
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --seed: accepted by the common parser but unused here.
@@ -32,12 +32,12 @@ int main(int argc, char** argv) {
   constexpr uint32_t default_rounds = 3;
 #else
   constexpr const char* name = "sdma_flood";
-  constexpr uint32_t default_rounds = 128;
+  constexpr uint32_t default_rounds = 8;
 #endif
   Start(argc, argv, name);
   const uint32_t rounds =
       Option(argc, argv, "--iterations", default_rounds, 100000);
-  const uint32_t count = Option(argc, argv, "--queues", 2, 4);
+  const uint32_t count = QueueCount(argc, argv, 0, true);
   Device device;
   constexpr uint32_t kChunk = 1u << 22;
 #ifdef DMA_BOUNDARIES
@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
   const uint32_t sizes[] = {1, 3, 64, 65, 4095, 4096, 4097, 65535};
 #endif
   Buffer source(device, count * kStride), target(device, count * kStride),
-      done(device, 4096);
+      done(device, count * 64);
   std::vector<std::unique_ptr<SdmaQueue>> queues;
   for (uint32_t q = 0; q < count; ++q)
     queues.emplace_back(new SdmaQueue(device));

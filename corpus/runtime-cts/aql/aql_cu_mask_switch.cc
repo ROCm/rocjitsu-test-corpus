@@ -11,10 +11,10 @@
 // the placement oracle without relying on timing.
 //
 // Parameters (decimal integers; ranges are inclusive):
-//   --iterations N: rounds; default 16; range 1..100000.
+//   --iterations N: rounds; default 2; range 1..100000.
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
-//   --queues N: disjoint masks on ONE queue; default 4; range 2..64,
-//     additionally limited by the WGP count per XCC.
+//   --queues N: disjoint masks on ONE queue; default all WGPs per XCC.
+//     Range 2..the detected WGP count per XCC.
 //   --seed: accepted by common parser but unused.
 //   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits have a separate 10-second deadline.
@@ -31,14 +31,15 @@
 using namespace cts;
 int main(int argc, char** argv) {
   Start(argc, argv, "aql_cu_mask_switch");
-  const uint32_t rounds = Option(argc, argv, "--iterations", 16, 100000);
-  const uint32_t count = Option(argc, argv, "--queues", 4, 64);
+  const uint32_t rounds = Option(argc, argv, "--iterations", 2, 100000);
   Device device;
   const uint32_t mask_bits =
       device.Property("simd_count") / device.Property("simd_per_cu");
   const uint32_t wgps = mask_bits / kCuMaskBitsPerWgp;
   const uint32_t xccs = device.Property("num_xcc");
   Check(xccs && xccs <= 64 && !(wgps % xccs), "unsupported WGP/XCC topology");
+  const uint32_t count =
+      Option(argc, argv, "--queues", wgps / xccs, wgps / xccs);
   Check(count >= 2 && count <= wgps / xccs,
         "requires 2..available WGP masks per XCC");
   Buffer code(device, sizeof(kKernelImage), true), args(device, 4096);

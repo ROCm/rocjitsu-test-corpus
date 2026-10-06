@@ -135,6 +135,10 @@ def pytest_generate_tests(metafunc):
     for case in cases:
         marks = []
         if case.suite in ("aql", "pm4"):
+            if case.run.get("slow", False):
+                marks.append(pytest.mark.slow)
+                if not config.getoption("run_slow") and case.run["status"] != "SKIP":
+                    marks.append(pytest.mark.skip(reason="Slow case; enable with --run-slow"))
             if case.run["status"] == "SKIP":
                 marks.append(pytest.mark.skip(reason=case.run["reason"]))
             elif case.run["status"] == "XFAIL":

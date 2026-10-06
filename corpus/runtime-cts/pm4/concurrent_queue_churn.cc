@@ -3,13 +3,15 @@
 // persistent queue progresses. Check per-thread completion, exact operation
 // counts, guards and queue retirement.
 //
+// Queue count defaults to the native CP capacity minus companion queues.
+// Explicit --queues above that budget fails before queue creation.
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
 //   --mode pm4: default pm4; use the AQL suite for AQL coverage.
 //   --iterations N: rounds.
-//     Default 16; range 1..100000.
+//     Default 2; range 1..100000.
 //   --queues N: host threads, each owning a transient queue.
-//     Default 8; range 1..64.
+//     Default/maximum: native capacity minus companion queues.
 //   --timeout N: process watchdog in seconds.
 //     Default 45; range 1..3600.
 //   --seed: accepted by the common parser but unused here.
@@ -30,8 +32,8 @@
 using namespace cts;
 static int RunPm4(int argc, char** argv) {
   Start(argc, argv, "concurrent_queue_churn", true);
-  const uint32_t count = Option(argc, argv, "--queues", 8, 64);
-  const uint32_t rounds = Option(argc, argv, "--iterations", 16, 100000);
+  const uint32_t count = QueueCount(argc, argv, 1);
+  const uint32_t rounds = Option(argc, argv, "--iterations", 2, 100000);
   Device device;
   Buffer shared(device, (count + 2) * 64);
   // Establish the process doorbell mapping before concurrent queue creation.

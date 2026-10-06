@@ -5,13 +5,17 @@
 // input edge (PM4 witnesses) or an ordered hash of all inputs (AQL shader).
 // One node per queue keeps reverse submission acyclic, including FIFO edges.
 //
+// Queue count defaults to the native CP capacity minus companion queues.
+// Explicit --queues above that budget fails before queue creation.
 // Parameters (decimal integers; ranges are inclusive):
 //   --aql-metadata off|on: gfx1250 only; no effect on PM4 or SDMA queues.
 //   --mode pm4: default pm4; use the AQL suite for AQL coverage.
 //   --iterations N: rounds.
 //     Default 32; range 1..100000.
 //   --queues N: PM4 queues.
-//     Default 16; range 1..64.
+//     Default/maximum: native capacity minus companion queues.
+//   --fan-in N: maximum parents per node; default min(5, queues - 1).
+//     Range 1..min(5, queues - 1); queue capacity and graph width are separate.
 //   --seed N: seed for the dependency graph.
 //     Default 12345; range 1..4294967295.
 //   --timeout N: process watchdog in seconds.
@@ -33,7 +37,9 @@ int main(int argc, char** argv) {
   Check(!AqlMode(argc, argv),
         "use the AQL suite for this scenario in AQL mode");
   Start(argc, argv, "random_dag", true);
-  const uint32_t count = Option(argc, argv, "--queues", 16, 64);
+  const uint32_t count = QueueCount(argc, argv, 0);
+  const uint32_t max_fanin = Option(
+      argc, argv, "--fan-in", std::min(count - 1, 5u), std::min(count - 1, 5u));
   const uint32_t rounds = Option(argc, argv, "--iterations", 32, 100000);
   const uint32_t seed = Option(argc, argv, "--seed", 12345, 0xffffffffu);
   uint32_t random = seed;
@@ -54,13 +60,13 @@ int main(int argc, char** argv) {
     // two roots, one held and one free, followed by randomized reconverging
     // joins.
     const uint32_t roots =
-        count < 3 ? 1 : (round == 1 ? std::min(count - 1, 5u) : 2);
+        count < 3 ? 1 : (round == 1 ? std::min(count - 1, max_fanin) : 2);
     std::vector<std::array<uint32_t, 5>> parents(count);
     std::vector<uint32_t> fanin(count), tags(count);
     for (uint32_t q = 0; q < count; ++q) {
       tags[q] = round * 31337u + q * 65537u;
       if (q >= roots) {
-        const uint32_t limit = std::min(q, 5u);
+        const uint32_t limit = std::min(q, max_fanin);
         fanin[q] = round == 1 || limit == 1 ? limit : 2 + next() % (limit - 1);
         parents[q][0] =
             0;  // Every join has the held root as a decisive parent.

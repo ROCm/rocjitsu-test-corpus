@@ -6,10 +6,12 @@
 // result and untouched guard after the snapshot. Detect lost decrements,
 // premature zero, stale shader stores and ring-reuse errors.
 //
+// Queue count defaults to the native CP capacity minus companion queues.
+// Explicit --queues above that budget fails before queue creation.
 // Parameters (decimal integers; ranges are inclusive):
-//   --iterations N: rounds; default 16; range 1..100000.
+//   --iterations N: rounds; default 2; range 1..100000.
 //   --timeout N: process watchdog seconds; default 45; range 1..3600.
-//   --queues N: AQL producer queues; default 2; range 1..4.
+//   --queues N: AQL producer queues.
 //   --seed N: input seed; default 12345; range 1..4294967295.
 //   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits have a separate 10-second deadline.
@@ -25,8 +27,8 @@
 using namespace cts;
 int main(int argc, char** argv) {
   Start(argc, argv, "aql_counted_completion");
-  const uint32_t rounds = Option(argc, argv, "--iterations", 16, 100000);
-  const uint32_t count = Option(argc, argv, "--queues", 2, 4);
+  const uint32_t rounds = Option(argc, argv, "--iterations", 2, 100000);
+  const uint32_t count = QueueCount(argc, argv, 0);
   const uint32_t seed = Option(argc, argv, "--seed", 12345, 0xffffffffu);
   constexpr uint32_t kBatch = 128;
   const uint32_t slots = count * kBatch;

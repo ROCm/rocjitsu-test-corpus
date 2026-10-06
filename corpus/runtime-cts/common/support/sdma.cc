@@ -12,6 +12,7 @@
 namespace cts {
 SdmaQueue::SdmaQueue(Device& device)
     : device_(device), ring_(device, 4096, true), pointers_(device, 4096) {
+  device.ClaimQueue(true);
   Check(device.Property("num_sdma_engines") != 0, "no SDMA engine available");
   kfd_ioctl_create_queue_args args{};
   args.gpu_id = device.gpu_id;
@@ -32,6 +33,7 @@ SdmaQueue::~SdmaQueue() {
   kfd_ioctl_destroy_queue_args args{};
   args.queue_id = id_;
   device_.Ioctl(AMDKFD_IOC_DESTROY_QUEUE, &args, "DESTROY_QUEUE SDMA");
+  device_.ReleaseQueue(true);
 }
 uint64_t SdmaQueue::Consumed() const {
   const uint64_t consumed = pointers_.Load64(0);

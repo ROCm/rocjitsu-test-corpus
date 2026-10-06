@@ -4,11 +4,13 @@
 // signals, markers and guards; this tests LDS use and barriers, not
 // save/restore across preemption.
 //
+// Queue count defaults to the native CP capacity minus companion queues.
+// Explicit --queues above that budget fails before queue creation.
 // Parameters (decimal integers; ranges are inclusive):
 //   --iterations N: rounds.
 //     Default 16; range 1..100000.
 //   --queues N: AQL queues.
-//     Default 4; range 1..128.
+//     Default/maximum: native capacity minus companion queues.
 //   --seed N: seed for shader input values.
 //     Default 4321; range 1..4294967295.
 //   --timeout N: process watchdog in seconds.
@@ -35,7 +37,7 @@ static_assert(offsetof(LdsArguments, local_offset) == 28);
 int main(int argc, char** argv) {
   Start(argc, argv, "aql_lds_dispatch");
   const uint32_t rounds = Option(argc, argv, "--iterations", 16, 100000);
-  const uint32_t count = Option(argc, argv, "--queues", 4, 128);
+  const uint32_t count = QueueCount(argc, argv, 0);
   const uint32_t seed = Option(argc, argv, "--seed", 4321, 0xffffffffu);
   constexpr uint32_t kGroups = 8, kWords = kGroups * 4096,
                      kStride = (kWords + 64) * 4;

@@ -6,13 +6,15 @@
 // generation. The public simulator regression is inspiration, not a claimed
 // gfx12 defect.
 //
+// Queue count defaults to the native CP capacity minus companion queues.
+// Explicit --queues above that budget fails before queue creation.
 // Parameters (decimal integers; ranges inclusive):
 //   --aql-metadata off|on: gfx1250 only; default off for AQL queues.
 //   Queue protocol: AQL only.
-//   --iterations N: rounds; default 64; range 1..100000.
-//   --queues N: transient queues plus one survivor; default 1;
-//     range 1..128. Higher AQL counts are not qualified oversubscription
-//     coverage.
+//   --iterations N: rounds; default 2; range 1..100000.
+//   --queues N: transient queues plus one survivor.
+//     Default/maximum: native capacity minus one survivor.
+//     This does not claim oversubscription coverage.
 //   --timeout N: watchdog seconds; default 45; range 1..3600.
 //   --seed: accepted but unused. Progress waits have a 10-second deadline.
 //
@@ -31,8 +33,8 @@
 using namespace cts;
 int main(int argc, char** argv) {
   Start(argc, argv, "queue_churn");
-  const uint32_t rounds = Option(argc, argv, "--iterations", 64, 100000);
-  const uint32_t count = Option(argc, argv, "--queues", 1, 128);
+  const uint32_t rounds = Option(argc, argv, "--iterations", 2, 100000);
+  const uint32_t count = QueueCount(argc, argv, 1);
   Device device;
   Buffer code(device, sizeof(kKernelImage), true),
       args(device, (count + 1) * 512);

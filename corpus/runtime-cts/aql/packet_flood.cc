@@ -2,17 +2,20 @@
 // AQL varies finite shader work across several queues;
 // check CPU-oracle results, shader markers, firmware completions and guards.
 //
+// Queue count defaults to the native CP capacity minus companion queues.
+// Explicit --queues above that budget fails before queue creation.
 // Parameters (decimal integers; ranges inclusive):
 //   Queue protocol: AQL only.
-//   --iterations N: batches/rounds; default 32; range 1..100000.
-//   --queues N: AQL queues; default 4; range 1..128.
+//   --iterations N: batches/rounds; default 8; range 1..100000.
+//   --queues N: AQL queues.
 //   --seed N: AQL shader seed; default 12345; range 1..4294967295.
 //   --timeout N: watchdog seconds; default 45; range 1..3600.
 //   --aql-metadata off|on: gfx1250 only; default off.
 // Progress waits retain a separate 10-second deadline.
-// Investigation: --queues 8 --iterations 1 has shown intermittent
-// gfx1201 timeouts but passes on gfx1250 (KFD 1.23, fw 2380). Higher queue
-// counts are not qualified oversubscription coverage.
+// Historical 8-queue gfx1201 timeouts exceeded that host's four resident CP
+// slots. Current compact/slow cases use the detected resident budget;
+// they do not claim coverage of KFD software oversubscription. Eight rounds
+// cross the 64-slot ring: each round adds eight dispatches and a drain marker.
 //
 // Inspiration: independent direct-KFD adaptations of these public patterns.
 // https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/runtime/src/iree/hal/cts/command_buffer/stress_test.cc
@@ -33,8 +36,8 @@ using namespace cts;
 
 int main(int argc, char** argv) {
   Start(argc, argv, "packet_flood");
-  const uint32_t count = Option(argc, argv, "--queues", 4, 128);
-  const uint32_t rounds = Option(argc, argv, "--iterations", 32, 100000);
+  const uint32_t count = QueueCount(argc, argv, 0);
+  const uint32_t rounds = Option(argc, argv, "--iterations", 8, 100000);
   const uint32_t seed = Option(argc, argv, "--seed", 12345, 0xffffffffu);
   Device device;
   Buffer code(device, sizeof(kKernelImage), true);
