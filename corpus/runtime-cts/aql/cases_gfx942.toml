@@ -33,7 +33,7 @@ args = ["--iterations", "2"]
 [[case]]
 id = "dependency_chain-aql"
 binary = "aql_dependency_chain_{target}"
-args = ["--iterations", "64"]
+args = ["--iterations", "64", "--timeout", "60"]
 
 [[case]]
 id = "dependency_diamond-aql"
