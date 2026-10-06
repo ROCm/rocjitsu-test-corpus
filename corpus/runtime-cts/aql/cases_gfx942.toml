@@ -121,7 +121,7 @@ args = ["--iterations", "64"]
 [[case]]
 id = "aql_counted_completion"
 binary = "aql_counted_completion_{target}"
-args = ["--iterations", "2", "--seed", "12345"]
+args = ["--iterations", "2", "--seed", "12345", "--timeout", "60"]
 
 [[case]]
 id = "aql_dispatch_geometry"
