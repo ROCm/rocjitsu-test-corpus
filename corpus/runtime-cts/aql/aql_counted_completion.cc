@@ -14,7 +14,8 @@
 //   --queues N: AQL producer queues.
 //   --seed N: input seed; default 12345; range 1..4294967295.
 //   --aql-metadata off|on: gfx1250 only; default off.
-// Progress waits have a separate 10-second deadline.
+// The full counted burst may use the watchdog budget; other progress waits
+// retain a separate 10-second deadline.
 // Inspiration: independent direct-KFD adaptation of public workload patterns.
 // https://github.com/KhronosGroup/VK-GL-CTS/blob/3905c821f43ded89284713187ffb3c7a1072afdb/external/vulkancts/modules/vulkan/synchronization/vktSynchronizationSignalOrderTests.cpp
 #include <cstring>
@@ -77,7 +78,7 @@ int main(int argc, char** argv) {
       }
       queues[q]->NotifyAql();
     }
-    signals.Wait(2, 1);
+    signals.Wait(2, 1, Option(argc, argv, "--timeout", 45, 3600) * 1000);
     const uint64_t deadline = NowNs() + 1000000;
     do {
       Check(signals.Load64(8) == 1 && signals.Load(16) == round - 1,

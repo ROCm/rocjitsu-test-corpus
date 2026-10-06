@@ -281,13 +281,13 @@ requires = ["aql_metadata"]
 [[case]]
 id = "aql_counted_completion-metadata-off"
 binary = "aql_counted_completion_{target}"
-args = ["--iterations", "2", "--seed", "12345", "--aql-metadata", "off"]
+args = ["--iterations", "2", "--seed", "12345", "--timeout", "60", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "aql_counted_completion-metadata-on"
 binary = "aql_counted_completion_{target}"
-args = ["--iterations", "2", "--seed", "12345", "--aql-metadata", "on"]
+args = ["--iterations", "2", "--seed", "12345", "--timeout", "60", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
 
 [[case]]
