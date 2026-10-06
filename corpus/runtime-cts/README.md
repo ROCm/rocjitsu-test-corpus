@@ -79,7 +79,8 @@ requires = ["aql_metadata"]
   and `expected_output` substring matching the subprocess output. Unexpected
   passes fail; timeouts cannot be xfailed.
 - `slow = true` marks cases measured above two seconds on native hardware
-  for that target. They are skipped
+  or above 60 seconds under RocJITsu for that target. Simulator classifications
+  record the observed runtime beside the case. They are skipped
   by default; `--run-slow` includes them and `--run-slow -m slow` selects only
   them. This does not override feature requirements or explicit `SKIP` status.
 - Cases may override `timeout_seconds`. The binary's `--timeout` watchdog

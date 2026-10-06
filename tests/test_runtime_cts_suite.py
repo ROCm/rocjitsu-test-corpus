@@ -445,14 +445,13 @@ def test_target_manifest_selection(tmp_path, monkeypatch, suite_name, target):
 
 @pytest.mark.parametrize("target", ["gfx942", "gfx950", "gfx1100", "gfx1201", "gfx1250"])
 @pytest.mark.parametrize("suite_name", ["aql", "pm4"])
-def test_every_slow_case_has_quick_counterpart(target, suite_name):
+def test_long_workloads_have_smaller_counterparts(target, suite_name):
     rows = suite.load_manifest(suite.ROOT / suite_name / f"cases_{target}.toml", target)
     by_id = {row["id"]: row for row in rows}
     for row in rows:
-        if not row.get("slow", False):
+        if "-slow" not in row["id"]:
             continue
         quick = by_id[row["id"].replace("-slow", "")]
-        assert not quick.get("slow", False)
         assert quick["status"] == row["status"] == ""
         assert quick["binary"] == row["binary"]
         assert quick.get("requires", []) == row.get("requires", [])
