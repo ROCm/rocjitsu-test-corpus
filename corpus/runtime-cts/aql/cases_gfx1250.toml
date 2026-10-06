@@ -20,16 +20,12 @@ args = ["--iterations", "64"]
 
 [[case]]
 id = "packet_flood-aql-metadata-off"
-# Simulator runtime exceeded 60 seconds (62.8s; TIMEOUT).
-slow = true
 binary = "aql_packet_flood_{target}"
 args = ["--iterations", "8", "--seed", "12345", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
 
 [[case]]
 id = "packet_flood-aql-metadata-on"
-# Simulator runtime exceeded 60 seconds (62.6s; TIMEOUT).
-slow = true
 binary = "aql_packet_flood_{target}"
 args = ["--iterations", "8", "--seed", "12345", "--aql-metadata", "on"]
 requires = ["aql_metadata"]
@@ -541,8 +537,6 @@ timeout_seconds = 300
 
 [[case]]
 id = "aql_counted_completion-slow-metadata-off"
-# Simulator runtime exceeded 60 seconds (64.6s; TIMEOUT).
-slow = true
 binary = "aql_counted_completion_{target}"
 args = ["--timeout", "240", "--iterations", "16", "--seed", "12345", "--aql-metadata", "off"]
 requires = ["aql_metadata"]
@@ -550,8 +544,6 @@ timeout_seconds = 300
 
 [[case]]
 id = "aql_counted_completion-slow-metadata-on"
-# Simulator runtime exceeded 60 seconds (64.6s; TIMEOUT).
-slow = true
 binary = "aql_counted_completion_{target}"
 args = ["--timeout", "240", "--iterations", "16", "--seed", "12345", "--aql-metadata", "on"]
 requires = ["aql_metadata"]

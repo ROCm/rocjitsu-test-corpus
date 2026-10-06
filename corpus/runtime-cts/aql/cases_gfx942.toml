@@ -15,8 +15,6 @@ args = ["--iterations", "64"]
 
 [[case]]
 id = "packet_flood-aql"
-# Simulator runtime exceeded 60 seconds (62.3s; TIMEOUT).
-slow = true
 binary = "aql_packet_flood_{target}"
 args = ["--iterations", "8", "--seed", "12345"]
 
@@ -222,8 +220,6 @@ timeout_seconds = 300
 
 [[case]]
 id = "aql_counted_completion-slow"
-# Simulator runtime exceeded 60 seconds (64.0s; TIMEOUT).
-slow = true
 binary = "aql_counted_completion_{target}"
 args = ["--timeout", "240", "--iterations", "16", "--seed", "12345"]
 timeout_seconds = 300
