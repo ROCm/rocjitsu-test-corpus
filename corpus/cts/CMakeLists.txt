@@ -87,6 +87,9 @@ if(NOT TARGET GTest::gtest_main)
     FetchContent_MakeAvailable(googletest)
 endif()
 
+# Keep test assertions active in optimized configurations too.
+add_compile_options(-UNDEBUG)
+
 set(FPSAN_TESTS_THIRD_PARTY_DIR "${CMAKE_CURRENT_LIST_DIR}/third_party")
 
 set(FPSAN_TESTS_INCLUDE_DIR "${FPSAN_TESTS_THIRD_PARTY_DIR}/hip-fpsan/include")
@@ -644,6 +647,8 @@ if(CTS_HAS_RDNA4)
         "${CTS_TEST_CASES_DIR}/general/int_isa/lane_read_test.cpp")
     cts_add_rdna4_wave_mode_tests(mbcnt
         "${CTS_TEST_CASES_DIR}/general/int_isa/mbcnt_test.cpp")
+    # Optimization folds mbcnt_hi to its input in wave32, losing ISA coverage.
+    target_compile_options(int_isa_rdna4_mbcnt_test PRIVATE -O0)
     cts_add_rdna4_wave_mode_tests(ds_permute
         "${CTS_TEST_CASES_DIR}/general/int_isa/ds_permute_test.cpp")
     # Fetch-invalid semantics require the per-lane source value to remain in a
@@ -748,6 +753,11 @@ if(CTS_HAS_GFX1250)
         list(APPEND GFX1250_INT_ISA_IMAGE_ARGS
             --image "${target_name}=$<TARGET_FILE:${target_name}>")
     endforeach()
+
+    # Preserve mbcnt_hi instruction coverage in wave32, as for RDNA4 above.
+    target_compile_options(int_isa_gfx1250_mbcnt_test PRIVATE -O0)
+    # Optimization also folds or rewrites required comparison opcodes.
+    target_compile_options(int_isa_gfx1250_compare_test PRIVATE -O0)
 
     # Fetch-invalid semantics require the per-lane source value to remain in a
     # VGPR across an EXEC-divergent region. See the RDNA4 targets above.
