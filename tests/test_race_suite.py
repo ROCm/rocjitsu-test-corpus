@@ -29,6 +29,50 @@ def test_configs_preserve_every_moved_gtest() -> None:
         )
 
 
+@pytest.mark.parametrize("target", ["gfx950", "gfx1151"])
+def test_discover_honors_compile_exclusions(tmp_path: Path, target: str) -> None:
+    configs = _configs_with_exclusions(
+        tmp_path,
+        target,
+        skip_compile_tests=["vgpr_waitcnt"],
+        skip_run_tests=["vgpr_waitcnt_race"],
+    )
+
+    cases = race.discover(make_target_spec(target), configs)
+
+    # Run exclusions still need a build, so they remain in discovery.
+    assert [case.metadata["name"] for case in cases] == ["vgpr_waitcnt_race"]
+
+
+@pytest.mark.parametrize("target", ["gfx950", "gfx1151"])
+def test_run_honors_run_exclusions(tmp_path: Path, monkeypatch, target: str) -> None:
+    configs = _configs_with_exclusions(
+        tmp_path, target, skip_run_tests=["vgpr_waitcnt"]
+    )
+    excluded, control = race.discover(make_target_spec(target), configs)
+    base = tmp_path / "base.json"
+    base.write_text('{"vm": {}}', encoding="utf-8")
+    monkeypatch.setenv("ROCJITSU_RACE_CONFIG", str(base))
+    context = RunContext(
+        repo_root=race.REPO_ROOT,
+        artifact_directory=tmp_path / "artifacts",
+        skip_all_runs=False,
+        run_wrapper="rocjitsu --config {config} --",
+    )
+    build_result = BuildResult(build_dir=None, executable_path=tmp_path / "race-test")
+
+    def process_launch(*args, **kwargs):
+        raise RuntimeError("case reached process launch")
+
+    monkeypatch.setattr(race, "_run_command", process_launch)
+    race.run(excluded, build_result, context)
+    assert not context.artifact_directory.exists()
+
+    # An exclusion for one case must not suppress an unlisted case.
+    with pytest.raises(RuntimeError, match="case reached process launch"):
+        race.run(control, build_result, context)
+
+
 def test_materialize_config_adds_required_race_plugin(tmp_path: Path) -> None:
     base = tmp_path / "base.json"
     output = tmp_path / "case" / "config.json"
@@ -199,6 +243,22 @@ def test_run_requires_the_requested_gtest_to_pass(
             race.run(case, build_result, context)
     else:
         race.run(case, build_result, context)
+
+
+def _configs_with_exclusions(tmp_path: Path, target: str, **exclusions) -> list[dict]:
+    path = tmp_path / "target.json"
+    path.write_text(
+        json.dumps(
+            {
+                "config_name": target,
+                "target": target,
+                "cases": ["vgpr_waitcnt", "vgpr_waitcnt_race"],
+                **exclusions,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return race.load_target_configs([str(path)])
 
 
 def _source_gtests(target: str) -> set[str]:

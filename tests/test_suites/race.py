@@ -77,6 +77,8 @@ def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]
         if layout is None:
             continue
         for name in target_config["cases"]:
+            if name in target_config.get("skip_compile_tests", []):
+                continue
             test_filter = f"{layout['fixture']}.{name}"
             legacy_name = f"RaceTest.{target.target}_{name}"
             discovered.append(
@@ -165,7 +167,10 @@ def build(
 
 
 def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> None:
-    if context.skip_all_runs:
+    target_config = case.metadata["target_config"]
+    if context.skip_all_runs or (
+        case.metadata["name"] in target_config.get("skip_run_tests", [])
+    ):
         return
     if build_result.executable_path is None:
         raise RuntimeError("Race test executable is unavailable")
