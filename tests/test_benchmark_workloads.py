@@ -6,6 +6,7 @@ import contextlib
 import importlib.util
 import json
 import sys
+import subprocess
 import tomllib
 import types
 from pathlib import Path
@@ -66,6 +67,36 @@ def load_module(name, path):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_attention_reference_tests_skip_without_triton():
+    # Keep the lightweight harness usable when Torch exists but Triton does not.
+    # Run collection in a fresh interpreter so installed/mocked imports elsewhere
+    # in this suite cannot conceal the missing optional dependency.
+    script = """
+import importlib.abc
+import runpy
+import sys
+import types
+import pytest
+sys.modules['torch'] = types.ModuleType('torch')
+class NoTriton(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'triton' or fullname.startswith('triton.'):
+            raise ModuleNotFoundError("No module named 'triton'", name='triton')
+sys.meta_path.insert(0, NoTriton())
+try:
+    runpy.run_path(sys.argv[1])
+except pytest.skip.Exception as error:
+    assert 'triton' in str(error), str(error)
+else:
+    raise AssertionError('attention reference tests did not skip missing Triton')
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script, str(ROOT / "tests/test_benchmark_attention_reference.py")],
+        capture_output=True, text=True,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
 def test_nightly_parameters_are_valid(workloads_context):

@@ -23,6 +23,7 @@ def candidates(monkeypatch):
     spec = importlib.util.spec_from_file_location("candidates_under_test", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    module._device_inputs = MagicMock(return_value=(MagicMock(), MagicMock()))
     return module
 
 
@@ -79,7 +80,8 @@ def test_triton_configuration_reaches_launch(candidates, monkeypatch, configurat
     kernel = getattr(module, kernel_name)
     candidates.triton.cdiv.side_effect = lambda value, block: (value + block - 1) // block
     candidates.torch.cuda.get_device_properties.return_value.multi_processor_count = 100
-    candidates.deterministic_tensor.return_value.stride.return_value = (256, 1)
+    for tensor in candidates._device_inputs.return_value:
+        tensor.stride.return_value = (256, 1)
     candidates.torch.empty.return_value.stride.return_value = (256, 1)
     p = dict(dtype="fp16", rows=256, columns=256, reduction=64)
     if workload == "triton_grouped":
@@ -111,7 +113,8 @@ def test_deepseek_configuration_reaches_launch_and_validation(candidates, monkey
     monkeypatch.setitem(sys.modules, "corpus.benchmarks.third_party.deepseek.kernel", module)
     candidates.triton.cdiv.side_effect = lambda value, block: (value + block - 1) // block
     check = MagicMock()
-    monkeypatch.setattr(candidates, "_constant_check", check)
+    monkeypatch.setattr(candidates, "_candidate_check", check)
+    candidates._device_inputs.return_value = tuple(MagicMock() for _ in range(4))
     p = dict(dtype="fp8", rows=256, columns=256, reduction=128)
     if configuration:
         p["configuration"] = configuration
@@ -124,6 +127,6 @@ def test_deepseek_configuration_reaches_launch_and_validation(candidates, monkey
     knobs = kernel.__getitem__.return_value.call_args.kwargs
     assert knobs == dict(BLOCK_SIZE_M=tile_m, BLOCK_SIZE_N=64, BLOCK_SIZE_K=128,
                          num_warps=8, num_stages=3)
-    assert [call.args[1] for call in candidates.torch.full.call_args_list] == list(scales)
-    assert metadata["scale_values"] == list(scales)
-    assert check.call_args.kwargs["scales"] == scales[0] * scales[1]
+    assert candidates._device_inputs.call_args.kwargs["scale_bases"] == scales
+    assert metadata["scale_bases"] == list(scales)
+    assert check.call_args.kwargs["scale_bases"] == scales

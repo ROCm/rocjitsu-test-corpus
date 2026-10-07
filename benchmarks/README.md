@@ -68,7 +68,8 @@ Four larger gfx1250 cases come from
 DeepSeek W1 and W2 with 3072 tokens, four grouped 3584³ GEMMs, and persistent
 8192 × 8192 × 4096 matmul. Their `configuration = "issue12611"` selects the issue's
 fixed launch settings: Triton tiles 128 × 128 × 64 with four warps and two stages;
-DeepSeek tiles 64 × 64 × 128 with eight warps, three stages, and unit scales.
+DeepSeek tiles 64 × 64 × 128 with eight warps, three stages, and unit base scales.
+The scale tensors also vary by row, column block, and reduction block for validation.
 Nightly uses one warmup and three samples after compile-only preparation, with
 Rocjitsu's default CPU thread budget and the caller's CPU affinity.
 
@@ -91,6 +92,10 @@ experiments. Sample counts must be positive and odd. `--list` shows the matrix
 without building or requiring GPU dependencies. Output directories must be new.
 All cells run sequentially. Failures and timeouts leave finalized partial results;
 the runner returns failure if any selected cell fails.
+Invalid base configurations are rejected before creating the output directory.
+If a native policy probe or setup fails before the initial `run.json` checkpoint,
+the runner removes its new output directory so the same path can be retried.
+After that checkpoint, failures preserve partial results as usual.
 
 ## Measurement and dependencies
 
@@ -112,11 +117,28 @@ executing an implicit initialization launch. Requested warmups run before the
 samples; with zero warmups, the first execution is the first timed sample.
 Remaining first-execution runtime costs can still occur in that sample.
 
-Each Triton sample launches one kernel. The DeepSeek, grouped GEMM, persistent
-GEMM, and GPT-OSS adapters copy outputs to the CPU and check references after all
-samples, before emitting results. A failed reference check fails the case. The
+Each Triton sample launches one kernel. After sampling, the DeepSeek, grouped
+GEMM, and persistent GEMM adapters poison outputs with NaNs and run one additional
+untimed launch. They compare its complete output with a CPU reference before
+emitting results. This checks that the launch overwrites every output instead of
+reusing values from earlier launches; it does not validate every timed sample.
+Their positive dyadic inputs vary by row, column, group, and reduction block;
+DeepSeek scales also vary across both free and reduction axes. The scheduled
+shapes accumulate exactly in FP32, so validation compares the rounded output
+without a blanket relative or absolute tolerance. These structured patterns
+use power-of-two row and column factors and scale FP16 inputs down when K exceeds
+65,536 to keep outputs finite and avoid fractional accumulation error. The
+checker rejects nonfinite references and outputs. The patterns
+exercise representative indexing and scale errors, not all possible permutations.
+A failed reference check fails the case. The
 Tensile adapter validates every measured launch; see its [README](../corpus/benchmarks/tensile_candidates/README.md) for input patterns
 and validation limits.
+
+GPT-OSS checks the sampled output with the upstream CPU reference in chunks of
+one batch, one KV head, and at most 128 query positions. Each chunk retains all
+keys and its absolute query offset to preserve causal and window masking. For
+the largest nightly shape, each temporary FP32 attention matrix is at most
+12 MiB; input and output storage still grows with the full problem size.
 
 The extracted GPT-OSS attention implementation lives in
 `corpus/benchmarks/third_party/gpt_oss/attention.py`. Its `NOTICE.md`

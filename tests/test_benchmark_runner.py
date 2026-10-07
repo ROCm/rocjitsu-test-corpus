@@ -110,7 +110,9 @@ def named_runner_context(runner_context, monkeypatch):
     runner_context.suite = replace(runner_context.suite, num_threads="default")
     monkeypatch.setattr(
         runner, "_native_target_metadata",
-        lambda path, *_args: runner._target_metadata(path, 8),
+        lambda config, *_args: runner.TargetMetadata(
+            config[0], config[0]["exec_mode"], 8, config[1]
+        ),
     )
     return runner_context
 
@@ -1373,7 +1375,9 @@ def test_signal_preserves_flushed_workload_output(runner_context, signum) -> Non
     assert active["artifacts"]["workload"] is None
 
 
-def test_existing_output_is_never_overwritten(runner_context) -> None:
+@pytest.mark.parametrize("thread_policy", [8, "default", "single"])
+def test_existing_output_is_never_overwritten(runner_context, thread_policy) -> None:
+    runner_context.suite = replace(runner_context.suite, num_threads=thread_policy)
     output = runner_context.root / "existing"
     output.mkdir()
     marker = output / "keep"
@@ -1742,11 +1746,14 @@ def test_single_thread_suite_is_fixed_subset_with_library_coverage():
         (0, "Configured | 8 | 9 | 0 | 16\nConfigured | 8 | 9 | 0 | 16\n"),
     ],
 )
-def test_default_threads_reject_unavailable_native_policy(runner_context, code, text):
+@pytest.mark.parametrize("thread_policy", ["default", "single"])
+def test_named_threads_reject_unavailable_native_policy(
+    runner_context, code, text, thread_policy
+):
     import dataclasses
 
     runner_context.suite = dataclasses.replace(
-        runner_context.suite, num_threads="default"
+        runner_context.suite, num_threads=thread_policy
     )
     with pytest.raises(runner.RunnerError, match="native|worker policy"):
         _run(
@@ -1757,6 +1764,7 @@ def test_default_threads_reject_unavailable_native_policy(runner_context, code, 
                 argv, code, text, ""
             ),
         )
+    assert not (runner_context.root / "bad-default").exists()
 
 
 def test_default_manifest_and_case_target_selection(tmp_path):
@@ -1825,3 +1833,144 @@ def test_plugin_overhead_manifest_uses_default_policy():
         "triton.gemm_bf16_aligned.default",
         "triton.gpt_oss_attention_bf16.default",
     }
+
+
+@pytest.mark.parametrize("thread_policy", [8, "default", "single"])
+@pytest.mark.parametrize(
+    "invalid_config",
+    [
+        "{",
+        "[]",
+        '{"exec_mode": ""}',
+        '{"exec_mode": "functional", "plugins": {"logging": {}}}',
+        None,
+    ],
+)
+def test_invalid_second_config_does_not_create_output(
+    runner_context, thread_policy, invalid_config
+):
+    runner_context.suite = replace(runner_context.suite, num_threads=thread_policy)
+    config = runner_context.configs["gfx1250"]
+    if invalid_config is None:
+        config.unlink()
+    else:
+        config.write_text(invalid_config)
+    output = runner_context.root / "invalid-config"
+    with mock.patch.object(runner, "_native_target_metadata") as probe:
+        with pytest.raises(runner.RunnerError):
+            _run(runner_context, runner.select_matrix(runner_context.suite), output.name)
+    probe.assert_not_called()
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("thread_policy", ["default", "single"])
+@pytest.mark.parametrize("failure", ["nonzero", "timeout", "malformed", "interrupt"])
+def test_native_setup_failure_on_second_target_allows_retry(
+    runner_context, thread_policy, failure
+):
+    runner_context.suite = replace(runner_context.suite, num_threads=thread_policy)
+    output = runner_context.root / "retry-policy"
+    matrix = runner.select_matrix(runner_context.suite)
+    targets = []
+
+    def execute(argv, **kwargs):
+        if argv[-1] != "--thread-budget-table":
+            return _successful_process(runner_context, argv, **kwargs)
+        target = Path(argv[argv.index("--config") + 1]).parent.name
+        targets.append(target)
+        if target == "gfx1250" and failure:
+            if failure == "interrupt":
+                raise KeyboardInterrupt()
+            if failure == "timeout":
+                raise subprocess.TimeoutExpired(
+                    argv, 30, output="probe output", stderr="probe error"
+                )
+            return subprocess.CompletedProcess(
+                argv,
+                1 if failure == "nonzero" else 0,
+                "probe output",
+                "probe error",
+            )
+        return subprocess.CompletedProcess(argv, 0, "Configured | 1 | 1 | 0 | 1\n", "")
+
+    expected_error = KeyboardInterrupt if failure == "interrupt" else runner.RunnerError
+    with pytest.raises(expected_error) as caught:
+        _run(runner_context, matrix, output.name, process=execute)
+    assert targets == ["gfx950", "gfx1250"]
+    assert not output.exists()
+    if failure != "interrupt":
+        assert "gfx1250" in str(caught.value)
+        assert "probe output" in str(caught.value)
+        assert "probe error" in str(caught.value)
+        assert "; see " not in str(caught.value)
+    failure = None
+    _, result = _run(runner_context, matrix, output.name, process=execute)
+    assert result["status"] == "completed"
+    assert (output / "run.json").exists()
+
+
+@pytest.mark.parametrize("thread_policy", [8, "default", "single"])
+def test_first_checkpoint_failure_removes_setup_output(runner_context, thread_policy):
+    runner_context.suite = replace(runner_context.suite, num_threads=thread_policy)
+    output = runner_context.root / "checkpoint-failure"
+
+    def failed_checkpoint(directory, run):
+        (directory / ".run.json.tmp").write_text("partial")
+        raise OSError("checkpoint failed")
+
+    def execute(argv, **kwargs):
+        return subprocess.CompletedProcess(argv, 0, "Configured | 1 | 1 | 0 | 1\n", "")
+
+    with mock.patch.object(runner, "_write_run", side_effect=failed_checkpoint):
+        with pytest.raises(OSError, match="checkpoint failed"):
+            _run(
+                runner_context,
+                runner.select_matrix(runner_context.suite),
+                output.name,
+                process=execute,
+            )
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("thread_policy", ["default", "single"])
+def test_native_probe_uses_all_prevalidated_target_snapshots(
+    runner_context, thread_policy
+):
+    runner_context.suite = replace(runner_context.suite, num_threads=thread_policy)
+    snapshots = []
+
+    def execute(argv, **kwargs):
+        if argv[-1] != "--thread-budget-table":
+            return _successful_process(runner_context, argv, **kwargs)
+        config = Path(argv[argv.index("--config") + 1])
+        snapshots.append(json.loads(config.read_text()))
+        # Both source files can change after validation without affecting this run.
+        for path in runner_context.configs.values():
+            path.write_text("invalidated after validation")
+        return subprocess.CompletedProcess(argv, 0, "Configured | 1 | 1 | 0 | 1\n", "")
+
+    _, result = _run(
+        runner_context,
+        runner.select_matrix(runner_context.suite),
+        "snapshot-policy",
+        process=execute,
+    )
+    assert result["status"] == "completed"
+    assert len(snapshots) == 2
+    assert all(snapshot["exec_mode"] == "functional" for snapshot in snapshots)
+
+
+def test_output_created_by_other_process_is_preserved(runner_context):
+    output = runner_context.root / "raced-output"
+    original_mkdir = Path.mkdir
+
+    def mkdir(path, *args, **kwargs):
+        if path == output:
+            original_mkdir(path)
+            (path / "keep").write_text("other process")
+        return original_mkdir(path, *args, **kwargs)
+
+    with mock.patch.object(Path, "mkdir", mkdir):
+        with pytest.raises(FileExistsError):
+            _run(runner_context, runner.select_matrix(runner_context.suite), output.name)
+    assert (output / "keep").read_text() == "other process"

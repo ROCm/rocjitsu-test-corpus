@@ -160,7 +160,7 @@ class TensileWorkloadContract(unittest.TestCase):
         (self.artifacts / 'artifacts.json').write_text(json.dumps(self.metadata))
         self.runner = self.root / 'native-fixture'
         self.result = dict(invocations=1, correctness='passed', kernel_name='fixed_kernel',
-                           solution_index=0, input_pattern='separable_periodic_bf16',
+                           solution_index=0, input_pattern='separable_positive_k_bf16_v1',
                            timings_ns=[123])
         self.output = self.root / 'output.json'
 
@@ -202,6 +202,16 @@ class TensileWorkloadContract(unittest.TestCase):
         result = self.run_workload()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('artifact inventory mismatch', result.stderr)
+
+
+class TensileNativeHostReference(unittest.TestCase):
+    def test_real_host_reference_executable(self):
+        executable = os.environ.get('TENSILE_CANDIDATE_HOST_TESTS')
+        if not executable:
+            self.skipTest('Set TENSILE_CANDIDATE_HOST_TESTS to the built native host-test executable')
+        result = subprocess.run([executable], capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('Tensile host reference tests passed', result.stdout)
 
 
 if __name__ == '__main__':

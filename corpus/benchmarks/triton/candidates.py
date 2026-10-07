@@ -5,42 +5,43 @@
 import torch
 import triton
 
-from benchmarks.measurement import TritonLaunch, deterministic_tensor, to_cpu
+from benchmarks.measurement import TritonLaunch, to_cpu
+from corpus.benchmarks.triton.candidate_reference import (
+    assert_candidate_output, candidate_expected, candidate_inputs,
+)
 
 TRITON_COMMIT = "ced7e4b42f992f0b125208767cafc371d079ffd9"
 DEEPSEEK_COMMIT = "9b4e9788e4a3a731f7567338ed15d3ec549ce03b"
 
 
-def _constant_check(outputs, reduction, input_dtype=torch.float16, scales=1.0):
-    # The same explicitly rounded constants initialize every element on device.
-    # Validate every output element without a second large GEMM in the guest.
+def _candidate_check(outputs, launch, reduction, scale_bases=None):
+    # A separate untimed dispatch must overwrite every output. Poisoning after
+    # sampling prevents warmups or a previous successful sample hiding a no-op.
     def check():
-        for index, output in enumerate(outputs):
-            a = (
-                torch.tensor(((index * 17) % 251 + 1) / 251.0, dtype=input_dtype)
-                .float()
-                .item()
+        for output in outputs:
+            output.fill_(float("nan"))
+        launch()
+        torch.cuda.synchronize()
+        for group, output in enumerate(outputs):
+            expected = candidate_expected(
+                *output.shape, reduction, output.dtype,
+                group=group, scale_bases=scale_bases,
             )
-            b = (
-                torch.tensor(((83 + index * 17) % 251 + 1) / 251.0, dtype=input_dtype)
-                .float()
-                .item()
-            )
-            expected = torch.full(
-                output.shape, reduction * a * b * scales, dtype=output.dtype
-            )
-            torch.testing.assert_close(
-                to_cpu(output), expected, rtol=0.01, atol=0.01
-            )
+            assert_candidate_output(to_cpu(output), expected)
 
     return check
+
+
+def _device_inputs(*args, **kwargs):
+    return tuple(value.pin_memory().to("cuda") for value in candidate_inputs(*args, **kwargs))
 
 
 def _metadata(parameters, source, entrypoint, launch):
     repository, commit = source
     parameters.update(
         {
-            "input_pattern": "deterministic_nonzero_constant_by_phase",
+            "input_pattern": "positive_dyadic_row_column_group_kblock",
+            "correctness": "exact_output_dtype_reference_untimed_poisoned_launch",
             "measurement_scope": "kernel_launch_and_synchronize",
             "source": {
                 "repository": repository,
@@ -58,8 +59,7 @@ def prepare_triton_persistent(parameters):
     )
 
     m, n, k = (parameters[name] for name in ("rows", "columns", "reduction"))
-    a = deterministic_tensor((m, k), torch.float16)
-    b = deterministic_tensor((k, n), torch.float16, phase=83)
+    a, b = _device_inputs(m, n, k, torch.float16)
     c = torch.empty((m, n), device="cuda", dtype=torch.float16)
     sms = torch.cuda.get_device_properties("cuda").multi_processor_count
     issue_configuration = parameters.get("configuration") == "issue12611"
@@ -95,7 +95,7 @@ def prepare_triton_persistent(parameters):
         "09-persistent-matmul.py:matmul_kernel_persistent",
         {"grid": list(grid), **knobs},
     )
-    return parameters, launch, _constant_check([c], k)
+    return parameters, launch, _candidate_check([c], launch, k)
 
 
 def prepare_triton_grouped(parameters):
@@ -105,13 +105,8 @@ def prepare_triton_grouped(parameters):
 
     m, n, k = (parameters[name] for name in ("rows", "columns", "reduction"))
     groups = parameters["groups"]
-    aa = [
-        deterministic_tensor((m, k), torch.float16, phase=i * 17) for i in range(groups)
-    ]
-    bb = [
-        deterministic_tensor((k, n), torch.float16, phase=83 + i * 17)
-        for i in range(groups)
-    ]
+    inputs = [_device_inputs(m, n, k, torch.float16, group=i) for i in range(groups)]
+    aa, bb = [pair[0] for pair in inputs], [pair[1] for pair in inputs]
     cc = [
         torch.empty((m, n), device="cuda", dtype=torch.float16) for _ in range(groups)
     ]
@@ -150,7 +145,7 @@ def prepare_triton_grouped(parameters):
         "08-grouped-gemm.py:grouped_matmul_kernel",
         {"grid": [sms], **knobs},
     )
-    return parameters, launch, _constant_check(cc, k)
+    return parameters, launch, _candidate_check(cc, launch, k)
 
 
 def prepare_deepseek_fp8(parameters):
@@ -158,19 +153,11 @@ def prepare_deepseek_fp8(parameters):
 
     m, n, k = (parameters[name] for name in ("rows", "columns", "reduction"))
     dtype = torch.float8_e4m3fn
-    a = deterministic_tensor((m, k), dtype)
-    b = deterministic_tensor((n, k), dtype, phase=83)
     issue_configuration = parameters.get("configuration") == "issue12611"
     scale_a, scale_b = (1.0, 1.0) if issue_configuration else (0.5, 0.25)
     tile_m = 64 if issue_configuration else 32
-    a_scale = torch.full(
-        (m, triton.cdiv(k, 128)), scale_a, device="cuda", dtype=torch.float32
-    )
-    b_scale = torch.full(
-        (triton.cdiv(n, 128), triton.cdiv(k, 128)),
-        scale_b,
-        device="cuda",
-        dtype=torch.float32,
+    a, b, a_scale, b_scale = _device_inputs(
+        m, n, k, dtype, scale_bases=(scale_a, scale_b)
     )
     c = torch.empty((m, n), device="cuda", dtype=torch.bfloat16)
     grid = (triton.cdiv(m, tile_m), triton.cdiv(n, 64))
@@ -202,9 +189,10 @@ def prepare_deepseek_fp8(parameters):
         {"grid": list(grid), **knobs},
     )
     parameters["output_dtype"] = "bf16"
-    parameters["scale_values"] = [scale_a, scale_b]
-    return parameters, launch, _constant_check(
-        [c], k, input_dtype=dtype, scales=scale_a * scale_b
+    parameters["scale_bases"] = [scale_a, scale_b]
+    parameters["scale_pattern"] = "power_of_two_row_column_block_and_kblock"
+    return parameters, launch, _candidate_check(
+        [c], launch, k, scale_bases=(scale_a, scale_b)
     )
 
 

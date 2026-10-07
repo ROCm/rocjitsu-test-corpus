@@ -37,7 +37,7 @@ cmake -S corpus/benchmarks/tensile_candidates -B .benchmark-artifacts/tensile-na
   -DROCM_PATH="$ROCM_PATH" -DCMAKE_PREFIX_PATH="$ROCM_PATH" \
   -DCMAKE_CXX_COMPILER="$ROCM_PATH/bin/amdclang++" \
   -DPython_EXECUTABLE="$PYTHON" -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-cmake --build .benchmark-artifacts/tensile-native --target tensile_candidate -j8
+cmake --build .benchmark-artifacts/tensile-native -j "$(nproc)"
 ```
 
 CMake uses upstream's pinned nanobind dependency. An existing checkout can be
@@ -81,9 +81,23 @@ the first timed sample. Code loading, handle initialization, allocations, copies
 workspace and synchronization-flag resets, output poisoning, and full-output
 reference checks are outside timing. Every measured launch is validated.
 
-BF16 inputs vary in both matrix axes with separable periodic patterns. MX inputs
-use unit values and unit E8 scales constructed by upstream conversion types;
-constant data is unchanged by the upstream swizzles. This MX check covers
-accumulation and complete output writes, but does not establish correctness for
-arbitrary packed input layouts or varying scales. Do not use it as a replacement
-for the upstream numeric test suite.
+BF16 inputs vary in both matrix axes with separable periodic patterns. Their K
+factors are positive, so an omitted reduction range cannot disappear through
+cancellation. MX payloads and E8 scales vary across rows, columns, and K blocks.
+The adapter retains canonical scales for the CPU reference and uploads separate
+buffers packed by the pinned upstream gfx950 or gfx1250 scale helpers. It checks
+the selected scale format, operand layout, padding, and allocation sizes before
+launching.
+
+The patterns use exactly representable dyadic values and compare the complete
+result after destination rounding. Validation rejects NaNs and uses exact
+equality instead of a blanket percentage tolerance. Structured patterns cover
+representative indexing, missing-work, and scale-application mistakes; they do
+not replace the upstream numeric test suite.
+
+The build also produces `tensile_candidate_host_tests`, which exercises the real
+initialization, packed input conversions, scale layouts, and output checker on
+the CPU. Run it directly, or set `TENSILE_CANDIDATE_HOST_TESTS` to its absolute path
+when running `tests/test_benchmark_tensile_candidates.py`. The executable tests
+small independent GEMM references and deliberately corrupted inputs and outputs.
+Native kernel checks on both targets are still required after adapter changes.

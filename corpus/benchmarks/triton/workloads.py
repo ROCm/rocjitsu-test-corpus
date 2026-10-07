@@ -443,7 +443,8 @@ def prepare_gemm(parameters):
 def prepare_gpt_oss_attention(parameters):
     from triton.tools.tensor_descriptor import TensorDescriptor
 
-    from corpus.benchmarks.third_party.gpt_oss.attention import _attn_fwd, attention_ref
+    from corpus.benchmarks.third_party.gpt_oss.attention import _attn_fwd
+    from corpus.benchmarks.triton.attention_reference import check_attention_reference
 
     batch, sequence = parameters["batch"], parameters["sequence"]
     heads, kv_heads = parameters["query_heads"], parameters["key_value_heads"]
@@ -499,19 +500,18 @@ def prepare_gpt_oss_attention(parameters):
 
     def check():
         # CPU reference and output copies are outside the sampling loop.
-        expected = attention_ref(
+        actual = (
+            to_cpu(output).transpose(1, 2).reshape(batch, sequence, heads * dimension)
+        )
+        check_attention_reference(
             to_cpu(q),
             to_cpu(k),
             to_cpu(v),
             to_cpu(sinks),
+            actual,
             sm_scale=0.125,
             sliding_window=window,
-            start_q=0,
         )
-        actual = (
-            to_cpu(output).transpose(1, 2).reshape(batch, sequence, heads * dimension)
-        )
-        torch.testing.assert_close(actual, expected)
 
     parameters.update(
         {

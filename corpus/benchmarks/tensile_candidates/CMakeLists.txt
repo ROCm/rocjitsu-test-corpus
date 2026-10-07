@@ -35,3 +35,14 @@ add_executable(tensile_candidate runner.cpp)
 target_compile_features(tensile_candidate PRIVATE cxx_std_17)
 target_include_directories(tensile_candidate PRIVATE ${LLVM_INCLUDE_DIRS})
 target_link_libraries(tensile_candidate PRIVATE roc::tensilelite-host hip::host LLVMObjectYAML)
+
+# Use the pinned header-only scale packers without importing the Tensile client.
+# Its interface preserves the upstream OpenMP link-only requirement.
+if(NOT TARGET tensilelite-mxdatagenerator-headers)
+  message(FATAL_ERROR "Pinned Tensile MX scale packing headers are required")
+endif()
+target_link_libraries(tensile_candidate PRIVATE tensilelite-mxdatagenerator-headers)
+add_executable(tensile_candidate_host_tests host_reference_test.cpp)
+target_compile_features(tensile_candidate_host_tests PRIVATE cxx_std_17)
+target_link_libraries(tensile_candidate_host_tests PRIVATE roc::tensilelite-host
+  tensilelite-mxdatagenerator-headers hip::host)

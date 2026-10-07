@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
+#include "host_reference.hpp"
 #include <Tensile/ContractionLibrary.hpp>
 #include <Tensile/DataTypes.hpp>
 #include <Tensile/ContractionProblem.hpp>
@@ -30,17 +31,6 @@ struct Buffer {
     Buffer(const Buffer&) = delete;
     Buffer& operator=(const Buffer&) = delete;
 };
-uint16_t bf16(float value) {
-    uint32_t bits;
-    std::memcpy(&bits, &value, sizeof(bits));
-    return (bits + 0x7fff + ((bits >> 16) & 1)) >> 16;
-}
-float fp32(uint16_t value) {
-    uint32_t bits = uint32_t(value) << 16;
-    float result;
-    std::memcpy(&result, &bits, sizeof(result));
-    return result;
-}
 int positive(const char* value, bool zero = false) {
     size_t end;
     const auto parsed = std::stoll(value, &end);
@@ -99,9 +89,14 @@ int main(int argc, char** argv) {
         problem.setHighPrecisionAccumulate(true);
         problem.setActivationComputeType(Type::Float);
         problem.setUseDeviceUserArguments(true);
+        const int scaleFormat = solution->problemType.mxScaleFormat;
         if (mx) {
-            problem.setMXScaleA(Type::E8,32);
-            problem.setMXScaleB(Type::E8,32);
+            const int expectedFormat = fp4 ? 2 : 1;
+            if (scaleFormat != expectedFormat || solution->problemType.swizzleTensorA
+                || solution->problemType.swizzleTensorB || !transA || transB)
+                throw std::runtime_error("unsupported fixed MX operand/scale layout");
+            problem.setMXScaleA(Type::E8,32,{},scaleFormat == 1);
+            problem.setMXScaleB(Type::E8,32,{},scaleFormat == 1);
         }
         problem.setAlphaType(Type::Float);
         problem.setBetaType(Type::Float);
@@ -115,51 +110,20 @@ int main(int argc, char** argv) {
             solution->problemPredicate->debugEval(problem,std::cerr);
             throw std::runtime_error("fixed solution does not support candidate");
         }
-        const size_t aBytes = size_t(m)*k*(mx ? 1 : 2)/(fp4 ? 2 : 1);
-        const size_t bBytes = size_t(n)*k*(mx ? 1 : 2)/(fp4 ? 2 : 1);
-        const size_t outBytes = size_t(m)*n*(fp4 ? 4 : 2);
-        std::vector<uint8_t> a(aBytes),b(bBytes),c(outBytes),d(outBytes);
-        auto putBF16=[](std::vector<uint8_t>& data,size_t index,float value) {
-            const auto packed=bf16(value);
-            std::memcpy(data.data()+index*2,&packed,2);
-        };
-        auto getOutput=[&](const std::vector<uint8_t>& data,size_t index) {
-            if(fp4) {float value;std::memcpy(&value,data.data()+index*4,4);return value;}
-            uint16_t value;std::memcpy(&value,data.data()+index*2,2);return fp32(value);
-        };
-        // BF16 inputs vary in both axes; the separable integer patterns allow
-        // an exact linear-time full-output reference. MX inputs use exact unit
-        // values and unit E8 scales, which are unchanged by upstream swizzles.
-        double sum=0;
-        if(mx) {
-            const auto packed4=TensileLite::Float4x2(1.0f,1.0f);
-            const auto packed8=TensileLite::Float8(1.0f);
-            uint8_t unit8;
-            static_assert(sizeof(packed8)==1);
-            std::memcpy(&unit8,&packed8,1);
-            const uint8_t unit=fp4 ? packed4.data : unit8;
-            std::fill(a.begin(),a.end(),unit);
-            std::fill(b.begin(),b.end(),unit);
-        } else {
-            for (int l=0;l<k;++l) {
-                sum+=(l%7-3)*(l%5-2)/256.0;
-                for(int i=0;i<m;++i) putBF16(a,transA ? size_t(i)*k+l : size_t(l)*m+i,(i%13-6)*(l%7-3)/16.0f);
-                for(int j=0;j<n;++j) putBF16(b,transB ? size_t(l)*n+j : size_t(j)*k+l,(j%11-5)*(l%5-2)/16.0f);
-            }
-        }
-        for(size_t i=0;i<size_t(m)*n;++i) {
-            const float value=(int(i%7)-3)/16.0f;
-            if(fp4) std::memcpy(c.data()+i*4,&value,4);
-            else putBF16(c,i,value);
-        }
+        candidate::HostReference host(variant,m,n,k,scaleFormat);
+        const size_t aBytes=host.a.size(), bBytes=host.b.size(), outBytes=host.c.size();
+        std::vector<uint8_t> d(outBytes);
+        if (mx && (host.scaleA.size()!=problem.mxsa().totalAllocatedBytes()
+                   || host.scaleB.size()!=problem.mxsb().totalAllocatedBytes()))
+            throw std::runtime_error("packed MX scales do not match solution descriptors");
         Buffer da(aBytes),db(bBytes),dc(outBytes),dd(outBytes),workspace(workspaceBytes),synchronizer(syncBytes);
-        Buffer scaleA(mx ? problem.mxsa().totalAllocatedBytes() : 0),scaleB(mx ? problem.mxsb().totalAllocatedBytes() : 0);
-        check(hipMemcpy(da.data,a.data(),aBytes,hipMemcpyHostToDevice));
-        check(hipMemcpy(db.data,b.data(),bBytes,hipMemcpyHostToDevice));
-        check(hipMemcpy(dc.data,c.data(),outBytes,hipMemcpyHostToDevice));
+        Buffer scaleA(host.scaleA.size()),scaleB(host.scaleB.size());
+        check(hipMemcpy(da.data,host.a.data(),aBytes,hipMemcpyHostToDevice));
+        check(hipMemcpy(db.data,host.b.data(),bBytes,hipMemcpyHostToDevice));
+        check(hipMemcpy(dc.data,host.c.data(),outBytes,hipMemcpyHostToDevice));
         if(mx) {
-            check(hipMemset(scaleA.data,TensileLite::E8(1.0f).data,problem.mxsa().totalAllocatedBytes()));
-            check(hipMemset(scaleB.data,TensileLite::E8(1.0f).data,problem.mxsb().totalAllocatedBytes()));
+            check(hipMemcpy(scaleA.data,host.scaleA.data(),host.scaleA.size(),hipMemcpyHostToDevice));
+            check(hipMemcpy(scaleB.data,host.scaleB.data(),host.scaleB.size(),hipMemcpyHostToDevice));
         }
         TensileLite::ContractionInputs inputs;
         inputs.a=da.data;inputs.b=db.data;inputs.c=dc.data;inputs.d=dd.data;
@@ -179,15 +143,7 @@ int main(int argc, char** argv) {
         auto launch=[&] {check(adapter.launchKernels(kernels));check(hipDeviceSynchronize());};
         auto validate=[&] {
             check(hipMemcpy(d.data(),dd.data,outBytes,hipMemcpyDeviceToHost));
-            for(int j=0;j<n;++j) for(int i=0;i<m;++i) {
-                const size_t index=size_t(j)*m+i;
-                const float reference=(mx ? float(k) : float((i%13-6)*(j%11-5)*sum))+beta*getOutput(c,index);
-                const float expected=fp4 ? reference : fp32(bf16(reference));
-                const float actual=getOutput(d,index);
-                const float tolerance=mx ? 0.005f : 0.002f+0.008f*std::abs(expected);
-                if(!std::isfinite(actual) || std::abs(actual-expected)>tolerance)
-                    throw std::runtime_error("GEMM mismatch at "+std::to_string(index)+": expected "+std::to_string(expected)+", actual "+std::to_string(actual));
-            }
+            host.validate(d);
         };
         for(int r=0;r<warmups;++r) {
             std::cout<<"phase=warmup index="<<r<<std::endl;
@@ -207,7 +163,7 @@ int main(int argc, char** argv) {
         std::ofstream out(argv[9]);
         out<<"{\"invocations\":1,\"correctness\":\"passed\",\"kernel_name\":"
            <<std::quoted(solution->kernelName)<<",\"solution_index\":"<<library->solutions.begin()->first
-           <<",\"input_pattern\":"<<std::quoted(mx ? "uniform_unit_mx" : "separable_periodic_bf16")
+           <<",\"input_pattern\":"<<std::quoted(host.pattern())
            <<",\"timings_ns\":[";
         for(size_t i=0;i<times.size();++i) {if(i) out<<',';out<<times[i];}
         out<<"]}\n";

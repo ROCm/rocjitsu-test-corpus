@@ -17,6 +17,7 @@ import os
 import platform
 import re
 import shlex
+import shutil
 import signal
 import socket
 import statistics
@@ -520,16 +521,14 @@ def _target_metadata(
 
 
 def _native_target_metadata(
-    path: Path,
+    configuration: tuple[dict[str, Any], str],
     target: str,
     output: Path,
     wrapper: Sequence[str],
     thread_policy: str,
 ) -> TargetMetadata:
     """Resolve workers using the same native CLI and CPU affinity as the run."""
-    value, digest = _load_target_configuration(
-        path, "single" if thread_policy == "single" else None
-    )
+    value, digest = configuration
     directory = output / "thread-policy" / target
     directory.mkdir(parents=True)
     snapshot = directory / "config.json"
@@ -544,7 +543,10 @@ def _native_target_metadata(
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise RunnerError(
-            f"cannot resolve {thread_policy} worker policy; use a native Rocjitsu CLI supporting --thread-budget-table: {error}"
+            f"cannot resolve {thread_policy} worker policy for {target}; "
+            f"native --thread-budget-table failed: {error}; "
+            f"stdout={_captured_text(getattr(error, 'stdout', None))!r}; "
+            f"stderr={_captured_text(getattr(error, 'stderr', None))!r}"
         ) from error
     raw = _captured_text(completed.stdout)
     (directory / "policy.txt").write_text(raw)
@@ -556,15 +558,18 @@ def _native_target_metadata(
     )
     if completed.returncode or len(rows) != 1:
         raise RunnerError(
-            f"cannot resolve {thread_policy} worker policy; use a native Rocjitsu CLI supporting --thread-budget-table with one Configured row; see "
-            + str(directory)
+            f"cannot resolve {thread_policy} worker policy for {target}; "
+            f"native --thread-budget-table must return one Configured row "
+            f"with exit status 0 (got {completed.returncode}); "
+            f"stdout={raw!r}; stderr={_captured_text(completed.stderr)!r}"
         )
     engine, dispatch, helpers, total = map(int, rows[0])
     if engine < 1 or dispatch < 1 or total != engine + dispatch - 1 + helpers:
-        raise RunnerError(f"invalid native worker allocation; see {directory}")
+        raise RunnerError(f"invalid native worker allocation for {target}: {rows[0]}")
     if thread_policy == "single" and (engine, dispatch, helpers, total) != (1, 1, 0, 1):
         raise RunnerError(
-            f"single-thread policy requires allocation 1/1/0, total 1; see {directory}"
+            f"single-thread policy requires allocation 1/1/0, total 1 "
+            f"for {target}; got {engine}/{dispatch}/{helpers}, total {total}"
         )
     allocation = {
         "engine": engine,
@@ -947,85 +952,95 @@ def run_suite(
     missing = sorted(set(targets) - set(target_configs))
     if missing:
         raise RunnerError(f"missing --target-config for selected targets: {missing}")
-    target_metadata = (
-        {}
-        if isinstance(suite.num_threads, str)
-        else {
-            target: _target_metadata(target_configs[target], suite.num_threads)
-            for target in targets
-        }
-    )
+    configurations = {}
+    target_metadata = {}
+    for target in targets:
+        if isinstance(suite.num_threads, str):
+            configurations[target] = _load_target_configuration(
+                target_configs[target],
+                "single" if suite.num_threads == "single" else None,
+            )
+        else:
+            target_metadata[target] = _target_metadata(
+                target_configs[target], suite.num_threads
+            )
     started = time.monotonic()
     timestamp = _utc_now()
     source = _source_info(source_dir)
     corpus = _source_info(CORPUS_ROOT)
     environment = _environment_info()
     output_path.mkdir(parents=True)
-    if isinstance(suite.num_threads, str):
-        target_metadata = {
-            target: _native_target_metadata(
-                target_configs[target], target, output_path, wrapper, suite.num_threads
-            )
-            for target in targets
-        }
-    total_cells = len(matrix)
-    _progress(
-        progress,
-        f"START suite={suite.name} cells={total_cells} "
-        f"warmups={selected_warmups} samples={selected_samples} "
-        f"threads={suite.num_threads} plugin={plugin_profile}",
-    )
-    run: dict[str, Any] = {
-        "schemaVersion": 1,
-        "timestamp": timestamp,
-        "finishedAt": None,
-        "status": "running",
-        "wallTimeSeconds": 0.0,
-        "benchmarkSuite": suite.name,
-        "targets": list(targets),
-        "measurement": {
-            "warmups": selected_warmups,
-            "samples": selected_samples,
-            "timeoutSeconds": suite.timeout_seconds,
-        },
-        "configuration": {
-            "id": f"plugins-{plugin_profile}-v1",
-            "pluginProfile": plugin_profile,
-            "plugins": list(PLUGIN_PROFILES[plugin_profile]),
-            "targetConfigSha256": {
-                target: target_metadata[target].config_sha256 for target in targets
+    try:
+        if isinstance(suite.num_threads, str):
+            target_metadata = {
+                target: _native_target_metadata(
+                    configurations[target], target, output_path, wrapper, suite.num_threads
+                )
+                for target in targets
+            }
+        total_cells = len(matrix)
+        _progress(
+            progress,
+            f"START suite={suite.name} cells={total_cells} "
+            f"warmups={selected_warmups} samples={selected_samples} "
+            f"threads={suite.num_threads} plugin={plugin_profile}",
+        )
+        run: dict[str, Any] = {
+            "schemaVersion": 1,
+            "timestamp": timestamp,
+            "finishedAt": None,
+            "status": "running",
+            "wallTimeSeconds": 0.0,
+            "benchmarkSuite": suite.name,
+            "targets": list(targets),
+            "measurement": {
+                "warmups": selected_warmups,
+                "samples": selected_samples,
+                "timeoutSeconds": suite.timeout_seconds,
             },
-        },
-        "provenance": {
-            **_provenance(source, environment, build_metadata),
-            "corpusCommitSha": corpus["commit_sha"],
-            "corpusCommitTimestamp": corpus["commit_timestamp"],
-            "corpusDirty": corpus["dirty"],
-        },
-        "environment": {
-            key: environment[key] for key in ("hostname", "platform", "kernel", "cpu")
-        },
-        "tests": [
-            _failed_test(
-                cell,
-                target_metadata[cell.target],
-                "run interrupted before completion",
-                config_path=None,
-                plugin_reports={},
-            )
-            for cell in matrix
-        ],
-    }
-    if suite.num_threads in ("default", "single"):
-        run["configuration"]["threadingMode"] = suite.num_threads
-    allocations = {
-        target: metadata.thread_allocation
-        for target, metadata in target_metadata.items()
-        if metadata.thread_allocation is not None
-    }
-    if allocations:
-        run["configuration"]["targetThreadAllocation"] = allocations
-    _write_run(output_path, run)
+            "configuration": {
+                "id": f"plugins-{plugin_profile}-v1",
+                "pluginProfile": plugin_profile,
+                "plugins": list(PLUGIN_PROFILES[plugin_profile]),
+                "targetConfigSha256": {
+                    target: target_metadata[target].config_sha256 for target in targets
+                },
+            },
+            "provenance": {
+                **_provenance(source, environment, build_metadata),
+                "corpusCommitSha": corpus["commit_sha"],
+                "corpusCommitTimestamp": corpus["commit_timestamp"],
+                "corpusDirty": corpus["dirty"],
+            },
+            "environment": {
+                key: environment[key] for key in ("hostname", "platform", "kernel", "cpu")
+            },
+            "tests": [
+                _failed_test(
+                    cell,
+                    target_metadata[cell.target],
+                    "run interrupted before completion",
+                    config_path=None,
+                    plugin_reports={},
+                )
+                for cell in matrix
+            ],
+        }
+        if suite.num_threads in ("default", "single"):
+            run["configuration"]["threadingMode"] = suite.num_threads
+        allocations = {
+            target: metadata.thread_allocation
+            for target, metadata in target_metadata.items()
+            if metadata.thread_allocation is not None
+        }
+        if allocations:
+            run["configuration"]["targetThreadAllocation"] = allocations
+        _write_run(output_path, run)
+    except BaseException:
+        # Until the first checkpoint, setup has no partial results to preserve.
+        # mkdir above must succeed before taking ownership of this directory.
+        shutil.rmtree(output_path)
+        raise
 
     try:
         for position, cell in enumerate(matrix, start=1):
