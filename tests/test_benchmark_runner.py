@@ -1816,14 +1816,14 @@ def test_tensile_candidate_command_and_provider(runner_context, tmp_path):
     )
 
 
-def test_numeric_suite_stays_local_without_inferred_mode(runner_context):
+def test_numeric_suite_can_be_published_without_inferred_mode(runner_context):
     _, raw = _run(runner_context, _matrix(runner_context), "numeric")
     assert "threadingMode" not in raw["configuration"]
-    with pytest.raises(dashboard_publish.PublishError, match="threadingMode"):
-        dashboard_publish.normalize_run(
-            raw, run_id="numeric", trigger="manual", branch="develop",
-            environment_id="test",
-        )
+    published, _ = dashboard_publish.normalize_run(
+        raw, run_id="numeric", trigger="manual", branch="develop",
+        environment_id="test",
+    )
+    assert "threadingMode" not in published
 
 
 def test_plugin_overhead_manifest_uses_default_policy():

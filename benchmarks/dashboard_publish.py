@@ -260,7 +260,6 @@ def normalize_run(
         ):
             raise PublishError(f"{prefix} SHA does not match expected SHA")
     configuration = _mapping(raw_run.get("configuration"), "configuration")
-    threading_mode = _threading_mode(configuration.get("threadingMode"))
     profile = configuration.get("pluginProfile")
     if profile not in PLUGIN_NAMES:
         raise PublishError(f"unsupported plugin profile {profile!r}")
@@ -343,30 +342,6 @@ def normalize_run(
         or set(targets) != set(groups)
     ):
         raise PublishError("raw run targets do not match results")
-    if "targetThreadAllocation" in configuration:
-        allocations = _mapping(
-            configuration["targetThreadAllocation"], "target thread allocations"
-        )
-        if set(allocations) != set(targets):
-            raise PublishError("thread allocation targets do not match results")
-        for target, allocation in allocations.items():
-            allocation = _mapping(allocation, "thread allocation")
-            if set(allocation) != {"engine", "dispatch", "helpers", "total"}:
-                raise PublishError(
-                    "thread allocation must contain engine, dispatch, helpers, total"
-                )
-            for key, count in allocation.items():
-                if type(count) is not int or count < (0 if key == "helpers" else 1):
-                    raise PublishError(f"invalid thread allocation {key}")
-                details[f"target.{target}.threadAllocation.{key}"] = count
-            if allocation["engine"] != details[f"target.{target}.numThreads"]:
-                raise PublishError(
-                    "thread allocation engine count conflicts with numThreads"
-                )
-            # Native allocation counts one dispatch worker on the calling thread.
-            total = allocation["engine"] + allocation["dispatch"] - 1 + allocation["helpers"]
-            if allocation["total"] != total:
-                raise PublishError("thread allocation total conflicts with worker counts")
     catalog = _catalog(
         list(definitions.values()),
         {
@@ -379,7 +354,6 @@ def normalize_run(
         "comparisonId": _identifier(
             comparison_id if comparison_id is not None else run_id, "comparison ID"
         ),
-        "threadingMode": threading_mode,
         "testCatalog": f"test-catalogs/{catalog['id']}.json",
         "plugin": {"id": plugin_id, "name": plugin_name},
         "source": source,
@@ -400,15 +374,8 @@ def normalize_run(
     return run, catalog
 
 
-def _threading_mode(value: Any) -> str:
-    if value not in ("default", "single"):
-        raise PublishError("threadingMode must be default or single")
-    return value
-
-
 def _comparison_identity(run: Mapping[str, Any]) -> Any:
     return (
-        run["threadingMode"],
         run["testCatalog"],
         run["source"],
         run["execution"]["trigger"],
@@ -419,7 +386,6 @@ def _comparison_identity(run: Mapping[str, Any]) -> Any:
 
 
 def _validate_published_run(run: Mapping[str, Any], catalog: Mapping[str, Any]) -> None:
-    _threading_mode(run.get("threadingMode"))
     _identifier(run.get("comparisonId"), "comparison ID")
     source = _mapping(run.get("source"), "source")
     if source.get("branch") != "develop" or not SHA.fullmatch(
@@ -480,7 +446,7 @@ def _load_dataset(root: Path) -> tuple[list[str], dict[str, Any], list[dict[str,
     index = _mapping(load_json_document(root / "index.json"), "index")
     if set(index) != {"generatedAt", "runFiles"}:
         raise PublishError(
-            "unsupported dashboard index: expected generatedAt and runFiles"
+            "unsupported dashboard index; use a fresh data directory for the new contract"
         )
     _timestamp(index["generatedAt"], "generatedAt")
     paths = index["runFiles"]
@@ -497,11 +463,6 @@ def _load_dataset(root: Path) -> tuple[list[str], dict[str, Any], list[dict[str,
         run = _mapping(load_json_document(root / path), "published run")
         if path != f"runs/{run.get('id')}.json":
             raise PublishError("run ID does not match filename")
-        # Preserve old paths and immutable files without applying current policy
-        # or reading catalogs that only unsupported historical runs reference.
-        if "threadingMode" not in run:
-            continue
-        _threading_mode(run["threadingMode"])
         catalog_path = run.get("testCatalog")
         if not isinstance(catalog_path, str) or not CATALOG_NAME.fullmatch(
             catalog_path

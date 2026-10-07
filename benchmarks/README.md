@@ -266,15 +266,14 @@ Published files follow the [dashboard contract](https://github.com/ROCm/rocm-sys
 `metadata.json`, `index.json`, `test-catalogs/catalog-<hash>.json`, and
 `runs/<run-id>.json` under the supplied data directory. Catalogs describe the
 selected matrix exactly, including failed or interrupted cells. Catalogs and
-runs are immutable; the index is updated last. Named policies add
-`configuration.threadingMode` to raw results and top-level `threadingMode`
-(`"default"` or `"single"`) to published runs, retaining schema version 1.
-The publisher requires an explicit mode for each new run.
+runs are immutable; the index is updated last. The publisher keeps the existing
+JSON contract and validates existing runs and their catalogs when updating a dataset.
 
-Existing runs without `threadingMode` remain in the dataset and index, but
-are excluded from dashboard histories and publication compatibility checks.
-Their catalogs are not loaded. Present but invalid modes remain errors.
-Existing files cannot be replaced, including skipped legacy runs and catalogs.
+Named policies record `configuration.threadingMode` and
+`configuration.targetThreadAllocation` in raw `run.json` results. These fields
+are not included in published runs. Published results retain the existing
+per-target engine-thread count and configuration hash; the nightly case IDs
+use `.default` and `.single` suffixes to distinguish the suites.
 
 The baseline profile is published as `vanilla`. For local plugin comparisons,
 run the same suite and sampling settings on the same machine, then publish each
