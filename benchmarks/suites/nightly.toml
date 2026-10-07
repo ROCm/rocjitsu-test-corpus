@@ -1,7 +1,7 @@
 name = "nightly"
 targets = ["gfx950", "gfx1250"]
-warmups = 1
-samples = 3
+warmups = 0
+samples = 1
 num_threads = "default"
 timeout_seconds = 1200
 

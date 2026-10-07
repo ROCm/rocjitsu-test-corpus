@@ -70,7 +70,7 @@ DeepSeek W1 and W2 with 3072 tokens, four grouped 3584³ GEMMs, and persistent
 fixed launch settings: Triton tiles 128 × 128 × 64 with four warps and two stages;
 DeepSeek tiles 64 × 64 × 128 with eight warps, three stages, and unit base scales.
 The scale tensors also vary by row, column block, and reduction block for validation.
-Nightly uses one warmup and three samples after compile-only preparation, with
+Nightly uses zero warmups and one sample after compile-only preparation, with
 Rocjitsu's default CPU thread budget and the caller's CPU affinity.
 
 `benchmarks/suites/nightly-single.toml` uses the same sampling settings and a

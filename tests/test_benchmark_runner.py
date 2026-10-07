@@ -250,8 +250,8 @@ def test_default_manifest_has_full_ordered_matrix() -> None:
         not cell.definition.targets or cell.target in cell.definition.targets
         for cell in matrix
     )
-    assert suite.warmups == 1
-    assert suite.samples == 3
+    assert suite.warmups == 0
+    assert suite.samples == 1
     assert suite.num_threads == "default"
     assert suite.timeout_seconds == 1200
 
@@ -1712,8 +1712,8 @@ def test_single_thread_suite_is_fixed_subset_with_library_coverage():
     nightly = runner.load_manifest()
     single = runner.load_manifest(runner.BENCHMARK_ROOT / "suites/nightly-single.toml")
     assert single.num_threads == "single"
-    assert single.warmups == nightly.warmups
-    assert single.samples == nightly.samples
+    assert single.warmups == nightly.warmups == 0
+    assert single.samples == nightly.samples == 1
     default_cases = {case.id: case for case in nightly.cases}
     for case in single.cases:
         assert case.id.endswith(".single")
