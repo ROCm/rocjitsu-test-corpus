@@ -75,6 +75,14 @@ def _string(value: Any, name: str) -> str:
     return value
 
 
+def _validate_publication_source(branch: Any, trigger: Any) -> None:
+    _string(branch, "branch")
+    if trigger not in ("auto", "manual"):
+        raise PublishError("invalid trigger")
+    if trigger == "auto" and branch != "develop":
+        raise PublishError("automatic publication requires branch develop")
+
+
 def _positive_integer(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise PublishError(f"{name} must be a positive integer")
@@ -241,10 +249,7 @@ def normalize_run(
         "failed",
     ):
         raise PublishError("raw run must be finalized schema version 1")
-    if branch != "develop" or trigger not in ("auto", "manual"):
-        raise PublishError(
-            "publication requires branch develop and trigger auto or manual"
-        )
+    _validate_publication_source(branch, trigger)
     provenance = _mapping(raw_run.get("provenance"), "provenance")
     for prefix, sha_key, dirty_key, expected in (
         ("Rocjitsu", "rocjitsuCommitSha", "dirty", expected_sha),
@@ -388,9 +393,7 @@ def _comparison_identity(run: Mapping[str, Any]) -> Any:
 def _validate_published_run(run: Mapping[str, Any], catalog: Mapping[str, Any]) -> None:
     _identifier(run.get("comparisonId"), "comparison ID")
     source = _mapping(run.get("source"), "source")
-    if source.get("branch") != "develop" or not SHA.fullmatch(
-        _string(source.get("commit"), "commit")
-    ):
+    if not SHA.fullmatch(_string(source.get("commit"), "commit")):
         raise PublishError("invalid published source")
     _timestamp(source.get("committedAt"), "committedAt")
     if "message" in source:
@@ -398,8 +401,7 @@ def _validate_published_run(run: Mapping[str, Any], catalog: Mapping[str, Any]) 
     execution = _mapping(run.get("execution"), "execution")
     _timestamp(execution.get("completedAt"), "completedAt")
     _string(execution.get("machine"), "machine")
-    if execution.get("trigger") not in ("auto", "manual"):
-        raise PublishError("invalid trigger")
+    _validate_publication_source(source.get("branch"), execution.get("trigger"))
     plugin = _mapping(run.get("plugin"), "plugin")
     _identifier(plugin.get("id"), "plugin ID")
     _string(plugin.get("name"), "plugin name")
@@ -607,7 +609,7 @@ def build_parser() -> argparse.ArgumentParser:
     ):
         parser.add_argument(f"--{flag}", required=True)
     parser.add_argument("--trigger", choices=("auto", "manual"), required=True)
-    parser.add_argument("--branch", choices=("develop",), required=True)
+    parser.add_argument("--branch", required=True)
     parser.add_argument("--is-beta", action="store_true")
     for flag in (
         "machine-id",
