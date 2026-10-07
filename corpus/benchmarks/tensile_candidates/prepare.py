@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Prepare one fixed solution per pinned TensileLite candidate (no timed runs)."""
 import hashlib
 from pathlib import Path

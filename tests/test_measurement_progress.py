@@ -94,3 +94,38 @@ def test_precompiled_single_sample_does_not_launch_during_compile(measurement, m
     kernel.__getitem__.assert_not_called()
     assert measurement.measure(launch, 0, 1) == [10]
     kernel.__getitem__.return_value.assert_called_once_with("tensor", BLOCK=128)
+
+
+@pytest.mark.parametrize("warmups,samples", [(0, 1), (0, 3), (2, 3)])
+def test_prelaunch_reset_is_outside_timing_and_does_not_add_launches(measurement, monkeypatch, warmups, samples):
+    clock = [0]
+    events = []
+    monkeypatch.setattr(measurement.time, "perf_counter_ns", lambda: clock[0])
+    monkeypatch.setattr(measurement.time, "monotonic_ns", lambda: clock[0])
+
+    def before_launch():
+        events.append("reset")
+        clock[0] += 1000
+
+    def synchronize():
+        events.append("sync")
+        clock[0] += 100
+
+    def launch():
+        events.append("launch")
+        clock[0] += 10
+
+    measurement.torch.cuda.synchronize.side_effect = synchronize
+    assert measurement.measure(launch, warmups, samples, before_launch=before_launch) == [110] * samples
+    assert events == ["reset", "sync", "launch", "sync"] * (warmups + samples)
+
+
+def test_failed_prelaunch_reset_never_executes_sample(measurement):
+    launch = MagicMock()
+
+    def fail():
+        raise RuntimeError("reset failed")
+
+    with pytest.raises(RuntimeError, match="reset failed"):
+        measurement.measure(launch, 0, 1, before_launch=fail)
+    launch.assert_not_called()

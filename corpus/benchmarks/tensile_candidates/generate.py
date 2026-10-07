@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Build and package pinned candidate code objects without running benchmarks."""
 import argparse
 import hashlib
@@ -8,8 +10,9 @@ import subprocess
 import shutil
 import sys
 
-from prepare import CANDIDATES, REVISION, configuration, verify_source
 import yaml
+
+from prepare import CANDIDATES, REVISION, configuration, verify_source
 
 
 def package(generated, output, provenance):

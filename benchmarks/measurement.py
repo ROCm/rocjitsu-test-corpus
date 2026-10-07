@@ -7,7 +7,8 @@ import json
 from pathlib import Path
 import sys
 import time
-from typing import Any, Callable
+from collections.abc import Callable, Sequence
+from typing import Any
 import torch
 
 
@@ -30,19 +31,23 @@ def reported_target() -> str:
 class TritonLaunch:
     """Keep identical arguments for compile-only preparation and execution."""
 
-    def __init__(self, kernel, grid, *args, keepalive=(), **kwargs):
+    def __init__(
+        self, kernel, grid, *args, keepalive=(),
+        before_launch: Callable[[], None] | None = None, **kwargs,
+    ):
         self.kernel, self.grid = kernel, grid
         self.args, self.kwargs = args, kwargs
         # Grouped GEMM passes pointer tables; retain the tensors they address.
         self.keepalive = keepalive
+        self.before_launch = before_launch
 
-    def compile(self):
+    def compile(self) -> None:
         compiled = self.kernel.warmup(*self.args, grid=self.grid, **self.kwargs)
         # Accessing run initializes the launcher and loads the binary, without
         # executing it. Do this here rather than on the first timed call.
         _ = compiled.run
 
-    def __call__(self):
+    def __call__(self) -> None:
         self.kernel[self.grid](*self.args, **self.kwargs)
 
 
@@ -51,6 +56,8 @@ def measure(
     warmups: int,
     samples: int,
     progress: Callable[[dict[str, Any]], None] | None = None,
+    *,
+    before_launch: Callable[[], None] | None = None,
 ) -> list[int]:
     """Sample launches with progress callbacks outside timed intervals."""
     durations: list[int] = []
@@ -67,6 +74,9 @@ def measure(
                     "timings_ns": list(durations),
                 }
             )
+        if before_launch is not None:
+            before_launch()
+            torch.cuda.synchronize()
         start = time.perf_counter_ns()
         launch()
         torch.cuda.synchronize()
@@ -102,14 +112,16 @@ def measure(
     return durations
 
 
-def progress_writer(output_path: str, case: str):
+def progress_writer(
+    output_path: str, case: str,
+) -> Callable[[dict[str, Any]], None] | None:
     """Return an atomic sidecar writer, or None for stdout-only results."""
     if output_path == "-":
         return None
     path = Path(output_path).with_suffix(".progress.json")
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    def write(event):
+    def write(event: dict[str, Any]) -> None:
         temporary = path.with_suffix(path.suffix + ".tmp")
         temporary.write_text(json.dumps({"case": case, **event}, sort_keys=True) + "\n")
         temporary.replace(path)
@@ -117,12 +129,20 @@ def progress_writer(output_path: str, case: str):
     return write
 
 
-def to_cpu(tensor):
+def to_cpu(tensor: torch.Tensor) -> torch.Tensor:
     # The simulated KMD needs host pages registered for device-to-host copies.
     # Pinned memory uses that public HIP path; pageable tensor.cpu() does not.
     host = torch.empty(tensor.shape, dtype=tensor.dtype, device="cpu", pin_memory=True)
     host.copy_(tensor)
     return host
+
+
+def poison_outputs(outputs: Sequence[torch.Tensor]) -> None:
+    """Invalidate every output before a launch, outside its timed interval."""
+    for output in outputs:
+        # Byte fill supports FP8 as well as FP16/BF16/FP32. All-ones encodes
+        # NaN for these output formats and needs no host-sized poison buffer.
+        output.view(torch.uint8).fill_(255)
 
 
 def deterministic_tensor(

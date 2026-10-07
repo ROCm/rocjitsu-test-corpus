@@ -5,6 +5,25 @@
 import torch
 
 
+def attention_inputs(batch, sequence, kv_heads, groups, dimension):
+    """Repeatable BF16 inputs varying across every logical tensor axis.
+
+    Positive values avoid cancellation around zero in the output, while signed
+    queries/keys and distinct sinks exercise attention weights and head mapping.
+    """
+    generator = torch.Generator(device="cpu").manual_seed(54)
+
+    def values(shape, low, high, divisor):
+        return (torch.randint(low, high, shape, generator=generator).float() / divisor).bfloat16()
+
+    return (
+        values((batch, sequence, kv_heads, groups, dimension), -8, 9, 8),
+        values((batch, sequence, kv_heads, dimension), -8, 9, 8),
+        values((batch, sequence, kv_heads, dimension), 1, 8, 4),
+        values((kv_heads * groups,), -4, 5, 8),
+    )
+
+
 def check_attention_reference(
     query, key, value, sinks, actual, *, sm_scale=0.125, sliding_window=0,
     query_chunk_size=128,
@@ -38,4 +57,6 @@ def check_attention_reference(
                     batch:batch + 1, start:end,
                     first_head * dimension:last_head * dimension,
                 ]
-                torch.testing.assert_close(observed, expected)
+                if not torch.isfinite(observed).all():
+                    raise AssertionError("attention output contains nonfinite or unwritten values")
+                torch.testing.assert_close(observed, expected, rtol=0.016, atol=1e-5)

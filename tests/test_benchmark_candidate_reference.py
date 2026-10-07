@@ -38,7 +38,7 @@ def test_fp16_reference_matches_actual_operands(shape, group):
     assert torch.all(expected > 0)
 
 
-@pytest.mark.parametrize("k", [65535, 65536, 65537, 131072, 262144])
+@pytest.mark.parametrize("k", [32767, 32768, 32769, 65535, 65536, 65537, 131072, 262144])
 def test_large_fp16_reduction_stays_finite_and_matches_operands(k):
     # Seven rows/five columns exercise every magnitude in the input pattern.
     a, b = candidate_inputs(7, 5, k, torch.float16)
@@ -87,6 +87,52 @@ def test_fp8_reference_matches_actual_operands(shape, bases):
     expected = candidate_expected(*shape, torch.bfloat16, scale_bases=bases)
     assert_candidate_output(actual, expected)
     assert torch.all(expected > 0)
+
+
+def _mutate_reduction_operand(operand, axis, mutation):
+    # Mutate decoded stored values, independently of the factor/reference code.
+    operand = operand.float()
+    if mutation == "reverse":
+        return operand.flip([axis])
+    if mutation == "shift_forward":
+        return operand.roll(1, axis)
+    if mutation == "shift_backward":
+        return operand.roll(-1, axis)
+    indices = torch.arange(operand.shape[axis]) % 64
+    return operand.index_select(axis, indices)
+
+
+@pytest.mark.parametrize("shape", [(9, 11, 129), (7, 5, 4096)])
+@pytest.mark.parametrize("operand", ["a", "b"])
+@pytest.mark.parametrize("mutation", ["reverse", "shift_forward", "shift_backward", "replay_first_64"])
+def test_fp16_reduction_indexing_mutations_are_rejected(shape, operand, mutation):
+    a, b = candidate_inputs(*shape, torch.float16, group=2)
+    if operand == "a":
+        a = _mutate_reduction_operand(a, 1, mutation)
+    else:
+        b = _mutate_reduction_operand(b, 0, mutation)
+    actual = (a.float() @ b.float()).half()
+    expected = candidate_expected(*shape, torch.float16, group=2)
+    with pytest.raises(AssertionError):
+        assert_candidate_output(actual, expected)
+
+
+@pytest.mark.parametrize("shape", [(7, 257, 513), (7, 5, 18432)])
+@pytest.mark.parametrize("bases", [(0.5, 0.25), (1.0, 1.0)])
+@pytest.mark.parametrize("operand", ["a", "b"])
+@pytest.mark.parametrize("mutation", ["reverse", "shift_forward", "shift_backward", "replay_first_64"])
+def test_fp8_reduction_indexing_mutations_are_rejected(shape, bases, operand, mutation):
+    a, b, a_scale, b_scale = candidate_inputs(
+        *shape, torch.float8_e4m3fn, scale_bases=bases,
+    )
+    if operand == "a":
+        a = _mutate_reduction_operand(a, 1, mutation)
+    else:
+        b = _mutate_reduction_operand(b, 1, mutation)
+    actual = sum(_block_products(a, b, a_scale, b_scale)).bfloat16()
+    expected = candidate_expected(*shape, torch.bfloat16, scale_bases=bases)
+    with pytest.raises(AssertionError):
+        assert_candidate_output(actual, expected)
 
 
 @pytest.mark.parametrize("bases", [(0.5, 0.25), (1.0, 1.0)])
@@ -166,7 +212,8 @@ def test_ignored_scales_are_rejected(bases, ignored):
         assert_candidate_output(actual, expected)
 
 
-def test_checked_launch_poisoning_rejects_stale_and_partial_outputs(monkeypatch):
+@pytest.mark.parametrize("warmups,samples", [(0, 1), (0, 3), (1, 3)])
+def test_sample_poisoning_rejects_stale_and_partial_outputs(monkeypatch, warmups, samples):
     # Only CUDA transport is replaced; poisoning and validation use real tensors.
     monkeypatch.setitem(sys.modules, "triton", SimpleNamespace())
     path = Path(__file__).resolve().parents[1] / "corpus/benchmarks/triton/candidates.py"
@@ -174,24 +221,40 @@ def test_checked_launch_poisoning_rejects_stale_and_partial_outputs(monkeypatch)
     candidates = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(candidates)
     monkeypatch.setattr(candidates, "to_cpu", lambda tensor: tensor)
+    from benchmarks.measurement import measure, poison_outputs
+
     events = []
     monkeypatch.setattr(torch.cuda, "synchronize", lambda: events.append("synchronize"))
     expected = candidate_expected(7, 5, 512, torch.float16)
     output = expected.clone()
-    write = "all"
+    calls = 0
 
     def launch():
+        nonlocal calls
         assert torch.isnan(output).all()
         events.append("launch")
-        if write == "all":
+        calls += 1
+        if write == "all" or calls < warmups + samples:
             output.copy_(expected)
         elif write == "partial":
             output[1:].copy_(expected[1:])
 
-    check = candidates._candidate_check([output], launch, 512)
-    check()
-    assert events == ["launch", "synchronize"]
-    for write in ("none", "partial"):
-        output.copy_(expected)  # Simulate a successful earlier warmup/sample.
-        with pytest.raises(AssertionError):
+    check = candidates._candidate_check([output], 512)
+    for write in ("all", "none", "partial"):
+        calls = 0
+        events.clear()
+        output.copy_(expected)
+        durations = measure(
+            launch, warmups, samples,
+            before_launch=lambda: poison_outputs([output]),
+        )
+        assert len(durations) == samples
+        assert calls == warmups + samples
+        sampled_events = events.copy()
+        if write == "all":
             check()
+        else:
+            with pytest.raises(AssertionError):
+                check()
+        # Validation consumes the sampled output without another dispatch.
+        assert events == sampled_events

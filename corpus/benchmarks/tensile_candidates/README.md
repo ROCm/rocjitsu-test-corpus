@@ -37,7 +37,7 @@ cmake -S corpus/benchmarks/tensile_candidates -B .benchmark-artifacts/tensile-na
   -DROCM_PATH="$ROCM_PATH" -DCMAKE_PREFIX_PATH="$ROCM_PATH" \
   -DCMAKE_CXX_COMPILER="$ROCM_PATH/bin/amdclang++" \
   -DPython_EXECUTABLE="$PYTHON" -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-cmake --build .benchmark-artifacts/tensile-native -j "$(nproc)"
+cmake --build .benchmark-artifacts/tensile-native
 ```
 
 CMake uses upstream's pinned nanobind dependency. An existing checkout can be

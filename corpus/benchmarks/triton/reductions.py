@@ -7,7 +7,7 @@ import math
 import torch
 import triton
 
-from benchmarks.measurement import TritonLaunch, to_cpu
+from benchmarks.measurement import TritonLaunch, poison_outputs, to_cpu
 
 TRITON_COMMIT = "ced7e4b42f992f0b125208767cafc371d079ffd9"
 REFERENCE_ROWS = 256
@@ -60,9 +60,7 @@ def _prepare(workload, parameters):
     for start in range(0, rows, REFERENCE_ROWS):
         stop = min(start + REFERENCE_ROWS, rows)
         x[start:stop].copy_(reduction_input(start, stop, columns).pin_memory())
-    # Initialize before timing: the very first measured launch must write all
-    # outputs. Checks never dispatch the benchmark kernel a second time.
-    y = torch.full_like(x, float("nan"))
+    y = torch.empty_like(x)
     block = triton.next_power_of_2(columns)
     if workload == "triton_softmax":
         from corpus.benchmarks.third_party.triton_candidates.softmax import softmax_kernel
@@ -77,8 +75,8 @@ def _prepare(workload, parameters):
         from corpus.benchmarks.third_party.triton_candidates.layernorm import _layer_norm_fwd_fused
 
         weight, bias = [v.pin_memory().to("cuda") for v in reduction_affine(columns)]
-        mean = torch.full((rows,), float("nan"), dtype=torch.float32, device="cuda")
-        rstd = torch.full_like(mean, float("nan"))
+        mean = torch.empty((rows,), dtype=torch.float32, device="cuda")
+        rstd = torch.empty_like(mean)
         grid = (rows,)
         knobs = {"BLOCK_SIZE": block, "num_warps": 8, "num_stages": 1}
         launch = TritonLaunch(
@@ -87,9 +85,10 @@ def _prepare(workload, parameters):
         )
         outputs = (y, mean, rstd)
         entrypoint = "05-layer-norm.py:_layer_norm_fwd_fused"
+    launch.before_launch = lambda: poison_outputs(outputs)
     parameters.update({
         "input_pattern": "dyadic_row_column_modular",
-        "correctness": "chunked_fp64_reference_all_outputs_initial_nan_poison",
+        "correctness": "chunked_fp64_reference_all_outputs_final_sample_prelaunch_poison",
         "measurement_scope": "kernel_launch_and_synchronize",
         "source": {"repository": "https://github.com/triton-lang/triton",
                    "commit": TRITON_COMMIT, "entrypoint": entrypoint},

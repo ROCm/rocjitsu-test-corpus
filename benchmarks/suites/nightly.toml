@@ -2,7 +2,7 @@ name = "nightly"
 targets = ["gfx950", "gfx1250"]
 warmups = 0
 samples = 1
-num_threads = "default"
+thread_policy = "default"
 timeout_seconds = 1200
 
 [[cases]]
@@ -77,7 +77,7 @@ params = { dtype = "fp8", rows = 256, columns = 7168, reduction = 18432 }
 id = "tensile.bf16_streamk_4096x4096x4096.default"
 workload = "tensile_candidate"
 suite = "TensileLite"
-name = "bf16_streamk 4096x4096x4096"
+name = "BF16 Stream-K 4096x4096x4096"
 operation = "GEMM"
 targets = ["gfx950"]
 params = { dtype = "bf16", variant = "bf16_streamk", m = 4096, n = 4096, k = 4096 }
@@ -86,7 +86,7 @@ params = { dtype = "bf16", variant = "bf16_streamk", m = 4096, n = 4096, k = 409
 id = "tensile.bf16_subtile_4096x4096x4096.default"
 workload = "tensile_candidate"
 suite = "TensileLite"
-name = "bf16_subtile 4096x4096x4096"
+name = "BF16 subtile 4096x4096x4096"
 operation = "GEMM"
 targets = ["gfx1250"]
 params = { dtype = "bf16", variant = "bf16_subtile", m = 4096, n = 4096, k = 4096 }
@@ -95,7 +95,7 @@ params = { dtype = "bf16", variant = "bf16_subtile", m = 4096, n = 4096, k = 409
 id = "tensile.mxfp8_subtile_4096x4096x4096.default"
 workload = "tensile_candidate"
 suite = "TensileLite"
-name = "mxfp8_subtile 4096x4096x4096"
+name = "MXFP8 subtile 4096x4096x4096"
 operation = "GEMM"
 targets = ["gfx950"]
 params = { dtype = "mxfp8", variant = "mxfp8_subtile", m = 4096, n = 4096, k = 4096 }
@@ -104,7 +104,7 @@ params = { dtype = "mxfp8", variant = "mxfp8_subtile", m = 4096, n = 4096, k = 4
 id = "tensile.mxfp4_streamk_4096x4096x4096.default"
 workload = "tensile_candidate"
 suite = "TensileLite"
-name = "mxfp4_streamk 4096x4096x4096"
+name = "MXFP4 Stream-K 4096x4096x4096"
 operation = "GEMM"
 targets = ["gfx1250"]
 params = { dtype = "mxfp4", variant = "mxfp4_streamk", m = 4096, n = 4096, k = 4096 }
@@ -117,7 +117,7 @@ suite = "DeepSeek"
 name = "FP8 MLP first projection, 3072 tokens"
 operation = "GEMM"
 targets = ["gfx1250"]
-params = { dtype = "fp8", rows = 3072, columns = 18432, reduction = 7168, configuration = "issue12611" }
+params = { dtype = "fp8", rows = 3072, columns = 18432, reduction = 7168, configuration = "large_tile" }
 
 [[cases]]
 id = "deepseek.mlp_w2_m3072.default"
@@ -126,7 +126,7 @@ suite = "DeepSeek"
 name = "FP8 MLP second projection, 3072 tokens"
 operation = "GEMM"
 targets = ["gfx1250"]
-params = { dtype = "fp8", rows = 3072, columns = 7168, reduction = 18432, configuration = "issue12611" }
+params = { dtype = "fp8", rows = 3072, columns = 7168, reduction = 18432, configuration = "large_tile" }
 
 [[cases]]
 id = "triton.grouped_4x3584.default"
@@ -135,7 +135,7 @@ suite = "Triton"
 name = "FP16 grouped GEMM, 4 x 3584"
 operation = "Grouped GEMM"
 targets = ["gfx1250"]
-params = { dtype = "fp16", rows = 3584, columns = 3584, reduction = 3584, groups = 4, configuration = "issue12611" }
+params = { dtype = "fp16", rows = 3584, columns = 3584, reduction = 3584, groups = 4, configuration = "large_tile" }
 
 [[cases]]
 id = "triton.persistent_8192x8192x4096.default"
@@ -144,7 +144,7 @@ suite = "Triton"
 name = "FP16 persistent matmul, 8192 x 8192 x 4096"
 operation = "GEMM"
 targets = ["gfx1250"]
-params = { dtype = "fp16", rows = 8192, columns = 8192, reduction = 4096, configuration = "issue12611" }
+params = { dtype = "fp16", rows = 8192, columns = 8192, reduction = 4096, configuration = "large_tile" }
 
 # Additional operation coverage from rocm-systems#12611, default threading only.
 [[cases]]

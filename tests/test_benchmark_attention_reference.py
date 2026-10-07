@@ -81,3 +81,63 @@ def test_nonpositive_chunk_rejected(references):
     q, k, v, sinks = inputs(1)
     with pytest.raises(ValueError, match="positive"):
         helper.check_attention_reference(q, k, v, sinks, None, query_chunk_size=0)
+
+
+@pytest.mark.parametrize("sequence,window,wrong_window", [(3072, 128, 64), (2560, 0, 128)])
+def test_adapter_inputs_reject_wrong_attention_window(references, sequence, window, wrong_window):
+    helper, upstream = references
+    q, k, v, sinks = helper.attention_inputs(1, sequence, 1, 2, 64)
+    # A single head pair keeps the mutation oracle small at the real sequence lengths.
+    wrong = upstream.attention_ref(q, k, v, sinks, sliding_window=wrong_window)
+    with pytest.raises(AssertionError):
+        helper.check_attention_reference(q, k, v, sinks, wrong, sliding_window=window)
+
+
+@pytest.mark.parametrize("mutation", ["kv_head", "query_group", "output_head", "batch"])
+def test_adapter_inputs_reject_head_and_batch_mapping(references, mutation):
+    helper, upstream = references
+    q, k, v, sinks = helper.attention_inputs(2, 192, 2, 2, 64)
+    if mutation == "kv_head":
+        wrong = upstream.attention_ref(q, k.roll(1, 2), v.roll(1, 2), sinks, sliding_window=128)
+    elif mutation == "query_group":
+        wrong = upstream.attention_ref(q.roll(1, 3), k, v, sinks, sliding_window=128)
+    else:
+        wrong = upstream.attention_ref(q, k, v, sinks, sliding_window=128)
+        if mutation == "batch":
+            wrong = wrong.roll(1, 0)
+        else:
+            wrong = wrong.reshape(2, 192, 4, 64).roll(1, 2).reshape(2, 192, 256)
+    with pytest.raises(AssertionError):
+        helper.check_attention_reference(q, k, v, sinks, wrong, sliding_window=128)
+
+
+def test_adapter_inputs_are_repeatable_and_vary_on_all_axes(references):
+    helper, _ = references
+    first = helper.attention_inputs(2, 192, 2, 2, 64)
+    second = helper.attention_inputs(2, 192, 2, 2, 64)
+    for actual, expected in zip(first, second, strict=True):
+        assert actual.dtype == torch.bfloat16
+        assert torch.equal(actual, expected)
+        for axis in range(actual.ndim):
+            assert not torch.equal(actual, actual.roll(1, axis))
+    assert (first[2] > 0).all()
+
+
+@pytest.mark.parametrize("write", ["none", "partial", "all"])
+def test_poisoned_sample_rejects_unwritten_attention_outputs(references, write):
+    from benchmarks.measurement import poison_outputs
+
+    helper, upstream = references
+    q, k, v, sinks = helper.attention_inputs(1, 192, 2, 2, 64)
+    expected = upstream.attention_ref(q, k, v, sinks, sliding_window=128)
+    actual = expected.clone()  # Previous successful warmup/sample.
+    poison_outputs([actual])
+    if write == "all":
+        actual.copy_(expected)
+    elif write == "partial":
+        actual[:, :-1].copy_(expected[:, :-1])
+    if write == "all":
+        helper.check_attention_reference(q, k, v, sinks, actual, sliding_window=128)
+    else:
+        with pytest.raises(AssertionError, match="unwritten"):
+            helper.check_attention_reference(q, k, v, sinks, actual, sliding_window=128)

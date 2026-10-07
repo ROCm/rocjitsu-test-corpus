@@ -2,10 +2,12 @@
 # SPDX-License-Identifier: MIT
 """Fixed-launch adapters for pinned upstream candidate kernels."""
 
+from typing import Any
+
 import torch
 import triton
 
-from benchmarks.measurement import TritonLaunch, to_cpu
+from benchmarks.measurement import TritonLaunch, poison_outputs, to_cpu
 from corpus.benchmarks.triton.candidate_reference import (
     assert_candidate_output, candidate_expected, candidate_inputs,
 )
@@ -14,14 +16,10 @@ TRITON_COMMIT = "ced7e4b42f992f0b125208767cafc371d079ffd9"
 DEEPSEEK_COMMIT = "9b4e9788e4a3a731f7567338ed15d3ec549ce03b"
 
 
-def _candidate_check(outputs, launch, reduction, scale_bases=None):
-    # A separate untimed dispatch must overwrite every output. Poisoning after
-    # sampling prevents warmups or a previous successful sample hiding a no-op.
+def _candidate_check(outputs, reduction, scale_bases=None):
+    # Each sampled output was poisoned before its launch. Validate the final
+    # sample without executing the benchmark kernel again.
     def check():
-        for output in outputs:
-            output.fill_(float("nan"))
-        launch()
-        torch.cuda.synchronize()
         for group, output in enumerate(outputs):
             expected = candidate_expected(
                 *output.shape, reduction, output.dtype,
@@ -40,8 +38,8 @@ def _metadata(parameters, source, entrypoint, launch):
     repository, commit = source
     parameters.update(
         {
-            "input_pattern": "positive_dyadic_row_column_group_kblock",
-            "correctness": "exact_output_dtype_reference_untimed_poisoned_launch",
+            "input_pattern": "positive_dyadic_row_column_group_k_and_block",
+            "correctness": "exact_output_dtype_reference_final_sample_prelaunch_poison",
             "measurement_scope": "kernel_launch_and_synchronize",
             "source": {
                 "repository": repository,
@@ -62,8 +60,8 @@ def prepare_triton_persistent(parameters):
     a, b = _device_inputs(m, n, k, torch.float16)
     c = torch.empty((m, n), device="cuda", dtype=torch.float16)
     sms = torch.cuda.get_device_properties("cuda").multi_processor_count
-    issue_configuration = parameters.get("configuration") == "issue12611"
-    tile = 128 if issue_configuration else 64
+    large_tile_configuration = parameters.get("configuration") == "large_tile"
+    tile = 128 if large_tile_configuration else 64
     grid = (min(sms, triton.cdiv(m, tile) * triton.cdiv(n, tile)),)
     knobs = {
         "BLOCK_SIZE_M": tile,
@@ -72,7 +70,7 @@ def prepare_triton_persistent(parameters):
         "GROUP_SIZE_M": 8,
         "NUM_SMS": sms,
         "num_warps": 4,
-        "num_stages": 2 if issue_configuration else 1,
+        "num_stages": 2 if large_tile_configuration else 1,
     }
 
     launch = TritonLaunch(
@@ -86,6 +84,7 @@ def prepare_triton_persistent(parameters):
         *a.stride(),
         *b.stride(),
         *c.stride(),
+        before_launch=lambda: poison_outputs([c]),
         **knobs,
     )
 
@@ -95,7 +94,7 @@ def prepare_triton_persistent(parameters):
         "09-persistent-matmul.py:matmul_kernel_persistent",
         {"grid": list(grid), **knobs},
     )
-    return parameters, launch, _candidate_check([c], launch, k)
+    return parameters, launch, _candidate_check([c], k)
 
 
 def prepare_triton_grouped(parameters):
@@ -118,15 +117,15 @@ def prepare_triton_grouped(parameters):
     sizes = torch.tensor([m, n, k] * groups, device="cuda", dtype=torch.int32)
     strides = torch.tensor([k, n, n] * groups, device="cuda", dtype=torch.int32)
     sms = torch.cuda.get_device_properties("cuda").multi_processor_count
-    issue_configuration = parameters.get("configuration") == "issue12611"
-    tile = 128 if issue_configuration else 64
+    large_tile_configuration = parameters.get("configuration") == "large_tile"
+    tile = 128 if large_tile_configuration else 64
     knobs = {
         "BLOCK_SIZE_M": tile,
         "BLOCK_SIZE_N": tile,
         "BLOCK_SIZE_K": 64,
         "NUM_SM": sms,
         "num_warps": 4,
-        "num_stages": 2 if issue_configuration else 1,
+        "num_stages": 2 if large_tile_configuration else 1,
     }
 
     launch = TritonLaunch(
@@ -137,6 +136,7 @@ def prepare_triton_grouped(parameters):
         groups,
         **knobs,
         keepalive=(aa, bb, cc),
+        before_launch=lambda: poison_outputs(cc),
     )
 
     _metadata(
@@ -145,7 +145,7 @@ def prepare_triton_grouped(parameters):
         "08-grouped-gemm.py:grouped_matmul_kernel",
         {"grid": [sms], **knobs},
     )
-    return parameters, launch, _candidate_check(cc, launch, k)
+    return parameters, launch, _candidate_check(cc, k)
 
 
 def prepare_deepseek_fp8(parameters):
@@ -153,9 +153,9 @@ def prepare_deepseek_fp8(parameters):
 
     m, n, k = (parameters[name] for name in ("rows", "columns", "reduction"))
     dtype = torch.float8_e4m3fn
-    issue_configuration = parameters.get("configuration") == "issue12611"
-    scale_a, scale_b = (1.0, 1.0) if issue_configuration else (0.5, 0.25)
-    tile_m = 64 if issue_configuration else 32
+    large_tile_configuration = parameters.get("configuration") == "large_tile"
+    scale_a, scale_b = (1.0, 1.0) if large_tile_configuration else (0.5, 0.25)
+    tile_m = 64 if large_tile_configuration else 32
     a, b, a_scale, b_scale = _device_inputs(
         m, n, k, dtype, scale_bases=(scale_a, scale_b)
     )
@@ -179,6 +179,7 @@ def prepare_deepseek_fp8(parameters):
         m,
         n,
         k,
+        before_launch=lambda: poison_outputs([c]),
         **knobs,
     )
 
@@ -192,7 +193,7 @@ def prepare_deepseek_fp8(parameters):
     parameters["scale_bases"] = [scale_a, scale_b]
     parameters["scale_pattern"] = "power_of_two_row_column_block_and_kblock"
     return parameters, launch, _candidate_check(
-        [c], launch, k, scale_bases=(scale_a, scale_b)
+        [c], k, scale_bases=(scale_a, scale_b)
     )
 
 
@@ -203,7 +204,7 @@ PREPARE_CANDIDATES = {
 }
 
 
-def validate_candidate_parameters(workload, parameters):
+def validate_candidate_parameters(workload: str, parameters: dict[str, Any]) -> dict[str, Any]:
     if workload not in PREPARE_CANDIDATES:
         raise ValueError(f"unknown candidate workload: {workload}")
     if not isinstance(parameters, dict):
@@ -211,8 +212,8 @@ def validate_candidate_parameters(workload, parameters):
     dimensions = {"rows", "columns", "reduction"}
     if workload == "triton_grouped":
         dimensions.add("groups")
-    if "configuration" in parameters and parameters["configuration"] != "issue12611":
-        raise ValueError("configuration must be issue12611 when specified")
+    if "configuration" in parameters and parameters["configuration"] != "large_tile":
+        raise ValueError("configuration must be large_tile when specified")
     if set(parameters) - {"configuration"} != dimensions | {"dtype"}:
         raise ValueError(
             f"{workload} requires exactly these params: {', '.join(sorted(dimensions | {'dtype'}))}"
@@ -224,7 +225,7 @@ def validate_candidate_parameters(workload, parameters):
     if parameters["dtype"] != dtype:
         raise ValueError(f"{workload} requires dtype={dtype}")
     if workload == "triton_grouped":
-        tile = 128 if parameters.get("configuration") == "issue12611" else 64
+        tile = 128 if parameters.get("configuration") == "large_tile" else 64
         if parameters["rows"] % tile or parameters["columns"] % tile or parameters["reduction"] % 64:
             raise ValueError(
                 f"upstream grouped GEMM requires full {tile}-element tiles in rows/columns and 64-element reduction tiles"

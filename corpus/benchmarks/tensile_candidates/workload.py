@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Run a prepared TensileLite candidate through the native single-launch adapter."""
 import argparse
 import hashlib

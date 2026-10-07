@@ -36,13 +36,15 @@ invoking directory. Every selected target needs a mapping; extra mappings are
 allowed for convenience when selecting a subset. The runner snapshots selected
 configs before execution and derives each cell's config from that snapshot.
 It applies the suite's thread policy, removes the simulation tick limit, and
-adds the selected plugin and report paths. With `num_threads = "default"`,
+adds the selected plugin and report paths. With `thread_policy = "default"`,
 the runner preserves the native allocation policy and records the allocation
 reported by `--thread-budget-table`. Base configs must not enable plugins or sinks.
-With `num_threads = "single"`, the runner sets the CPU budget to one and overrides
+With `thread_policy = "single"`, the runner sets the CPU budget to one and overrides
 engine, dispatch, and helper counts to 1/1/0. It verifies that the native CLI
 resolves exactly one total worker. Setting the integer `num_threads = 1` alone
 only limits simulator engines; dispatch and helper workers can still run in parallel.
+Each manifest must specify exactly one of `thread_policy` or integer `num_threads`.
+The keys cannot be combined; string-valued `num_threads` is not supported.
 With either named thread policy, resolved engine, dispatch, helper, and total
 worker counts are included in `run.json` and the published environment.
 Plugin comparisons reject different allocations or a mix of results with and
@@ -54,7 +56,7 @@ source root, SDK, and selected plugin binaries. The wrapper must select the
 binary from that build; arbitrary wrapper commands cannot be checked against
 CMake metadata. Rebuild rocjitsu after source changes.
 
-The default `benchmarks/suites/nightly.toml` contains 16 case definitions and
+The default `benchmarks/suites/nightly.toml` contains 20 case definitions and
 28 target/case combinations across `gfx950` and `gfx1250`:
 
 - GPT-OSS windowed and full causal attention on both targets.
@@ -69,7 +71,7 @@ The default `benchmarks/suites/nightly.toml` contains 16 case definitions and
 Four larger gfx1250 cases come from
 [rocm-systems issue 12611](https://github.com/ROCm/rocm-systems/issues/12611):
 DeepSeek W1 and W2 with 3072 tokens, four grouped 3584³ GEMMs, and persistent
-8192 × 8192 × 4096 matmul. Their `configuration = "issue12611"` selects the issue's
+8192 × 8192 × 4096 matmul. Their `configuration = "large_tile"` selects the issue's
 fixed launch settings: Triton tiles 128 × 128 × 64 with four warps and two stages;
 DeepSeek tiles 64 × 64 × 128 with eight warps, three stages, and unit base scales.
 The scale tensors also vary by row, column block, and reduction block for validation.
@@ -85,7 +87,8 @@ the large issue 12611 cases, windowed attention, W2 projections, MX variants,
 softmax, layer normalization, and activation/weight conversions.
 The issue's later measurements put the large W1/W2 cases near 14 minutes per
 single-threaded launch; those cases remain in the default suite only.
-The trimmed suite's end-to-end runtime has not been measured.
+End-to-end runtime includes setup, compilation, output reset, and CPU validation;
+it is longer than the sum of measured kernel durations.
 
 Run both manifests separately with different output directories. Keep their
 dashboard run IDs and environment IDs distinct so both histories are retained.
@@ -121,28 +124,32 @@ executing an implicit initialization launch. Requested warmups run before the
 samples; with zero warmups, the first execution is the first timed sample.
 Remaining first-execution runtime costs can still occur in that sample.
 
-Each Triton sample launches one kernel. After sampling, the DeepSeek, grouped
-GEMM, and persistent GEMM adapters poison outputs with NaNs and run one additional
-untimed launch. They compare its complete output with a CPU reference before
-emitting results. This checks that the launch overwrites every output instead of
-reusing values from earlier launches; it does not validate every timed sample.
-Their positive dyadic inputs vary by row, column, group, and reduction block;
-DeepSeek scales also vary across both free and reduction axes. The scheduled
-shapes accumulate exactly in FP32, so validation compares the rounded output
-without a blanket relative or absolute tolerance. These structured patterns
-use power-of-two row and column factors and scale FP16 inputs down when K exceeds
-65,536 to keep outputs finite and avoid fractional accumulation error. The
-checker rejects nonfinite references and outputs. The patterns
-exercise representative indexing and scale errors, not all possible permutations.
-A failed reference check fails the case. The
-Tensile adapter validates every measured launch; see its [README](../corpus/benchmarks/tensile_candidates/README.md) for input patterns
-and validation limits.
+Each Triton sample launches one benchmark kernel. The DeepSeek, grouped
+GEMM, and persistent GEMM adapters poison outputs before each warmup and sample.
+GPT-OSS attention, the row reductions, and the activation/weight conversions do
+this too. Reset and synchronization complete before the sample timer starts.
+Validation checks the final sampled output and never launches the benchmark
+kernel again. Zero warmups and one sample therefore executes each benchmark
+kernel exactly once. With multiple samples, only the final sample is checked;
+the output reset prevents values from earlier launches hiding missing writes.
 
-GPT-OSS checks the sampled output with the upstream CPU reference in chunks of
-one batch, one KV head, and at most 128 query positions. Each chunk retains all
-keys and its absolute query offset to preserve causal and window masking. For
-the largest nightly shape, each temporary FP32 attention matrix is at most
-12 MiB; input and output storage still grows with the full problem size.
+GEMM inputs use positive dyadic factors varying by row, column, group, reduction
+block, and within each 64-element K tile. DeepSeek scales vary across both free
+and reduction axes. The scheduled shapes accumulate exactly in FP32, so the
+checker compares the rounded output without a blanket tolerance. For FP16
+reductions above 32,768, power-of-two free-axis factors preserve accumulation
+headroom and keep outputs finite. These patterns exercise representative indexing
+and scale errors, not all possible permutations. Nonfinite values and failed
+references fail the case. The Tensile adapter validates every measured launch;
+see its [README](../corpus/benchmarks/tensile_candidates/README.md).
+
+GPT-OSS uses fixed-seed BF16 inputs varying across all axes, with positive value
+inputs and varying queries, keys, and sinks. It checks the final sampled output
+with the upstream CPU reference using explicit BF16 bounds (`rtol=0.016`,
+`atol=1e-5`). Reference chunks contain one batch, one KV head, and at most 128
+query positions, retaining all keys and absolute query offsets for causal/window
+masking. Each temporary FP32 attention matrix is at most 12 MiB for the largest
+nightly shape; full input and output storage still scales with the problem.
 
 The extracted GPT-OSS attention implementation lives in
 `corpus/benchmarks/third_party/gpt_oss/attention.py`. Its `NOTICE.md`
@@ -192,13 +199,18 @@ Supported parameters (all dimensions are positive integers):
 | `rmsnorm` | `rows`, `columns`, `epsilon` | fp16, bf16, fp32 |
 | `gemm` | `m`, `n`, `k` | fp16, bf16 |
 | `gpt_oss_attention` | `batch`, `query_heads`, `key_value_heads`, `sequence`, `window`, `head_dimension` | bf16 |
-| `triton_persistent` | `rows`, `columns`, `reduction`; optional `configuration = "issue12611"` | fp16 |
-| `triton_grouped` | `rows`, `columns`, `reduction`, `groups`; optional `configuration = "issue12611"` | fp16 |
+| `triton_persistent` | `rows`, `columns`, `reduction`; optional `configuration = "large_tile"` | fp16 |
+| `triton_grouped` | `rows`, `columns`, `reduction`, `groups`; optional `configuration = "large_tile"` | fp16 |
 | `triton_softmax` | `rows`, `columns` | fp32 |
 | `triton_layernorm` | `rows`, `columns`, `epsilon` | fp32 |
 | `deepseek_act_quant` | `rows`, `columns` | bf16 |
 | `deepseek_weight_dequant` | `rows`, `columns` | fp8 |
-| `deepseek_fp8` | `rows`, `columns`, `reduction`; optional `configuration = "issue12611"` | fp8 |
+| `tensile_candidate` | `variant`, `m`, `n`, `k`; explicit matching case `targets` | bf16, mxfp8, mxfp4 (matching variant) |
+| `deepseek_fp8` | `rows`, `columns`, `reduction`; optional `configuration = "large_tile"` | fp8 |
+
+For Tensile variants, target restrictions, native build instructions, and
+`TENSILE_CANDIDATE_ARTIFACTS` / `TENSILE_CANDIDATE_RUNNER`, see the
+[Tensile candidate guide](../corpus/benchmarks/tensile_candidates/README.md).
 
 Gather accepts a nonnegative index offset and wraps indices by source size.
 RMSNorm epsilon must be finite and positive. GEMM uses non-transposed inputs,
@@ -207,7 +219,7 @@ dimension 64, sequence lengths divisible by 64, query heads divisible by KV
 heads, and a window of zero (full causal attention) or a positive multiple of 64.
 Unsupported parameters fail the case before GPU allocation.
 Grouped GEMM requires full tiles: rows and columns divisible by 64 by default,
-or 128 with `configuration = "issue12611"`, and reduction divisible by 64.
+or 128 with `configuration = "large_tile"`, and reduction divisible by 64.
 The upstream `triton_softmax` and `triton_layernorm` adapters support up to
 16384 columns. Both use eight warps and one program per row; softmax uses two
 stages and layer normalization uses one. Layer normalization requires a finite,
@@ -215,8 +227,8 @@ positive epsilon. Activation quantization requires columns divisible by 128 and
 uses 128-element blocks. Weight dequantization uses 128 × 128 tiles, including
 masked edge tiles. Both DeepSeek conversions use four warps.
 
-These four default-thread workloads poison outputs before the first timed launch
-and check every output afterward in CPU chunks. Layer normalization also checks
+These four default-thread workloads poison outputs before every launch
+and check every output of the final sample in CPU chunks. Layer normalization also checks
 its mean and reciprocal standard deviation; activation quantization checks its
 block scales. The chosen dyadic conversion inputs allow exact output checks.
 The reductions use FP64 CPU references with FP32 error bounds. Validation does

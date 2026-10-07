@@ -2,7 +2,7 @@ name = "plugin-overhead"
 targets = ["gfx950", "gfx1250"]
 warmups = 3
 samples = 21
-num_threads = "default"
+thread_policy = "default"
 timeout_seconds = 300
 
 [[cases]]

@@ -58,6 +58,8 @@ def workloads_context(monkeypatch):
     monkeypatch.setitem(sys.modules, "benchmarks.measurement", ctx.measurement)
     candidates = load_module("candidates_under_test", WORKLOAD.with_name("candidates.py"))
     monkeypatch.setitem(sys.modules, "corpus.benchmarks.triton.candidates", candidates)
+    attention_reference = load_module("attention_reference_under_test", WORKLOAD.with_name("attention_reference.py"))
+    monkeypatch.setitem(sys.modules, "corpus.benchmarks.triton.attention_reference", attention_reference)
     ctx.workload = load_module("upstream_under_test", WORKLOAD)
     return ctx
 
@@ -131,7 +133,9 @@ def test_attention_prepares_buffers_and_descriptors_only_once(workloads_context)
     )
     workloads_context.attention.__getitem__.assert_not_called()
     assert workloads_context.descriptor.from_tensor.call_count == 4
-    assert workloads_context.torch.full.call_count == 4
+    assert workloads_context.torch.Generator.call_count == 1
+    assert workloads_context.torch.randint.call_count == 4
+    assert launch.before_launch is not None
     allocations = list(workloads_context.torch.mock_calls)
     descriptors = list(workloads_context.descriptor.mock_calls)
     launch()
@@ -239,7 +243,8 @@ def run_main(workloads_context, check):
         events.append("prepare")
         return ({"fixture": True}, launch, check(events))
 
-    def measure(callback, warmups, samples, progress=None):
+    def measure(callback, warmups, samples, progress=None, *, before_launch=None):
+        assert before_launch is launch.before_launch
         assert callback is launch
         events.append("measure")
         return [12, 13, 14]

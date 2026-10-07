@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 import importlib.util
 from pathlib import Path
 import unittest

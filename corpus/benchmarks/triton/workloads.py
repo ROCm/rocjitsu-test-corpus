@@ -38,6 +38,7 @@ from benchmarks.measurement import (
     reported_target as _reported_target,
     target_matches as _target_matches,
     to_cpu,
+    poison_outputs,
     write_result as _write_result,
 )
 
@@ -453,22 +454,16 @@ def prepare_gpt_oss_attention(parameters):
     from triton.tools.tensor_descriptor import TensorDescriptor
 
     from corpus.benchmarks.third_party.gpt_oss.attention import _attn_fwd
-    from corpus.benchmarks.triton.attention_reference import check_attention_reference
+    from corpus.benchmarks.triton.attention_reference import (
+        attention_inputs, check_attention_reference,
+    )
 
     batch, sequence = parameters["batch"], parameters["sequence"]
     heads, kv_heads = parameters["query_heads"], parameters["key_value_heads"]
     dimension, window = parameters["head_dimension"], parameters["window"]
     groups = heads // kv_heads
-    q = _deterministic_tensor(
-        (batch, sequence, kv_heads, groups, dimension), torch.bfloat16
-    )
-    k = _deterministic_tensor(
-        (batch, sequence, kv_heads, dimension), torch.bfloat16, phase=83
-    )
-    v = _deterministic_tensor(
-        (batch, sequence, kv_heads, dimension), torch.bfloat16, phase=167
-    )
-    sinks = _deterministic_tensor((heads,), torch.bfloat16, phase=41)
+    host_inputs = attention_inputs(batch, sequence, kv_heads, groups, dimension)
+    q, k, v, sinks = (tensor.pin_memory().to("cuda") for tensor in host_inputs)
     start = torch.zeros((batch,), device="cuda", dtype=torch.int32)
     grid = (sequence // 64, batch * heads, 1)
 
@@ -505,6 +500,7 @@ def prepare_gpt_oss_attention(parameters):
         BANDWIDTH=window,
         num_warps=4,
         num_stages=1,
+        before_launch=lambda: poison_outputs([output]),
     )
 
     def check():
@@ -513,10 +509,7 @@ def prepare_gpt_oss_attention(parameters):
             to_cpu(output).transpose(1, 2).reshape(batch, sequence, heads * dimension)
         )
         check_attention_reference(
-            to_cpu(q),
-            to_cpu(k),
-            to_cpu(v),
-            to_cpu(sinks),
+            *host_inputs,
             actual,
             sm_scale=0.125,
             sliding_window=window,
@@ -526,7 +519,8 @@ def prepare_gpt_oss_attention(parameters):
         {
             "causal": True,
             "learned_sinks": True,
-            "input_pattern": "deterministic_nonzero_constant_by_phase",
+            "input_pattern": "seed54_dyadic_all_axes_positive_values",
+            "correctness": "chunked_cpu_reference_final_sample_prelaunch_poison",
             "measurement_scope": "kernel_launch_and_synchronize",
             "source": {
                 "repository": "https://github.com/openai/gpt-oss",
@@ -705,7 +699,7 @@ def main() -> int:
         torch.cuda.synchronize()
         durations = _measure(
             launch, arguments.warmups, arguments.samples,
-            progress=progress,
+            progress=progress, before_launch=launch.before_launch,
         )
         if check is not None:
             started = time.monotonic_ns()

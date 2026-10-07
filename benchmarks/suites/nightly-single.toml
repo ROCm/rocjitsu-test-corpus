@@ -2,7 +2,7 @@ name = "nightly-single"
 targets = ["gfx950", "gfx1250"]
 warmups = 0
 samples = 1
-num_threads = "single"
+thread_policy = "single"
 timeout_seconds = 1200
 
 # Fixed subset of nightly.toml: five cases per target, preserving all four libraries.
@@ -54,7 +54,7 @@ params = { dtype = "fp8", rows = 256, columns = 18432, reduction = 7168 }
 id = "tensile.bf16_streamk_4096x4096x4096.single"
 workload = "tensile_candidate"
 suite = "TensileLite"
-name = "bf16_streamk 4096x4096x4096"
+name = "BF16 Stream-K 4096x4096x4096"
 operation = "GEMM"
 targets = ["gfx950"]
 params = { dtype = "bf16", variant = "bf16_streamk", m = 4096, n = 4096, k = 4096 }
@@ -63,7 +63,7 @@ params = { dtype = "bf16", variant = "bf16_streamk", m = 4096, n = 4096, k = 409
 id = "tensile.bf16_subtile_4096x4096x4096.single"
 workload = "tensile_candidate"
 suite = "TensileLite"
-name = "bf16_subtile 4096x4096x4096"
+name = "BF16 subtile 4096x4096x4096"
 operation = "GEMM"
 targets = ["gfx1250"]
 params = { dtype = "bf16", variant = "bf16_subtile", m = 4096, n = 4096, k = 4096 }

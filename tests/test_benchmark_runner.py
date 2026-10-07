@@ -107,7 +107,7 @@ def runner_context(tmp_path, monkeypatch):
 
 @pytest.fixture
 def named_runner_context(runner_context, monkeypatch):
-    runner_context.suite = replace(runner_context.suite, num_threads="default")
+    runner_context.suite = replace(runner_context.suite, num_threads=None, thread_policy="default")
     monkeypatch.setattr(
         runner, "_native_target_metadata",
         lambda config, *_args: runner.TargetMetadata(
@@ -252,7 +252,7 @@ def test_default_manifest_has_full_ordered_matrix() -> None:
     )
     assert suite.warmups == 0
     assert suite.samples == 1
-    assert suite.num_threads == "default"
+    assert suite.thread_policy == "default"
     assert suite.timeout_seconds == 1200
 
 
@@ -263,7 +263,7 @@ def test_smoke_manifest_has_single_triton_case(runner_context) -> None:
     assert tuple(case.id for case in smoke.cases) == ("triton.rmsnorm_bf16.default",)
     assert smoke.warmups == 1
     assert smoke.samples == 3
-    assert smoke.num_threads == "default"
+    assert smoke.thread_policy == "default"
     assert smoke.timeout_seconds == 60
 
 
@@ -331,7 +331,7 @@ def test_manifest_rejects_invalid_thread_count(runner_context) -> None:
     text = runner.DEFAULT_MANIFEST.read_text(encoding="utf-8")
     for value in ("0", "-1", "true"):
         manifest.write_text(
-            text.replace('num_threads = "default"', f"num_threads = {value}"),
+            text.replace('thread_policy = "default"', f"num_threads = {value}"),
             encoding="utf-8",
         )
         with pytest.raises(
@@ -1377,7 +1377,8 @@ def test_signal_preserves_flushed_workload_output(runner_context, signum) -> Non
 
 @pytest.mark.parametrize("thread_policy", [8, "default", "single"])
 def test_existing_output_is_never_overwritten(runner_context, thread_policy) -> None:
-    runner_context.suite = replace(runner_context.suite, num_threads=thread_policy)
+    runner_context.suite = replace(runner_context.suite, num_threads=thread_policy if isinstance(thread_policy, int) else None,
+        thread_policy=thread_policy if isinstance(thread_policy, str) else None)
     output = runner_context.root / "existing"
     output.mkdir()
     marker = output / "keep"
@@ -1622,7 +1623,8 @@ def test_thread_policy_and_recorded_native_allocation(
     import dataclasses
 
     runner_context.suite = dataclasses.replace(
-        runner_context.suite, num_threads=thread_policy
+        runner_context.suite, num_threads=thread_policy if isinstance(thread_policy, int) else None,
+        thread_policy=thread_policy if isinstance(thread_policy, str) else None
     )
     policy = {
         "exec_mode": "functional",
@@ -1695,7 +1697,7 @@ def test_single_thread_policy_rejects_parallel_native_allocation(
     import dataclasses
 
     runner_context.suite = dataclasses.replace(
-        runner_context.suite, num_threads="single"
+        runner_context.suite, num_threads=None, thread_policy="single"
     )
     with pytest.raises(runner.RunnerError, match="single-thread policy requires"):
         _run(
@@ -1711,7 +1713,7 @@ def test_single_thread_policy_rejects_parallel_native_allocation(
 def test_single_thread_suite_is_fixed_subset_with_library_coverage():
     nightly = runner.load_manifest()
     single = runner.load_manifest(runner.BENCHMARK_ROOT / "suites/nightly-single.toml")
-    assert single.num_threads == "single"
+    assert single.thread_policy == "single"
     assert single.warmups == nightly.warmups == 0
     assert single.samples == nightly.samples == 1
     default_cases = {case.id: case for case in nightly.cases}
@@ -1723,7 +1725,7 @@ def test_single_thread_suite_is_fixed_subset_with_library_coverage():
             original.params,
             original.targets,
         )
-        assert case.params.get("configuration") != "issue12611"
+        assert case.params.get("configuration") != "large_tile"
     for target in nightly.targets:
         matrix = runner.select_matrix(single, targets=[target])
         assert len(matrix) == 5
@@ -1753,7 +1755,8 @@ def test_named_threads_reject_unavailable_native_policy(
     import dataclasses
 
     runner_context.suite = dataclasses.replace(
-        runner_context.suite, num_threads=thread_policy
+        runner_context.suite, num_threads=thread_policy if isinstance(thread_policy, int) else None,
+        thread_policy=thread_policy if isinstance(thread_policy, str) else None
     )
     with pytest.raises(runner.RunnerError, match="native|worker policy"):
         _run(
@@ -1773,7 +1776,7 @@ def test_default_manifest_and_case_target_selection(tmp_path):
     manifest = tmp_path / "suite.toml"
     manifest.write_text(text)
     suite = runner.load_manifest(manifest)
-    assert suite.num_threads == "default"
+    assert suite.thread_policy == "default"
     assert runner.select_matrix(suite, cases=[suite.cases[0].id])[0].target == "gfx950"
     with pytest.raises(runner.RunnerError, match="no supported targets"):
         runner.select_matrix(suite, cases=[suite.cases[0].id], targets=["gfx1250"])
@@ -1825,7 +1828,7 @@ def test_numeric_suite_stays_local_without_inferred_mode(runner_context):
 
 def test_plugin_overhead_manifest_uses_default_policy():
     suite = runner.load_manifest(runner.BENCHMARK_ROOT / "suites/plugin-overhead.toml")
-    assert suite.num_threads == "default"
+    assert suite.thread_policy == "default"
     assert (suite.warmups, suite.samples, suite.timeout_seconds) == (3, 21, 300)
     assert {case.id for case in suite.cases} == {
         "triton.copy_fp32_32m.default",
@@ -1849,7 +1852,8 @@ def test_plugin_overhead_manifest_uses_default_policy():
 def test_invalid_second_config_does_not_create_output(
     runner_context, thread_policy, invalid_config
 ):
-    runner_context.suite = replace(runner_context.suite, num_threads=thread_policy)
+    runner_context.suite = replace(runner_context.suite, num_threads=thread_policy if isinstance(thread_policy, int) else None,
+        thread_policy=thread_policy if isinstance(thread_policy, str) else None)
     config = runner_context.configs["gfx1250"]
     if invalid_config is None:
         config.unlink()
@@ -1868,7 +1872,8 @@ def test_invalid_second_config_does_not_create_output(
 def test_native_setup_failure_on_second_target_allows_retry(
     runner_context, thread_policy, failure
 ):
-    runner_context.suite = replace(runner_context.suite, num_threads=thread_policy)
+    runner_context.suite = replace(runner_context.suite, num_threads=thread_policy if isinstance(thread_policy, int) else None,
+        thread_policy=thread_policy if isinstance(thread_policy, str) else None)
     output = runner_context.root / "retry-policy"
     matrix = runner.select_matrix(runner_context.suite)
     targets = []
@@ -1911,7 +1916,8 @@ def test_native_setup_failure_on_second_target_allows_retry(
 
 @pytest.mark.parametrize("thread_policy", [8, "default", "single"])
 def test_first_checkpoint_failure_removes_setup_output(runner_context, thread_policy):
-    runner_context.suite = replace(runner_context.suite, num_threads=thread_policy)
+    runner_context.suite = replace(runner_context.suite, num_threads=thread_policy if isinstance(thread_policy, int) else None,
+        thread_policy=thread_policy if isinstance(thread_policy, str) else None)
     output = runner_context.root / "checkpoint-failure"
 
     def failed_checkpoint(directory, run):
@@ -1936,7 +1942,8 @@ def test_first_checkpoint_failure_removes_setup_output(runner_context, thread_po
 def test_native_probe_uses_all_prevalidated_target_snapshots(
     runner_context, thread_policy
 ):
-    runner_context.suite = replace(runner_context.suite, num_threads=thread_policy)
+    runner_context.suite = replace(runner_context.suite, num_threads=thread_policy if isinstance(thread_policy, int) else None,
+        thread_policy=thread_policy if isinstance(thread_policy, str) else None)
     snapshots = []
 
     def execute(argv, **kwargs):
@@ -1974,3 +1981,42 @@ def test_output_created_by_other_process_is_preserved(runner_context):
         with pytest.raises(FileExistsError):
             _run(runner_context, runner.select_matrix(runner_context.suite), output.name)
     assert (output / "keep").read_text() == "other process"
+
+
+@pytest.mark.parametrize("selection", [
+    '', 'thread_policy = "default"\nnum_threads = 1',
+    'thread_policy = "single"\nnum_threads = 1',
+])
+def test_manifest_requires_one_thread_selection(runner_context, selection):
+    path = runner_context.root / "ambiguous.toml"
+    path.write_text(runner.DEFAULT_MANIFEST.read_text().replace('thread_policy = "default"', selection))
+    with pytest.raises(runner.RunnerError, match="exactly one"):
+        runner.load_manifest(path)
+
+
+@pytest.mark.parametrize("value", ['"default"', '"single"', '"8"', '1.5', '[]', '{}'])
+def test_num_threads_accepts_only_integer_counts(runner_context, value):
+    path = runner_context.root / "numeric.toml"
+    path.write_text(runner.DEFAULT_MANIFEST.read_text().replace('thread_policy = "default"', f'num_threads = {value}'))
+    with pytest.raises(runner.RunnerError, match="positive integer"):
+        runner.load_manifest(path)
+
+
+@pytest.mark.parametrize("value", ['"unknown"', '1', 'true', '[]', '{}'])
+def test_manifest_rejects_invalid_named_policy(runner_context, value):
+    path = runner_context.root / "policy.toml"
+    path.write_text(runner.DEFAULT_MANIFEST.read_text().replace('thread_policy = "default"', f'thread_policy = {value}'))
+    with pytest.raises(runner.RunnerError, match="thread_policy must"):
+        runner.load_manifest(path)
+
+
+def test_numeric_one_is_not_the_single_worker_policy(runner_context):
+    path = runner_context.root / "numeric.toml"
+    path.write_text(runner.DEFAULT_MANIFEST.read_text().replace('thread_policy = "default"', 'num_threads = 1'))
+    suite = runner.load_manifest(path)
+    assert suite.num_threads == 1 and suite.thread_policy is None
+    runner_context.suite = replace(runner_context.suite, num_threads=1)
+    matrix = _matrix(runner_context, runner_context.suite.cases[0].id)
+    _, result = _run(runner_context, matrix, "numeric-one")
+    assert "threadingMode" not in result["configuration"]
+    assert result["tests"][0]["numThreads"] == 1

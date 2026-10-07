@@ -27,7 +27,7 @@ import time
 import tomllib
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, Literal, TextIO
 
 BENCHMARK_ROOT = Path(__file__).resolve().parent
 CORPUS_ROOT = BENCHMARK_ROOT.parent
@@ -40,7 +40,6 @@ MANIFEST_FIELDS = {
     "cases",
     "warmups",
     "samples",
-    "num_threads",
     "timeout_seconds",
 }
 PACKAGE_NAMES = (
@@ -113,8 +112,9 @@ class Suite:
     cases: tuple[Case, ...]
     warmups: int
     samples: int
-    num_threads: int | str
+    num_threads: int | None
     timeout_seconds: float
+    thread_policy: Literal["default", "single"] | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -178,6 +178,12 @@ def _sample_count(value: Any, field: str = "samples") -> int:
     return count
 
 
+def _thread_policy(value: Any) -> Literal["default", "single"]:
+    if value not in ("default", "single"):
+        raise RunnerError('thread_policy must be "default" or "single"')
+    return value
+
+
 def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
     """Read and validate the intentionally small suite manifest."""
 
@@ -187,6 +193,10 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise RunnerError(f"cannot read manifest {manifest}: {error}") from error
     fields = set(value)
+    threading_fields = fields & {"num_threads", "thread_policy"}
+    if len(threading_fields) != 1:
+        raise RunnerError("manifest requires exactly one of thread_policy or num_threads")
+    fields -= threading_fields
     if fields != MANIFEST_FIELDS:
         missing = sorted(MANIFEST_FIELDS - fields)
         extra = sorted(fields - MANIFEST_FIELDS)
@@ -248,10 +258,10 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
         warmups=_integer(value["warmups"], "warmups", allow_zero=True),
         samples=_sample_count(value["samples"]),
         num_threads=(
-            value["num_threads"]
-            if value["num_threads"] in ("default", "single")
-            else _integer(value["num_threads"], "num_threads", allow_zero=False)
+            _integer(value["num_threads"], "num_threads", allow_zero=False)
+            if "num_threads" in value else None
         ),
+        thread_policy=_thread_policy(value["thread_policy"]) if "thread_policy" in value else None,
         timeout_seconds=float(timeout),
     )
 
@@ -467,7 +477,9 @@ def validate_build(
 
 def _load_target_configuration(
     path: Path,
-    num_threads: int | str | None = None,
+    num_threads: int | None = None,
+    *,
+    thread_policy: Literal["default", "single"] | None = None,
 ) -> tuple[dict[str, Any], str]:
     try:
         encoded = path.read_bytes()
@@ -488,7 +500,7 @@ def _load_target_configuration(
     result = dict(value)
     # Benchmarks must finish the workload without a simulation tick limit.
     result["max_ticks"] = 0
-    if num_threads == "single":
+    if thread_policy == "single":
         # A single engine alone still permits parallel dispatch and helpers.
         result.update(
             cpu_thread_budget=1,
@@ -959,10 +971,10 @@ def run_suite(
     configurations = {}
     target_metadata = {}
     for target in targets:
-        if isinstance(suite.num_threads, str):
+        if suite.thread_policy is not None:
             configurations[target] = _load_target_configuration(
                 target_configs[target],
-                "single" if suite.num_threads == "single" else None,
+                thread_policy=suite.thread_policy,
             )
         else:
             target_metadata[target] = _target_metadata(
@@ -975,10 +987,10 @@ def run_suite(
     environment = _environment_info()
     output_path.mkdir(parents=True)
     try:
-        if isinstance(suite.num_threads, str):
+        if suite.thread_policy is not None:
             target_metadata = {
                 target: _native_target_metadata(
-                    configurations[target], target, output_path, wrapper, suite.num_threads
+                    configurations[target], target, output_path, wrapper, suite.thread_policy
                 )
                 for target in targets
             }
@@ -987,7 +999,7 @@ def run_suite(
             progress,
             f"START suite={suite.name} cells={total_cells} "
             f"warmups={selected_warmups} samples={selected_samples} "
-            f"threads={suite.num_threads} plugin={plugin_profile}",
+            f"threads={suite.thread_policy or suite.num_threads} plugin={plugin_profile}",
         )
         run: dict[str, Any] = {
             "schemaVersion": 1,
@@ -1030,8 +1042,8 @@ def run_suite(
                 for cell in matrix
             ],
         }
-        if suite.num_threads in ("default", "single"):
-            run["configuration"]["threadingMode"] = suite.num_threads
+        if suite.thread_policy is not None:
+            run["configuration"]["threadingMode"] = suite.thread_policy
         allocations = {
             target: metadata.thread_allocation
             for target, metadata in target_metadata.items()

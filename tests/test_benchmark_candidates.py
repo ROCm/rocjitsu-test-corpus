@@ -44,22 +44,22 @@ def test_candidate_rejects_invalid_launch_inputs(candidates):
 
 
 @pytest.mark.parametrize("workload", ["deepseek_fp8", "triton_grouped", "triton_persistent"])
-def test_issue_configuration_is_explicit_and_validated(candidates, workload):
+def test_large_tile_configuration_is_explicit_and_validated(candidates, workload):
     p = dict(dtype="fp8" if workload == "deepseek_fp8" else "fp16",
              rows=3072, columns=7168, reduction=18432)
     if workload == "triton_grouped":
         p["groups"] = 4
     assert candidates.validate_candidate_parameters(workload, p) == p
-    configured = {**p, "configuration": "issue12611"}
+    configured = {**p, "configuration": "large_tile"}
     assert candidates.validate_candidate_parameters(workload, configured) == configured
-    for invalid in (None, True, 12611, "unknown", {}, []):
+    for invalid in (None, True, 12611, "issue12611", "unknown", {}, []):
         with pytest.raises(ValueError, match="configuration"):
             candidates.validate_candidate_parameters(workload, {**p, "configuration": invalid})
 
 
-def test_issue_grouped_requires_selected_full_tiles(candidates):
+def test_large_tile_grouped_requires_selected_full_tiles(candidates):
     p = dict(dtype="fp16", rows=128, columns=128, reduction=64, groups=4,
-             configuration="issue12611")
+             configuration="large_tile")
     assert candidates.validate_candidate_parameters("triton_grouped", p) == p
     for key, value in (("rows", 64), ("columns", 64), ("reduction", 32)):
         with pytest.raises(ValueError, match="full 128-element tiles"):
@@ -68,7 +68,7 @@ def test_issue_grouped_requires_selected_full_tiles(candidates):
     assert candidates.validate_candidate_parameters("triton_grouped", default) == default
 
 
-@pytest.mark.parametrize("configuration,tile,stages", [(None, 64, 1), ("issue12611", 128, 2)])
+@pytest.mark.parametrize("configuration,tile,stages", [(None, 64, 1), ("large_tile", 128, 2)])
 @pytest.mark.parametrize("workload,module_name,kernel_name", [
     ("triton_persistent", "persistent", "matmul_kernel_persistent"),
     ("triton_grouped", "grouped", "grouped_matmul_kernel"),
@@ -105,7 +105,7 @@ def test_triton_configuration_reaches_launch(candidates, monkeypatch, configurat
 
 
 @pytest.mark.parametrize("configuration,tile_m,scales", [
-    (None, 32, (0.5, 0.25)), ("issue12611", 64, (1.0, 1.0)),
+    (None, 32, (0.5, 0.25)), ("large_tile", 64, (1.0, 1.0)),
 ])
 def test_deepseek_configuration_reaches_launch_and_validation(candidates, monkeypatch,
                                                              configuration, tile_m, scales):

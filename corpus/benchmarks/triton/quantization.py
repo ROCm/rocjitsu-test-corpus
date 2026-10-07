@@ -5,7 +5,7 @@
 import torch
 import triton
 
-from benchmarks.measurement import TritonLaunch, to_cpu
+from benchmarks.measurement import TritonLaunch, poison_outputs, to_cpu
 from corpus.benchmarks.triton.quantization_reference import (
     BLOCK, CHUNK_ROWS, activation_input, assert_activation_output,
     assert_weight_output, weight_input, weight_scales,
@@ -23,12 +23,6 @@ def _device_input(rows, columns, dtype, make_input):
     return host.to("cuda")
 
 
-def _poisoned(shape, dtype):
-    # No setup GPU dispatch: poison the first measured output before compilation.
-    host = torch.full(shape, float("nan"), dtype=dtype, pin_memory=True)
-    return host.to("cuda")
-
-
 def _metadata(parameters, kernel, grid, knobs, output_dtype):
     parameters.update({
         "source": {
@@ -39,7 +33,7 @@ def _metadata(parameters, kernel, grid, knobs, output_dtype):
         "launch": {"grid": list(grid), **knobs},
         "output_dtype": output_dtype,
         "input_pattern": "signed_row_column_block_dyadic",
-        "correctness": "full_output_chunked_cpu_exact_reference_prelaunch_poison",
+        "correctness": "full_output_chunked_cpu_exact_reference_final_sample_prelaunch_poison",
         "reference_chunk_rows": CHUNK_ROWS,
         "measurement_scope": "kernel_launch_and_synchronize",
     })
@@ -50,11 +44,14 @@ def prepare_deepseek_act_quant(parameters):
 
     rows, columns = parameters["rows"], parameters["columns"]
     x = _device_input(rows, columns, torch.bfloat16, activation_input)
-    y = _poisoned((rows, columns), torch.float8_e4m3fn)
-    scales = _poisoned((rows, columns // BLOCK), torch.float32)
+    y = torch.empty((rows, columns), dtype=torch.float8_e4m3fn, device="cuda")
+    scales = torch.empty((rows, columns // BLOCK), dtype=torch.float32, device="cuda")
     grid = (rows * columns // BLOCK,)
     knobs = {"BLOCK_SIZE": BLOCK, "scale_fmt": None, "num_warps": 4}
-    launch = TritonLaunch(act_quant_kernel, grid, x, y, scales, **knobs)
+    launch = TritonLaunch(
+        act_quant_kernel, grid, x, y, scales,
+        before_launch=lambda: poison_outputs([y, scales]), **knobs,
+    )
     _metadata(parameters, "act_quant_kernel", grid, knobs, "fp8e4m3fn")
     parameters["scale_dtype"] = "fp32"
     parameters["scale_validation_rtol"] = 2e-7
@@ -77,10 +74,13 @@ def prepare_deepseek_weight_dequant(parameters):
     x = _device_input(rows, columns, torch.float8_e4m3fn, weight_input)
     host_scales = weight_scales(rows, columns)
     scales = host_scales.pin_memory().to("cuda")
-    y = _poisoned((rows, columns), torch.float32)
+    y = torch.empty((rows, columns), dtype=torch.float32, device="cuda")
     grid = (triton.cdiv(rows, BLOCK), triton.cdiv(columns, BLOCK))
     knobs = {"BLOCK_SIZE": BLOCK, "num_warps": 4}
-    launch = TritonLaunch(weight_dequant_kernel, grid, x, scales, y, rows, columns, **knobs)
+    launch = TritonLaunch(
+        weight_dequant_kernel, grid, x, scales, y, rows, columns,
+        before_launch=lambda: poison_outputs([y]), **knobs,
+    )
     _metadata(parameters, "weight_dequant_kernel", grid, knobs, "fp32")
     parameters["scale_pattern"] = "power_of_two_row_column_tiles"
 
