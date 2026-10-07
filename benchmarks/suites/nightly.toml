@@ -145,3 +145,36 @@ name = "FP16 persistent matmul, 8192 x 8192 x 4096"
 operation = "GEMM"
 targets = ["gfx1250"]
 params = { dtype = "fp16", rows = 8192, columns = 8192, reduction = 4096, configuration = "issue12611" }
+
+# Additional operation coverage from rocm-systems#12611, default threading only.
+[[cases]]
+id = "triton.softmax_131072x2048.default"
+workload = "triton_softmax"
+suite = "Triton"
+name = "FP32 softmax"
+operation = "Softmax"
+params = { dtype = "fp32", rows = 131072, columns = 2048 }
+
+[[cases]]
+id = "triton.layernorm_131072x2048.default"
+workload = "triton_layernorm"
+suite = "Triton"
+name = "FP32 layer normalization"
+operation = "Layer normalization"
+params = { dtype = "fp32", rows = 131072, columns = 2048, epsilon = 1e-5 }
+
+[[cases]]
+id = "deepseek.act_quant_32768x8192.default"
+workload = "deepseek_act_quant"
+suite = "DeepSeek"
+name = "BF16 activation quantization to FP8"
+operation = "Activation quantization"
+params = { dtype = "bf16", rows = 32768, columns = 8192 }
+
+[[cases]]
+id = "deepseek.weight_dequant_32768x8192.default"
+workload = "deepseek_weight_dequant"
+suite = "DeepSeek"
+name = "FP8 weight dequantization to FP32"
+operation = "Weight dequantization"
+params = { dtype = "fp8", rows = 32768, columns = 8192 }

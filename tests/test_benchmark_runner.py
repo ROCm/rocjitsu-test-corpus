@@ -231,8 +231,8 @@ def test_default_manifest_has_full_ordered_matrix() -> None:
     suite = runner.load_manifest()
     matrix = runner.select_matrix(suite)
     assert suite.name == "nightly"
-    assert len(suite.cases) == 16
-    assert len(matrix) == 20
+    assert len(suite.cases) == 20
+    assert len(matrix) == 28
     assert {cell.definition.suite for cell in matrix} == {
         "GPT-OSS",
         "DeepSeek",
@@ -245,7 +245,7 @@ def test_default_manifest_has_full_ordered_matrix() -> None:
     assert suite.targets == ("gfx950", "gfx1250")
     assert {
         target: sum(cell.target == target for cell in matrix) for target in suite.targets
-    } == {"gfx950": 8, "gfx1250": 12}
+    } == {"gfx950": 12, "gfx1250": 16}
     assert all(
         not cell.definition.targets or cell.target in cell.definition.targets
         for cell in matrix

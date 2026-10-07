@@ -21,6 +21,15 @@ from corpus.benchmarks.triton.candidates import (
     validate_candidate_parameters,
 )
 
+from corpus.benchmarks.triton.reductions import (
+    PREPARE_REDUCTIONS,
+    validate_reduction_parameters,
+)
+from corpus.benchmarks.triton.quantization import (
+    PREPARE_QUANTIZATION,
+    validate_quantization_parameters,
+)
+
 from benchmarks.measurement import (
     TritonLaunch,
     deterministic_tensor as _deterministic_tensor,
@@ -547,11 +556,17 @@ PREPARE = {
     "gemm": prepare_gemm,
     "gpt_oss_attention": prepare_gpt_oss_attention,
     **PREPARE_CANDIDATES,
+    **PREPARE_REDUCTIONS,
+    **PREPARE_QUANTIZATION,
 }
 
 
 def validate_parameters(workload: str, parameters: dict[str, Any]) -> dict[str, Any]:
     """Reject unsupported inputs before allocating any GPU buffers."""
+    if workload in PREPARE_REDUCTIONS:
+        return validate_reduction_parameters(workload, parameters)
+    if workload in PREPARE_QUANTIZATION:
+        return validate_quantization_parameters(workload, parameters)
     if workload in PREPARE_CANDIDATES:
         return validate_candidate_parameters(workload, parameters)
     dimensions = {

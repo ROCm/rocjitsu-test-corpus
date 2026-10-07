@@ -55,11 +55,14 @@ binary from that build; arbitrary wrapper commands cannot be checked against
 CMake metadata. Rebuild rocjitsu after source changes.
 
 The default `benchmarks/suites/nightly.toml` contains 16 case definitions and
-20 target/case combinations across `gfx950` and `gfx1250`:
+28 target/case combinations across `gfx950` and `gfx1250`:
 
 - GPT-OSS windowed and full causal attention on both targets.
 - Triton persistent and grouped GEMM on both targets.
+- Triton FP32 softmax and layer normalization, each at 131072 × 2048.
 - DeepSeek FP8 MLP projections with target-specific token counts.
+- DeepSeek activation quantization (BF16 to FP8) and weight dequantization
+  (FP8 to FP32), each at 32768 × 8192.
 - TensileLite BF16 Stream-K and MXFP8 on gfx950, and BF16 subtile and MXFP4
   Stream-K on gfx1250.
 
@@ -78,7 +81,8 @@ single CPU worker. It selects five cases per target (10 target/case combinations
 full causal attention, persistent matmul, grouped GEMM, the smaller DeepSeek W1
 projection, and BF16 TensileLite. All shapes and kernel settings match their
 default-threaded counterparts. This keeps all four libraries while excluding
-the large issue 12611 cases, windowed attention, W2 projections, and MX variants.
+the large issue 12611 cases, windowed attention, W2 projections, MX variants,
+softmax, layer normalization, and activation/weight conversions.
 The issue's later measurements put the large W1/W2 cases near 14 minutes per
 single-threaded launch; those cases remain in the default suite only.
 The trimmed suite's end-to-end runtime has not been measured.
@@ -190,6 +194,10 @@ Supported parameters (all dimensions are positive integers):
 | `gpt_oss_attention` | `batch`, `query_heads`, `key_value_heads`, `sequence`, `window`, `head_dimension` | bf16 |
 | `triton_persistent` | `rows`, `columns`, `reduction`; optional `configuration = "issue12611"` | fp16 |
 | `triton_grouped` | `rows`, `columns`, `reduction`, `groups`; optional `configuration = "issue12611"` | fp16 |
+| `triton_softmax` | `rows`, `columns` | fp32 |
+| `triton_layernorm` | `rows`, `columns`, `epsilon` | fp32 |
+| `deepseek_act_quant` | `rows`, `columns` | bf16 |
+| `deepseek_weight_dequant` | `rows`, `columns` | fp8 |
 | `deepseek_fp8` | `rows`, `columns`, `reduction`; optional `configuration = "issue12611"` | fp8 |
 
 Gather accepts a nonnegative index offset and wraps indices by source size.
@@ -200,6 +208,19 @@ heads, and a window of zero (full causal attention) or a positive multiple of 64
 Unsupported parameters fail the case before GPU allocation.
 Grouped GEMM requires full tiles: rows and columns divisible by 64 by default,
 or 128 with `configuration = "issue12611"`, and reduction divisible by 64.
+The upstream `triton_softmax` and `triton_layernorm` adapters support up to
+16384 columns. Both use eight warps and one program per row; softmax uses two
+stages and layer normalization uses one. Layer normalization requires a finite,
+positive epsilon. Activation quantization requires columns divisible by 128 and
+uses 128-element blocks. Weight dequantization uses 128 × 128 tiles, including
+masked edge tiles. Both DeepSeek conversions use four warps.
+
+These four default-thread workloads poison outputs before the first timed launch
+and check every output afterward in CPU chunks. Layer normalization also checks
+its mean and reciprocal standard deviation; activation quantization checks its
+block scales. The chosen dyadic conversion inputs allow exact output checks.
+The reductions use FP64 CPU references with FP32 error bounds. Validation does
+not launch these benchmark kernels again.
 
 ## Results and plugins
 

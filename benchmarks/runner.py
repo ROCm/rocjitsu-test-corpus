@@ -67,6 +67,10 @@ WORKLOADS = {
     "triton_persistent",
     "triton_grouped",
     "deepseek_fp8",
+    "triton_softmax",
+    "triton_layernorm",
+    "deepseek_act_quant",
+    "deepseek_weight_dequant",
     "tensile_candidate",
 }
 WORKLOAD_FIELDS = {"schema", "case", "target", "provider", "parameters", "timings_ns"}
