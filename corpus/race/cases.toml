@@ -1,151 +1,65 @@
-# Race-detection corpus: kernel-level metadata.
+# Race-detection corpus: kernel inventory.
 #
-# Each case names one independently buildable HIP kernel and the hazard it is
-# built to exercise. Tool-specific coverage maps can refer to these stable IDs
-# without coupling this corpus to a particular detector or launch mechanism.
-#
-# This file describes kernels. The mutants derived from them live in
-# mutants.toml, which `scripts/generate.py` writes.
+# Each case names one independently buildable HIP kernel and the targets its
+# device assembly is pinned for. scripts/regenerate_asm.py compiles every case
+# for each of its targets into asm/<target>/<kernel>.s, and
+# scripts/check_cases.py checks this inventory against kernels/ and asm/
+# without a compiler.
 #
 # Fields:
-#   id           stable selector, also used to build CorpusCase ids
+#   id           stable selector for the case
 #   kernel       basename under kernels/, without .hip
-#   requires     gfx targets this kernel assembles for; empty means portable
-#   mutate       mutation kinds this kernel opts into: "wait" and/or "memory"
-#   hazard       the dominant hazard kind the kernel is built to produce
-#   waits        the wait counters the committed assembly waits on, as a table
-#                keyed by target: one entry per target the case builds for,
-#                each listing exactly the counters some wait in
-#                asm/<target>/<kernel>.s drains. See "Waits" below.
-#                scripts/check_cases.py verifies it against the assembly.
+#   requires     gfx targets this kernel assembles for; empty means every
+#                target under asm/
 #   headers      optional: headers outside ROCm's defaults the kernel includes.
-#                scripts/regenerate_asm.py skips the case, keeping its
-#                committed assembly, when any is not on the include path.
-#   resource     optional: pins the resource tag of every mutant in the case.
-#                Normally omitted; see "Resources" below.
-#
-# Waits
-#   Counters are spelled as each target's assembly spells them, because the
-#   targets do not share a counter set:
-#     gfx950   one combined `s_waitcnt` names its counters in the operand:
-#              vmcnt (vector memory) and lgkmcnt (LDS, scalar memory and
-#              messages, as one counter).
-#     gfx1250  split mnemonics name the counter: s_wait_loadcnt, _storecnt,
-#              _dscnt (LDS), _kmcnt (scalar memory), _tensorcnt, ...
-#   `waits` names counters, not wait instructions. A wait naming two counters
-#   -- `s_waitcnt vmcnt(0) lgkmcnt(0)` on gfx950, `s_wait_loadcnt_dscnt` on
-#   gfx1250 -- drains both, so both are listed, even where no single-counter
-#   wait for either appears (pointer_chase's gfx1250 dscnt comes only from
-#   s_wait_loadcnt_dscnt, a distinct instruction from s_wait_dscnt). It is
-#   still one mutation site: removing it removes both waits.
-#   `s_wait_xcnt` is out of scope. It tracks address-translation replay rather
-#   than data completion, so removing it creates no race; it is never a
-#   mutation site and is never listed.
-#
-# Resources
-#   A counter alone does not say which resource a removed wait leaves exposed.
-#   On gfx950 one lgkmcnt(0) can follow scalar loads (an SGPR destination) and
-#   another, a few lines later, DS reads. So the mutant generator,
-#   scripts/generate.py, looks back from the removed wait (up to 40 lines) for
-#   the nearest memory operation of a kind that counter tracks, and tags the
-#   mutant by that operation:
-#     s_load / s_buffer_load              -> sgpr
-#     ds_* (read or write), tensor_*      -> lds
-#     global/flat/buffer/scratch load     -> vgpr (the destination register)
-#     global/flat/buffer store            -> vgpr (the source register)
-#   The counter limits the search: vmcnt/loadcnt considers vector memory only,
-#   dscnt considers DS and vector memory, and lgkmcnt or a combined
-#   wait considers all three. kmcnt is always sgpr and tensorcnt always lds.
-#   A load rewritten as a store (`memory` kind) races the memory itself, so it
-#   takes the load's address space: global_/buffer_ -> global, scratch_ ->
-#   scratch, ds_ -> lds. A flat load may touch any of them.
-#   Where the generator cannot tell -- a flat memory site, or a wait with no
-#   memory operation in reach -- generation fails, and the case settles it with
-#   `resource = "..."`. The derived tags are written to mutants.toml for review;
-#   they, not any case-level field, say what each mutant tests.
-#
-# Resource names are corpus-facing rather than any one detector's internal
-# spelling; each adapter maps them onto its own vocabulary.
+#                regenerate_asm.py skips the case, keeping its committed
+#                assembly, when any is not on the include path.
 
 [corpus]
 schema = 1
 name = "race"
 
 # --- Global vector loads -----------------------------------------------------
-# These touch global memory, but a removed loadcnt wait races the destination
-# register, so their mutants are tagged vgpr rather than global.
 
 [[case]]
 id = "add-checked"
 kernel = "add_checked"
 requires = []
-mutate = ["wait"]
-hazard = "RAW"
-waits = { gfx1250 = ["kmcnt", "loadcnt"], gfx950 = ["lgkmcnt", "vmcnt"] }
-description = "Global vector RAW (load then use), bounds checked"
 
 [[case]]
 id = "add-buffer"
 kernel = "add_buffer"
 requires = []
-mutate = ["wait"]
-hazard = "RAW"
-waits = { gfx1250 = ["kmcnt", "loadcnt"], gfx950 = ["lgkmcnt", "vmcnt"] }
-description = "Buffer resource RAW (buffer load then use)"
 
 [[case]]
 id = "double-unsafe"
 kernel = "double_unsafe"
 requires = []
-mutate = ["wait"]
-hazard = "RAW"
-waits = { gfx1250 = ["kmcnt", "loadcnt"], gfx950 = ["lgkmcnt", "vmcnt"] }
-description = "Global vector RAW with no bounds check"
 
 [[case]]
 id = "collatz"
 kernel = "collatz"
 requires = []
-mutate = ["wait"]
-hazard = "RAW"
-waits = { gfx1250 = ["kmcnt", "loadcnt"], gfx950 = ["lgkmcnt", "vmcnt"] }
-description = "Global RAW across loops and divergent branches"
 
 [[case]]
 id = "atomic-inc"
 kernel = "atomic_inc"
 requires = []
-mutate = ["wait"]
-hazard = "RAW"
-waits = { gfx1250 = ["kmcnt", "loadcnt"], gfx950 = ["lgkmcnt", "vmcnt"] }
-description = "Global atomic histogram increment"
 
 [[case]]
 id = "pointer-chase"
 kernel = "pointer_chase"
 requires = []
-mutate = ["wait"]
-hazard = "RAW"
-waits = { gfx1250 = ["dscnt", "kmcnt", "loadcnt"], gfx950 = ["lgkmcnt", "vmcnt"] }
-description = "RAW where a load result addresses the next load"
 
 [[case]]
 id = "war-pattern"
 kernel = "war_pattern"
 requires = []
-mutate = ["wait"]
-hazard = "WAR"
-waits = { gfx1250 = ["kmcnt", "loadcnt"], gfx950 = ["lgkmcnt", "vmcnt"] }
-description = "Global vector WAR (read then overwrite)"
 
 [[case]]
 id = "waw-pattern"
 kernel = "waw_pattern"
 requires = []
-mutate = ["wait"]
-hazard = "WAW"
-waits = { gfx1250 = ["kmcnt", "loadcnt"], gfx950 = ["lgkmcnt", "vmcnt"] }
-description = "Global vector WAW (two writes to the same address)"
 
 # --- Scratch -----------------------------------------------------------------
 
@@ -153,10 +67,6 @@ description = "Global vector WAW (two writes to the same address)"
 id = "scratch-access"
 kernel = "scratch_access"
 requires = []
-mutate = ["wait"]
-hazard = "RAW"
-waits = { gfx1250 = ["kmcnt", "loadcnt"], gfx950 = ["lgkmcnt", "vmcnt"] }
-description = "RAW through scratch spills"
 
 # --- LDS ---------------------------------------------------------------------
 
@@ -164,28 +74,16 @@ description = "RAW through scratch spills"
 id = "lds-reduce"
 kernel = "lds_reduce"
 requires = []
-mutate = ["wait"]
-hazard = "RAW"
-waits = { gfx1250 = ["dscnt", "kmcnt", "loadcnt"], gfx950 = ["lgkmcnt", "vmcnt"] }
-description = "RAW through a shared-memory reduction"
 
 [[case]]
 id = "lds-war-pattern"
 kernel = "lds_war_pattern"
 requires = []
-mutate = ["wait"]
-hazard = "WAR"
-waits = { gfx1250 = ["dscnt", "kmcnt", "loadcnt"], gfx950 = ["lgkmcnt", "vmcnt"] }
-description = "LDS WAR (ds_read then ds_write to the same slot)"
 
 [[case]]
 id = "trans-lds"
 kernel = "trans_lds"
 requires = []
-mutate = ["wait"]
-hazard = "RAW"
-waits = { gfx1250 = ["dscnt", "kmcnt", "loadcnt"], gfx950 = ["lgkmcnt", "vmcnt"] }
-description = "RAW from an LDS read into a transcendental"
 
 # --- Tensor DMA into LDS -----------------------------------------------------
 
@@ -193,28 +91,16 @@ description = "RAW from an LDS read into a transcendental"
 id = "tensor-lds"
 kernel = "tensor_lds"
 requires = ["gfx1250"]
-mutate = ["wait"]
-hazard = "RAW"
-waits = { gfx1250 = ["dscnt", "kmcnt", "tensorcnt"] }
-description = "Tensor DMA to LDS RAW (TDM write then LDS read)"
 
 [[case]]
 id = "tensor-lds-offset"
 kernel = "tensor_lds_offset"
 requires = ["gfx1250"]
-mutate = ["wait"]
-hazard = "RAW"
-waits = { gfx1250 = ["dscnt", "kmcnt", "tensorcnt"] }
-description = "Tensor DMA to LDS RAW at a nonzero descriptor base"
 
 [[case]]
 id = "fa-barrier-epoch"
 kernel = "fa_barrier_epoch"
 requires = ["gfx1250"]
-mutate = ["wait"]
-hazard = "RAW"
-waits = { gfx1250 = ["dscnt", "kmcnt", "loadcnt"] }
-description = "Cross-wave LDS reuse across barrier epochs"
 
 # --- Transcendentals ---------------------------------------------------------
 
@@ -222,28 +108,16 @@ description = "Cross-wave LDS reuse across barrier epochs"
 id = "trans-sin-cos"
 kernel = "trans_sin_cos"
 requires = []
-mutate = ["wait"]
-hazard = "RAW"
-waits = { gfx1250 = ["kmcnt", "loadcnt"], gfx950 = ["lgkmcnt", "vmcnt"] }
-description = "RAW from a load into v_sin / v_cos"
 
 [[case]]
 id = "trans-rcp-sqrt"
 kernel = "trans_rcp_sqrt"
 requires = []
-mutate = ["wait"]
-hazard = "RAW"
-waits = { gfx1250 = ["kmcnt", "loadcnt"], gfx950 = ["lgkmcnt", "vmcnt"] }
-description = "RAW from a load into v_rcp / v_sqrt / v_rsq"
 
 [[case]]
 id = "trans-chain"
 kernel = "trans_chain"
 requires = []
-mutate = ["wait"]
-hazard = "RAW"
-waits = { gfx1250 = ["kmcnt", "loadcnt"], gfx950 = ["lgkmcnt", "vmcnt"] }
-description = "RAW along a v_exp into v_log chain"
 
 # --- WMMA --------------------------------------------------------------------
 
@@ -251,57 +125,20 @@ description = "RAW along a v_exp into v_log chain"
 id = "wmma-exp"
 kernel = "wmma_exp"
 requires = ["gfx1250"]
-mutate = ["wait"]
-hazard = "RAW"
-waits = { gfx1250 = ["kmcnt", "loadcnt"] }
-description = "RAW from a WMMA result into a transcendental, via builtin"
 
 [[case]]
 id = "wmma-rocwmma"
 kernel = "wmma_rocwmma"
 requires = ["gfx1250"]
-mutate = ["wait"]
-hazard = "RAW"
-waits = { gfx1250 = ["kmcnt", "loadcnt"] }
 # Needs the rocWMMA headers. regenerate_asm.py looks for them under ROCm's
 # include directory and any -I passed with --cxxflags "-I/path/to/include",
 # and skips the case -- leaving its committed assembly as it is -- when they
 # are not found.
 headers = ["rocwmma/rocwmma.hpp"]
-description = "RAW from a WMMA result into a transcendental, via rocWMMA"
-
-# A mutation that provably does not introduce a race. A detector reporting
-# nothing here is correct, so the mutant is exempt from scoring rather than
-# counted as a miss.
-#
-# `ordinal` counts wait sites in asm/gfx1250/wmma_rocwmma.s (the only target
-# this case builds for): 0-based, in file order, in one domain shared by every
-# counter, skipping comment and directive lines and s_wait_xcnt. Ordinal 3 is
-# therefore the fourth such wait -- the fifth s_wait_* overall, after one
-# s_wait_xcnt, and the third s_wait_kmcnt -- at line 148.
-#
-# `site` is checked against the instruction actually found at that ordinal, by
-# scripts/check_cases.py and when the manifest is generated. If codegen shifts
-# and the ordinal lands on a different instruction, the check fails loudly
-# instead of quietly excusing the wrong one.
-[[case.exempt]]
-kind = "wait"
-ordinal = 3
-site = "s_wait_kmcnt"
-reason = "epilogue wait already satisfied by an earlier s_wait_kmcnt on the K > 0 path the kernel takes, so removing it has no effect"
 
 # --- Cross-workgroup global memory -------------------------------------------
 
-# The only case whose baseline is race-free by construction: every access is an
-# ordinary read, and reads never race reads whatever order the workgroups run
-# in. The `memory` mutation rewrites one sub-dword load as a store, the single
-# edit that makes it racy, which is how the sub-dword eviction behavior of a
-# global shadow gets exercised. Its mutants really are tagged global.
 [[case]]
 id = "global-byte-eviction"
 kernel = "global_byte_eviction"
 requires = []
-mutate = ["memory"]
-hazard = "GlobalMemoryRace"
-waits = { gfx1250 = ["kmcnt", "loadcnt"], gfx950 = ["lgkmcnt", "vmcnt"] }
-description = "Cross-workgroup sub-dword eviction under a single-byte read flood"

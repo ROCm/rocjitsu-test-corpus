@@ -13,9 +13,8 @@ meant to be run by a person, not by CI::
     python corpus/race/scripts/regenerate_asm.py --check         # CI drift gate
 
 ``--check`` compares assembly text only. ``scripts/check_cases.py`` checks the
-metadata in ``cases.toml`` against the committed assembly -- the per-target
-``waits`` and every exemption's ordinal -- and needs no compiler; run it after
-regenerating.
+case inventory in ``cases.toml`` against ``kernels/`` and the committed
+assembly, and needs no compiler; run it after regenerating.
 
 Why the assembly is committed rather than compiled per run: the compiler decides
 how many ``s_wait_*`` instructions a kernel contains, and the corpus derives one
