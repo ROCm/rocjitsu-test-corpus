@@ -45,10 +45,11 @@ resolves exactly one total worker. Setting the integer `num_threads = 1` alone
 only limits simulator engines; dispatch and helper workers can still run in parallel.
 Each manifest must specify exactly one of `thread_policy` or integer `num_threads`.
 The keys cannot be combined; string-valued `num_threads` is not supported.
-With either named thread policy, resolved engine, dispatch, helper, and total
-worker counts are included in raw `run.json`. For the subset of metadata
-included in published runs and plugin comparisons, see
-[Results and plugins](#results-and-plugins).
+Execution requires `thread_policy = "default"` or `"single"`. Numeric-thread
+manifests can still be loaded and listed, but cannot produce new raw runs.
+With either named thread policy, the native worker allocation is recorded in
+`thread-policy/<target>/allocation.json` under the output directory.
+`run.json` records the named policy in `execution_summary.threading_mode`.
 
 The runner checks the Release configuration, disabled LTO/sanitizers,
 source root, SDK, and selected plugin binaries. The wrapper must select the
@@ -180,9 +181,7 @@ params = { dtype = "fp32", elements = 8388608 }
 `--case` selection and dashboard history. Give different parameter variants
 distinct IDs. The bundled suites use case IDs ending in `.default` for native
 allocation or `.single` for one total CPU worker. Smoke and plugin-overhead use
-the default policy too. Custom numeric-thread manifests can also be published;
-the publisher records their engine-thread counts without inferring a named
-thread policy. Give cases with different thread policies or counts distinct IDs
+the default policy too. Give cases with different thread policies distinct IDs
 to keep their dashboard histories separate.
 Repeat the complete definition in each suite that uses it.
 Dimensions, dtypes, and operation parameters belong in TOML; launch settings
@@ -246,25 +245,32 @@ not launch these benchmark kernels again.
 
 ## Results and plugins
 
-`run.json` uses schema version 1 and records raw samples, summaries, cell status,
-configuration, package versions, and both rocjitsu and corpus revisions,
-commit timestamps, and dirty state. Each cell retains `workload.json`,
+`run.json` follows the [raw run schema](raw-run-schema.md): `execution_summary`,
+`benchmark_results`, and `provenance`. Raw timing samples are in seconds.
+The schema records cell status, problem parameters, configuration hashes,
+package versions, and both rocjitsu and corpus revisions and commit timestamps.
+Each cell retains `workload.json`,
 `stdout.txt`, `stderr.txt`, and its generated `config.json` under `cases/`.
-Dashboard problem definitions come from TOML parameters for both successful and
-failed cases, so a new case can publish its first failure without an existing
-catalog entry. Derived launch and source metadata remain in `workload.json`.
+Problem definitions come from TOML parameters for both successful and failed
+cases. Derived launch and source metadata remain in `workload.json`.
 A workload that fails early may have no `workload.json`.
 
 On SIGINT or SIGTERM, the runner terminates the active workload, saves captured
 stdout and stderr, retains existing workload and plugin artifacts, and
-finalizes `run.json` as failed. Completed cells retain their results; cells that
-have not started retain null artifact links.
+finalizes `run.json` with a finish time and failed status for unfinished cells.
+Completed cells retain their results; cells that have not started have no artifacts.
 
 Use `--manifest benchmarks/suites/plugin-overhead.toml` and
 `--plugin-profile none|logging|race|throughput`, running each profile into a
 separate output directory. Each enabled profile must produce its report.
 Reports cover the entire process, including setup and warmups; timing samples
 retain the same boundary across profiles.
+
+### Existing dashboard publication
+
+The existing publisher does not yet accept the new raw schema. Updating the
+publisher and dashboard contract is separate work. The workflow below describes
+publication of legacy raw files; do not use it with newly generated runs.
 
 The CI workflow remains in rocm-systems. It pins this corpus and uses the same
 revision for execution and `python -m benchmarks.dashboard_publish`. The
@@ -278,12 +284,11 @@ Published files follow the [dashboard contract](https://github.com/ROCm/rocm-sys
 selected matrix exactly, including failed or interrupted cells. Catalogs and
 runs are immutable; the index is updated last. The publisher keeps the existing
 JSON contract and validates existing runs and their catalogs when updating a dataset.
+Child `workload.json` files keep their existing format and nanosecond timings.
 
-Named policies record `configuration.threadingMode` and
-`configuration.targetThreadAllocation` in raw `run.json` results. These fields
-are not included in published runs. Published results retain the existing
-per-target engine-thread count and configuration hash; the nightly case IDs
-use `.default` and `.single` suffixes to distinguish the suites.
+Existing published results retain the per-target engine-thread count and
+configuration hash; the nightly case IDs use `.default` and `.single` suffixes
+to distinguish the suites.
 
 The baseline profile is published as `vanilla`. For local plugin comparisons,
 run the same suite and sampling settings on the same machine, then publish each
