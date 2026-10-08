@@ -30,38 +30,40 @@ WORKLOAD = ROOT / "corpus/benchmarks/triton/workloads.py"
 
 @pytest.fixture
 def workloads_context(monkeypatch):
-    # Fake GPU dependencies keep harness tests runnable without ROCm or Triton.
-    ctx = SimpleNamespace(
-        torch=MagicMock(), descriptor=MagicMock(), attention=MagicMock()
-    )
-    triton = types.ModuleType("triton")
-    triton.jit = lambda function: function
-    triton.cdiv = lambda a, b: (a + b - 1) // b
-    triton.next_power_of_2 = lambda x: 1 << (x - 1).bit_length()
-    triton.language = types.ModuleType("triton.language")
-    dependencies = {
-        "torch": ctx.torch,
-        "triton": triton,
-        "triton.language": triton.language,
-        "triton.tools.tensor_descriptor": SimpleNamespace(
-            TensorDescriptor=ctx.descriptor
-        ),
-        "corpus.benchmarks.third_party.gpt_oss.attention": SimpleNamespace(
-            _attn_fwd=ctx.attention, attention_ref=MagicMock()
-        ),
-    }
-    for name, module in dependencies.items():
-        monkeypatch.setitem(sys.modules, name, module)
-    ctx.measurement = load_module(
-        "measurement_under_test", ROOT / "benchmarks/measurement.py"
-    )
-    monkeypatch.setitem(sys.modules, "benchmarks.measurement", ctx.measurement)
-    candidates = load_module("candidates_under_test", WORKLOAD.with_name("candidates.py"))
-    monkeypatch.setitem(sys.modules, "corpus.benchmarks.triton.candidates", candidates)
-    attention_reference = load_module("attention_reference_under_test", WORKLOAD.with_name("attention_reference.py"))
-    monkeypatch.setitem(sys.modules, "corpus.benchmarks.triton.attention_reference", attention_reference)
-    ctx.workload = load_module("upstream_under_test", WORKLOAD)
-    return ctx
+    # Restore transitive imports too: reference modules must not retain mocked Torch.
+    with patch.dict(sys.modules):
+        # Fake GPU dependencies keep harness tests runnable without ROCm or Triton.
+        ctx = SimpleNamespace(
+            torch=MagicMock(), descriptor=MagicMock(), attention=MagicMock()
+        )
+        triton = types.ModuleType("triton")
+        triton.jit = lambda function: function
+        triton.cdiv = lambda a, b: (a + b - 1) // b
+        triton.next_power_of_2 = lambda x: 1 << (x - 1).bit_length()
+        triton.language = types.ModuleType("triton.language")
+        dependencies = {
+            "torch": ctx.torch,
+            "triton": triton,
+            "triton.language": triton.language,
+            "triton.tools.tensor_descriptor": SimpleNamespace(
+                TensorDescriptor=ctx.descriptor
+            ),
+            "corpus.benchmarks.third_party.gpt_oss.attention": SimpleNamespace(
+                _attn_fwd=ctx.attention, attention_ref=MagicMock()
+            ),
+        }
+        for name, module in dependencies.items():
+            monkeypatch.setitem(sys.modules, name, module)
+        ctx.measurement = load_module(
+            "measurement_under_test", ROOT / "benchmarks/measurement.py"
+        )
+        monkeypatch.setitem(sys.modules, "benchmarks.measurement", ctx.measurement)
+        candidates = load_module("candidates_under_test", WORKLOAD.with_name("candidates.py"))
+        monkeypatch.setitem(sys.modules, "corpus.benchmarks.triton.candidates", candidates)
+        attention_reference = load_module("attention_reference_under_test", WORKLOAD.with_name("attention_reference.py"))
+        monkeypatch.setitem(sys.modules, "corpus.benchmarks.triton.attention_reference", attention_reference)
+        ctx.workload = load_module("upstream_under_test", WORKLOAD)
+        yield ctx
 
 
 def load_module(name, path):
@@ -301,3 +303,14 @@ def test_reference_failure_does_not_emit_successful_samples(workloads_context):
             main()
         assert events == ["prepare", "compile", "measure", "check"]
         write_result.assert_not_called()
+
+
+def test_workload_registries_agree(workloads_context):
+    from benchmarks.runner import WORKLOADS
+
+    workload = workloads_context.workload
+    assert WORKLOADS == set(workload.PREPARE) | {"tensile_candidate"}
+    for family in (workload.PREPARE_CANDIDATES, workload.PREPARE_REDUCTIONS,
+                   workload.PREPARE_QUANTIZATION):
+        for name, prepare in family.items():
+            assert workload.PREPARE[name] is prepare

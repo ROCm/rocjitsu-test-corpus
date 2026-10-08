@@ -36,7 +36,11 @@ def _factors(m, n, k, group, *, fp16):
     b_reduction = torch.where(positions % (2 * a_period) == 0, 2.0, 1.0).double()
     # The unequal residue counts across A's four-block period break first-block
     # replay and +/-one-block lag correlations at the scheduled K values.
-    # B still repeats after 32 blocks; this does not cover every possible lag.
+    # B repeats after 32 blocks, but output aliases also occur at shorter lags:
+    # cyclic shifts of either operand by even numbers of 128-element blocks
+    # preserve FP16 results at K=2048/3584/4096. For FP8 K=7168/18432, shifts
+    # by multiples of four blocks preserve results for both scale presets.
+    # These patterns therefore do not cover every possible indexing fault.
     # Sparse boosts preserve FP32 headroom: on a 1/1024 grid, FP8 W2's largest
     # integer sum after K-block scales is 16,203,264 < 2**24; FP16 K <= 32768
     # is bounded by 12,773,376. Free-axis/base power-of-two scales preserve

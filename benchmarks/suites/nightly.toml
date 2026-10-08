@@ -132,7 +132,7 @@ params = { dtype = "fp8", rows = 3072, columns = 7168, reduction = 18432, config
 id = "triton.grouped_4x3584.default"
 workload = "triton_grouped"
 suite = "Triton"
-name = "FP16 grouped GEMM, 4 x 3584"
+name = "FP16 grouped GEMM, 4 groups of 3584x3584x3584"
 operation = "Grouped GEMM"
 targets = ["gfx1250"]
 params = { dtype = "fp16", rows = 3584, columns = 3584, reduction = 3584, groups = 4, configuration = "large_tile" }

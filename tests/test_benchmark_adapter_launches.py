@@ -5,7 +5,7 @@
 import importlib.util
 from pathlib import Path
 import sys
-from types import SimpleNamespace
+from types import SimpleNamespace, ModuleType
 from unittest.mock import MagicMock
 
 import pytest
@@ -17,7 +17,7 @@ torch = pytest.importorskip("torch")
 def adapters(monkeypatch):
     # Replace device transport only. Keep actual inputs, outputs, preparation,
     # reset hooks, measurement, and checkers so missing adapter wiring fails.
-    for name in ("empty", "tensor"):
+    for name in ("empty", "tensor", "zeros"):
         original = getattr(torch, name)
 
         def allocate(*args, _original=original, **kwargs):
@@ -38,7 +38,11 @@ def adapters(monkeypatch):
     monkeypatch.setattr(torch.Tensor, "pin_memory", lambda tensor: tensor)
     monkeypatch.setattr(torch.cuda, "synchronize", lambda: None)
     monkeypatch.setattr(torch.cuda, "get_device_properties", lambda *_: SimpleNamespace(multi_processor_count=8))
+    language = ModuleType("triton.language")
+    language.constexpr = object()
+    monkeypatch.setitem(sys.modules, "triton.language", language)
     monkeypatch.setitem(sys.modules, "triton", SimpleNamespace(
+        jit=lambda fn: fn, language=language,
         cdiv=lambda n, d: (n + d - 1) // d,
         next_power_of_2=lambda n: 1 << (n - 1).bit_length(),
     ))
@@ -53,13 +57,15 @@ def adapters(monkeypatch):
     measurement = load("adapter_measurement", "benchmarks/measurement.py")
     monkeypatch.setitem(sys.modules, "benchmarks.measurement", measurement)
     modules = {}
-    for name in ("reductions", "quantization", "candidates"):
+    for name in ("reductions", "quantization", "candidates", "workloads"):
         modules[name] = load(f"adapter_{name}", f"corpus/benchmarks/triton/{name}.py")
         monkeypatch.setattr(modules[name], "to_cpu", lambda tensor: tensor)
+        monkeypatch.setitem(sys.modules, f"corpus.benchmarks.triton.{name}", modules[name])
     return measurement, modules
 
 
 CASES = [
+    ("gpt_oss_attention", None),
     ("triton_softmax", None), ("triton_layernorm", None),
     ("deepseek_act_quant", None), ("deepseek_weight_dequant", None),
     *[(name, preset) for name in ("triton_persistent", "triton_grouped", "deepseek_fp8")
@@ -75,7 +81,32 @@ def test_prepared_launch_metadata_and_final_sample_reset(
 ):
     measurement, modules = adapters
     kernel = MagicMock()
-    if workload.startswith("triton_") and workload in ("triton_softmax", "triton_layernorm"):
+    if workload == "gpt_oss_attention":
+        # Keep the pinned CPU reference real; replace only device descriptors
+        # and the upstream GPU entrypoint.
+        root = Path(__file__).resolve().parents[1]
+        spec = importlib.util.spec_from_file_location(
+            "attention_adapter_upstream", root / "corpus/benchmarks/third_party/gpt_oss/attention.py",
+        )
+        upstream = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(upstream)
+        monkeypatch.setattr(upstream, "_attn_fwd", kernel)
+        monkeypatch.setitem(sys.modules, "corpus.benchmarks.third_party.gpt_oss.attention", upstream)
+        monkeypatch.setitem(sys.modules, "triton.tools.tensor_descriptor", SimpleNamespace(
+            TensorDescriptor=SimpleNamespace(from_tensor=lambda tensor, _: tensor),
+        ))
+        params = dict(batch=1, sequence=128, query_heads=4, key_value_heads=2,
+                      head_dimension=64, window=64, dtype="bf16")
+        metadata, launch, check = modules["workloads"].prepare_gpt_oss_attention(params)
+        from corpus.benchmarks.triton.attention_reference import attention_inputs
+        host_inputs = attention_inputs(1, 128, 2, 2, 64)
+        value = upstream.attention_ref(*host_inputs, sm_scale=0.125, sliding_window=64)
+        outputs = [launch.args[6]]
+        expected = [value.reshape(1, 128, 4, 64).transpose(1, 2).contiguous()]
+        expected_grid = (2, 4, 1)
+        expected_knobs = dict(HEAD_DIM=64, BLOCK_M=64, BLOCK_N=64, BANDWIDTH=64,
+                              num_warps=4, num_stages=1)
+    elif workload.startswith("triton_") and workload in ("triton_softmax", "triton_layernorm"):
         name = "softmax" if workload == "triton_softmax" else "layernorm"
         symbol = "softmax_kernel" if name == "softmax" else "_layer_norm_fwd_fused"
         monkeypatch.setitem(sys.modules, f"corpus.benchmarks.third_party.triton_candidates.{name}", SimpleNamespace(**{symbol: kernel}))
@@ -136,7 +167,10 @@ def test_prepared_launch_metadata_and_final_sample_reset(
             else:
                 expected_knobs.update(NUM_SMS=8, GROUP_SIZE_M=8)
 
-    assert metadata["launch"] == {"grid": list(expected_grid), **expected_knobs}
+    expected_metadata = {"grid": list(expected_grid), **expected_knobs}
+    if workload == "gpt_oss_attention":
+        expected_metadata = dict(grid=list(expected_grid), block=[64, 64], num_warps=4, num_stages=1)
+    assert metadata["launch"] == expected_metadata
     # Seed a previous good result. Removing the installed hook must fail even
     # for a sole no-op sample, not just when allocation happened to contain NaN.
     for output, value in zip(outputs, expected, strict=True):
@@ -158,7 +192,7 @@ def test_prepared_launch_metadata_and_final_sample_reset(
             if final_write == "all" or calls < warmups + samples:
                 output.copy_(value)
             elif final_write == "partial":
-                output[1:].copy_(value[1:])
+                output.reshape(-1)[1:].copy_(value.reshape(-1)[1:])
 
     kernel.__getitem__.return_value.side_effect = dispatch
     durations = measurement.measure(launch, warmups, samples)

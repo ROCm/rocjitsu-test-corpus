@@ -150,8 +150,9 @@ def test_fp8_reduction_indexing_mutations_are_rejected(shape, bases, operand, mu
 @pytest.mark.parametrize("operand", ["a", "b"])
 @pytest.mark.parametrize("mutation", ["replay_first_128", "shift_block_forward", "shift_block_backward"])
 def test_fp16_scheduled_block_indexing_mutations_are_rejected(k, operand, mutation):
-    # Cover the scheduled reduction lengths, not every possible cyclic lag:
-    # periodic input patterns can still alias a whole pattern-period shift.
+    # Cover first-block replay and +/-one-block shifts at scheduled lengths.
+    # Cyclic shifts of either operand by any even number of 128-element blocks
+    # preserve these FP16 results, despite B's longer 32-block pattern period.
     shape = (7, 5, k)
     a, b = candidate_inputs(*shape, torch.float16, group=2)
     if operand == "a":
@@ -168,6 +169,8 @@ def test_fp16_scheduled_block_indexing_mutations_are_rejected(k, operand, mutati
 @pytest.mark.parametrize("operand", ["a", "b"])
 @pytest.mark.parametrize("mutation", ["replay_first_128", "shift_block_forward", "shift_block_backward"])
 def test_fp8_scheduled_block_indexing_mutations_are_rejected(k, bases, operand, mutation):
+    # These checks do not cover cyclic shifts by multiples of four 128-element
+    # blocks: either operand can alias at both K values and both scale presets.
     shape = (7, 5, k)
     a, b, a_scale, b_scale = candidate_inputs(
         *shape, torch.float8_e4m3fn, scale_bases=bases,
