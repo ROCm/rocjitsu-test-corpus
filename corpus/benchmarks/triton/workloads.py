@@ -699,7 +699,7 @@ def main() -> int:
         torch.cuda.synchronize()
         durations = _measure(
             launch, arguments.warmups, arguments.samples,
-            progress=progress, before_launch=launch.before_launch,
+            progress=progress,
         )
         if check is not None:
             started = time.monotonic_ns()

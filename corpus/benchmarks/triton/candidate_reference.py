@@ -34,6 +34,19 @@ def _factors(m, n, k, group, *, fp16):
     a_reduction = torch.where(positions % a_period == 0, 1.0, 0.5).double()
     a_reduction *= reduction.repeat_interleave(128)[:k]
     b_reduction = torch.where(positions % (2 * a_period) == 0, 2.0, 1.0).double()
+    # The unequal residue counts across A's four-block period break first-block
+    # replay and +/-one-block lag correlations at the scheduled K values.
+    # B still repeats after 32 blocks; this does not cover every possible lag.
+    # Sparse boosts preserve FP32 headroom: on a 1/1024 grid, FP8 W2's largest
+    # integer sum after K-block scales is 16,203,264 < 2**24; FP16 K <= 32768
+    # is bounded by 12,773,376. Free-axis/base power-of-two scales preserve
+    # these significand bounds. Larger FP16 K uses the free-axis powers above.
+    b_blocks = torch.where(
+        (blocks % 32 == 1) | (blocks % 32 == 2)
+        | (blocks % 32 == 3) | (blocks % 32 == 7),
+        1.0, 0.5,
+    ).double()
+    b_reduction *= b_blocks.repeat_interleave(128)[:k]
     return rows, columns, blocks, a_reduction, b_reduction
 
 

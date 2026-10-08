@@ -17,9 +17,9 @@ from corpus.benchmarks.triton.candidate_reference import (
 )
 
 
-def _block_products(a, b, a_scale, b_scale):
+def _block_products(a, b, a_scale, b_scale, *, dtype=torch.float32):
     """Independent oracle using actual stored FP8 values and scale indexing."""
-    a, b = a.float(), b.float()
+    a, b = a.to(dtype), b.to(dtype)
     columns = torch.arange(b.shape[0]) // 128
     return [
         (a[:, start:start + 128] @ b[:, start:start + 128].T)
@@ -42,7 +42,10 @@ def test_fp16_reference_matches_actual_operands(shape, group):
 def test_large_fp16_reduction_stays_finite_and_matches_operands(k):
     # Seven rows/five columns exercise every magnitude in the input pattern.
     a, b = candidate_inputs(7, 5, k, torch.float16)
-    actual = (a.float() @ b.float()).half()
+    accumulated = a.float() @ b.float()
+    # Check the accumulation headroom before the FP16 cast can hide a lost bit.
+    torch.testing.assert_close(accumulated.double(), a.double() @ b.double(), rtol=0, atol=0)
+    actual = accumulated.half()
     expected = candidate_expected(7, 5, k, torch.float16)
     assert torch.isfinite(actual).all()
     assert torch.isfinite(expected).all()
@@ -83,7 +86,12 @@ def test_large_fp16_factors_preserve_exact_sequential_accumulation():
 @pytest.mark.parametrize("shape", [(1, 1, 1), (7, 257, 513), (7, 5, 18432)])
 def test_fp8_reference_matches_actual_operands(shape, bases):
     inputs = candidate_inputs(*shape, torch.float8_e4m3fn, scale_bases=bases)
-    actual = sum(_block_products(*inputs)).bfloat16()
+    accumulated = sum(_block_products(*inputs))
+    # The FP64 oracle decodes the same stored operands and scale indexing.
+    # Requiring equality before BF16 rounding verifies FP32 headroom directly.
+    precise = sum(_block_products(*inputs, dtype=torch.float64))
+    torch.testing.assert_close(accumulated.double(), precise, rtol=0, atol=0)
+    actual = accumulated.bfloat16()
     expected = candidate_expected(*shape, torch.bfloat16, scale_bases=bases)
     assert_candidate_output(actual, expected)
     assert torch.all(expected > 0)
@@ -94,11 +102,14 @@ def _mutate_reduction_operand(operand, axis, mutation):
     operand = operand.float()
     if mutation == "reverse":
         return operand.flip([axis])
-    if mutation == "shift_forward":
-        return operand.roll(1, axis)
-    if mutation == "shift_backward":
-        return operand.roll(-1, axis)
-    indices = torch.arange(operand.shape[axis]) % 64
+    shift = {
+        "shift_forward": 1, "shift_backward": -1,
+        "shift_block_forward": 128, "shift_block_backward": -128,
+    }.get(mutation)
+    if shift is not None:
+        return operand.roll(shift, axis)
+    tile = {"replay_first_64": 64, "replay_first_128": 128}[mutation]
+    indices = torch.arange(operand.shape[axis]) % tile
     return operand.index_select(axis, indices)
 
 
@@ -122,6 +133,42 @@ def test_fp16_reduction_indexing_mutations_are_rejected(shape, operand, mutation
 @pytest.mark.parametrize("operand", ["a", "b"])
 @pytest.mark.parametrize("mutation", ["reverse", "shift_forward", "shift_backward", "replay_first_64"])
 def test_fp8_reduction_indexing_mutations_are_rejected(shape, bases, operand, mutation):
+    a, b, a_scale, b_scale = candidate_inputs(
+        *shape, torch.float8_e4m3fn, scale_bases=bases,
+    )
+    if operand == "a":
+        a = _mutate_reduction_operand(a, 1, mutation)
+    else:
+        b = _mutate_reduction_operand(b, 1, mutation)
+    actual = sum(_block_products(a, b, a_scale, b_scale)).bfloat16()
+    expected = candidate_expected(*shape, torch.bfloat16, scale_bases=bases)
+    with pytest.raises(AssertionError):
+        assert_candidate_output(actual, expected)
+
+
+@pytest.mark.parametrize("k", [2048, 3584, 4096])
+@pytest.mark.parametrize("operand", ["a", "b"])
+@pytest.mark.parametrize("mutation", ["replay_first_128", "shift_block_forward", "shift_block_backward"])
+def test_fp16_scheduled_block_indexing_mutations_are_rejected(k, operand, mutation):
+    # Cover the scheduled reduction lengths, not every possible cyclic lag:
+    # periodic input patterns can still alias a whole pattern-period shift.
+    shape = (7, 5, k)
+    a, b = candidate_inputs(*shape, torch.float16, group=2)
+    if operand == "a":
+        a = _mutate_reduction_operand(a, 1, mutation)
+    else:
+        b = _mutate_reduction_operand(b, 0, mutation)
+    expected = candidate_expected(*shape, torch.float16, group=2)
+    with pytest.raises(AssertionError):
+        assert_candidate_output((a.float() @ b.float()).half(), expected)
+
+
+@pytest.mark.parametrize("k", [7168, 18432])
+@pytest.mark.parametrize("bases", [(0.5, 0.25), (1.0, 1.0)])
+@pytest.mark.parametrize("operand", ["a", "b"])
+@pytest.mark.parametrize("mutation", ["replay_first_128", "shift_block_forward", "shift_block_backward"])
+def test_fp8_scheduled_block_indexing_mutations_are_rejected(k, bases, operand, mutation):
+    shape = (7, 5, k)
     a, b, a_scale, b_scale = candidate_inputs(
         *shape, torch.float8_e4m3fn, scale_bases=bases,
     )
@@ -244,10 +291,8 @@ def test_sample_poisoning_rejects_stale_and_partial_outputs(monkeypatch, warmups
         calls = 0
         events.clear()
         output.copy_(expected)
-        durations = measure(
-            launch, warmups, samples,
-            before_launch=lambda: poison_outputs([output]),
-        )
+        launch.before_launch = lambda: poison_outputs([output])
+        durations = measure(launch, warmups, samples)
         assert len(durations) == samples
         assert calls == warmups + samples
         sampled_events = events.copy()

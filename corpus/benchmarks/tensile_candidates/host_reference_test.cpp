@@ -2,9 +2,16 @@
 // SPDX-License-Identifier: MIT
 #include "host_reference.hpp"
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <exception>
+#include <initializer_list>
 #include <iostream>
 #include <limits>
 #include <numeric>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace {
 void require(bool value, const char *message) {

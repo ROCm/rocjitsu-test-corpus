@@ -3,55 +3,17 @@
 """Fixed launches and bounded CPU checks for upstream row reductions."""
 
 import math
+from typing import Any
 
 import torch
 import triton
 
 from benchmarks.measurement import TritonLaunch, poison_outputs, to_cpu
+from corpus.benchmarks.triton.reduction_reference import (
+    REFERENCE_ROWS, reduction_input, reduction_affine, check_reduction_output,
+)
 
 TRITON_COMMIT = "ced7e4b42f992f0b125208767cafc371d079ffd9"
-REFERENCE_ROWS = 256
-
-
-def reduction_input(start, stop, columns):
-    """Dyadic values whose distribution changes with both row and column."""
-    row = torch.arange(start, stop, dtype=torch.int64)[:, None]
-    col = torch.arange(columns, dtype=torch.int64)[None, :]
-    return (((row * 17 + col * 13 + (row * col) % 127) % 257 - 128).float() / 32)
-
-
-def reduction_affine(columns):
-    col = torch.arange(columns, dtype=torch.int64)
-    return 0.5 + (col % 13).float() / 16, ((col % 17) - 8).float() / 32
-
-
-def reduction_reference(workload, start, stop, columns, epsilon=1e-5):
-    x = reduction_input(start, stop, columns).double()
-    if workload == "triton_softmax":
-        return (torch.softmax(x, dim=1).float(),)
-    mean = x.mean(dim=1)
-    rstd = torch.rsqrt(((x - mean[:, None]) ** 2).mean(dim=1) + epsilon)
-    weight, bias = reduction_affine(columns)
-    output = (x - mean[:, None]) * rstd[:, None] * weight.double() + bias.double()
-    return output.float(), mean.float(), rstd.float()
-
-
-def check_reduction_output(workload, outputs, epsilon=1e-5, copy_to_cpu=lambda x: x):
-    """Check every output, including LayerNorm statistics, in bounded chunks."""
-    rows, columns = outputs[0].shape
-    for start in range(0, rows, REFERENCE_ROWS):
-        stop = min(start + REFERENCE_ROWS, rows)
-        expected = reduction_reference(workload, start, stop, columns, epsilon)
-        for actual, reference in zip(outputs, expected, strict=True):
-            actual = copy_to_cpu(actual[start:stop])
-            if not torch.isfinite(actual).all():
-                raise AssertionError("reduction output contains nonfinite or unwritten values")
-            # Exp/rsqrt and reduction order differ between CPU and Triton. These
-            # FP32 bounds are tight enough to reject a dropped element or row.
-            torch.testing.assert_close(
-                actual, reference, rtol=2e-5,
-                atol=1e-8 if workload == "triton_softmax" else 2e-6,
-            )
 
 
 def _prepare(workload, parameters):
@@ -68,8 +30,11 @@ def _prepare(workload, parameters):
         # Match issue12611: one program per row, with no occupancy heuristic.
         grid = (rows,)
         knobs = {"BLOCK_SIZE": block, "num_warps": 8, "num_stages": 2}
-        launch = TritonLaunch(softmax_kernel, grid, y, x, columns, columns, rows, columns, **knobs)
         outputs = (y,)
+        launch = TritonLaunch(
+            softmax_kernel, grid, y, x, columns, columns, rows, columns,
+            before_launch=lambda: poison_outputs(outputs), **knobs,
+        )
         entrypoint = "02-fused-softmax.py:softmax_kernel"
     else:
         from corpus.benchmarks.third_party.triton_candidates.layernorm import _layer_norm_fwd_fused
@@ -79,13 +44,13 @@ def _prepare(workload, parameters):
         rstd = torch.empty_like(mean)
         grid = (rows,)
         knobs = {"BLOCK_SIZE": block, "num_warps": 8, "num_stages": 1}
+        outputs = (y, mean, rstd)
         launch = TritonLaunch(
             _layer_norm_fwd_fused, grid, x, y, weight, bias, mean, rstd,
-            columns, columns, parameters["epsilon"], **knobs,
+            columns, columns, parameters["epsilon"],
+            before_launch=lambda: poison_outputs(outputs), **knobs,
         )
-        outputs = (y, mean, rstd)
         entrypoint = "05-layer-norm.py:_layer_norm_fwd_fused"
-    launch.before_launch = lambda: poison_outputs(outputs)
     parameters.update({
         "input_pattern": "dyadic_row_column_modular",
         "correctness": "chunked_fp64_reference_all_outputs_final_sample_prelaunch_poison",
@@ -113,7 +78,7 @@ PREPARE_REDUCTIONS = {
 }
 
 
-def validate_reduction_parameters(workload, parameters):
+def validate_reduction_parameters(workload: str, parameters: dict[str, Any]) -> dict[str, Any]:
     if workload not in PREPARE_REDUCTIONS:
         raise ValueError(f"unknown reduction workload: {workload}")
     required = {"dtype", "rows", "columns"}

@@ -243,8 +243,7 @@ def run_main(workloads_context, check):
         events.append("prepare")
         return ({"fixture": True}, launch, check(events))
 
-    def measure(callback, warmups, samples, progress=None, *, before_launch=None):
-        assert before_launch is launch.before_launch
+    def measure(callback, warmups, samples, progress=None):
         assert callback is launch
         events.append("measure")
         return [12, 13, 14]

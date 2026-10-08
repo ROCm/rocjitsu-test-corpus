@@ -56,10 +56,9 @@ def measure(
     warmups: int,
     samples: int,
     progress: Callable[[dict[str, Any]], None] | None = None,
-    *,
-    before_launch: Callable[[], None] | None = None,
 ) -> list[int]:
     """Sample launches with progress callbacks outside timed intervals."""
+    before_launch = getattr(launch, "before_launch", None)
     durations: list[int] = []
 
     def run(stage: str, index: int) -> int:

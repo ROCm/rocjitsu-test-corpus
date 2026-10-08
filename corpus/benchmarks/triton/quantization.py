@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: MIT
 """Fixed-launch adapters for pinned DeepSeek activation and weight conversion."""
 
+from typing import Any
+
 import torch
 import triton
 
@@ -101,7 +103,7 @@ PREPARE_QUANTIZATION = {
 }
 
 
-def validate_quantization_parameters(workload, parameters):
+def validate_quantization_parameters(workload: str, parameters: dict[str, Any]) -> dict[str, Any]:
     if workload not in PREPARE_QUANTIZATION:
         raise ValueError(f"unknown quantization workload: {workload}")
     if not isinstance(parameters, dict) or set(parameters) != {"rows", "columns", "dtype"}:

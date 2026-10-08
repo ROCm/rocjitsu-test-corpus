@@ -116,7 +116,8 @@ def test_prelaunch_reset_is_outside_timing_and_does_not_add_launches(measurement
         clock[0] += 10
 
     measurement.torch.cuda.synchronize.side_effect = synchronize
-    assert measurement.measure(launch, warmups, samples, before_launch=before_launch) == [110] * samples
+    launch.before_launch = before_launch
+    assert measurement.measure(launch, warmups, samples) == [110] * samples
     assert events == ["reset", "sync", "launch", "sync"] * (warmups + samples)
 
 
@@ -126,6 +127,7 @@ def test_failed_prelaunch_reset_never_executes_sample(measurement):
     def fail():
         raise RuntimeError("reset failed")
 
+    launch.before_launch = fail
     with pytest.raises(RuntimeError, match="reset failed"):
-        measurement.measure(launch, 0, 1, before_launch=fail)
+        measurement.measure(launch, 0, 1)
     launch.assert_not_called()

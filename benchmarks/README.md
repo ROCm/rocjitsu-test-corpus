@@ -46,10 +46,9 @@ only limits simulator engines; dispatch and helper workers can still run in para
 Each manifest must specify exactly one of `thread_policy` or integer `num_threads`.
 The keys cannot be combined; string-valued `num_threads` is not supported.
 With either named thread policy, resolved engine, dispatch, helper, and total
-worker counts are included in `run.json` and the published environment.
-Plugin comparisons reject different allocations or a mix of results with and
-without allocation metadata. Historical Default runs remain comparable when
-native allocation changes across revisions.
+worker counts are included in raw `run.json`. For the subset of metadata
+included in published runs and plugin comparisons, see
+[Results and plugins](#results-and-plugins).
 
 The runner checks the Release configuration, disabled LTO/sanitizers,
 source root, SDK, and selected plugin binaries. The wrapper must select the
@@ -126,15 +125,17 @@ Remaining first-execution runtime costs can still occur in that sample.
 
 Each Triton sample launches one benchmark kernel. The DeepSeek, grouped
 GEMM, and persistent GEMM adapters poison outputs before each warmup and sample.
-GPT-OSS attention, the row reductions, and the activation/weight conversions do
-this too. Reset and synchronization complete before the sample timer starts.
+GPT-OSS attention, `triton_softmax`, `triton_layernorm`, and the
+activation/weight conversions do this too. Reset and synchronization complete
+before the sample timer starts.
 Validation checks the final sampled output and never launches the benchmark
 kernel again. Zero warmups and one sample therefore executes each benchmark
 kernel exactly once. With multiple samples, only the final sample is checked;
 the output reset prevents values from earlier launches hiding missing writes.
 
-GEMM inputs use positive dyadic factors varying by row, column, group, reduction
-block, and within each 64-element K tile. DeepSeek scales vary across both free
+The candidate GEMM adapters use positive dyadic factors varying by row, column,
+group, reduction block, and within each 64-element K tile. Both operands vary
+independently between reduction blocks. DeepSeek scales vary across both free
 and reduction axes. The scheduled shapes accumulate exactly in FP32, so the
 checker compares the rounded output without a blanket tolerance. For FP16
 reductions above 32,768, power-of-two free-axis factors preserve accumulation
@@ -177,10 +178,12 @@ params = { dtype = "fp32", elements = 8388608 }
 
 `workload` selects the preparation function; `id` identifies the case in
 `--case` selection and dashboard history. Give different parameter variants
-distinct IDs. Published suite IDs end in `.default` for native allocation or
-`.single` for one total CPU worker. Smoke and plugin-overhead use the default
-policy too. Custom numeric-thread manifests remain runnable locally, but cannot
-be published because they do not identify a supported threading policy.
+distinct IDs. The bundled suites use case IDs ending in `.default` for native
+allocation or `.single` for one total CPU worker. Smoke and plugin-overhead use
+the default policy too. Custom numeric-thread manifests can also be published;
+the publisher records their engine-thread counts without inferring a named
+thread policy. Give cases with different thread policies or counts distinct IDs
+to keep their dashboard histories separate.
 Repeat the complete definition in each suite that uses it.
 Dimensions, dtypes, and operation parameters belong in TOML; launch settings
 such as tile sizes, warps, and stages stay in code and are recorded in results.
@@ -207,6 +210,13 @@ Supported parameters (all dimensions are positive integers):
 | `deepseek_weight_dequant` | `rows`, `columns` | fp8 |
 | `tensile_candidate` | `variant`, `m`, `n`, `k`; explicit matching case `targets` | bf16, mxfp8, mxfp4 (matching variant) |
 | `deepseek_fp8` | `rows`, `columns`, `reduction`; optional `configuration = "large_tile"` | fp8 |
+
+The legacy `softmax` and `rmsnorm` workloads use local kernels and do not
+validate their outputs. The nightly `triton_softmax` and `triton_layernorm`
+workloads use pinned upstream kernels, varied inputs, output poisoning, and
+full-output CPU checks. RMSNorm and layer normalization are different operations:
+RMSNorm scales by the root mean square without subtracting the mean; layer
+normalization subtracts the mean and scales by the standard deviation.
 
 For Tensile variants, target restrictions, native build instructions, and
 `TENSILE_CANDIDATE_ARTIFACTS` / `TENSILE_CANDIDATE_RUNNER`, see the
@@ -279,12 +289,15 @@ The baseline profile is published as `vanilla`. For local plugin comparisons,
 run the same suite and sampling settings on the same machine, then publish each
 profile with a distinct `--run-id` and the same `--comparison-id`. The latter
 defaults to the run ID, so unrelated executions are never grouped implicitly.
-Threading mode, catalog, source, machine, environment, trigger, and targets
-must match within a plugin comparison. Resolved worker counts and configuration
-hashes remain strict compatibility checks for these plugin experiments.
-Default historical comparisons span revisions and do not require equal worker
-allocations or configuration hashes; the dashboard displays those as context. Recorded package versions are published as `package.<name>` environment
-entries and participate in these compatibility checks. Packages recorded as
+Catalog, source metadata, machine, environment, trigger, and targets must match
+within a plugin comparison. The published environment includes per-target
+engine-thread counts and configuration hashes, so those values must match too.
+Raw threading modes and dispatch/helper/total worker counts are not published
+and do not participate in these checks.
+Historical comparisons span revisions and do not require equal engine-thread
+counts or configuration hashes; the dashboard displays those values as context.
+Recorded package versions are published as `package.<name>` environment entries
+and participate in plugin comparison compatibility checks. Packages recorded as
 unavailable are omitted. Existing published runs remain immutable; runs with
 package entries cannot join comparisons that lack those entries.
 `--machine-id` defaults to the recorded hostname; CI passes the
