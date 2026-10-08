@@ -266,52 +266,7 @@ separate output directory. Each enabled profile must produce its report.
 Reports cover the entire process, including setup and warmups; timing samples
 retain the same boundary across profiles.
 
-### Existing dashboard publication
-
-The existing publisher does not yet accept the new raw schema. Updating the
-publisher and dashboard contract is separate work. The workflow below describes
-publication of legacy raw files; do not use it with newly generated runs.
-
-The CI workflow remains in rocm-systems. It pins this corpus and uses the same
-revision for execution and `python -m benchmarks.dashboard_publish`. The
-publisher writes dashboard resources into a local `--data-dir`; CI passes
-`--expected-sha` and `--expected-corpus-sha` to require matching, clean source
-checkouts. Both source checkouts must be clean and include revision metadata.
-
-Published files follow the [dashboard contract](https://github.com/ROCm/rocm-systems/blob/c53572277a6f160e92f360e23f5af7ce2de904a7/emulation/rocjitsu/website/docs/website-data-contract.md):
-`metadata.json`, `index.json`, `test-catalogs/catalog-<hash>.json`, and
-`runs/<run-id>.json` under the supplied data directory. Catalogs describe the
-selected matrix exactly, including failed or interrupted cells. Catalogs and
-runs are immutable; the index is updated last. The publisher keeps the existing
-JSON contract and validates existing runs and their catalogs when updating a dataset.
-Child `workload.json` files keep their existing format and nanosecond timings.
-
-Existing published results retain the per-target engine-thread count and
-configuration hash; the nightly case IDs use `.default` and `.single` suffixes
-to distinguish the suites.
-
-The baseline profile is published as `vanilla`. For local plugin comparisons,
-run the same suite and sampling settings on the same machine, then publish each
-profile with a distinct `--run-id` and the same `--comparison-id`. The latter
-defaults to the run ID, so unrelated executions are never grouped implicitly.
-Catalog, source metadata, machine, environment, trigger, and targets must match
-within a plugin comparison. The published environment includes per-target
-engine-thread counts and configuration hashes, so those values must match too.
-Raw threading modes and dispatch/helper/total worker counts are not published
-and do not participate in these checks.
-Historical comparisons span revisions and do not require equal engine-thread
-counts or configuration hashes; the dashboard displays those values as context.
-Recorded package versions are published as `package.<name>` environment entries
-and participate in plugin comparison compatibility checks. Packages recorded as
-unavailable are omitted. Existing published runs remain immutable; runs with
-package entries cannot join comparisons that lack those entries.
-`--machine-id` defaults to the recorded hostname; CI passes the
-benchmark runner's name. `--is-beta` controls the site's Beta label.
-
-Consumer CI must provide the nightly dependencies and allow the manifest sampling
-defaults to take effect. A fresh dataset requires a valid Vanilla run, which can
-contain failed or timed-out results. Publish each comparison's Vanilla baseline
-before its instrumented runs. All supported runs in a dataset must use the same machine.
+### Harness tests
 
 Run the benchmark harness tests through the repository's pytest configuration,
 without ROCm dependencies. pytest-xdist supplies the plugin used by the root

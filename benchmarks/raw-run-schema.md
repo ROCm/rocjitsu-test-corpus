@@ -92,6 +92,4 @@ that fails early may not produce `workload.json`. That file retains the child's
 **nanosecond** timings and derived launch metadata; its schema is separate from
 `run.json`.
 
-The existing dashboard publisher does not yet accept this raw schema. Publisher
-and dashboard updates are separate work. See [Results and plugins](README.md#results-and-plugins)
-for artifact details and the legacy publication workflow.
+See [Results and plugins](README.md#results-and-plugins) for artifact details.
