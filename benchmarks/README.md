@@ -9,7 +9,7 @@ parameters. Benchmark runs are separate from normal pytest collection.
 Use Python 3.12 and install the pinned GPU dependencies with
 `python -m pip install -r benchmarks/requirements.txt`. For the concrete
 rocjitsu build and launch recipe, see the
-[rocm-systems benchmark guide](https://github.com/ROCm/rocm-systems/blob/develop/emulation/rocjitsu/docs/benchmark-suite.md).
+[dashboard publication guide](https://github.com/ROCm/rocm-systems/blob/develop/emulation/rocjitsu/website/README.md#prepare-benchmark-data).
 
 The consumer supplies the launch command and one base config per selected target:
 
@@ -119,7 +119,8 @@ Unsupported parameters fail the case before GPU allocation.
 
 ## Results and plugins
 
-`run.json` uses schema version 1 and records raw samples, summaries, cell status,
+`run.json` uses schema version 1, the interface between this runner and the
+rocm-systems publisher. It records raw samples, summaries, cell status,
 configuration, package versions, and both rocjitsu and corpus revisions,
 commit timestamps, and dirty state. Each cell retains `workload.json`,
 `stdout.txt`, `stderr.txt`, and its generated `config.json` under `cases/`.
@@ -139,9 +140,13 @@ separate output directory. Each enabled profile must produce its report.
 Reports cover the entire process, including setup and warmups; timing samples
 retain the same boundary across profiles.
 
-The CI workflow remains in rocm-systems. It pins this corpus and uses the same
-revision for execution and `python -m benchmarks.dashboard_publish`. The
-publisher writes dashboard resources into a local `--data-dir`; CI passes
+The publisher and CI workflow live in rocm-systems. CI pins this corpus for
+benchmark execution and uses
+`python "$src/website/scripts/dashboard_publish.py"` for publication, where
+`$src` is the rocjitsu source directory used by the runner. See the
+[dashboard publication guide](https://github.com/ROCm/rocm-systems/blob/develop/emulation/rocjitsu/website/README.md#prepare-benchmark-data)
+for the publication command. The publisher consumes finalized schema version 1
+`run.json` files and writes dashboard resources into a local `--data-dir`; CI passes
 `--expected-sha` and `--expected-corpus-sha` to require matching, clean source
 checkouts. Both source checkouts must be clean and include revision metadata.
 
@@ -178,5 +183,5 @@ configuration; install these test tools separately from the AMD package index:
 ```bash
 python3 -m pip install --index-url https://pypi.org/simple \
   'pytest>=5.4.1' 'pytest-xdist>=1.32.0'
-python3 -m pytest -q tests/test_benchmark_*.py
+python3 -m pytest -q tests/test_benchmark_*.py -n "$(nproc)"
 ```
