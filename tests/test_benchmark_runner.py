@@ -22,7 +22,7 @@ from unittest import mock
 
 import pytest
 
-from benchmarks import dashboard_publish, runner
+from benchmarks import runner
 
 
 @pytest.fixture
@@ -639,7 +639,7 @@ def test_initial_checkpoint_is_a_running_v1_run(runner_context) -> None:
     assert observed["tests"][0]["status"] == "failed"
 
 
-def test_first_partial_run_publishes_and_failed_case_can_later_succeed(
+def test_first_partial_run_retains_definitions_and_failed_case_can_later_succeed(
     runner_context,
 ) -> None:
     failed_id = "triton.gpt_oss_attention_bf16.threads8"
@@ -665,28 +665,35 @@ def test_first_partial_run_publishes_and_failed_case_can_later_succeed(
         "failed",
         "failed",
     ]
-    options = dict(
-        data_dir=runner_context.root / "dashboard",
-        repository="https://github.com/ROCm/rocm-systems",
-        environment_id="test",
-        trigger="manual",
-        branch="develop",
-        expected_sha="a" * 40,
-        expected_corpus_sha="a" * 40,
-    )
-    published = dashboard_publish.publish(partial, run_id="partial", **options)
-    normalized = json.loads(Path(published["run"]).read_text())
-    results = [r for group in normalized["targets"] for r in group["results"]]
-    assert len(results) == 4
-    assert sum(r["status"] == "failed" for r in results) == 2
-    catalog = json.loads(Path(published["catalog"]).read_text())
-    assert len(catalog["tests"]) == 2
+    assert partial["finishedAt"] is not None
+    for test in partial["tests"]:
+        assert test["testId"] == f"{test['target']}:{test['logicalTestId']}"
+        assert test["problem"]
+        if test["logicalTestId"] == failed_id:
+            assert test["operation"] == "Attention"
+            assert test["dataType"] == "bf16"
+            assert test["durationSeconds"] is None
+            assert test["timing"]["samples"] == []
+            assert test["artifacts"]["workload"] is None
+            assert test["exitCode"] == 1
     _, recovered = _run(runner_context, matrix, "recovered", samples=1)
     assert recovered["status"] == "completed"
-    dashboard_publish.publish(recovered, run_id="recovered", **options)
-    assert not dashboard_publish.publish(recovered, run_id="recovered", **options)[
-        "changed"
-    ]
+    assert recovered["finishedAt"] is not None
+    assert len(recovered["tests"]) == 4
+    for failed, successful in zip(partial["tests"], recovered["tests"]):
+        for key in (
+            "testId",
+            "logicalTestId",
+            "target",
+            "operation",
+            "dataType",
+            "problem",
+        ):
+            assert failed[key] == successful[key]
+        assert successful["status"] == "completed"
+        assert successful["durationSeconds"] is not None
+        assert successful["timing"]["samples"] == [1]
+        assert successful["error"] is None
 
 
 def test_nonzero_exit_preserves_logs(runner_context) -> None:
@@ -1163,15 +1170,12 @@ def test_interruption_retains_completed_and_unrun_matrix_cells(
         )
     )
     assert raw["tests"][2]["artifacts"]["pluginReports"] == {}
-    run, catalog = dashboard_publish.normalize_run(
-        raw,
-        run_id="interrupted",
-        trigger="manual",
-        branch="develop",
-        environment_id="test",
-    )
-    assert len(catalog["tests"]) == 3
-    assert len(run["targets"][0]["results"]) == 3
+    assert [test["logicalTestId"] for test in raw["tests"]] == [
+        "triton.rmsnorm_bf16.threads8",
+        "triton.gemm_bf16_aligned.threads8",
+        "triton.gpt_oss_attention_bf16.threads8",
+    ]
+    assert all(test["problem"] for test in raw["tests"])
 
 
 def test_interruption_finalizes_the_run_artifact(runner_context) -> None:
