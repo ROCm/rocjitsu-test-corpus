@@ -13,10 +13,10 @@
   },
   "executable": "cases/hip-matmul/hip_matmul_matvec",
   "tests": {
-    "m256_n1_k1024": {
+    "m192_n1_k1024": {
       "test_args": [
         "-m",
-        256,
+        192,
         "-n",
         1,
         "-k",

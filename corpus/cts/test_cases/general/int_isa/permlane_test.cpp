@@ -62,9 +62,17 @@ struct PermlaneFixedTrait
         constexpr std::uint32_t kSwapLow  = 0x67452301u;
         constexpr std::uint32_t kSwapHigh = 0xefcdab89u;
         const std::uint32_t     src       = permlane_value(lane);
+#ifdef INT_ISA_TEST_WAVE64
+        const std::uint32_t half_swap = __builtin_amdgcn_permlane64(src);
+#else
+        // In wave32 the instruction is a NOP: it preserves the destination,
+        // which need not share a register with the source.
+        std::uint32_t half_swap = src ^ 0x12345678u;
+        asm volatile("v_permlane64_b32 %0, %1" : "+v"(half_swap) : "v"(src));
+#endif
         return {__builtin_amdgcn_permlane16(0xdeadbeefu, src, kSwapLow, kSwapHigh, false, false),
                 __builtin_amdgcn_permlanex16(0xfeedfaceu, src, kSwapLow, kSwapHigh, false, false),
-                __builtin_amdgcn_permlane64(src)};
+                half_swap};
     }
 
     static Output oracle(unsigned lane)
@@ -73,11 +81,11 @@ struct PermlaneFixedTrait
         const unsigned own_lane   = (lane & ~15u) + index;
         const unsigned other_lane = ((lane & ~15u) ^ 16u) + index;
 #ifdef INT_ISA_TEST_WAVE64
-        const unsigned half_lane = lane ^ 32u;
+        const std::uint32_t half_swap = permlane_value(lane ^ 32u);
 #else
-        const unsigned half_lane = lane;
+        const std::uint32_t half_swap = permlane_value(lane) ^ 0x12345678u;
 #endif
-        return {permlane_value(own_lane), permlane_value(other_lane), permlane_value(half_lane)};
+        return {permlane_value(own_lane), permlane_value(other_lane), half_swap};
     }
 
     static void expect(const Output& actual, const Output& expected, unsigned lane)

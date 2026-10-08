@@ -9,6 +9,8 @@ import shutil
 import subprocess
 import sys
 
+import pytest
+
 from support.define_contracts import (
     BuildResult,
     BuildState,
@@ -142,7 +144,7 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     assert build_result.build_dir is not None
     test = case.metadata["test"]
     if test in case.metadata["target_config"].get("skip_run_tests", []):
-        return
+        pytest.skip("Runtime disabled by target configuration (build succeeded).")
 
     logs_dir = Path(build_result.metadata["logs_dir"])
     binary = build_result.build_dir / "bin" / test
