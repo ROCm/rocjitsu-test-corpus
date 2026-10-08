@@ -1,0 +1,238 @@
+# gfx1201 invocations; includes only this target's implemented cases.
+# References and checks are in each source header.
+[defaults]
+timeout_seconds = 60
+
+[[case]]
+id = "sdma_flood"
+binary = "aql_sdma_flood_{target}"
+args = ["--iterations", "8"]
+
+[[case]]
+id = "sdma_event_interrupt"
+binary = "aql_sdma_event_interrupt_{target}"
+args = ["--iterations", "64"]
+
+[[case]]
+id = "packet_flood-aql"
+binary = "aql_packet_flood_{target}"
+args = ["--iterations", "8", "--seed", "12345"]
+
+[[case]]
+id = "queue_flood-aql"
+binary = "aql_queue_flood_{target}"
+args = ["--iterations", "9"]
+
+[[case]]
+id = "queue_churn-aql"
+binary = "aql_queue_churn_{target}"
+args = ["--iterations", "2"]
+
+[[case]]
+id = "dependency_chain-aql"
+binary = "aql_dependency_chain_{target}"
+args = ["--iterations", "64"]
+
+[[case]]
+id = "dependency_diamond-aql"
+binary = "aql_dependency_diamond_{target}"
+args = ["--iterations", "32"]
+
+[[case]]
+id = "engine_pipeline-aql"
+binary = "aql_engine_pipeline_{target}"
+args = ["--iterations", "64"]
+
+[[case]]
+id = "concurrent_submit-aql"
+binary = "aql_concurrent_submit_{target}"
+args = ["--queues", "8", "--iterations", "128"]
+
+[[case]]
+id = "multiprocess-aql"
+binary = "aql_multiprocess_{target}"
+args = ["--iterations", "2"]
+
+[[case]]
+id = "random_dag-aql"
+binary = "aql_random_dag_{target}"
+args = ["--iterations", "32", "--seed", "12345"]
+
+[[case]]
+id = "queue_pause_resume-aql"
+binary = "aql_queue_pause_resume_{target}"
+args = ["--iterations", "32"]
+
+[[case]]
+id = "gpu_ping_pong-aql"
+binary = "aql_gpu_ping_pong_{target}"
+args = ["--iterations", "64"]
+
+[[case]]
+id = "host_gate-aql"
+binary = "aql_host_gate_{target}"
+args = ["--iterations", "16"]
+
+[[case]]
+id = "allocation_churn-aql"
+binary = "aql_allocation_churn_{target}"
+args = ["--iterations", "2", "--queues", "16"]
+
+[[case]]
+id = "concurrent_queue_churn-aql"
+binary = "aql_concurrent_queue_churn_{target}"
+args = ["--iterations", "2"]
+
+[[case]]
+id = "process_exit_inflight-aql"
+binary = "aql_process_exit_inflight_{target}"
+args = ["--iterations", "2"]
+
+[[case]]
+id = "dmabuf_process_handoff-aql"
+binary = "aql_dmabuf_process_handoff_{target}"
+args = ["--iterations", "64"]
+
+[[case]]
+id = "registered_memory-aql"
+binary = "aql_registered_memory_{target}"
+args = ["--iterations", "2"]
+
+[[case]]
+id = "priority_dependency-aql"
+binary = "aql_priority_dependency_{target}"
+args = ["--iterations", "64"]
+
+[[case]]
+id = "aql_dispatch_barrier"
+binary = "aql_dispatch_barrier_{target}"
+args = ["--iterations", "32"]
+
+[[case]]
+id = "aql_lds_dispatch"
+binary = "aql_lds_dispatch_{target}"
+args = ["--iterations", "16", "--seed", "4321"]
+
+[[case]]
+id = "aql_mixed_dispatch"
+binary = "aql_mixed_dispatch_{target}"
+args = ["--iterations", "64"]
+
+[[case]]
+id = "aql_counted_completion"
+binary = "aql_counted_completion_{target}"
+args = ["--iterations", "2", "--seed", "12345"]
+
+[[case]]
+id = "aql_dispatch_geometry"
+binary = "aql_dispatch_geometry_{target}"
+args = ["--iterations", "32"]
+
+[[case]]
+id = "aql_cu_mask_switch"
+binary = "aql_cu_mask_switch_{target}"
+requires = ["wgp_placement"]
+args = ["--iterations", "2"]
+
+[[case]]
+id = "aql_scratch_dispatch"
+binary = "aql_scratch_dispatch_{target}"
+requires = ["wave32_scratch"]
+args = ["--iterations", "32"]
+
+[[case]]
+id = "aql_shader_host_ping_pong"
+binary = "aql_shader_host_ping_pong_{target}"
+args = ["--iterations", "64", "--seed", "12345"]
+
+[[case]]
+id = "engine_pipeline_window-aql"
+binary = "aql_engine_pipeline_window_{target}"
+args = ["--iterations", "64"]
+
+[[case]]
+id = "random_dag-fanin2-aql"
+binary = "aql_random_dag_{target}"
+args = ["--fan-in", "2", "--iterations", "32", "--seed", "12345"]
+
+[[case]]
+id = "random_dag-native-fanin-aql"
+binary = "aql_random_dag_{target}"
+args = ["--iterations", "32", "--seed", "4321"]
+
+[[case]]
+id = "sdma_copy_boundaries"
+binary = "aql_sdma_copy_boundaries_{target}"
+args = ["--iterations", "3"]
+
+# Higher-iteration variants; matching quick cases appear above.
+# Only entries with slow = true require --run-slow (>2s measured natively).
+# The historical -slow ID suffix does not control selection.
+
+[[case]]
+id = "sdma_flood-slow"
+binary = "aql_sdma_flood_{target}"
+args = ["--timeout", "240", "--iterations", "128"]
+timeout_seconds = 300
+
+[[case]]
+id = "packet_flood-aql-slow"
+binary = "aql_packet_flood_{target}"
+args = ["--timeout", "240", "--iterations", "32", "--seed", "12345"]
+timeout_seconds = 300
+
+[[case]]
+id = "queue_flood-aql-slow"
+binary = "aql_queue_flood_{target}"
+args = ["--timeout", "240", "--iterations", "64"]
+timeout_seconds = 300
+
+[[case]]
+id = "queue_churn-aql-slow"
+binary = "aql_queue_churn_{target}"
+args = ["--timeout", "240", "--iterations", "64"]
+
+timeout_seconds = 300
+
+[[case]]
+id = "multiprocess-aql-slow"
+binary = "aql_multiprocess_{target}"
+args = ["--timeout", "240", "--iterations", "64"]
+timeout_seconds = 300
+
+[[case]]
+id = "allocation_churn-aql-slow"
+binary = "aql_allocation_churn_{target}"
+args = ["--timeout", "240", "--iterations", "32", "--queues", "16"]
+timeout_seconds = 300
+
+[[case]]
+id = "concurrent_queue_churn-aql-slow"
+binary = "aql_concurrent_queue_churn_{target}"
+args = ["--timeout", "240", "--iterations", "16"]
+timeout_seconds = 300
+
+[[case]]
+id = "process_exit_inflight-aql-slow"
+binary = "aql_process_exit_inflight_{target}"
+args = ["--timeout", "240", "--iterations", "16"]
+timeout_seconds = 300
+
+[[case]]
+id = "registered_memory-aql-slow"
+binary = "aql_registered_memory_{target}"
+args = ["--timeout", "240", "--iterations", "64"]
+timeout_seconds = 300
+
+[[case]]
+id = "aql_counted_completion-slow"
+binary = "aql_counted_completion_{target}"
+args = ["--timeout", "240", "--iterations", "16", "--seed", "12345"]
+timeout_seconds = 300
+
+[[case]]
+id = "aql_cu_mask_switch-slow"
+binary = "aql_cu_mask_switch_{target}"
+requires = ["wgp_placement"]
+args = ["--timeout", "240", "--iterations", "16"]
+timeout_seconds = 300

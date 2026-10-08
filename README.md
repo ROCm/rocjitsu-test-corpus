@@ -14,6 +14,7 @@ corpus/
   semantics/  Standalone target-specific HIP semantic programs.
   llama/      llama.cpp test-backend-ops cases and vendored GGML sources.
   vulkan/     Pinned Vulkan compute and texel-buffer CTS selections.
+  runtime-cts/ Direct-KFD aql/ and capability-gated pm4/ suites.
   tensile/    gfx1250 TensileLite configs and generated artifacts.
   benchmarks/ Parameterized Triton benchmarks and reused upstream kernels.
 
@@ -54,6 +55,9 @@ CI orchestration and simulator configurations remain in rocm-systems.
   that the runtime test executes.
 - `corpus/vulkan/`: pinned Vulkan CTS compute and buffer cases for RDNA3/RDNA4
   through Mesa RADV. See the [build and local smoke-test guide](corpus/vulkan/README.md).
+- `corpus/runtime-cts/`: standalone direct-KFD queue, packet, dependency,
+  SDMA and shader stress tests with gfx9, gfx11 and gfx12 support. Run binaries directly or
+  through the manifest-based pytest adapter (`--suite aql` or `--suite pm4`); see the [build instructions](corpus/runtime-cts/README.md).
 - `corpus/semantics/`: standalone HIP programs with deterministic inputs,
   source-ISA coverage, and typed results that can be captured under any
   externally selected launch configuration.
@@ -200,7 +204,7 @@ Useful selectors:
 
 - `--target <gfx target>`: target to run, for example `gfx942`, `gfx950`,
   `gfx1201`, or `gfx1250`.
-- `--suite <iree|kernels|cts|dbt|semantics|llama|vulkan>`: include a suite. Repeat or
+- `--suite <iree|kernels|cts|dbt|semantics|llama|vulkan|aql|pm4>`: include a suite. Repeat or
   pass comma-separated values.
 - `--exclude-suite <suite>`: exclude a suite.
 - `--backend <backend>`: include a kernel backend such as `hipkittens`.

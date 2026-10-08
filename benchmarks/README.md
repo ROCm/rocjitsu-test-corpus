@@ -9,7 +9,7 @@ parameters. Benchmark runs are separate from normal pytest collection.
 Use Python 3.12 and install the pinned GPU dependencies with
 `python -m pip install -r benchmarks/requirements.txt`. For the concrete
 rocjitsu build and launch recipe, see the
-[dashboard publication guide](https://github.com/ROCm/rocm-systems/blob/develop/emulation/rocjitsu/website/README.md#prepare-benchmark-data).
+[dashboard publication guide](https://github.com/ROCm/rocm-systems/blob/develop/emulation/rocjitsu/website/dashboard/README.md#prepare-benchmark-data).
 
 The consumer supplies the launch command and one base config per selected target:
 
@@ -142,15 +142,28 @@ retain the same boundary across profiles.
 
 The publisher and CI workflow live in rocm-systems. CI pins this corpus for
 benchmark execution and uses
-`python "$src/website/scripts/dashboard_publish.py"` for publication, where
+`python "$src/website/dashboard/scripts/dashboard_publish.py"` for publication, where
 `$src` is the rocjitsu source directory used by the runner. See the
-[dashboard publication guide](https://github.com/ROCm/rocm-systems/blob/develop/emulation/rocjitsu/website/README.md#prepare-benchmark-data)
+[dashboard publication guide](https://github.com/ROCm/rocm-systems/blob/develop/emulation/rocjitsu/website/dashboard/README.md#prepare-benchmark-data)
 for the publication command. The publisher consumes finalized schema version 1
 `run.json` files and writes dashboard resources into a local `--data-dir`; CI passes
 `--expected-sha` and `--expected-corpus-sha` to require matching, clean source
 checkouts. Both source checkouts must be clean and include revision metadata.
+Use `--trigger auto --branch develop` for automatic runs. Manual runs use
+`--trigger manual --branch BRANCH`, where `BRANCH` is the branch that was
+benchmarked. The publisher requires a nonempty branch for manual runs and
+rejects automatic runs from other branches.
 
-Published files follow the [dashboard contract](https://github.com/ROCm/rocm-systems/blob/c53572277a6f160e92f360e23f5af7ce2de904a7/emulation/rocjitsu/website/docs/website-data-contract.md):
+Before publishing manual topic-branch results, deploy the compatible dashboard
+from [ROCm/rocm-systems#12926](https://github.com/ROCm/rocm-systems/pull/12926)
+and let benchmark jobs using the older publisher finish. That dashboard shows
+manual runs only in **Run Comparison**, including manual runs from `develop`.
+While manual topic-branch results remain indexed, retain compatible dashboard
+and publisher versions, even when rolling back workflow enablement. Older
+dashboards reject the dataset, and older publishers cannot append results to it.
+
+Published files follow the [compatible dashboard contract](https://github.com/ROCm/rocm-systems/blob/1e327b34a7e6641a7a6c0c9f76da918727336060/emulation/rocjitsu/website/dashboard/docs/website-data-contract.md)
+from the companion PR:
 `metadata.json`, `index.json`, `test-catalogs/catalog-<hash>.json`, and
 `runs/<run-id>.json` under the supplied data directory. Catalogs describe the
 selected matrix exactly, including failed or interrupted cells. Catalogs and

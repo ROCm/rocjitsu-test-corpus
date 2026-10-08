@@ -145,7 +145,7 @@ __global__ void lds_atomic_kernel(LdsAtomicResult *result) {
     return;
 
   const std::uint32_t one = 1;
-  const std::uint32_t quiet_nan = 0x7fc54321u;
+  const std::uint32_t signaling_nan = 0x7f854321u;
   const std::uint32_t positive_zero = 0;
   const std::uint32_t negative_zero = 0x80000000u;
   std::uint32_t integer_old;
@@ -160,7 +160,7 @@ __global__ void lds_atomic_kernel(LdsAtomicResult *result) {
                : "=&v"(integer_old), "=&v"(add_nan_old), "=&v"(min_zero_old),
                  "=&v"(max_zero_old)
                : "v"(std::uint32_t{0}), "v"(std::uint32_t{4}), "v"(std::uint32_t{8}),
-                 "v"(std::uint32_t{12}), "v"(one), "v"(quiet_nan), "v"(positive_zero),
+                 "v"(std::uint32_t{12}), "v"(one), "v"(signaling_nan), "v"(positive_zero),
                  "v"(negative_zero)
                : "memory");
   result->integer_old = integer_old;
@@ -213,7 +213,7 @@ TEST(Gfx1250MemoryIsaAtomic, LdsReturnNaNQuietingAndSignedZeroOrdering) {
   EXPECT_EQ(actual.min_zero_old, 0x80000000u);
   EXPECT_EQ(actual.max_zero_old, 0x00000000u);
   EXPECT_EQ(actual.values[0], 42u);
-  EXPECT_EQ(actual.values[1], 0x7fc12345u); // first NaN wins and signaling NaN is quieted
+  EXPECT_EQ(actual.values[1], 0x7fc54321u); // DATA0's NaN wins and is quieted
   EXPECT_EQ(actual.values[2], 0x80000000u); // minNum(-0, +0) is -0
   EXPECT_EQ(actual.values[3], 0x00000000u); // maxNum(+0, -0) is +0
 }
