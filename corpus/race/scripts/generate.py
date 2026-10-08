@@ -74,7 +74,6 @@ class Case:
     kernel: str
     requires: list[str]
     mutate: list[str]
-    access: str
     hazard: str
     resource: str | None  # optional override; see derive_resource
     exempt: tuple[Exemption, ...] = ()
@@ -119,6 +118,17 @@ _INFLIGHT_RESOURCE = (
 )
 
 _INFLIGHT_SCAN_LINES = 40
+
+# The memory a load rewritten as a store races, from the load's address space.
+# flat_ is deliberately absent: a flat address can resolve to global memory,
+# LDS or scratch, so a case with a flat memory site must say which with
+# `resource = "..."`.
+_MEMORY_SITE_RESOURCE = (
+    ("global_", "global"),
+    ("buffer_", "global"),
+    ("scratch_", "scratch"),
+    ("ds_", "lds"),
+)
 
 
 def _counter_family(site: "mutate.WaitSite") -> str:
@@ -171,15 +181,24 @@ def derive_resource(case: Case, site, lines: list[str]) -> str:
     preceding memory operation is what actually says which, so that is what is
     consulted.
 
+    A load rewritten as a store races the memory itself rather than a
+    register, so a ``memory`` site takes the address space of the load.
+
     A case may still pin its resource with ``resource = "..."`` in cases.toml.
     Tags are committed and reviewable precisely so a wrong guess is corrected
-    once and stays corrected.
+    once and stays corrected. Where a site cannot be attributed at all,
+    generation fails rather than guessing.
     """
     if case.resource is not None:
         return case.resource
     if isinstance(site, mutate.MemorySite):
-        # A load rewritten as a store races the memory itself, not a register.
-        return case.access
+        for prefix, resource in _MEMORY_SITE_RESOURCE:
+            if site.load_mnemonic.startswith(prefix):
+                return resource
+        raise SystemExit(
+            f"{case.id}: memory site {site.ordinal} ({site.load_mnemonic}) does not say "
+            f"which memory it touches; pin it with resource = \"...\" in cases.toml"
+        )
 
     family = _counter_family(site)
     if family == "tensor":
@@ -195,7 +214,12 @@ def derive_resource(case: Case, site, lines: list[str]) -> str:
         found = _nearest_inflight(lines, site.line_number, ("lds", "sgpr", "vgpr"))
         if found is not None:
             return found
-        return "lds" if case.access == "lds" else "sgpr"
+        raise SystemExit(
+            f"{case.id}: cannot tell what wait {site.ordinal} ({site.full_line.strip()}) "
+            f"guards: no scalar, DS or vector memory operation within the "
+            f"{_INFLIGHT_SCAN_LINES} lines before it. Pin it with resource = \"...\" "
+            f"in cases.toml."
+        )
     return "vgpr"
 
 
@@ -224,7 +248,6 @@ def load_cases() -> list[Case]:
             kernel=entry["kernel"],
             requires=entry.get("requires", []),
             mutate=entry.get("mutate", ["wait"]),
-            access=entry["access"],
             hazard=entry["hazard"],
             resource=entry.get("resource"),
             exempt=tuple(

@@ -10,13 +10,14 @@ the same rule for which targets a case builds for. A change to the schema is a
 change here, not in each script.
 
 This module checks the manifest on its own terms: fields, types, uniqueness, and
-that every case's targets are corpus targets. Whether the files it names exist
-is ``check_cases.py``'s job.
+that every case's targets are corpus targets. Whether the files it names exist,
+and whether a case's mutation rules agree with its assembly, is
+``check_cases.py``'s job.
 """
 
 import tomllib
 from collections.abc import Iterable
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 SCHEMA = 1
@@ -42,6 +43,64 @@ class InventoryError(ValueError):
         self.problems = problems
 
 
+# The mutation kinds a case may opt into with ``mutate``.
+MUTATION_KINDS = frozenset({"wait", "memory"})
+
+# The keys a [[case.exempt]] table may have; all but ``target`` are required.
+EXEMPTION_KEYS = frozenset({"kind", "ordinal", "site", "reason", "target"})
+
+
+@dataclass(frozen=True)
+class Exemption:
+    """
+    A mutation of a case that provably introduces no race, so its mutant is
+    exempt from scoring.
+
+    Attributes:
+        kind: The mutation kind, such as ``"wait"``.
+        ordinal: Which site of that kind, 0-based, counted as
+            ``check_cases.wait_sites`` counts them.
+        site: The instruction the ordinal names, such as ``"s_wait_kmcnt"``.
+        reason: Why the mutation introduces no race.
+        target: The one target the exemption applies to, or None for every
+            target the case builds for.
+    """
+
+    kind: str
+    ordinal: int
+    site: str
+    reason: str
+    target: str | None = None
+
+
+@dataclass(frozen=True)
+class MutationRules:
+    """
+    How the mutant generator treats a case. A case with none of these fields
+    takes no part in mutation, and has no default rules.
+
+    Attributes:
+        mutate: The mutation kinds the case opts into; see MUTATION_KINDS.
+        hazard: The dominant hazard kind the kernel is built to produce.
+        description: What the kernel exercises, in a sentence.
+        resource: The resource tag pinned for every mutant of the case.
+        waits: Per target, the counters the case's assembly waits on, or None
+            if the manifest gives no ``waits`` table.
+        exempt: The mutations exempt from scoring.
+    """
+
+    mutate: tuple[str, ...] = ()
+    hazard: str | None = None
+    description: str | None = None
+    resource: str | None = None
+    waits: dict[str, tuple[str, ...]] | None = None
+    exempt: tuple[Exemption, ...] = ()
+
+    def declared(self) -> bool:
+        """Whether the manifest gives the case any mutation rule."""
+        return self != MutationRules()
+
+
 @dataclass(frozen=True)
 class Case:
     """
@@ -54,20 +113,26 @@ class Case:
             manifest. Empty means every corpus target; see
             :meth:`Inventory.targets_of`.
         headers: Headers outside ROCm's defaults that the kernel includes.
+        rules: The case's mutation rules, from its other fields.
     """
 
     id: str
     kernel: str
     targets: tuple[str, ...]
     headers: tuple[str, ...]
+    rules: MutationRules = field(default_factory=MutationRules)
 
     def builds_for(self, target: str) -> bool:
         """Whether the case builds for *target*, a corpus target."""
         return not self.targets or target in self.targets
 
 
-# The fields a [[case]] table may have: those of Case.
-CASE_FIELDS = frozenset(field.name for field in fields(Case))
+# The fields a [[case]] table may have: those of Case, with MutationRules'
+# fields in place of ``rules``.
+CASE_FIELDS = frozenset(
+    {item.name for item in fields(Case)} - {"rules"}
+    | {item.name for item in fields(MutationRules)}
+)
 
 
 @dataclass(frozen=True)
@@ -211,7 +276,113 @@ def _cases(
             problem=f"{where}: kernel {kernel} is already used by another case",
             problems=problems,
         )
-        yield Case(id=case_id, kernel=kernel, targets=targets, headers=headers)
+        yield Case(
+            id=case_id,
+            kernel=kernel,
+            targets=targets,
+            headers=headers,
+            rules=_mutation_rules(where=where, entry=entry, problems=problems),
+        )
+
+
+def _mutation_rules(
+    where: str, entry: dict[str, object], problems: list[str]
+) -> MutationRules:
+    """The mutation rules in a case *entry*, with a problem for each invalid one."""
+    mutate = _string_list(
+        where=where, name="mutate", value=entry.get("mutate", []), problems=problems
+    )
+    for kind in mutate:
+        if kind not in MUTATION_KINDS:
+            problems.append(
+                f"{where}: mutate lists {kind!r}; known kinds are "
+                f"{', '.join(sorted(MUTATION_KINDS))}"
+            )
+    hazard, description, resource = (
+        _optional_string(
+            where=where, name=name, value=entry.get(name), problems=problems
+        )
+        for name in ("hazard", "description", "resource")
+    )
+    return MutationRules(
+        mutate=mutate,
+        hazard=hazard,
+        description=description,
+        resource=resource,
+        waits=_waits(where=where, value=entry.get("waits"), problems=problems),
+        exempt=_exemptions(
+            where=where, value=entry.get("exempt", []), problems=problems
+        ),
+    )
+
+
+def _optional_string(
+    where: str, name: str, value: object, problems: list[str]
+) -> str | None:
+    if value is not None and not _is_name(value):
+        problems.append(f"{where}: {name} must be a non-empty string")
+        return None
+    return value
+
+
+def _waits(
+    where: str, value: object, problems: list[str]
+) -> dict[str, tuple[str, ...]] | None:
+    """A ``waits`` table: each target to the counters its assembly waits on."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        problems.append(f"{where}: waits must be a table keyed by target")
+        return None
+    return {
+        target: _string_list(
+            where=where, name=f"waits.{target}", value=counters, problems=problems
+        )
+        for target, counters in value.items()
+    }
+
+
+def _exemptions(
+    where: str, value: object, problems: list[str]
+) -> tuple[Exemption, ...]:
+    """The [[case.exempt]] tables, each with every required key of the right type."""
+    if not isinstance(value, list) or not all(isinstance(e, dict) for e in value):
+        problems.append(f"{where}: exempt must be a list of [[case.exempt]] tables")
+        return ()
+    exemptions = []
+    for table in value:
+        if (
+            exemption := _exemption(where=where, table=table, problems=problems)
+        ) is not None:
+            exemptions.append(exemption)
+    return tuple(exemptions)
+
+
+def _exemption(
+    where: str, table: dict[str, object], problems: list[str]
+) -> Exemption | None:
+    """One [[case.exempt]] table, or None, with a problem, if it is invalid."""
+    count = len(problems)
+    for key in sorted(set(table) - EXEMPTION_KEYS):
+        problems.append(f"{where}: unknown [[case.exempt]] key {key!r}")
+    for key in ("kind", "site", "reason"):
+        if not _is_name(table.get(key)):
+            problems.append(f"{where}: exempt {key} must be a non-empty string")
+    ordinal = table.get("ordinal")
+    if not isinstance(ordinal, int) or isinstance(ordinal, bool) or ordinal < 0:
+        problems.append(f"{where}: exempt ordinal must be a non-negative integer")
+    target = _optional_string(
+        where=where, name="exempt target", value=table.get("target"), problems=problems
+    )
+    if len(problems) > count:
+        return None
+    return Exemption(
+        kind=table["kind"],
+        ordinal=ordinal,
+        site=table["site"],
+        reason=table["reason"],
+        target=target,
+    )
 
 
 def _field_problems(where: str, entry: dict[str, object]) -> list[str]:

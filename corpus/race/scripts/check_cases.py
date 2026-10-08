@@ -8,7 +8,8 @@ Check that ``cases.toml`` agrees with ``kernels/`` and the committed ``asm/``.
 This needs no compiler: it checks the kernel inventory against the files on
 disk::
 
-    python corpus/race/scripts/check_cases.py   # exit 1 on any problem
+    python corpus/race/scripts/check_cases.py            # exit 1 on any problem
+    python corpus/race/scripts/check_cases.py --suggest  # print derived waits tables
 
 Its guarantee is about the inventory only: every case has its source and its
 assembly, and every assembly file belongs to a case. It does not check that
@@ -38,12 +39,22 @@ caught. It checks that:
 * every ``asm/<target>/`` has the ``recipe.toml`` that ``regenerate_asm.py``
   writes beside the assembly, with all of its fields, so a regeneration commit
   that leaves it out is caught.
+
+For a case with mutation rules (any of ``mutate``, ``hazard``, ``waits`` and
+the other fields ``generate.py`` reads), it also checks that:
+
+* ``waits`` has exactly one entry per target the case builds for, and that
+  entry lists exactly the counters the target's assembly waits on (see
+  ``wait_counters``);
+* each ``[[case.exempt]]`` ordinal names, under the counting rule in
+  ``wait_sites``, the instruction its ``site`` says it does.
 """
 
 import argparse
 import enum
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import inventory
@@ -70,6 +81,85 @@ ASM_DIR = inventory.ASM_DIR
 _AMDGCN_TARGET_RE = re.compile(
     r'^\s*\.amdgcn_target\s+"[^"]*-([^-":]+)(?::[^"]*)?"', re.MULTILINE
 )
+
+# s_wait_xcnt tracks address-translation replay rather than data completion.
+# It is never a mutation site and never counts as a wait the kernel exercises.
+EXCLUDED_WAITS = frozenset({"s_wait_xcnt"})
+
+# Matches a wait mnemonic and its first operand on a stripped line. Kept in
+# step with mutate.find_wait_sites, so an ordinal means the same instruction
+# here and when a mutant is built.
+_WAIT_RE = re.compile(r"(s_wait\w+)\s+(\S+)")
+
+# Counter fields named inside a gfx9-era combined s_waitcnt operand.
+_LEGACY_FIELD_RE = re.compile(r"\b(vmcnt|lgkmcnt|expcnt|vscnt)\(")
+
+
+@dataclass(frozen=True)
+class WaitSite:
+    """
+    One wait mutation site in a listing.
+
+    Attributes:
+        ordinal: Its position among the listing's wait sites, 0-based; see
+            wait_sites.
+        line: Its 1-based line in the ``.s`` file, for messages.
+        mnemonic: The wait instruction, such as ``s_wait_kmcnt``.
+        counters: The counters it drains, spelled as the target spells them.
+    """
+
+    ordinal: int
+    line: int
+    mnemonic: str
+    counters: frozenset[str]
+
+
+def _site_counters(mnemonic: str, stripped_line: str) -> frozenset[str]:
+    """
+    The counters one wait instruction drains, spelled as the target spells them.
+
+    gfx9 names its counters in the operand of a combined ``s_waitcnt``; gfx10+
+    names one in the mnemonic (``s_waitcnt_vscnt``, ``s_wait_loadcnt``) or two
+    (``s_wait_loadcnt_dscnt``). A wait naming two counters drains both.
+    """
+    if mnemonic == "s_waitcnt":
+        return frozenset(_LEGACY_FIELD_RE.findall(stripped_line))
+    suffix = mnemonic.removeprefix("s_waitcnt_").removeprefix("s_wait_")
+    return frozenset(part for part in suffix.split("_") if part.endswith("cnt"))
+
+
+def wait_sites(asm: Path) -> list[WaitSite]:
+    """
+    Every wait mutation site in *asm*, with its ordinal.
+
+    The counting rule: one domain for all counters (a ``kmcnt`` wait and a
+    ``loadcnt`` wait share it), in file order, starting at 0. Comment and
+    directive lines are skipped, and so is ``s_wait_xcnt``. A wait naming two
+    counters is one site.
+    """
+    sites: list[WaitSite] = []
+    lines = asm.read_text(encoding="utf-8", errors="replace").splitlines()
+    for number, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if stripped.startswith((";", ".")):
+            continue
+        match = _WAIT_RE.match(stripped)
+        if not match or match.group(1) in EXCLUDED_WAITS:
+            continue
+        sites.append(
+            WaitSite(
+                ordinal=len(sites),
+                line=number,
+                mnemonic=match.group(1),
+                counters=_site_counters(match.group(1), stripped),
+            )
+        )
+    return sites
+
+
+def wait_counters(asm: Path) -> set[str]:
+    """Every counter some wait site in *asm* drains."""
+    return {counter for site in wait_sites(asm) for counter in site.counters}
 
 
 def asm_targets() -> list[str]:
@@ -137,6 +227,111 @@ def case_file_problems(corpus: inventory.Inventory) -> list[str]:
     return problems
 
 
+def mutation_problems(corpus: inventory.Inventory) -> list[str]:
+    """
+    Where a case's mutation rules disagree with its committed assembly: its
+    ``waits`` table, and its exemption ordinals. A case without mutation rules
+    is not checked, and a missing listing is left to case_file_problems.
+    """
+    problems: list[str] = []
+    for case in corpus.cases:
+        if case.rules.declared():
+            problems.extend(
+                _case_mutation_problems(case=case, targets=corpus.targets_of(case))
+            )
+    return problems
+
+
+def _case_mutation_problems(
+    case: inventory.Case, targets: tuple[str, ...]
+) -> list[str]:
+    where = f"{CASES_PATH.name} [{case.id}]"
+    waits = case.rules.waits
+    if waits is None:
+        example = targets[0] if targets else "<target>"
+        return [
+            f"{where}: waits must be a table keyed by target, e.g. "
+            f"waits = {{ {example} = [...] }}"
+        ]
+    problems = [
+        f"{where}: waits names {target}, which the case does not build for"
+        for target in sorted(set(waits) - set(targets))
+    ]
+    for target in targets:
+        asm = ASM_DIR / target / f"{case.kernel}.s"
+        if asm.is_file():
+            problems.extend(
+                _wait_problems(
+                    where, target=target, declared=waits.get(target), asm=asm
+                )
+            )
+            problems.extend(
+                _exemption_problems(where, case=case, target=target, asm=asm)
+            )
+    return problems
+
+
+def _wait_problems(
+    where: str, target: str, declared: tuple[str, ...] | None, asm: Path
+) -> list[str]:
+    """Whether *declared*, a case's waits for *target*, is what *asm* waits on."""
+    actual = wait_counters(asm)
+    if declared is None:
+        return [
+            f"{where}: waits has no {target} entry; the asm waits on {sorted(actual)}"
+        ]
+    if set(declared) == actual and len(declared) == len(set(declared)):
+        return []
+    detail = []
+    if missing := sorted(actual - set(declared)):
+        detail.append(f"asm also waits on {missing}")
+    if extra := sorted(set(declared) - actual):
+        detail.append(f"asm never waits on {extra}")
+    if len(declared) != len(set(declared)):
+        detail.append("duplicate entries")
+    return [f"{where}: waits.{target} {list(declared)}: {'; '.join(detail)}"]
+
+
+def _exemption_problems(
+    where: str, case: inventory.Case, target: str, asm: Path
+) -> list[str]:
+    """Whether each of *case*'s exemptions for *target* names the site it says."""
+    problems: list[str] = []
+    sites = wait_sites(asm)
+    listing = f"asm/{target}/{case.kernel}.s"
+    for exemption in case.rules.exempt:
+        if exemption.target not in (None, target):
+            continue
+        if exemption.kind != "wait":
+            problems.append(
+                f"{where}: cannot verify a {exemption.kind!r} exemption; "
+                f"only wait ordinals are checked"
+            )
+        elif exemption.ordinal >= len(sites):
+            problems.append(
+                f"{where}: exempt wait ordinal {exemption.ordinal} is out of range; "
+                f"{listing} has {len(sites)} wait sites"
+            )
+        elif (site := sites[exemption.ordinal]).mnemonic != exemption.site:
+            problems.append(
+                f"{where}: exempt wait ordinal {exemption.ordinal} is {site.mnemonic} "
+                f"at {listing}:{site.line}, not {exemption.site}"
+            )
+    return problems
+
+
+def suggest(corpus: inventory.Inventory) -> None:
+    """Print the waits table each case's committed assembly implies."""
+    for case in corpus.cases:
+        entries = []
+        for target in corpus.targets_of(case):
+            asm = ASM_DIR / target / f"{case.kernel}.s"
+            counters = sorted(wait_counters(asm)) if asm.is_file() else []
+            quoted = ", ".join(f'"{counter}"' for counter in counters)
+            entries.append(f"{target} = [{quoted}]")
+        print(f"{case.id:24} waits = {{ {', '.join(entries)} }}")
+
+
 def check(corpus: inventory.Inventory) -> list[str]:
     """
     Every mismatch between a validated inventory and the files on disk.
@@ -156,6 +351,7 @@ def check(corpus: inventory.Inventory) -> list[str]:
             )
 
     errors.extend(case_file_problems(corpus))
+    errors.extend(mutation_problems(corpus))
 
     owned = corpus.outputs()
     for target in sorted(set(corpus.targets) & set(present)):
@@ -172,9 +368,16 @@ def check(corpus: inventory.Inventory) -> list[str]:
 
 
 def main(argv: list[str]) -> ExitCode:
-    argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description="Check cases.toml against kernels/ and the committed asm/, without a compiler."
-    ).parse_args(argv)
+    )
+    parser.add_argument(
+        "--suggest",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Print the waits table each case's committed assembly implies, and exit.",
+    )
+    args = parser.parse_args(argv)
     try:
         corpus = inventory.load(CASES_PATH)
     except inventory.InventoryError as error:
@@ -182,6 +385,9 @@ def main(argv: list[str]) -> ExitCode:
             error.problems, summary=f"{CASES_PATH.name} is invalid: {{}} problem(s)"
         )
         return ExitCode.PROBLEMS_FOUND
+    if args.suggest:
+        suggest(corpus)
+        return ExitCode.SUCCESS
     if mismatches := check(corpus):
         _print_problems(
             mismatches,

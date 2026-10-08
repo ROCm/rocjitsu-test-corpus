@@ -35,24 +35,80 @@ def test_load_gives_named_case_records(tmp_path: Path) -> None:
     assert only.targets == ("gfx1250",) and only.headers == ("x/y.hpp",)
 
 
-@pytest.mark.parametrize("record", [inventory.Case, inventory.Inventory])
-def test_records_are_frozen_dataclasses(
-    record: type[inventory.Case] | type[inventory.Inventory],
-) -> None:
-    # Both inventory records are represented the same way: immutable fields,
+@pytest.mark.parametrize(
+    "record",
+    [inventory.Case, inventory.Inventory, inventory.MutationRules, inventory.Exemption],
+)
+def test_records_are_frozen_dataclasses(record: type) -> None:
+    # Every inventory record is represented the same way: immutable fields,
     # and no tuple behaviour such as indexing or unpacking to depend on.
     assert dataclasses.is_dataclass(record)
     assert record.__dataclass_params__.frozen
     assert not issubclass(record, tuple)
 
 
-def test_case_fields_are_the_fields_of_case() -> None:
-    # A field added to Case is accepted in cases.toml without a second list to
-    # update, as recipe.FIELDS is derived from Recipe.
+def test_case_fields_are_the_fields_of_case_and_its_rules() -> None:
+    # A field added to Case or MutationRules is accepted in cases.toml without
+    # a second list to update, as recipe.FIELDS is derived from Recipe. Case's
+    # rules field holds the mutation fields, and is not itself a manifest field.
+    case_fields = {field.name for field in dataclasses.fields(inventory.Case)}
+    rule_fields = {field.name for field in dataclasses.fields(inventory.MutationRules)}
+    assert inventory.CASE_FIELDS == (case_fields - {"rules"}) | rule_fields
     assert inventory.CASE_FIELDS == {
-        field.name for field in dataclasses.fields(inventory.Case)
+        "id",
+        "kernel",
+        "targets",
+        "headers",
+        "mutate",
+        "hazard",
+        "description",
+        "resource",
+        "waits",
+        "exempt",
     }
-    assert inventory.CASE_FIELDS == {"id", "kernel", "targets", "headers"}
+
+
+MUTATING = (
+    '[[case]]\nid = "m"\nkernel = "m"\ntargets = ["gfx1250"]\n'
+    'mutate = ["wait", "memory"]\nhazard = "RAW"\ndescription = "LDS RAW"\n'
+    'resource = "lds"\nwaits = { gfx1250 = ["dscnt", "kmcnt"] }\n'
+    '[[case.exempt]]\nkind = "wait"\nordinal = 3\nsite = "s_wait_kmcnt"\n'
+    'reason = "already satisfied"\n'
+    '[[case.exempt]]\nkind = "wait"\nordinal = 0\nsite = "s_wait_dscnt"\n'
+    'reason = "own slot"\ntarget = "gfx1250"\n'
+)
+
+
+def test_mutation_rules_are_read_into_a_record(tmp_path: Path) -> None:
+    (case,) = inventory.load(write_manifest(tmp_path / "cases.toml", MUTATING)).cases
+    assert case.rules == inventory.MutationRules(
+        mutate=("wait", "memory"),
+        hazard="RAW",
+        description="LDS RAW",
+        resource="lds",
+        waits={"gfx1250": ("dscnt", "kmcnt")},
+        exempt=(
+            inventory.Exemption(
+                kind="wait", ordinal=3, site="s_wait_kmcnt", reason="already satisfied"
+            ),
+            inventory.Exemption(
+                kind="wait",
+                ordinal=0,
+                site="s_wait_dscnt",
+                reason="own slot",
+                target="gfx1250",
+            ),
+        ),
+    )
+    assert case.rules.declared()
+
+
+def test_case_without_mutation_fields_has_no_rules(tmp_path: Path) -> None:
+    (case,) = inventory.load(write_manifest(tmp_path / "cases.toml", PORTABLE)).cases
+    assert case.rules == inventory.MutationRules()
+    assert not case.rules.declared()
+    # An empty waits table is still a declared rule: the case names no target.
+    assert inventory.MutationRules(waits={}).declared()
 
 
 def test_case_fields_cannot_be_reassigned() -> None:
@@ -150,6 +206,53 @@ BAD_MANIFESTS = {
         "cases.toml: unknown [corpus] key 'name'",
     ),
     "no cases": ("", "cases.toml: no [[case]] tables"),
+    # Mutation rules are checked for type here; whether they agree with the
+    # assembly is check_cases.py's job.
+    "unknown mutation kind": (
+        '[[case]]\nid = "a"\nkernel = "a"\nmutate = ["weight"]\n',
+        "cases.toml [a]: mutate lists 'weight'; known kinds are memory, wait",
+    ),
+    "mutate not a list": (
+        '[[case]]\nid = "a"\nkernel = "a"\nmutate = "wait"\n',
+        "cases.toml [a]: mutate must be a list of strings",
+    ),
+    "hazard not a string": (
+        '[[case]]\nid = "a"\nkernel = "a"\nhazard = 1\n',
+        "cases.toml [a]: hazard must be a non-empty string",
+    ),
+    "waits not a table": (
+        '[[case]]\nid = "a"\nkernel = "a"\nwaits = ["vmcnt"]\n',
+        "cases.toml [a]: waits must be a table keyed by target",
+    ),
+    "waits entry not a list": (
+        '[[case]]\nid = "a"\nkernel = "a"\nwaits = { gfx950 = "vmcnt" }\n',
+        "cases.toml [a]: waits.gfx950 must be a list of strings",
+    ),
+    "exempt not a list of tables": (
+        '[[case]]\nid = "a"\nkernel = "a"\nexempt = "wait"\n',
+        "cases.toml [a]: exempt must be a list of [[case.exempt]] tables",
+    ),
+    "exempt missing its site": (
+        '[[case]]\nid = "a"\nkernel = "a"\n'
+        '[[case.exempt]]\nkind = "wait"\nordinal = 0\nreason = "r"\n',
+        "cases.toml [a]: exempt site must be a non-empty string",
+    ),
+    "exempt negative ordinal": (
+        '[[case]]\nid = "a"\nkernel = "a"\n'
+        '[[case.exempt]]\nkind = "wait"\nordinal = -1\nsite = "s"\nreason = "r"\n',
+        "cases.toml [a]: exempt ordinal must be a non-negative integer",
+    ),
+    "exempt boolean ordinal": (
+        '[[case]]\nid = "a"\nkernel = "a"\n'
+        '[[case.exempt]]\nkind = "wait"\nordinal = true\nsite = "s"\nreason = "r"\n',
+        "cases.toml [a]: exempt ordinal must be a non-negative integer",
+    ),
+    "exempt unknown key": (
+        '[[case]]\nid = "a"\nkernel = "a"\n'
+        '[[case.exempt]]\nkind = "wait"\nordinal = 0\nsite = "s"\nreason = "r"\n'
+        'note = "x"\n',
+        "cases.toml [a]: unknown [[case.exempt]] key 'note'",
+    ),
 }
 
 
