@@ -13,6 +13,7 @@ numbers, not strings.
     "timeout_seconds": "<positive number>",
     "benchmark_suite": "<suite name from the manifest>",
     "threading_mode": "<default|single>",
+    "plugin_profile": "<none|logging|race|throughput>",
     "timestamp": "<run start timestamp>",
     "finished_at": "<run finish timestamp|null while running>",
     "wall_time_s": "<nonnegative number>"
@@ -23,6 +24,8 @@ numbers, not strings.
       "name": "<human-readable case name>",
       "target": "<target architecture, such as gfx950>",
       "suite": "<workload family, such as Triton>",
+      "operation": "<operation from the manifest, such as GEMM>",
+      "workload": "<adapter identifier from the manifest, such as triton_persistent>",
       "problem": {
         "<parameter name>": "<JSON value from the manifest>"
       },
@@ -44,14 +47,16 @@ numbers, not strings.
     "rocjitsu": {
       "rocjitsu_commit_sha": "<SHA|null>",
       "rocjitsu_commit_timestamp": "<timestamp|null>",
+      "rocjitsu_dirty": "<boolean|null if unknown>",
       "target_config_sha256": {
-        "<target architecture>": "<SHA-256 of the effective target configuration>"
+        "<target architecture>": "<SHA-256 of the target configuration before adding plugins and sinks>"
       },
       "rocm_sdk_version": "<version string|null>"
     },
     "corpus": {
       "corpus_commit_sha": "<SHA|null>",
-      "corpus_commit_timestamp": "<timestamp|null>"
+      "corpus_commit_timestamp": "<timestamp|null>",
+      "corpus_dirty": "<boolean|null if unknown>"
     },
     "auxiliary": {
       "<package name>": "<version string|null>",
@@ -65,7 +70,8 @@ numbers, not strings.
 
 - **One result per case and target.** The same `id` can occur on both targets;
   use `(target, id)` to identify a result. `problem` preserves the manifest's
-  parameter names and values, including `dtype`.
+  parameter names and values, including `dtype`. `operation` and `workload`
+  identify the operation and adapter for every result, including early failures.
 - **Timings are in seconds.** `timing_results_s` contains accepted samples in
   execution order, excluding warmups. For example, `[0.012]` means one 12 ms
   sample. `wall_time_s` is elapsed time for the whole run, including setup and
@@ -78,7 +84,11 @@ numbers, not strings.
 - **Provenance identifies the host and software.** Unknown revisions and
   versions are null. `auxiliary` is a flat version map, such as
   `{"python": "3.12.0", "torch": "2.10.0"}`. Target configuration hashes include
-  the selected thread policy.
+  the selected thread policy but exclude plugins and report sinks.
+  `execution_summary.plugin_profile` identifies the selected instrumentation.
+  `rocjitsu_dirty` and `corpus_dirty` are true when Git reports tracked changes
+  or untracked files, false for a clean checkout, and null if Git status is
+  unavailable. A recorded revision alone does not imply a clean checkout.
 
 Timestamps are UTC ISO 8601 strings. All numbers must be finite. The only
 threading modes are `default` (native worker allocation) and `single` (one total

@@ -90,8 +90,7 @@ single-threaded launch; those cases remain in the default suite only.
 End-to-end runtime includes setup, compilation, output reset, and CPU validation;
 it is longer than the sum of measured kernel durations.
 
-Run both manifests separately with different output directories. Keep their
-dashboard run IDs and environment IDs distinct so both histories are retained.
+Run both manifests separately with different output directories.
 
 Use `--manifest benchmarks/suites/smoke.toml` for a short suite, repeated
 `--case` and `--target` flags for subsets, and `--warmups`/`--samples` for
@@ -266,7 +265,7 @@ separate output directory. Each enabled profile must produce its report.
 Reports cover the entire process, including setup and warmups; timing samples
 retain the same boundary across profiles.
 
-### Harness tests
+## Harness tests
 
 Run the benchmark harness tests through the repository's pytest configuration,
 without ROCm dependencies. pytest-xdist supplies the plugin used by the root
