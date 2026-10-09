@@ -116,7 +116,6 @@ def _write_cache(runner_context, **overrides: str) -> None:
         "RJ_ENABLE_MSAN": "OFF",
         "RJ_ENABLE_TSAN": "OFF",
         "RJ_ENABLE_UBSAN": "OFF",
-        "ROCM_PATH": str(runner_context.rocm),
     }
     values.update(overrides)
     (runner_context.build / "CMakeCache.txt").write_text(
@@ -697,17 +696,22 @@ def test_rejects_build_from_another_worktree(runner_context) -> None:
         )
 
 
-def test_build_validation_requires_pinned_sdk_and_no_instrumentation(
-    runner_context,
-) -> None:
+@pytest.mark.parametrize("rocm_path", [None, "", "/another-sdk"])
+def test_build_validation_ignores_test_sdk_path(runner_context, rocm_path) -> None:
+    overrides = {} if rocm_path is None else {"ROCM_PATH": rocm_path}
+    _write_cache(runner_context, **overrides)
     runner.validate_build(
         runner_context.build, rocjitsu_source_dir=runner_context.source
     )
-    _write_cache(runner_context, ROCM_PATH=str(runner_context.root / "another-sdk"))
-    with pytest.raises(runner.RunnerError, match="this Python environment"):
-        runner.validate_build(
-            runner_context.build, rocjitsu_source_dir=runner_context.source
-        )
+
+
+def test_sdk_discovery_requires_installed_package(monkeypatch) -> None:
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+    with pytest.raises(runner.RunnerError, match="rocm-sdk-devel package is not installed"):
+        runner._installed_rocm_path()
+
+
+def test_build_validation_requires_no_instrumentation(runner_context) -> None:
     for option in (
         "LTO",
         "RJ_ENABLE_ASAN",

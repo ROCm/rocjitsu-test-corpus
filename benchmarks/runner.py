@@ -443,16 +443,9 @@ def validate_build(
         raise RunnerError(
             "benchmark build must disable sanitizers: " + ", ".join(enabled_sanitizers)
         )
-    configured_rocm = values.get("ROCM_PATH")
-    if not configured_rocm:
-        raise RunnerError("benchmark build has no ROCM_PATH")
-    rocm_path = Path(configured_rocm).resolve()
-    installed_rocm = _installed_rocm_path()
-    if rocm_path != installed_rocm:
-        raise RunnerError(
-            f"benchmark build uses ROCM_PATH {str(rocm_path)!r}, "
-            f"but this Python environment provides {str(installed_rocm)!r}"
-        )
+    # Workloads use the Python environment's SDK. ROCM_PATH in the build cache
+    # only configures optional rocjitsu tests, not its host compiler or runtime.
+    _installed_rocm_path()
     _require_file(WORKLOAD_ROOT / "triton" / "workloads.py", "Triton workload")
     try:
         plugins = PLUGIN_PROFILES[plugin_profile]
