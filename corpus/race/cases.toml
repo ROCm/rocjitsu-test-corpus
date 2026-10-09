@@ -1,0 +1,144 @@
+# Race-detection corpus: kernel inventory.
+#
+# Each case names one independently buildable HIP kernel and the targets its
+# device assembly is pinned for. scripts/regenerate_asm.py compiles every case
+# for each of its targets into asm/<target>/<kernel>.s, and
+# scripts/check_cases.py checks this inventory against kernels/ and asm/
+# without a compiler.
+#
+# Fields:
+#   id           stable selector for the case
+#   kernel       basename under kernels/, without .hip
+#   requires     gfx targets this kernel assembles for; empty means every
+#                target under asm/
+#   headers      optional: headers outside ROCm's defaults the kernel includes.
+#                regenerate_asm.py skips the case, keeping its committed
+#                assembly, when any is not on the include path.
+
+[corpus]
+schema = 1
+name = "race"
+
+# --- Global vector loads -----------------------------------------------------
+
+[[case]]
+id = "add-checked"
+kernel = "add_checked"
+requires = []
+
+[[case]]
+id = "add-buffer"
+kernel = "add_buffer"
+requires = []
+
+[[case]]
+id = "double-unsafe"
+kernel = "double_unsafe"
+requires = []
+
+[[case]]
+id = "collatz"
+kernel = "collatz"
+requires = []
+
+[[case]]
+id = "atomic-inc"
+kernel = "atomic_inc"
+requires = []
+
+[[case]]
+id = "pointer-chase"
+kernel = "pointer_chase"
+requires = []
+
+[[case]]
+id = "war-pattern"
+kernel = "war_pattern"
+requires = []
+
+[[case]]
+id = "waw-pattern"
+kernel = "waw_pattern"
+requires = []
+
+# --- Scratch -----------------------------------------------------------------
+
+[[case]]
+id = "scratch-access"
+kernel = "scratch_access"
+requires = []
+
+# --- LDS ---------------------------------------------------------------------
+
+[[case]]
+id = "lds-reduce"
+kernel = "lds_reduce"
+requires = []
+
+[[case]]
+id = "lds-war-pattern"
+kernel = "lds_war_pattern"
+requires = []
+
+[[case]]
+id = "trans-lds"
+kernel = "trans_lds"
+requires = []
+
+# --- Tensor DMA into LDS -----------------------------------------------------
+
+[[case]]
+id = "tensor-lds"
+kernel = "tensor_lds"
+requires = ["gfx1250"]
+
+[[case]]
+id = "tensor-lds-offset"
+kernel = "tensor_lds_offset"
+requires = ["gfx1250"]
+
+[[case]]
+id = "fa-barrier-epoch"
+kernel = "fa_barrier_epoch"
+requires = ["gfx1250"]
+
+# --- Transcendentals ---------------------------------------------------------
+
+[[case]]
+id = "trans-sin-cos"
+kernel = "trans_sin_cos"
+requires = []
+
+[[case]]
+id = "trans-rcp-sqrt"
+kernel = "trans_rcp_sqrt"
+requires = []
+
+[[case]]
+id = "trans-chain"
+kernel = "trans_chain"
+requires = []
+
+# --- WMMA --------------------------------------------------------------------
+
+[[case]]
+id = "wmma-exp"
+kernel = "wmma_exp"
+requires = ["gfx1250"]
+
+[[case]]
+id = "wmma-rocwmma"
+kernel = "wmma_rocwmma"
+requires = ["gfx1250"]
+# Needs the rocWMMA headers. regenerate_asm.py looks for them under ROCm's
+# include directory and any -I passed with --cxxflags "-I/path/to/include",
+# and skips the case -- leaving its committed assembly as it is -- when they
+# are not found.
+headers = ["rocwmma/rocwmma.hpp"]
+
+# --- Cross-workgroup global memory -------------------------------------------
+
+[[case]]
+id = "global-byte-eviction"
+kernel = "global_byte_eviction"
+requires = []
