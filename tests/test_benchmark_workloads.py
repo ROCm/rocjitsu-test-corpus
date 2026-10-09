@@ -6,6 +6,7 @@ import contextlib
 import importlib.util
 import json
 import sys
+import subprocess
 import tomllib
 import types
 from pathlib import Path
@@ -29,34 +30,40 @@ WORKLOAD = ROOT / "corpus/benchmarks/triton/workloads.py"
 
 @pytest.fixture
 def workloads_context(monkeypatch):
-    # Fake GPU dependencies keep harness tests runnable without ROCm or Triton.
-    ctx = SimpleNamespace(
-        torch=MagicMock(), descriptor=MagicMock(), attention=MagicMock()
-    )
-    triton = types.ModuleType("triton")
-    triton.jit = lambda function: function
-    triton.cdiv = lambda a, b: (a + b - 1) // b
-    triton.next_power_of_2 = lambda x: 1 << (x - 1).bit_length()
-    triton.language = types.ModuleType("triton.language")
-    dependencies = {
-        "torch": ctx.torch,
-        "triton": triton,
-        "triton.language": triton.language,
-        "triton.tools.tensor_descriptor": SimpleNamespace(
-            TensorDescriptor=ctx.descriptor
-        ),
-        "corpus.benchmarks.third_party.gpt_oss.attention": SimpleNamespace(
-            _attn_fwd=ctx.attention, attention_ref=MagicMock()
-        ),
-    }
-    for name, module in dependencies.items():
-        monkeypatch.setitem(sys.modules, name, module)
-    ctx.measurement = load_module(
-        "measurement_under_test", ROOT / "benchmarks/measurement.py"
-    )
-    monkeypatch.setitem(sys.modules, "benchmarks.measurement", ctx.measurement)
-    ctx.workload = load_module("upstream_under_test", WORKLOAD)
-    return ctx
+    # Restore transitive imports too: reference modules must not retain mocked Torch.
+    with patch.dict(sys.modules):
+        # Fake GPU dependencies keep harness tests runnable without ROCm or Triton.
+        ctx = SimpleNamespace(
+            torch=MagicMock(), descriptor=MagicMock(), attention=MagicMock()
+        )
+        triton = types.ModuleType("triton")
+        triton.jit = lambda function: function
+        triton.cdiv = lambda a, b: (a + b - 1) // b
+        triton.next_power_of_2 = lambda x: 1 << (x - 1).bit_length()
+        triton.language = types.ModuleType("triton.language")
+        dependencies = {
+            "torch": ctx.torch,
+            "triton": triton,
+            "triton.language": triton.language,
+            "triton.tools.tensor_descriptor": SimpleNamespace(
+                TensorDescriptor=ctx.descriptor
+            ),
+            "corpus.benchmarks.third_party.gpt_oss.attention": SimpleNamespace(
+                _attn_fwd=ctx.attention, attention_ref=MagicMock()
+            ),
+        }
+        for name, module in dependencies.items():
+            monkeypatch.setitem(sys.modules, name, module)
+        ctx.measurement = load_module(
+            "measurement_under_test", ROOT / "benchmarks/measurement.py"
+        )
+        monkeypatch.setitem(sys.modules, "benchmarks.measurement", ctx.measurement)
+        candidates = load_module("candidates_under_test", WORKLOAD.with_name("candidates.py"))
+        monkeypatch.setitem(sys.modules, "corpus.benchmarks.triton.candidates", candidates)
+        attention_reference = load_module("attention_reference_under_test", WORKLOAD.with_name("attention_reference.py"))
+        monkeypatch.setitem(sys.modules, "corpus.benchmarks.triton.attention_reference", attention_reference)
+        ctx.workload = load_module("upstream_under_test", WORKLOAD)
+        yield ctx
 
 
 def load_module(name, path):
@@ -66,20 +73,60 @@ def load_module(name, path):
     return module
 
 
+def test_attention_reference_tests_skip_without_triton():
+    # Keep the lightweight harness usable when Torch exists but Triton does not.
+    # Run collection in a fresh interpreter so installed/mocked imports elsewhere
+    # in this suite cannot conceal the missing optional dependency.
+    script = """
+import importlib.abc
+import runpy
+import sys
+import types
+import pytest
+sys.modules['torch'] = types.ModuleType('torch')
+class NoTriton(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'triton' or fullname.startswith('triton.'):
+            raise ModuleNotFoundError("No module named 'triton'", name='triton')
+sys.meta_path.insert(0, NoTriton())
+try:
+    runpy.run_path(sys.argv[1])
+except pytest.skip.Exception as error:
+    assert 'triton' in str(error), str(error)
+else:
+    raise AssertionError('attention reference tests did not skip missing Triton')
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script, str(ROOT / "tests/test_benchmark_attention_reference.py")],
+        capture_output=True, text=True,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
 def test_nightly_parameters_are_valid(workloads_context):
     suite = tomllib.loads((ROOT / "benchmarks/suites/nightly.toml").read_text())
-    for case in suite["cases"]:
-        workloads_context.workload.validate_parameters(case["workload"], case["params"])
-
-
-def test_reference_copies_use_registered_host_memory(workloads_context):
-    tensor = MagicMock()
-    host = workloads_context.workload.to_cpu(tensor)
-    workloads_context.torch.empty.assert_called_once_with(
-        tensor.shape, dtype=tensor.dtype, device="cpu", pin_memory=True
+    tensile = load_module(
+        "tensile_prepare_under_test",
+        ROOT / "corpus/benchmarks/tensile_candidates/prepare.py",
     )
-    host.copy_.assert_called_once_with(tensor)
-    tensor.cpu.assert_not_called()
+    for case in suite["cases"]:
+        params = case["params"]
+        if case["workload"] == "tensile_candidate":
+            variant = params["variant"]
+            assert variant in tensile.CANDIDATES
+            assert case["targets"] == [tensile.CANDIDATES[variant][0]]
+            dtype = (
+                "mxfp8"
+                if variant == "mxfp8_subtile"
+                else "mxfp4" if variant == "mxfp4_streamk" else "bf16"
+            )
+            assert params["dtype"] == dtype
+            assert set(params) == {"dtype", "variant", "m", "n", "k"}
+            assert all(
+                type(params[key]) is int and params[key] > 0 for key in ("m", "n", "k")
+            )
+        else:
+            workloads_context.workload.validate_parameters(case["workload"], params)
 
 
 def test_attention_prepares_buffers_and_descriptors_only_once(workloads_context):
@@ -88,7 +135,9 @@ def test_attention_prepares_buffers_and_descriptors_only_once(workloads_context)
     )
     workloads_context.attention.__getitem__.assert_not_called()
     assert workloads_context.descriptor.from_tensor.call_count == 4
-    assert workloads_context.torch.full.call_count == 4
+    assert workloads_context.torch.Generator.call_count == 1
+    assert workloads_context.torch.randint.call_count == 4
+    assert launch.before_launch is not None
     allocations = list(workloads_context.torch.mock_calls)
     descriptors = list(workloads_context.descriptor.mock_calls)
     launch()
@@ -188,6 +237,7 @@ def test_attention_parameters_control_launch(workloads_context):
 def run_main(workloads_context, check):
     events = []
     launch = MagicMock()
+    launch.compile.side_effect = lambda: events.append("compile")
 
     def prepare(workload, params):
         assert workload == "gpt_oss_attention"
@@ -195,7 +245,7 @@ def run_main(workloads_context, check):
         events.append("prepare")
         return ({"fixture": True}, launch, check(events))
 
-    def measure(callback, warmups, samples):
+    def measure(callback, warmups, samples, progress=None):
         assert callback is launch
         events.append("measure")
         return [12, 13, 14]
@@ -234,7 +284,7 @@ def test_reference_check_runs_after_measurement_before_emission(workloads_contex
 
     with run_main(workloads_context, check) as (events, write_result, main):
         assert main() == 0
-        assert events == ["prepare", "measure", "check"]
+        assert events == ["prepare", "compile", "measure", "check"]
         assert write_result.call_args.args[1]["timings_ns"] == [12, 13, 14]
 
 
@@ -251,5 +301,16 @@ def test_reference_failure_does_not_emit_successful_samples(workloads_context):
     with run_main(workloads_context, check) as (events, write_result, main):
         with pytest.raises(AssertionError, match="reference mismatch"):
             main()
-        assert events == ["prepare", "measure", "check"]
+        assert events == ["prepare", "compile", "measure", "check"]
         write_result.assert_not_called()
+
+
+def test_workload_registries_agree(workloads_context):
+    from benchmarks.runner import WORKLOADS
+
+    workload = workloads_context.workload
+    assert WORKLOADS == set(workload.PREPARE) | {"tensile_candidate"}
+    for family in (workload.PREPARE_CANDIDATES, workload.PREPARE_REDUCTIONS,
+                   workload.PREPARE_QUANTIZATION):
+        for name, prepare in family.items():
+            assert workload.PREPARE[name] is prepare

@@ -9,17 +9,36 @@ import argparse
 import json
 import math
 import sys
+import time
 from typing import Any
 
 import torch
 import triton
 import triton.language as tl
 
+from corpus.benchmarks.triton.candidates import (
+    PREPARE_CANDIDATES,
+    validate_candidate_parameters,
+)
+
+from corpus.benchmarks.triton.reductions import (
+    PREPARE_REDUCTIONS,
+    validate_reduction_parameters,
+)
+from corpus.benchmarks.triton.quantization import (
+    PREPARE_QUANTIZATION,
+    validate_quantization_parameters,
+)
+
 from benchmarks.measurement import (
+    TritonLaunch,
     deterministic_tensor as _deterministic_tensor,
     measure as _measure,
+    progress_writer as _progress_writer,
     reported_target as _reported_target,
     target_matches as _target_matches,
+    to_cpu,
+    poison_outputs,
     write_result as _write_result,
 )
 
@@ -196,15 +215,15 @@ def prepare_copy(parameters):
         "num_stages": num_stages,
     }
 
-    def launch() -> None:
-        _copy_kernel[grid](
-            input_gpu,
-            output_gpu,
-            elements=elements,
-            BLOCK_SIZE=block_size,
-            num_warps=num_warps,
-            num_stages=num_stages,
-        )
+    launch = TritonLaunch(
+        _copy_kernel, grid,
+        input_gpu,
+        output_gpu,
+        elements=elements,
+        BLOCK_SIZE=block_size,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
 
     return parameters, launch, None
 
@@ -225,16 +244,16 @@ def prepare_vector_add(parameters):
         "num_stages": num_stages,
     }
 
-    def launch() -> None:
-        _vector_add_kernel[grid](
-            left_gpu,
-            right_gpu,
-            output_gpu,
-            elements=elements,
-            BLOCK_SIZE=block_size,
-            num_warps=num_warps,
-            num_stages=num_stages,
-        )
+    launch = TritonLaunch(
+        _vector_add_kernel, grid,
+        left_gpu,
+        right_gpu,
+        output_gpu,
+        elements=elements,
+        BLOCK_SIZE=block_size,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
 
     return parameters, launch, None
 
@@ -254,16 +273,16 @@ def prepare_transpose(parameters):
         "num_stages": num_stages,
     }
 
-    def launch() -> None:
-        _transpose_kernel[grid](
-            input_gpu,
-            output_gpu,
-            rows=rows,
-            columns=columns,
-            TILE=tile,
-            num_warps=num_warps,
-            num_stages=num_stages,
-        )
+    launch = TritonLaunch(
+        _transpose_kernel, grid,
+        input_gpu,
+        output_gpu,
+        rows=rows,
+        columns=columns,
+        TILE=tile,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
 
     return parameters, launch, None
 
@@ -295,16 +314,16 @@ def prepare_gather(parameters):
         "num_stages": num_stages,
     }
 
-    def launch() -> None:
-        _gather_kernel[grid](
-            input_gpu,
-            indices_gpu,
-            output_gpu,
-            elements=output_elements,
-            BLOCK_SIZE=block_size,
-            num_warps=num_warps,
-            num_stages=num_stages,
-        )
+    launch = TritonLaunch(
+        _gather_kernel, grid,
+        input_gpu,
+        indices_gpu,
+        output_gpu,
+        elements=output_elements,
+        BLOCK_SIZE=block_size,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
 
     return parameters, launch, None
 
@@ -322,16 +341,16 @@ def prepare_atomic_add(parameters):
         "num_stages": num_stages,
     }
 
-    def launch() -> None:
-        _atomic_add_kernel[grid](
-            input_gpu,
-            output_gpu,
-            elements=elements,
-            buckets=buckets,
-            BLOCK_SIZE=block_size,
-            num_warps=num_warps,
-            num_stages=num_stages,
-        )
+    launch = TritonLaunch(
+        _atomic_add_kernel, grid,
+        input_gpu,
+        output_gpu,
+        elements=elements,
+        buckets=buckets,
+        BLOCK_SIZE=block_size,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
 
     return parameters, launch, None
 
@@ -351,15 +370,15 @@ def prepare_softmax(parameters):
         "num_stages": num_stages,
     }
 
-    def launch() -> None:
-        _softmax_kernel[grid](
-            input_gpu,
-            output_gpu,
-            row_width=columns,
-            BLOCK_SIZE=block_size,
-            num_warps=num_warps,
-            num_stages=num_stages,
-        )
+    launch = TritonLaunch(
+        _softmax_kernel, grid,
+        input_gpu,
+        output_gpu,
+        row_width=columns,
+        BLOCK_SIZE=block_size,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
 
     return parameters, launch, None
 
@@ -380,16 +399,16 @@ def prepare_rmsnorm(parameters):
         "num_stages": num_stages,
     }
 
-    def launch() -> None:
-        _rmsnorm_kernel[grid](
-            input_gpu,
-            output_gpu,
-            row_width=columns,
-            epsilon=epsilon,
-            BLOCK_SIZE=block_size,
-            num_warps=num_warps,
-            num_stages=num_stages,
-        )
+    launch = TritonLaunch(
+        _rmsnorm_kernel, grid,
+        input_gpu,
+        output_gpu,
+        row_width=columns,
+        epsilon=epsilon,
+        BLOCK_SIZE=block_size,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
 
     return parameters, launch, None
 
@@ -413,51 +432,38 @@ def prepare_gemm(parameters):
         "num_stages": num_stages,
     }
 
-    def launch() -> None:
-        _gemm_kernel[grid](
-            left_gpu,
-            right_gpu,
-            output_gpu,
-            rows=rows,
-            columns=columns,
-            reduction=reduction,
-            BLOCK_M=block_m,
-            BLOCK_N=block_n,
-            BLOCK_K=block_k,
-            num_warps=num_warps,
-            num_stages=num_stages,
-        )
+    launch = TritonLaunch(
+        _gemm_kernel, grid,
+        left_gpu,
+        right_gpu,
+        output_gpu,
+        rows=rows,
+        columns=columns,
+        reduction=reduction,
+        BLOCK_M=block_m,
+        BLOCK_N=block_n,
+        BLOCK_K=block_k,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
 
     return parameters, launch, None
-
-
-def to_cpu(tensor):
-    # The simulated KMD needs host pages registered for device-to-host copies.
-    # Pinned memory uses that public HIP path; pageable tensor.cpu() does not.
-    host = torch.empty(tensor.shape, dtype=tensor.dtype, device="cpu", pin_memory=True)
-    host.copy_(tensor)
-    return host
 
 
 def prepare_gpt_oss_attention(parameters):
     from triton.tools.tensor_descriptor import TensorDescriptor
 
-    from corpus.benchmarks.third_party.gpt_oss.attention import _attn_fwd, attention_ref
+    from corpus.benchmarks.third_party.gpt_oss.attention import _attn_fwd
+    from corpus.benchmarks.triton.attention_reference import (
+        attention_inputs, check_attention_reference,
+    )
 
     batch, sequence = parameters["batch"], parameters["sequence"]
     heads, kv_heads = parameters["query_heads"], parameters["key_value_heads"]
     dimension, window = parameters["head_dimension"], parameters["window"]
     groups = heads // kv_heads
-    q = _deterministic_tensor(
-        (batch, sequence, kv_heads, groups, dimension), torch.bfloat16
-    )
-    k = _deterministic_tensor(
-        (batch, sequence, kv_heads, dimension), torch.bfloat16, phase=83
-    )
-    v = _deterministic_tensor(
-        (batch, sequence, kv_heads, dimension), torch.bfloat16, phase=167
-    )
-    sinks = _deterministic_tensor((heads,), torch.bfloat16, phase=41)
+    host_inputs = attention_inputs(batch, sequence, kv_heads, groups, dimension)
+    q, k, v, sinks = (tensor.pin_memory().to("cuda") for tensor in host_inputs)
     start = torch.zeros((batch,), device="cuda", dtype=torch.int32)
     grid = (sequence // 64, batch * heads, 1)
 
@@ -474,49 +480,47 @@ def prepare_gpt_oss_attention(parameters):
         for tensor in (q_kernel, k_kernel, v_kernel, output)
     )
 
-    def launch():
-        _attn_fwd[grid](
-            descriptors[0],
-            descriptors[1],
-            descriptors[2],
-            sinks,
-            0.125,
-            logsumexp,
-            descriptors[3],
-            start,
-            batch,
-            heads,
-            sequence,
-            sequence,
-            HEAD_DIM=64,
-            BLOCK_M=64,
-            BLOCK_N=64,
-            BANDWIDTH=window,
-            num_warps=4,
-            num_stages=1,
-        )
+    launch = TritonLaunch(
+        _attn_fwd, grid,
+        descriptors[0],
+        descriptors[1],
+        descriptors[2],
+        sinks,
+        0.125,
+        logsumexp,
+        descriptors[3],
+        start,
+        batch,
+        heads,
+        sequence,
+        sequence,
+        HEAD_DIM=64,
+        BLOCK_M=64,
+        BLOCK_N=64,
+        BANDWIDTH=window,
+        num_warps=4,
+        num_stages=1,
+        before_launch=lambda: poison_outputs([output]),
+    )
 
     def check():
         # CPU reference and output copies are outside the sampling loop.
-        expected = attention_ref(
-            to_cpu(q),
-            to_cpu(k),
-            to_cpu(v),
-            to_cpu(sinks),
-            sm_scale=0.125,
-            sliding_window=window,
-            start_q=0,
-        )
         actual = (
             to_cpu(output).transpose(1, 2).reshape(batch, sequence, heads * dimension)
         )
-        torch.testing.assert_close(actual, expected)
+        check_attention_reference(
+            *host_inputs,
+            actual,
+            sm_scale=0.125,
+            sliding_window=window,
+        )
 
     parameters.update(
         {
             "causal": True,
             "learned_sinks": True,
-            "input_pattern": "deterministic_nonzero_constant_by_phase",
+            "input_pattern": "seed54_dyadic_all_axes_positive_values",
+            "correctness": "chunked_cpu_reference_final_sample_prelaunch_poison",
             "measurement_scope": "kernel_launch_and_synchronize",
             "source": {
                 "repository": "https://github.com/openai/gpt-oss",
@@ -545,11 +549,20 @@ PREPARE = {
     "rmsnorm": prepare_rmsnorm,
     "gemm": prepare_gemm,
     "gpt_oss_attention": prepare_gpt_oss_attention,
+    **PREPARE_CANDIDATES,
+    **PREPARE_REDUCTIONS,
+    **PREPARE_QUANTIZATION,
 }
 
 
 def validate_parameters(workload: str, parameters: dict[str, Any]) -> dict[str, Any]:
     """Reject unsupported inputs before allocating any GPU buffers."""
+    if workload in PREPARE_REDUCTIONS:
+        return validate_reduction_parameters(workload, parameters)
+    if workload in PREPARE_QUANTIZATION:
+        return validate_quantization_parameters(workload, parameters)
+    if workload in PREPARE_CANDIDATES:
+        return validate_candidate_parameters(workload, parameters)
     dimensions = {
         "copy": ("elements",),
         "vector_add": ("elements",),
@@ -639,7 +652,9 @@ def prepare(workload, parameters):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", required=True)
-    parser.add_argument("--workload", choices=PREPARE, required=True)
+    parser.add_argument(
+        "--workload", choices=sorted(PREPARE), required=True
+    )
     parser.add_argument("--params", type=json.loads, required=True)
     parser.add_argument("--target", required=True)
     parser.add_argument("--warmups", type=int, default=3)
@@ -663,11 +678,34 @@ def main() -> int:
             f"runtime reported target {reported_target!r}, expected {arguments.target!r}"
         )
 
+    progress = _progress_writer(arguments.output, arguments.case)
+    durations = []
+
+    def boundary(stage, started, finished=None):
+        if progress is not None:
+            progress({"stage": stage, "index": None,
+                      "monotonic_start_ns": started, "monotonic_end_ns": finished,
+                      "timings_ns": list(durations)})
+
     with torch.inference_mode():
+        started = time.monotonic_ns()
+        boundary("preparation", started)
         parameters, launch, check = prepare(arguments.workload, arguments.params)
-        durations = _measure(launch, arguments.warmups, arguments.samples)
+        boundary("preparation", started, time.monotonic_ns())
+        started = time.monotonic_ns()
+        boundary("compilation", started)
+        launch.compile()
+        boundary("compilation", started, time.monotonic_ns())
+        torch.cuda.synchronize()
+        durations = _measure(
+            launch, arguments.warmups, arguments.samples,
+            progress=progress,
+        )
         if check is not None:
+            started = time.monotonic_ns()
+            boundary("validation", started)
             check()
+            boundary("validation", started, time.monotonic_ns())
 
     result = {
         "schema": SCHEMA,
@@ -678,6 +716,8 @@ def main() -> int:
         "timings_ns": durations,
     }
     _write_result(arguments.output, result)
+    finished = time.monotonic_ns()
+    boundary("complete", finished, finished)
     return 0
 
 

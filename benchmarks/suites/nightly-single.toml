@@ -1,0 +1,70 @@
+name = "nightly-single"
+targets = ["gfx950", "gfx1250"]
+warmups = 0
+samples = 1
+thread_policy = "single"
+timeout_seconds = 1200
+
+# Fixed subset of nightly.toml: five cases per target, preserving all four libraries.
+# Keep shapes and kernel settings identical for direct thread-policy comparisons.
+# Exclude the large issue12611 cases, windowed attention, W2, and MX variants.
+[[cases]]
+id = "gpt_oss.causal_seq2560.single"
+workload = "gpt_oss_attention"
+suite = "GPT-OSS"
+name = "Full causal attention"
+operation = "Attention"
+params = { dtype = "bf16", batch = 1, query_heads = 64, key_value_heads = 8, sequence = 2560, window = 0, head_dimension = 64 }
+
+[[cases]]
+id = "triton.persistent_1024x4096x4096.single"
+workload = "triton_persistent"
+suite = "Triton"
+name = "FP16 persistent matmul"
+operation = "GEMM"
+params = { dtype = "fp16", rows = 1024, columns = 4096, reduction = 4096 }
+
+[[cases]]
+id = "triton.grouped_4x2048.single"
+workload = "triton_grouped"
+suite = "Triton"
+name = "FP16 grouped GEMM"
+operation = "Grouped GEMM"
+params = { dtype = "fp16", rows = 2048, columns = 2048, reduction = 2048, groups = 4 }
+
+[[cases]]
+id = "deepseek.mlp_w1_m64.single"
+workload = "deepseek_fp8"
+suite = "DeepSeek"
+name = "FP8 MLP first projection"
+operation = "GEMM"
+targets = ["gfx950"]
+params = { dtype = "fp8", rows = 64, columns = 18432, reduction = 7168 }
+
+[[cases]]
+id = "deepseek.mlp_w1_m256.single"
+workload = "deepseek_fp8"
+suite = "DeepSeek"
+name = "FP8 MLP first projection"
+operation = "GEMM"
+targets = ["gfx1250"]
+params = { dtype = "fp8", rows = 256, columns = 18432, reduction = 7168 }
+
+[[cases]]
+id = "tensile.bf16_streamk_4096x4096x4096.single"
+workload = "tensile_candidate"
+suite = "TensileLite"
+name = "BF16 Stream-K 4096x4096x4096"
+operation = "GEMM"
+targets = ["gfx950"]
+params = { dtype = "bf16", variant = "bf16_streamk", m = 4096, n = 4096, k = 4096 }
+
+[[cases]]
+id = "tensile.bf16_subtile_4096x4096x4096.single"
+workload = "tensile_candidate"
+suite = "TensileLite"
+name = "BF16 subtile 4096x4096x4096"
+operation = "GEMM"
+targets = ["gfx1250"]
+params = { dtype = "bf16", variant = "bf16_subtile", m = 4096, n = 4096, k = 4096 }
+

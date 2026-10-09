@@ -17,6 +17,7 @@ import os
 import platform
 import re
 import shlex
+import shutil
 import signal
 import socket
 import statistics
@@ -26,7 +27,7 @@ import time
 import tomllib
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, Literal, TextIO
 
 BENCHMARK_ROOT = Path(__file__).resolve().parent
 CORPUS_ROOT = BENCHMARK_ROOT.parent
@@ -39,7 +40,6 @@ MANIFEST_FIELDS = {
     "cases",
     "warmups",
     "samples",
-    "num_threads",
     "timeout_seconds",
 }
 PACKAGE_NAMES = (
@@ -63,6 +63,14 @@ WORKLOADS = {
     "rmsnorm",
     "gemm",
     "gpt_oss_attention",
+    "triton_persistent",
+    "triton_grouped",
+    "deepseek_fp8",
+    "triton_softmax",
+    "triton_layernorm",
+    "deepseek_act_quant",
+    "deepseek_weight_dequant",
+    "tensile_candidate",
 }
 WORKLOAD_FIELDS = {"schema", "case", "target", "provider", "parameters", "timings_ns"}
 PLUGIN_PROFILES: dict[str, tuple[str, ...]] = {
@@ -94,6 +102,7 @@ class Case:
     name: str
     operation: str
     params: dict[str, Any]
+    targets: tuple[str, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -103,8 +112,9 @@ class Suite:
     cases: tuple[Case, ...]
     warmups: int
     samples: int
-    num_threads: int
+    num_threads: int | None
     timeout_seconds: float
+    thread_policy: Literal["default", "single"] | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -130,15 +140,7 @@ class PreparedCommand:
 @dataclasses.dataclass(frozen=True)
 class TargetMetadata:
     configuration: dict[str, Any]
-    exec_mode: str
-    num_threads: int
     config_sha256: str
-
-
-@dataclasses.dataclass(frozen=True)
-class BuildMetadata:
-    build_type: str
-    rocm_path: Path
 
 
 def _string_list(value: Any, field: str) -> tuple[str, ...]:
@@ -167,6 +169,12 @@ def _sample_count(value: Any, field: str = "samples") -> int:
     return count
 
 
+def _thread_policy(value: Any) -> Literal["default", "single"]:
+    if value not in ("default", "single"):
+        raise RunnerError('thread_policy must be "default" or "single"')
+    return value
+
+
 def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
     """Read and validate the intentionally small suite manifest."""
 
@@ -176,6 +184,10 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise RunnerError(f"cannot read manifest {manifest}: {error}") from error
     fields = set(value)
+    threading_fields = fields & {"num_threads", "thread_policy"}
+    if len(threading_fields) != 1:
+        raise RunnerError("manifest requires exactly one of thread_policy or num_threads")
+    fields -= threading_fields
     if fields != MANIFEST_FIELDS:
         missing = sorted(MANIFEST_FIELDS - fields)
         extra = sorted(fields - MANIFEST_FIELDS)
@@ -193,7 +205,7 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
     ids = set()
     case_fields = {"id", "workload", "suite", "name", "operation", "params"}
     for entry in raw_cases:
-        if not isinstance(entry, dict) or set(entry) != case_fields:
+        if not isinstance(entry, dict) or set(entry) - {"targets"} != case_fields:
             raise RunnerError(
                 "each case must contain id, workload, suite, name, operation, params"
             )
@@ -216,6 +228,11 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
             raise RunnerError(
                 f"case parameters must be finite JSON values: {error}"
             ) from error
+        entry = dict(entry)
+        if "targets" in entry:
+            entry["targets"] = _string_list(entry["targets"], "case targets")
+            if set(entry["targets"]) - set(targets):
+                raise RunnerError("case targets must be selected from suite targets")
         cases.append(Case(**entry))
     timeout = value["timeout_seconds"]
     if (
@@ -231,7 +248,11 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
         cases=tuple(cases),
         warmups=_integer(value["warmups"], "warmups", allow_zero=True),
         samples=_sample_count(value["samples"]),
-        num_threads=_integer(value["num_threads"], "num_threads", allow_zero=False),
+        num_threads=(
+            _integer(value["num_threads"], "num_threads", allow_zero=False)
+            if "num_threads" in value else None
+        ),
+        thread_policy=_thread_policy(value["thread_policy"]) if "thread_policy" in value else None,
         timeout_seconds=float(timeout),
     )
 
@@ -262,9 +283,15 @@ def select_matrix(
         for case in suite.cases
         if not requested_cases or case.id in requested_cases
     )
-    return tuple(
-        Cell(case, target) for case in chosen_cases for target in chosen_targets
+    matrix = tuple(
+        Cell(case, target)
+        for case in chosen_cases
+        for target in chosen_targets
+        if not case.targets or target in case.targets
     )
+    if not matrix:
+        raise RunnerError("selected cases have no supported targets in the selection")
+    return matrix
 
 
 def parse_run_wrapper(value: str) -> tuple[str, ...]:
@@ -318,7 +345,11 @@ def prepare_command(
     )
     payload = (
         sys.executable,
-        str(WORKLOAD_ROOT / "triton" / "workloads.py"),
+        str(
+            WORKLOAD_ROOT / "tensile_candidates" / "workload.py"
+            if cell.definition.workload == "tensile_candidate"
+            else WORKLOAD_ROOT / "triton" / "workloads.py"
+        ),
         "--workload",
         cell.definition.workload,
         "--params",
@@ -375,7 +406,7 @@ def validate_build(
     *,
     rocjitsu_source_dir: str | Path,
     plugin_profile: str = "none",
-) -> BuildMetadata:
+) -> None:
     """Require a Release build and every file needed by the selected matrix."""
 
     build = Path(build_dir).expanduser().resolve()
@@ -432,12 +463,12 @@ def validate_build(
             build / f"librocjitsu_plugin_{plugin}.so",
             f"{plugin} plugin",
         )
-    return BuildMetadata(build_type=build_type, rocm_path=rocm_path)
 
 
 def _load_target_configuration(
     path: Path,
-    num_threads: int | None = None,
+    *,
+    thread_policy: Literal["default", "single"] | None = None,
 ) -> tuple[dict[str, Any], str]:
     try:
         encoded = path.read_bytes()
@@ -448,42 +479,98 @@ def _load_target_configuration(
         ) from error
     if not isinstance(value, Mapping):
         raise RunnerError(f"target configuration must be a JSON object: {path}")
+    if value.get("plugins") or value.get("sinks"):
+        raise RunnerError(
+            f"benchmark base configuration must not enable plugins or sinks: {path}"
+        )
+    exec_mode = value.get("exec_mode")
+    if not isinstance(exec_mode, str) or not exec_mode:
+        raise RunnerError(f"target configuration has invalid exec_mode: {path}")
     result = dict(value)
     # Benchmarks must finish the workload without a simulation tick limit.
     result["max_ticks"] = 0
-    if num_threads is not None:
-        result["num_threads"] = num_threads
+    if thread_policy == "single":
+        # A single engine alone still permits parallel dispatch and helpers.
+        result.update(
+            cpu_thread_budget=1,
+            num_threads=1,
+            cpu_dispatch_threads=1,
+            async_helper_threads=0,
+        )
     encoded = (
         json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n"
     ).encode()
     return result, hashlib.sha256(encoded).hexdigest()
 
 
-def _target_metadata(
-    path: Path,
-    num_threads: int | None = None,
+def _native_target_metadata(
+    configuration: tuple[dict[str, Any], str],
+    target: str,
+    output: Path,
+    wrapper: Sequence[str],
+    thread_policy: str,
 ) -> TargetMetadata:
-    value, config_sha256 = _load_target_configuration(path, num_threads)
-    if value.get("plugins") or value.get("sinks"):
-        raise RunnerError(
-            f"benchmark base configuration must not enable plugins or sinks: {path}"
+    """Resolve workers using the same native CLI and CPU affinity as the run."""
+    value, digest = configuration
+    directory = output / "thread-policy" / target
+    directory.mkdir(parents=True)
+    snapshot = directory / "config.json"
+    snapshot.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+    argv = [str(snapshot) if arg == "{config}" else arg for arg in wrapper]
+    if argv[-1] == "--":
+        argv.pop()
+    argv.append("--thread-budget-table")
+    try:
+        completed = _run_command(
+            argv, cwd=CORPUS_ROOT, env=dict(os.environ), timeout=30
         )
-    exec_mode = value.get("exec_mode")
-    num_threads = value.get("num_threads")
-    if not isinstance(exec_mode, str) or not exec_mode:
-        raise RunnerError(f"target configuration has invalid exec_mode: {path}")
-    if (
-        isinstance(num_threads, bool)
-        or not isinstance(num_threads, int)
-        or num_threads <= 0
-    ):
-        raise RunnerError(f"target configuration has invalid num_threads: {path}")
-    return TargetMetadata(
-        configuration=value,
-        exec_mode=exec_mode,
-        num_threads=num_threads,
-        config_sha256=config_sha256,
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise RunnerError(
+            f"cannot resolve {thread_policy} worker policy for {target}; "
+            f"native --thread-budget-table failed: {error}; "
+            f"stdout={_captured_text(getattr(error, 'stdout', None))!r}; "
+            f"stderr={_captured_text(getattr(error, 'stderr', None))!r}"
+        ) from error
+    raw = _captured_text(completed.stdout)
+    (directory / "policy.txt").write_text(raw)
+    (directory / "stderr.txt").write_text(_captured_text(completed.stderr))
+    rows = re.findall(
+        r"^\s*Configured\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*$",
+        raw,
+        re.MULTILINE,
     )
+    if completed.returncode or len(rows) != 1:
+        raise RunnerError(
+            f"cannot resolve {thread_policy} worker policy for {target}; "
+            f"native --thread-budget-table must return one Configured row "
+            f"with exit status 0 (got {completed.returncode}); "
+            f"stdout={raw!r}; stderr={_captured_text(completed.stderr)!r}"
+        )
+    engine, dispatch, helpers, total = map(int, rows[0])
+    if engine < 1 or dispatch < 1 or total != engine + dispatch - 1 + helpers:
+        raise RunnerError(f"invalid native worker allocation for {target}: {rows[0]}")
+    if thread_policy == "single" and (engine, dispatch, helpers, total) != (1, 1, 0, 1):
+        raise RunnerError(
+            f"single-thread policy requires allocation 1/1/0, total 1 "
+            f"for {target}; got {engine}/{dispatch}/{helpers}, total {total}"
+        )
+    allocation = {
+        "engine": engine,
+        "dispatch": dispatch,
+        "helpers": helpers,
+        "total": total,
+    }
+    (directory / "allocation.json").write_text(
+        json.dumps(
+            {
+                **allocation,
+                "command": argv,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+    return TargetMetadata(value, digest)
 
 
 def _materialize_config(
@@ -517,31 +604,8 @@ def _materialize_config(
     return config_path, reports
 
 
-def _camel_case(key: str) -> str:
-    head, *tail = key.split("_")
-    return head + "".join(part[:1].upper() + part[1:] for part in tail)
-
-
-def _dashboard_value(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        normalized: dict[str, Any] = {}
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise RunnerError("workload parameter keys must be strings")
-            dashboard_key = _camel_case(key)
-            if dashboard_key in normalized:
-                raise RunnerError(
-                    f"workload parameter keys collide as {dashboard_key!r}"
-                )
-            normalized[dashboard_key] = _dashboard_value(item)
-        return normalized
-    if isinstance(value, list):
-        return [_dashboard_value(item) for item in value]
-    return value
-
-
-def validate_workload(path: Path, cell: Cell, samples: int) -> dict[str, Any]:
-    """Validate and aggregate one workload's small JSON contract."""
+def validate_workload(path: Path, cell: Cell, samples: int) -> list[float]:
+    """Validate a workload result and return its timing samples in seconds."""
 
     def reject_constant(value: str) -> None:
         raise ValueError(f"non-finite JSON value {value}")
@@ -568,7 +632,9 @@ def validate_workload(path: Path, cell: Cell, samples: int) -> dict[str, Any]:
         "schema": "rocjitsu.benchmark.workload.v1",
         "case": cell.case,
         "target": cell.target,
-        "provider": "triton",
+        "provider": (
+            "tensile" if cell.definition.workload == "tensile_candidate" else "triton"
+        ),
     }
     for field, expected_value in expected.items():
         if value.get(field) != expected_value:
@@ -587,17 +653,7 @@ def validate_workload(path: Path, cell: Cell, samples: int) -> dict[str, Any]:
         for item in timings
     ):
         raise RunnerError("workload timings must be positive integers")
-    median = statistics.median(timings)
-    return {
-        "durationSeconds": median / 1_000_000_000,
-        "timing": {
-            "unit": "ns",
-            "samples": timings,
-            "minimum": min(timings),
-            "median": median,
-            "maximum": max(timings),
-        },
-    }
+    return [sample / 1_000_000_000 for sample in timings]
 
 
 def _utc_now() -> str:
@@ -619,7 +675,6 @@ def _normalize_timestamp(value: str) -> str | None:
 def _source_info(source_dir: Path) -> dict[str, Any]:
     revision = None
     commit_timestamp = None
-    dirty = None
     try:
         revision = subprocess.check_output(
             ["git", "rev-parse", "HEAD"],
@@ -640,21 +695,9 @@ def _source_info(source_dir: Path) -> dict[str, Any]:
             commit_timestamp = _normalize_timestamp(value)
         except (OSError, subprocess.CalledProcessError):
             pass
-    try:
-        dirty = bool(
-            subprocess.check_output(
-                ["git", "status", "--porcelain", "--", "."],
-                cwd=source_dir,
-                stderr=subprocess.DEVNULL,
-                text=True,
-            ).strip()
-        )
-    except (OSError, subprocess.CalledProcessError):
-        pass
     return {
         "commit_sha": revision,
         "commit_timestamp": commit_timestamp,
-        "dirty": dirty,
     }
 
 
@@ -671,26 +714,6 @@ def _environment_info() -> dict[str, Any]:
         "kernel": platform.release(),
         "cpu": platform.processor() or platform.machine(),
         "python": platform.python_version(),
-        "packages": packages,
-    }
-
-
-def _provenance(
-    source: Mapping[str, Any], environment: Mapping[str, Any], build: BuildMetadata
-) -> dict[str, Any]:
-    packages = environment["packages"]
-    return {
-        "rocjitsuCommitSha": source["commit_sha"],
-        "rocjitsuCommitTimestamp": source["commit_timestamp"],
-        "dirty": source["dirty"],
-        "buildType": build.build_type,
-        "rocmSdkPath": str(build.rocm_path),
-        "rocmSdkVersion": packages["rocm-sdk-devel"],
-        "pythonVersion": environment["python"],
-        "torchVersion": packages["torch"],
-        "tritonVersion": packages["triton"],
-        "tritonCommitSha": None,
-        "tensileLiteCommitSha": None,
         "packages": packages,
     }
 
@@ -768,46 +791,18 @@ def _run_command(
     return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
 
 
-def _failed_test(
-    cell: Cell,
-    target: TargetMetadata,
-    error: str,
-    *,
-    config_path: str | None,
-    plugin_reports: Mapping[str, str],
-) -> dict[str, Any]:
+def _failed_test(cell: Cell, error: str) -> dict[str, Any]:
     metadata = cell.definition
-    base = f"cases/{cell.case}/{cell.target}"
     return {
-        "testId": f"{cell.target}:{cell.case}",
-        "logicalTestId": cell.case,
+        "id": cell.case,
         "suite": metadata.suite,
         "name": metadata.name,
         "target": cell.target,
-        "operation": metadata.operation,
-        "dataType": metadata.params["dtype"],
-        "problem": _dashboard_value(metadata.params),
-        "execMode": target.exec_mode,
-        "numThreads": target.num_threads,
-        "durationSeconds": None,
-        "timing": {
-            "unit": "ns",
-            "samples": [],
-            "minimum": None,
-            "median": None,
-            "maximum": None,
-        },
+        "problem": dict(metadata.params),
+        "timing_results_s": [],
         "status": "failed",
-        "exitCode": None,
-        "timedOut": False,
+        "exit_code": None,
         "error": error,
-        "artifacts": {
-            "workload": f"{base}/workload.json" if config_path else None,
-            "stdout": f"{base}/stdout.txt" if config_path else None,
-            "stderr": f"{base}/stderr.txt" if config_path else None,
-            "config": config_path,
-            "pluginReports": dict(plugin_reports),
-        },
     }
 
 
@@ -827,6 +822,11 @@ def run_suite(
 ) -> dict[str, Any]:
     """Run all selected cells, preserving partial results after failures."""
 
+    if suite.thread_policy not in {"default", "single"}:
+        raise RunnerError(
+            "raw benchmark runs require thread_policy = default or single; "
+            "numeric num_threads is unsupported"
+        )
     output_path = Path(output).expanduser().resolve()
     if output_path.exists():
         raise RunnerError(f"output already exists: {output_path}")
@@ -839,15 +839,17 @@ def run_suite(
     build = Path(build_dir).expanduser().resolve()
     source_dir = Path(rocjitsu_source_dir).expanduser().resolve()
     wrapper = parse_run_wrapper(run_wrapper)
-    build_metadata = validate_build(
+    validate_build(
         build, rocjitsu_source_dir=source_dir, plugin_profile=plugin_profile
     )
     targets = tuple(dict.fromkeys(cell.target for cell in matrix))
     missing = sorted(set(targets) - set(target_configs))
     if missing:
         raise RunnerError(f"missing --target-config for selected targets: {missing}")
-    target_metadata = {
-        target: _target_metadata(target_configs[target], suite.num_threads)
+    configurations = {
+        target: _load_target_configuration(
+            target_configs[target], thread_policy=suite.thread_policy
+        )
         for target in targets
     }
     started = time.monotonic()
@@ -856,55 +858,61 @@ def run_suite(
     corpus = _source_info(CORPUS_ROOT)
     environment = _environment_info()
     output_path.mkdir(parents=True)
-    total_cells = len(matrix)
-    _progress(
-        progress,
-        f"START suite={suite.name} cells={total_cells} "
-        f"warmups={selected_warmups} samples={selected_samples} "
-        f"threads={suite.num_threads} plugin={plugin_profile}",
-    )
-    run: dict[str, Any] = {
-        "schemaVersion": 1,
-        "timestamp": timestamp,
-        "finishedAt": None,
-        "status": "running",
-        "wallTimeSeconds": 0.0,
-        "benchmarkSuite": suite.name,
-        "targets": list(targets),
-        "measurement": {
+    try:
+        target_metadata = {
+            target: _native_target_metadata(
+                configurations[target], target, output_path, wrapper, suite.thread_policy
+            )
+            for target in targets
+        }
+        total_cells = len(matrix)
+        _progress(
+            progress,
+            f"START suite={suite.name} cells={total_cells} "
+            f"warmups={selected_warmups} samples={selected_samples} "
+            f"threads={suite.thread_policy} plugin={plugin_profile}",
+        )
+        summary = {
             "warmups": selected_warmups,
             "samples": selected_samples,
-            "timeoutSeconds": suite.timeout_seconds,
-        },
-        "configuration": {
-            "id": f"plugins-{plugin_profile}-v1",
-            "pluginProfile": plugin_profile,
-            "plugins": list(PLUGIN_PROFILES[plugin_profile]),
-            "targetConfigSha256": {
-                target: target_metadata[target].config_sha256 for target in targets
+            "timeout_seconds": suite.timeout_seconds,
+            "benchmark_suite": suite.name,
+            "threading_mode": suite.thread_policy,
+            "timestamp": timestamp,
+            "finished_at": None,
+            "wall_time_s": 0.0,
+        }
+        run: dict[str, Any] = {
+            "execution_summary": summary,
+            "provenance": {
+                "machine": {
+                    key: environment[key]
+                    for key in ("hostname", "platform", "kernel", "cpu")
+                },
+                "rocjitsu": {
+                    "rocjitsu_commit_sha": source["commit_sha"],
+                    "rocjitsu_commit_timestamp": source["commit_timestamp"],
+                    "target_config_sha256": {
+                        target: target_metadata[target].config_sha256 for target in targets
+                    },
+                    "rocm_sdk_version": environment["packages"]["rocm-sdk-devel"],
+                },
+                "corpus": {
+                    "corpus_commit_sha": corpus["commit_sha"],
+                    "corpus_commit_timestamp": corpus["commit_timestamp"],
+                },
+                "auxiliary": {**environment["packages"], "python": environment["python"]},
             },
-        },
-        "provenance": {
-            **_provenance(source, environment, build_metadata),
-            "corpusCommitSha": corpus["commit_sha"],
-            "corpusCommitTimestamp": corpus["commit_timestamp"],
-            "corpusDirty": corpus["dirty"],
-        },
-        "environment": {
-            key: environment[key] for key in ("hostname", "platform", "kernel", "cpu")
-        },
-        "tests": [
-            _failed_test(
-                cell,
-                target_metadata[cell.target],
-                "run interrupted before completion",
-                config_path=None,
-                plugin_reports={},
-            )
-            for cell in matrix
-        ],
-    }
-    _write_run(output_path, run)
+            "benchmark_results": [
+                _failed_test(cell, "run interrupted before completion") for cell in matrix
+            ],
+        }
+        _write_run(output_path, run)
+    except BaseException:
+        # Until the first checkpoint, setup has no partial results to preserve.
+        # mkdir above must succeed before taking ownership of this directory.
+        shutil.rmtree(output_path)
+        raise
 
     try:
         for position, cell in enumerate(matrix, start=1):
@@ -912,7 +920,7 @@ def run_suite(
             _progress(
                 progress,
                 f"START [{position}/{total_cells}] case={cell.case} "
-                f"target={cell.target} provider=triton "
+                f"target={cell.target} provider={'tensile' if cell.definition.workload == 'tensile_candidate' else 'triton'} "
                 f"timeout_seconds={suite.timeout_seconds:g}",
             )
             command = prepare_command(
@@ -928,20 +936,9 @@ def run_suite(
             (output_path / "cache" / "triton" / cell.target).mkdir(
                 parents=True, exist_ok=True
             )
-            config_artifact = str(command.config_path.relative_to(output_path))
-            plugin_artifacts = {
-                plugin: str(path.relative_to(output_path))
-                for plugin, path in command.plugin_reports.items()
-            }
             stdout = ""
             stderr = ""
-            result = _failed_test(
-                cell,
-                target_metadata[cell.target],
-                "workload did not run",
-                config_path=config_artifact,
-                plugin_reports=plugin_artifacts,
-            )
+            result = _failed_test(cell, "workload did not run")
             try:
                 completed = _run_command(
                     command.argv,
@@ -951,12 +948,12 @@ def run_suite(
                 )
                 stdout = _captured_text(completed.stdout)
                 stderr = _captured_text(completed.stderr)
-                result["exitCode"] = completed.returncode
+                result["exit_code"] = completed.returncode
                 if completed.returncode != 0:
                     raise RunnerError(
                         f"command exited with status {completed.returncode}"
                     )
-                aggregate = validate_workload(
+                timings = validate_workload(
                     command.workload_path, cell, selected_samples
                 )
                 missing_reports = [
@@ -969,14 +966,13 @@ def run_suite(
                         "workload did not produce plugin reports: "
                         + ", ".join(missing_reports)
                     )
-                result.update(aggregate)
+                result["timing_results_s"] = timings
                 result["status"] = "completed"
                 result["error"] = None
             except subprocess.TimeoutExpired as error:
                 stdout = _captured_text(error.stdout)
                 stderr = _captured_text(error.stderr)
                 result["status"] = "timeout"
-                result["timedOut"] = True
                 result["error"] = (
                     f"command timed out after {suite.timeout_seconds:g} seconds"
                 )
@@ -987,28 +983,18 @@ def run_suite(
                     stdout = _captured_text(error.stdout)
                     stderr = _captured_text(error.stderr)
                 result = _failed_test(
-                    cell,
-                    target_metadata[cell.target],
-                    "workload interrupted" + (f": {error}" if str(error) else ""),
-                    config_path=config_artifact,
-                    plugin_reports={
-                        plugin: plugin_artifacts[plugin]
-                        for plugin, path in command.plugin_reports.items()
-                        if path.is_file()
-                    },
+                    cell, "workload interrupted" + (f": {error}" if str(error) else "")
                 )
                 raise
             finally:
-                if not command.workload_path.is_file():
-                    result["artifacts"]["workload"] = None
                 (cell_dir / "stdout.txt").write_text(stdout, encoding="utf-8")
                 (cell_dir / "stderr.txt").write_text(stderr, encoding="utf-8")
-                run["tests"][position - 1] = result
-                run["wallTimeSeconds"] = time.monotonic() - started
+                run["benchmark_results"][position - 1] = result
+                summary["wall_time_s"] = time.monotonic() - started
                 _write_run(output_path, run)
             detail = ""
             if result["status"] == "completed":
-                detail = f" median_ns={result['timing']['median']}"
+                detail = f" median_s={statistics.median(result['timing_results_s']):g}"
             _progress(
                 progress,
                 f"DONE  [{position}/{total_cells}] case={cell.case} "
@@ -1016,36 +1002,31 @@ def run_suite(
                 f"elapsed_seconds={time.monotonic() - cell_started:.1f}{detail}",
             )
     except BaseException:
-        run["status"] = "failed"
-        run["finishedAt"] = _utc_now()
-        run["wallTimeSeconds"] = time.monotonic() - started
+        summary["finished_at"] = _utc_now()
+        summary["wall_time_s"] = time.monotonic() - started
         _write_run(output_path, run)
         _progress(
             progress,
             f"ABORT suite={suite.name} "
-            f"completed={sum(test['status'] == 'completed' for test in run['tests'])}/{total_cells} "
-            f"elapsed_seconds={run['wallTimeSeconds']:.1f}",
+            f"completed={sum(test['status'] == 'completed' for test in run['benchmark_results'])}/{total_cells} "
+            f"elapsed_seconds={summary['wall_time_s']:.1f}",
         )
         raise
 
-    run["status"] = (
-        "completed"
-        if all(item["status"] == "completed" for item in run["tests"])
-        else "failed"
-    )
-    run["finishedAt"] = _utc_now()
-    run["wallTimeSeconds"] = time.monotonic() - started
+    summary["finished_at"] = _utc_now()
+    summary["wall_time_s"] = time.monotonic() - started
     _write_run(output_path, run)
     status_counts = {
-        status: sum(test["status"] == status for test in run["tests"])
+        status: sum(test["status"] == status for test in run["benchmark_results"])
         for status in ("completed", "failed", "timeout")
     }
+    status = "completed" if status_counts["completed"] == total_cells else "failed"
     _progress(
         progress,
-        f"DONE suite={suite.name} status={run['status']} "
+        f"DONE suite={suite.name} status={status} "
         f"completed={status_counts['completed']} failed={status_counts['failed']} "
         f"timeout={status_counts['timeout']} "
-        f"elapsed_seconds={run['wallTimeSeconds']:.1f}",
+        f"elapsed_seconds={summary['wall_time_s']:.1f}",
     )
     return run
 
@@ -1114,8 +1095,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             progress=sys.stdout,
         )
         artifact = arguments.output.expanduser().resolve() / "run.json"
-        print(f"run {run['status']}: {artifact}")
-        return 0 if run["status"] == "completed" else 1
+        status = (
+            "completed"
+            if all(result["status"] == "completed" for result in run["benchmark_results"])
+            else "failed"
+        )
+        print(f"run {status}: {artifact}")
+        return 0 if status == "completed" else 1
     except RunnerError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

@@ -1,0 +1,62 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
+"""Bound the CPU attention reference's temporary matrices by query chunks."""
+
+import torch
+
+
+def attention_inputs(batch, sequence, kv_heads, groups, dimension):
+    """Repeatable BF16 inputs varying across every logical tensor axis.
+
+    Positive values avoid cancellation around zero in the output, while signed
+    queries/keys and distinct sinks exercise attention weights and head mapping.
+    """
+    generator = torch.Generator(device="cpu").manual_seed(54)
+
+    def values(shape, low, high, divisor):
+        return (torch.randint(low, high, shape, generator=generator).float() / divisor).bfloat16()
+
+    return (
+        values((batch, sequence, kv_heads, groups, dimension), -8, 9, 8),
+        values((batch, sequence, kv_heads, dimension), -8, 9, 8),
+        values((batch, sequence, kv_heads, dimension), 1, 8, 4),
+        values((kv_heads * groups,), -4, 5, 8),
+    )
+
+
+def check_attention_reference(
+    query, key, value, sinks, actual, *, sm_scale=0.125, sliding_window=0,
+    query_chunk_size=128,
+):
+    """Compare CPU outputs in [batch, query, heads * dimension] layout.
+
+    Keep all keys for the upstream reference's causal/window masking, but only
+    one batch, one KV head, and a bounded number of queries live at a time.
+    """
+    from corpus.benchmarks.third_party.gpt_oss.attention import attention_ref
+
+    if query_chunk_size <= 0:
+        raise ValueError("query_chunk_size must be positive")
+    batches, queries, kv_heads, groups, dimension = query.shape
+    for batch in range(batches):
+        for head in range(kv_heads):
+            first_head = head * groups
+            last_head = first_head + groups
+            for start in range(0, queries, query_chunk_size):
+                end = min(start + query_chunk_size, queries)
+                expected = attention_ref(
+                    query[batch:batch + 1, start:end, head:head + 1],
+                    key[batch:batch + 1, :, head:head + 1],
+                    value[batch:batch + 1, :, head:head + 1],
+                    sinks[first_head:last_head],
+                    sm_scale=sm_scale,
+                    sliding_window=sliding_window,
+                    start_q=start,
+                )
+                observed = actual[
+                    batch:batch + 1, start:end,
+                    first_head * dimension:last_head * dimension,
+                ]
+                if not torch.isfinite(observed).all():
+                    raise AssertionError("attention output contains nonfinite or unwritten values")
+                torch.testing.assert_close(observed, expected, rtol=0.016, atol=1e-5)

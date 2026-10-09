@@ -29,7 +29,7 @@ scripts/
   extract_gfx1250_hsacos.py
   ... additional corpus helper scripts
 
-benchmarks/            Sequential runner, suites, and dashboard publisher.
+benchmarks/            Sequential runner and benchmark suites.
 requirements.txt       Python packages for pytest and corpus helpers.
 ```
 

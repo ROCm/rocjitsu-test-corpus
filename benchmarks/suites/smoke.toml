@@ -2,11 +2,11 @@ name = "smoke"
 targets = ["gfx950"]
 warmups = 1
 samples = 3
-num_threads = 8
+thread_policy = "default"
 timeout_seconds = 60
 
 [[cases]]
-id = "triton.rmsnorm_bf16.threads8"
+id = "triton.rmsnorm_bf16.default"
 workload = "rmsnorm"
 suite = "Triton"
 name = "BF16 RMSNorm"

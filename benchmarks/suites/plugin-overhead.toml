@@ -2,11 +2,11 @@ name = "plugin-overhead"
 targets = ["gfx950", "gfx1250"]
 warmups = 3
 samples = 21
-num_threads = 8
+thread_policy = "default"
 timeout_seconds = 300
 
 [[cases]]
-id = "triton.copy_fp32_32m.threads8"
+id = "triton.copy_fp32_32m.default"
 workload = "copy"
 suite = "Triton"
 name = "32 MiB contiguous FP32 copy"
@@ -14,7 +14,7 @@ operation = "Copy"
 params = { elements = 8388608, dtype = "fp32" }
 
 [[cases]]
-id = "triton.softmax_fp16_boundary.threads8"
+id = "triton.softmax_fp16_boundary.default"
 workload = "softmax"
 suite = "Triton"
 name = "Boundary FP16 softmax"
@@ -22,7 +22,7 @@ operation = "Softmax"
 params = { rows = 64, columns = 4097, dtype = "fp16" }
 
 [[cases]]
-id = "triton.gemm_bf16_aligned.threads8"
+id = "triton.gemm_bf16_aligned.default"
 workload = "gemm"
 suite = "Triton"
 name = "Aligned BF16 GEMM"
@@ -30,7 +30,7 @@ operation = "GEMM"
 params = { m = 256, n = 256, k = 512, dtype = "bf16" }
 
 [[cases]]
-id = "triton.gpt_oss_attention_bf16.threads8"
+id = "triton.gpt_oss_attention_bf16.default"
 workload = "gpt_oss_attention"
 suite = "GPT-OSS"
 name = "GPT-OSS BF16 attention"
