@@ -22,7 +22,9 @@
         256,
         "--num_runs",
         1,
-        "--validate"
+        "--validate",
+        "--grid",
+        3
       ],
       "validation": {
         "kind": "exit_code",

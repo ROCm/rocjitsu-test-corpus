@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from support.define_contracts import (
     BuildResult,
     BuildState,
@@ -88,9 +90,12 @@ def build(
 
 def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> None:
     target_config = dict(case.metadata["target_config"])
-    compile_only = context.skip_all_runs or (
-        case.metadata["name"] in target_config.get("skip_run_tests", [])
-    )
+    if not context.skip_all_runs and case.metadata["name"] in target_config.get("skip_run_tests", []):
+        pytest.skip("Runtime disabled by target configuration (build succeeded).")
+    definition = legacy_iree.load_case(case.metadata["case_path"])
+    if not context.skip_all_runs and definition.get("compile_only", False):
+        pytest.skip(definition.get("skip_reason", "Case only supports compilation (build succeeded)."))
+    compile_only = context.skip_all_runs
     artifact_directory = _artifact_directory_for_case(case, context)
     legacy_iree.run_case(
         case.metadata["case_path"],

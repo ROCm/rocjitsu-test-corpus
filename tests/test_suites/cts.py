@@ -13,6 +13,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from support.define_contracts import (
     BuildResult,
     BuildState,
@@ -172,7 +174,7 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     safe_name = _sanitize_log_component(test_name)
 
     if test_name in case.metadata["target_config"].get("skip_run_tests", []):
-        return
+        pytest.skip("Runtime disabled by target configuration (build succeeded).")
 
     ctest_command = [
         "ctest",
