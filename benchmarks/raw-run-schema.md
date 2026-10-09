@@ -89,6 +89,9 @@ numbers, not strings.
   `rocjitsu_dirty` and `corpus_dirty` are true when Git reports tracked changes
   or untracked files, false for a clean checkout, and null if Git status is
   unavailable. A recorded revision alone does not imply a clean checkout.
+  `provenance.rocjitsu.rocm_sdk_version` records the `rocm-sdk-devel` package
+  version in the workload's Python environment, not the SDK used to compile
+  rocjitsu.
 
 Timestamps are UTC ISO 8601 strings. All numbers must be finite. The only
 threading modes are `default` (native worker allocation) and `single` (one total
