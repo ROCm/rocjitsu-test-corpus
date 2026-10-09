@@ -1,0 +1,27 @@
+{
+  "config_name": "gfx1151",
+  "target": "gfx1151",
+  "cases": [
+    "vgpr_waitcnt",
+    "vgpr_waitcnt_race",
+    "standalone_vmcnt_waits_for_vmem",
+    "standalone_vmcnt_does_not_wait_for_lds",
+    "standalone_lgkmcnt_waits_for_lds",
+    "standalone_lgkmcnt_does_not_wait_for_vmem",
+    "vmcnt_capacity_boundary",
+    "vmcnt_below_capacity_race",
+    "vscnt_pressure_does_not_advance_vmcnt",
+    "lgkmcnt_capacity_boundary",
+    "lgkmcnt_below_capacity_race",
+    "mixed_lgkmcnt_capacity_boundary",
+    "mixed_lgkmcnt_below_capacity_race",
+    "wide_scalar_lgkmcnt_capacity_boundary",
+    "wide_scalar_lgkmcnt_below_capacity_race",
+    "d16_global_load_merge_no_race",
+    "d16_global_load_hi_merge_no_race",
+    "d16_global_load_missing_waitcnt_race",
+    "lds_wave32_cross_wave",
+    "lds_wave32_cross_wave_race",
+    "waw_global_load_then_wmma"
+  ]
+}

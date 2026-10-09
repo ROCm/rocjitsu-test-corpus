@@ -15,6 +15,7 @@ corpus/
   llama/      llama.cpp test-backend-ops cases and vendored GGML sources.
   vulkan/     Pinned Vulkan compute and texel-buffer CTS selections.
   runtime-cts/ Direct-KFD aql/ and capability-gated pm4/ suites.
+  race/       RocJITsu race-detector HIP integration cases.
   tensile/    gfx1250 TensileLite configs and generated artifacts.
   benchmarks/ Parameterized Triton benchmarks and reused upstream kernels.
 
@@ -68,8 +69,40 @@ CI orchestration and simulator configurations remain in rocm-systems.
   Tensile scripts, not by `tests/test_corpus.py`.
 
 `tests/test_corpus.py` discovers and runs the `iree`, `kernels`, `cts`, `dbt`,
-`semantics`, `llama`, and `vulkan` suites. By default it uses target `gfx1201` and
-selects the first three; `dbt`, `semantics`, `llama`, and `vulkan` are opt-in.
+`semantics`, `llama`, `vulkan`, `race`, `aql`, and `pm4` suites. By default it
+uses target `gfx1201` and selects the first three; the other suites are opt-in.
+
+### RocJITsu race-detector integration
+
+The opt-in `race` suite builds the existing gfx950 and gfx1151 HIP integration
+programs with the corpus HIP toolchain and runs each GoogleTest case separately.
+The caller supplies a plugin-free base simulator config through
+`ROCJITSU_RACE_CONFIG` and a run wrapper containing one standalone `{config}`
+token. The suite derives a private race-plugin config and report directory for
+every case:
+
+```bash
+ROCM_PATH=/path/to/rocm-sdk \
+ROCJITSU_RACE_CONFIG=/path/to/gfx950-race-test.json \
+pytest tests/test_corpus.py \
+  --target gfx950 \
+  --suite race \
+  --run-wrapper "rocjitsu --config {config} --"
+```
+
+Set `ROCJITSU_RACE_BUILD_ROOT` to keep the CMake build outside the checkout.
+The HIP programs retain their original functional and race-report assertions;
+the corpus adapter only supplies build and launch isolation. The same build
+also runs the host-only unit tests for the race-log parser and expectation
+matcher used by those programs.
+Each invocation records a GoogleTest XML report and requires the selected case
+to complete successfully; empty selections and skipped cases fail the corpus test.
+
+The target configs in `corpus/race/configs/` accept `skip_compile_tests` to omit
+cases from discovery and `skip_run_tests` to build without launching those cases.
+Both lists use bare case names such as `vgpr_waitcnt`. The HIP program is shared
+by all cases for an architecture, so discovery exclusions do not remove test
+bodies from that program's compilation.
 
 ### gfx1250 memory CTS
 
@@ -204,7 +237,7 @@ Useful selectors:
 
 - `--target <gfx target>`: target to run, for example `gfx942`, `gfx950`,
   `gfx1201`, or `gfx1250`.
-- `--suite <iree|kernels|cts|dbt|semantics|llama|vulkan|aql|pm4>`: include a suite. Repeat or
+- `--suite <iree|kernels|cts|dbt|semantics|llama|vulkan|race|aql|pm4>`: include a suite. Repeat or
   pass comma-separated values.
 - `--exclude-suite <suite>`: exclude a suite.
 - `--backend <backend>`: include a kernel backend such as `hipkittens`.
