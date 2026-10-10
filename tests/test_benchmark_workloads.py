@@ -104,7 +104,7 @@ else:
 
 
 def test_nightly_parameters_are_valid(workloads_context):
-    suite = tomllib.loads((ROOT / "benchmarks/suites/nightly.toml").read_text())
+    suite = tomllib.loads((ROOT / "benchmarks/suites/performance-v1.toml").read_text())
     tensile = load_module(
         "tensile_prepare_under_test",
         ROOT / "corpus/benchmarks/tensile_candidates/prepare.py",

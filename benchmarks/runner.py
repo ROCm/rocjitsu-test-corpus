@@ -8,7 +8,6 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import datetime
-import hashlib
 import importlib.metadata
 import importlib.util
 import json
@@ -32,14 +31,11 @@ from typing import Any, Literal, TextIO
 BENCHMARK_ROOT = Path(__file__).resolve().parent
 CORPUS_ROOT = BENCHMARK_ROOT.parent
 WORKLOAD_ROOT = CORPUS_ROOT / "corpus" / "benchmarks"
-DEFAULT_MANIFEST = BENCHMARK_ROOT / "suites" / "nightly.toml"
+DEFAULT_MANIFEST = BENCHMARK_ROOT / "suites" / "performance-v1.toml"
 TARGET_NAME = re.compile(r"gfx[0-9A-Za-z]+")
 MANIFEST_FIELDS = {
     "name",
-    "targets",
     "cases",
-    "warmups",
-    "samples",
     "timeout_seconds",
 }
 PACKAGE_NAMES = (
@@ -103,6 +99,7 @@ class Case:
     operation: str
     params: dict[str, Any]
     targets: tuple[str, ...] = ()
+    thread_policies: tuple[str, ...] = ("default",)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -110,17 +107,14 @@ class Suite:
     name: str
     targets: tuple[str, ...]
     cases: tuple[Case, ...]
-    warmups: int
-    samples: int
-    num_threads: int | None
     timeout_seconds: float
-    thread_policy: Literal["default", "single"] | None = None
 
 
 @dataclasses.dataclass(frozen=True)
 class Cell:
     definition: Case
     target: str
+    thread_policy: str = "default"
 
     @property
     def case(self) -> str:
@@ -140,7 +134,6 @@ class PreparedCommand:
 @dataclasses.dataclass(frozen=True)
 class TargetMetadata:
     configuration: dict[str, Any]
-    config_sha256: str
 
 
 def _string_list(value: Any, field: str) -> tuple[str, ...]:
@@ -184,10 +177,6 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise RunnerError(f"cannot read manifest {manifest}: {error}") from error
     fields = set(value)
-    threading_fields = fields & {"num_threads", "thread_policy"}
-    if len(threading_fields) != 1:
-        raise RunnerError("manifest requires exactly one of thread_policy or num_threads")
-    fields -= threading_fields
     if fields != MANIFEST_FIELDS:
         missing = sorted(MANIFEST_FIELDS - fields)
         extra = sorted(fields - MANIFEST_FIELDS)
@@ -195,21 +184,23 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
     name = value["name"]
     if not isinstance(name, str) or not name:
         raise RunnerError("name must be a non-empty string")
-    targets = _string_list(value["targets"], "targets")
-    if any(not TARGET_NAME.fullmatch(target) for target in targets):
-        raise RunnerError("targets must be concrete gfx target names")
+
     raw_cases = value["cases"]
     if not isinstance(raw_cases, list) or not raw_cases:
         raise RunnerError("cases must be a non-empty array of tables")
     cases = []
     ids = set()
-    case_fields = {"id", "workload", "suite", "name", "operation", "params"}
+    case_fields = {
+        "id", "workload", "suite", "name", "operation", "params",
+        "targets", "thread_policies",
+    }
     for entry in raw_cases:
-        if not isinstance(entry, dict) or set(entry) - {"targets"} != case_fields:
+        if not isinstance(entry, dict) or set(entry) != case_fields:
             raise RunnerError(
-                "each case must contain id, workload, suite, name, operation, params"
+                "each case must contain id, workload, suite, name, operation, "
+                "params, targets, thread_policies"
             )
-        for field in case_fields - {"params"}:
+        for field in case_fields - {"params", "targets", "thread_policies"}:
             if not isinstance(entry[field], str) or not entry[field].strip():
                 raise RunnerError(f"case {field} must be a non-empty string")
         if not CASE_ID.fullmatch(entry["id"]):
@@ -229,10 +220,12 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
                 f"case parameters must be finite JSON values: {error}"
             ) from error
         entry = dict(entry)
-        if "targets" in entry:
-            entry["targets"] = _string_list(entry["targets"], "case targets")
-            if set(entry["targets"]) - set(targets):
-                raise RunnerError("case targets must be selected from suite targets")
+        entry["targets"] = _string_list(entry["targets"], "case targets")
+        if any(not TARGET_NAME.fullmatch(target) for target in entry["targets"]):
+            raise RunnerError("case targets must be concrete gfx target names")
+        entry["thread_policies"] = _string_list(entry["thread_policies"], "thread_policies")
+        for policy in entry["thread_policies"]:
+            _thread_policy(policy)
         cases.append(Case(**entry))
     timeout = value["timeout_seconds"]
     if (
@@ -244,16 +237,26 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
         raise RunnerError("timeout_seconds must be a positive number")
     return Suite(
         name=name,
-        targets=targets,
+        targets=tuple(dict.fromkeys(target for case in cases for target in case.targets)),
         cases=tuple(cases),
-        warmups=_integer(value["warmups"], "warmups", allow_zero=True),
-        samples=_sample_count(value["samples"]),
-        num_threads=(
-            _integer(value["num_threads"], "num_threads", allow_zero=False)
-            if "num_threads" in value else None
-        ),
-        thread_policy=_thread_policy(value["thread_policy"]) if "thread_policy" in value else None,
         timeout_seconds=float(timeout),
+    )
+
+
+def combine_suites(suites: Sequence[Suite]) -> Suite:
+    """Combine definitions without hiding duplicates or timeout conflicts."""
+    if not suites:
+        raise RunnerError("manifest selection is empty")
+    if len({suite.timeout_seconds for suite in suites}) != 1:
+        raise RunnerError("manifest timeout_seconds values conflict")
+    cases = tuple(case for suite in suites for case in suite.cases)
+    if len({case.id for case in cases}) != len(cases):
+        raise RunnerError("duplicate case ID across manifests")
+    return Suite(
+        name=",".join(suite.name for suite in suites),
+        targets=tuple(dict.fromkeys(target for case in cases for target in case.targets)),
+        cases=cases,
+        timeout_seconds=suites[0].timeout_seconds,
     )
 
 
@@ -262,8 +265,13 @@ def select_matrix(
     *,
     targets: Sequence[str] = (),
     cases: Sequence[str] = (),
+    thread_policies: Sequence[str] = ("default",),
 ) -> tuple[Cell, ...]:
-    """Select cells while retaining manifest case-major ordering."""
+    """Select target/policy groups, retaining case order within each group."""
+    for policy in thread_policies:
+        _thread_policy(policy)
+    if not thread_policies or len(set(thread_policies)) != len(thread_policies):
+        raise RunnerError("thread_policy selection must be non-empty without duplicates")
 
     requested_targets = set(targets)
     requested_cases = set(cases)
@@ -284,13 +292,17 @@ def select_matrix(
         if not requested_cases or case.id in requested_cases
     )
     matrix = tuple(
-        Cell(case, target)
-        for case in chosen_cases
+        Cell(case, target, policy)
         for target in chosen_targets
-        if not case.targets or target in case.targets
+        for policy in ("default", "single")
+        if policy in thread_policies
+        for case in chosen_cases
+        if target in case.targets and policy in case.thread_policies
     )
     if not matrix:
-        raise RunnerError("selected cases have no supported targets in the selection")
+        raise RunnerError(
+            "selected cases have no supported targets/policies in the selection"
+        )
     return matrix
 
 
@@ -306,7 +318,17 @@ def parse_run_wrapper(value: str) -> tuple[str, ...]:
         )
     if any("{config}" in arg and arg != "{config}" for arg in argv):
         raise RunnerError("{config} must be a standalone --run-wrapper token")
+    if any(arg.split("=", 1)[0] == "--cpu-thread-budget" for arg in argv):
+        raise RunnerError("--run-wrapper must not supply an independent CPU thread budget")
     return argv
+
+
+def _policy_wrapper(wrapper: Sequence[str], policy: str) -> tuple[str, ...]:
+    """Insert native budget options before the workload separator."""
+    _thread_policy(policy)
+    budget = ("--cpu-thread-budget", "1" if policy == "single" else "0")
+    position = wrapper.index("--") if "--" in wrapper else len(wrapper)
+    return (*wrapper[:position], *budget, *wrapper[position:])
 
 
 def parse_target_configs(values: Sequence[str]) -> dict[str, Path]:
@@ -336,7 +358,10 @@ def prepare_command(
     """Construct one shell-free Rocjitsu workload command."""
 
     output_root = Path(output).expanduser().resolve()
-    workload_path = output_root / "cases" / cell.case / cell.target / "workload.json"
+    workload_path = (
+        output_root / cell.target / cell.thread_policy / "cases" / cell.case
+        / "workload.json"
+    )
     config_path, plugin_reports = _materialize_config(
         output_root,
         cell,
@@ -378,7 +403,10 @@ def prepare_command(
     )
     return PreparedCommand(
         argv=(
-            *(str(config_path) if arg == "{config}" else arg for arg in run_wrapper),
+            *(
+                str(config_path) if arg == "{config}" else arg
+                for arg in _policy_wrapper(run_wrapper, cell.thread_policy)
+            ),
             *payload,
         ),
         cwd=CORPUS_ROOT,
@@ -458,11 +486,7 @@ def validate_build(
         )
 
 
-def _load_target_configuration(
-    path: Path,
-    *,
-    thread_policy: Literal["default", "single"] | None = None,
-) -> tuple[dict[str, Any], str]:
+def _load_target_configuration(path: Path) -> dict[str, Any]:
     try:
         encoded = path.read_bytes()
         value = json.loads(encoded)
@@ -482,34 +506,32 @@ def _load_target_configuration(
     result = dict(value)
     # Benchmarks must finish the workload without a simulation tick limit.
     result["max_ticks"] = 0
-    if thread_policy == "single":
-        # A single engine alone still permits parallel dispatch and helpers.
-        result.update(
-            cpu_thread_budget=1,
-            num_threads=1,
-            cpu_dispatch_threads=1,
-            async_helper_threads=0,
-        )
-    encoded = (
-        json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n"
-    ).encode()
-    return result, hashlib.sha256(encoded).hexdigest()
+    try:
+        json.dumps(result, allow_nan=False)
+    except (ValueError, TypeError) as error:
+        raise RunnerError(
+            f"target configuration must contain finite JSON values: {path}"
+        ) from error
+    return result
 
 
 def _native_target_metadata(
-    configuration: tuple[dict[str, Any], str],
+    configuration: dict[str, Any],
     target: str,
     output: Path,
     wrapper: Sequence[str],
     thread_policy: str,
 ) -> TargetMetadata:
     """Resolve workers using the same native CLI and CPU affinity as the run."""
-    value, digest = configuration
-    directory = output / "thread-policy" / target
+    value = configuration
+    directory = output / target / thread_policy
     directory.mkdir(parents=True)
     snapshot = directory / "config.json"
     snapshot.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
-    argv = [str(snapshot) if arg == "{config}" else arg for arg in wrapper]
+    argv = [
+        str(snapshot) if arg == "{config}" else arg
+        for arg in _policy_wrapper(wrapper, thread_policy)
+    ]
     if argv[-1] == "--":
         argv.pop()
     argv.append("--thread-budget-table")
@@ -563,7 +585,7 @@ def _native_target_metadata(
         )
         + "\n"
     )
-    return TargetMetadata(value, digest)
+    return TargetMetadata(value)
 
 
 def _materialize_config(
@@ -579,7 +601,7 @@ def _materialize_config(
         raise RunnerError(f"unknown plugin profile {plugin_profile!r}") from error
     value = dict(configuration)
 
-    cell_dir = output_root / "cases" / cell.case / cell.target
+    cell_dir = output_root / cell.target / cell.thread_policy / "cases" / cell.case
     cell_dir.mkdir(parents=True, exist_ok=True)
     reports: dict[str, Path] = {}
     if plugins:
@@ -791,6 +813,8 @@ def _failed_test(cell: Cell, error: str) -> dict[str, Any]:
         "suite": metadata.suite,
         "name": metadata.name,
         "target": cell.target,
+        "operation": metadata.operation,
+        "thread_policy": cell.thread_policy,
         "problem": dict(metadata.params),
         "timing_results_s": [],
         "status": "failed",
@@ -808,27 +832,36 @@ def run_suite(
     output: str | Path,
     run_wrapper: str,
     target_configs: Mapping[str, Path],
-    warmups: int | None = None,
-    samples: int | None = None,
+    warmups: int = 0,
+    samples: int = 1,
     plugin_profile: str = "none",
     progress: TextIO | None = None,
 ) -> dict[str, Any]:
     """Run all selected cells, preserving partial results after failures."""
 
-    if suite.thread_policy not in {"default", "single"}:
-        raise RunnerError(
-            "raw benchmark runs require thread_policy = default or single; "
-            "numeric num_threads is unsupported"
-        )
+    if not matrix:
+        raise RunnerError("execution matrix is empty")
+    identities = {(cell.case, cell.target, cell.thread_policy) for cell in matrix}
+    if len(identities) != len(matrix):
+        raise RunnerError("duplicate execution matrix identity")
+    for cell in matrix:
+        _thread_policy(cell.thread_policy)
+        if (
+            cell.definition not in suite.cases
+            or cell.target not in cell.definition.targets
+            or cell.thread_policy not in cell.definition.thread_policies
+        ):
+            raise RunnerError("execution matrix contains unsupported combination")
+    groups = tuple(dict.fromkeys((cell.target, cell.thread_policy) for cell in matrix))
+    matrix = tuple(
+        cell for group in groups for cell in matrix
+        if (cell.target, cell.thread_policy) == group
+    )
     output_path = Path(output).expanduser().resolve()
     if output_path.exists():
         raise RunnerError(f"output already exists: {output_path}")
-    selected_warmups = (
-        suite.warmups
-        if warmups is None
-        else _integer(warmups, "warmups", allow_zero=True)
-    )
-    selected_samples = suite.samples if samples is None else _sample_count(samples)
+    selected_warmups = _integer(warmups, "warmups", allow_zero=True)
+    selected_samples = _sample_count(samples)
     build = Path(build_dir).expanduser().resolve()
     source_dir = Path(rocjitsu_source_dir).expanduser().resolve()
     wrapper = parse_run_wrapper(run_wrapper)
@@ -840,9 +873,7 @@ def run_suite(
     if missing:
         raise RunnerError(f"missing --target-config for selected targets: {missing}")
     configurations = {
-        target: _load_target_configuration(
-            target_configs[target], thread_policy=suite.thread_policy
-        )
+        target: _load_target_configuration(target_configs[target])
         for target in targets
     }
     started = time.monotonic()
@@ -853,24 +884,23 @@ def run_suite(
     output_path.mkdir(parents=True)
     try:
         target_metadata = {
-            target: _native_target_metadata(
-                configurations[target], target, output_path, wrapper, suite.thread_policy
+            (target, policy): _native_target_metadata(
+                configurations[target], target, output_path, wrapper, policy
             )
-            for target in targets
+            for target, policy in groups
         }
         total_cells = len(matrix)
         _progress(
             progress,
             f"START suite={suite.name} cells={total_cells} "
             f"warmups={selected_warmups} samples={selected_samples} "
-            f"threads={suite.thread_policy} plugin={plugin_profile}",
+            f"plugin={plugin_profile}",
         )
         summary = {
             "warmups": selected_warmups,
             "samples": selected_samples,
             "timeout_seconds": suite.timeout_seconds,
             "benchmark_suite": suite.name,
-            "threading_mode": suite.thread_policy,
             "timestamp": timestamp,
             "finished_at": None,
             "wall_time_s": 0.0,
@@ -885,9 +915,6 @@ def run_suite(
                 "rocjitsu": {
                     "rocjitsu_commit_sha": source["commit_sha"],
                     "rocjitsu_commit_timestamp": source["commit_timestamp"],
-                    "target_config_sha256": {
-                        target: target_metadata[target].config_sha256 for target in targets
-                    },
                     "rocm_sdk_version": environment["packages"]["rocm-sdk-devel"],
                 },
                 "corpus": {
@@ -920,7 +947,7 @@ def run_suite(
                 output_path,
                 cell,
                 run_wrapper=wrapper,
-                target=target_metadata[cell.target],
+                target=target_metadata[cell.target, cell.thread_policy],
                 warmups=selected_warmups,
                 samples=selected_samples,
                 plugin_profile=plugin_profile,
@@ -1026,11 +1053,15 @@ def run_suite(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
+    parser.add_argument("--manifest", type=Path, action="append", default=[])
     parser.add_argument("--target", action="append", default=[])
     parser.add_argument("--case", action="append", default=[])
-    parser.add_argument("--warmups", type=int)
-    parser.add_argument("--samples", type=int)
+    parser.add_argument(
+        "--thread-policy", choices=("default", "single", "default,single"),
+        default="default",
+    )
+    parser.add_argument("--warmups", type=int, default=0)
+    parser.add_argument("--samples", type=int, default=1)
     parser.add_argument(
         "--plugin-profile", choices=tuple(PLUGIN_PROFILES), default="none"
     )
@@ -1059,11 +1090,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         for signum in (signal.SIGHUP, signal.SIGTERM)
     }
     try:
-        suite = load_manifest(arguments.manifest)
-        matrix = select_matrix(suite, targets=arguments.target, cases=arguments.case)
+        suite = combine_suites(tuple(
+            load_manifest(path) for path in arguments.manifest or [DEFAULT_MANIFEST]
+        ))
+        _integer(arguments.warmups, "warmups", allow_zero=True)
+        _sample_count(arguments.samples)
+        matrix = select_matrix(
+            suite, targets=arguments.target, cases=arguments.case,
+            thread_policies=arguments.thread_policy.split(","),
+        )
         if arguments.list:
             for cell in matrix:
-                print(f"{cell.case}\t{cell.target}")
+                print(f"{cell.case}\t{cell.target}\t{cell.thread_policy}")
             return 0
         if (
             arguments.build_dir is None
