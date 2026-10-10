@@ -169,7 +169,7 @@ case using an existing workload; no Python change is needed:
 
 ```toml
 [[cases]]
-id = "triton.copy_fp32_32m.default"
+id = "triton.copy_fp32_32m"
 workload = "copy"
 suite = "Triton"
 name = "32 MiB contiguous FP32 copy"
@@ -179,10 +179,13 @@ params = { dtype = "fp32", elements = 8388608 }
 
 `workload` selects the preparation function; `id` identifies the case in
 `--case` selection and dashboard history. Give different parameter variants
-distinct IDs. The bundled suites use case IDs ending in `.default` for native
-allocation or `.single` for one total CPU worker. Smoke and plugin-overhead use
-the default policy too. Give cases with different thread policies distinct IDs
-to keep their dashboard histories separate.
+distinct IDs, even when their display names match (for example,
+`deepseek.mlp_w1_m64` and `deepseek.mlp_w1_m256`). The bundled suites use the same
+workload ID across thread policies, without a `.default` or `.single` suffix.
+Threading is Rocjitsu configuration, recorded separately in
+`execution_summary.threading_mode`, not a workload change. The runner carries
+the explicit manifest ID unchanged into selection, raw results, and case output
+paths; it does not derive IDs from display names or strip suffixes at runtime.
 Repeat the complete definition in each suite that uses it.
 Dimensions, dtypes, and operation parameters belong in TOML; launch settings
 such as tile sizes, warps, and stages stay in code and are recorded in results.

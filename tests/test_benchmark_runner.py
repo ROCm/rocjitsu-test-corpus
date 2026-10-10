@@ -258,7 +258,7 @@ def test_smoke_manifest_has_single_triton_case(runner_context) -> None:
     smoke = runner.load_manifest(runner.BENCHMARK_ROOT / "suites" / "smoke.toml")
     assert smoke.name == "smoke"
     assert smoke.targets == ("gfx950",)
-    assert tuple(case.id for case in smoke.cases) == ("triton.rmsnorm_bf16.default",)
+    assert tuple(case.id for case in smoke.cases) == ("triton.rmsnorm_bf16",)
     assert smoke.warmups == 1
     assert smoke.samples == 3
     assert smoke.thread_policy == "default"
@@ -341,7 +341,7 @@ def test_manifest_rejects_invalid_thread_count(runner_context) -> None:
 def test_manifest_rejects_case_path_traversal(runner_context) -> None:
     manifest = runner_context.root / "suite.toml"
     text = runner.DEFAULT_MANIFEST.read_text(encoding="utf-8").replace(
-        '"gpt_oss.window_batch4_seq3072.default"', '"triton./../../../escaped"'
+        '"gpt_oss.window_batch4_seq3072"', '"triton./../../../escaped"'
     )
     manifest.write_text(text, encoding="utf-8")
     with pytest.raises(runner.RunnerError, match="invalid benchmark case ID"):
@@ -1177,7 +1177,7 @@ def test_signal_preserves_flushed_workload_output(runner_context, signum) -> Non
             "--manifest",
             str(runner.BENCHMARK_ROOT / "suites" / "smoke.toml"),
             "--case",
-            "triton.rmsnorm_bf16.default",
+            "triton.rmsnorm_bf16",
             "--run-wrapper",
             shlex.join(
                 [sys.executable, str(child), str(ready), "--config", "{config}", "--"]
@@ -1289,13 +1289,13 @@ def test_list_needs_no_build_or_dependency_metadata(runner_context) -> None:
             [
                 "--list",
                 "--case",
-                "gpt_oss.window_batch4_seq3072.default",
+                "gpt_oss.window_batch4_seq3072",
                 "--target",
                 "gfx950",
             ]
         )
     assert status == 0
-    assert stdout.getvalue() == "gpt_oss.window_batch4_seq3072.default\tgfx950\n"
+    assert stdout.getvalue() == "gpt_oss.window_batch4_seq3072\tgfx950\n"
 
 
 @pytest.mark.parametrize(
@@ -1564,6 +1564,69 @@ def test_single_thread_policy_rejects_parallel_native_allocation(
         )
 
 
+@pytest.mark.parametrize(
+    "manifest_name", ["nightly", "nightly-single", "smoke", "plugin-overhead"]
+)
+def test_bundled_case_ids_are_workload_ids(manifest_name):
+    suite = runner.load_manifest(
+        runner.BENCHMARK_ROOT / "suites" / f"{manifest_name}.toml"
+    )
+    ids = [case.id for case in suite.cases]
+    assert ids
+    assert len(ids) == len(set(ids))
+    assert all(not case_id.endswith((".default", ".single")) for case_id in ids)
+
+
+@pytest.mark.parametrize(
+    "manifest_name,thread_policy", [("nightly", "default"), ("nightly-single", "single")]
+)
+def test_workload_ids_preserve_sizes_selection_and_raw_output(
+    runner_context, capsys, manifest_name, thread_policy
+):
+    manifest = runner.BENCHMARK_ROOT / "suites" / f"{manifest_name}.toml"
+    runner_context.suite = runner.load_manifest(manifest)
+    ids = ["deepseek.mlp_w1_m64", "deepseek.mlp_w1_m256"]
+    matrix = _matrix(runner_context, *ids, targets=("gfx950", "gfx1250"))
+    assert [cell.case for cell in matrix] == ids
+    assert [cell.target for cell in matrix] == ["gfx950", "gfx1250"]
+    assert [cell.definition.params["rows"] for cell in matrix] == [64, 256]
+    # Display names are intentionally identical, but these are different workloads.
+    assert matrix[0].definition.name == matrix[1].definition.name
+    assert runner.main([
+        "--manifest", str(manifest), "--list",
+        "--case", ids[0], "--case", ids[1],
+    ]) == 0
+    assert capsys.readouterr().out == "".join(
+        f"{cell.case}\t{cell.target}\n" for cell in matrix
+    )
+
+    output, result = _run(runner_context, matrix, manifest_name)
+    saved = json.loads((output / "run.json").read_text())
+    assert saved == result
+    assert saved["execution_summary"]["threading_mode"] == thread_policy
+    assert [item["id"] for item in saved["benchmark_results"]] == ids
+    for cell, item in zip(matrix, saved["benchmark_results"], strict=True):
+        assert item["status"] == "completed"
+        assert item["problem"] == cell.definition.params
+        assert item["timing_results_s"] == [1e-9]
+        case_dir = output / "cases" / cell.case / cell.target
+        payload = json.loads((case_dir / "workload.json").read_text())
+        assert payload["case"] == cell.case
+        assert payload["target"] == cell.target
+        assert (case_dir / "config.json").is_file()
+        assert (case_dir / "stdout.txt").read_text() == "out"
+
+
+@pytest.mark.parametrize("case_id", ["custom.workload.default", "custom.workload.single"])
+def test_runner_preserves_explicit_custom_ids(runner_context, case_id):
+    case = replace(runner_context.suite.cases[0], id=case_id)
+    runner_context.suite = replace(runner_context.suite, cases=(case,))
+    output, result = _run(runner_context, _matrix(runner_context, case_id), "custom")
+    assert result["benchmark_results"][0]["id"] == case_id
+    assert result["benchmark_results"][0]["status"] == "completed"
+    assert (output / "cases" / case_id / "gfx950" / "workload.json").is_file()
+
+
 def test_single_thread_suite_is_fixed_subset_with_library_coverage():
     nightly = runner.load_manifest()
     single = runner.load_manifest(runner.BENCHMARK_ROOT / "suites/nightly-single.toml")
@@ -1572,13 +1635,8 @@ def test_single_thread_suite_is_fixed_subset_with_library_coverage():
     assert single.samples == nightly.samples == 1
     default_cases = {case.id: case for case in nightly.cases}
     for case in single.cases:
-        assert case.id.endswith(".single")
-        original = default_cases[case.id.removesuffix(".single") + ".default"]
-        assert (case.workload, case.params, case.targets) == (
-            original.workload,
-            original.params,
-            original.targets,
-        )
+        assert not case.id.endswith((".default", ".single"))
+        assert case == default_cases[case.id]
         assert case.params.get("configuration") != "large_tile"
     for target in nightly.targets:
         matrix = runner.select_matrix(single, targets=[target])
@@ -1684,10 +1742,10 @@ def test_plugin_overhead_manifest_uses_default_policy():
     assert suite.thread_policy == "default"
     assert (suite.warmups, suite.samples, suite.timeout_seconds) == (3, 21, 300)
     assert {case.id for case in suite.cases} == {
-        "triton.copy_fp32_32m.default",
-        "triton.softmax_fp16_boundary.default",
-        "triton.gemm_bf16_aligned.default",
-        "triton.gpt_oss_attention_bf16.default",
+        "triton.copy_fp32_32m",
+        "triton.softmax_fp16_boundary",
+        "triton.gemm_bf16_aligned",
+        "triton.gpt_oss_attention_bf16",
     }
 
 

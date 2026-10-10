@@ -6,7 +6,7 @@ thread_policy = "default"
 timeout_seconds = 1200
 
 [[cases]]
-id = "gpt_oss.window_batch4_seq3072.default"
+id = "gpt_oss.window_batch4_seq3072"
 workload = "gpt_oss_attention"
 suite = "GPT-OSS"
 name = "Windowed attention"
@@ -14,7 +14,7 @@ operation = "Attention"
 params = { dtype = "bf16", batch = 4, query_heads = 64, key_value_heads = 8, sequence = 3072, window = 128, head_dimension = 64 }
 
 [[cases]]
-id = "gpt_oss.causal_seq2560.default"
+id = "gpt_oss.causal_seq2560"
 workload = "gpt_oss_attention"
 suite = "GPT-OSS"
 name = "Full causal attention"
@@ -22,7 +22,7 @@ operation = "Attention"
 params = { dtype = "bf16", batch = 1, query_heads = 64, key_value_heads = 8, sequence = 2560, window = 0, head_dimension = 64 }
 
 [[cases]]
-id = "triton.persistent_1024x4096x4096.default"
+id = "triton.persistent_1024x4096x4096"
 workload = "triton_persistent"
 suite = "Triton"
 name = "FP16 persistent matmul"
@@ -30,7 +30,7 @@ operation = "GEMM"
 params = { dtype = "fp16", rows = 1024, columns = 4096, reduction = 4096 }
 
 [[cases]]
-id = "triton.grouped_4x2048.default"
+id = "triton.grouped_4x2048"
 workload = "triton_grouped"
 suite = "Triton"
 name = "FP16 grouped GEMM"
@@ -38,7 +38,7 @@ operation = "Grouped GEMM"
 params = { dtype = "fp16", rows = 2048, columns = 2048, reduction = 2048, groups = 4 }
 
 [[cases]]
-id = "deepseek.mlp_w1_m64.default"
+id = "deepseek.mlp_w1_m64"
 workload = "deepseek_fp8"
 suite = "DeepSeek"
 name = "FP8 MLP first projection"
@@ -47,7 +47,7 @@ targets = ["gfx950"]
 params = { dtype = "fp8", rows = 64, columns = 18432, reduction = 7168 }
 
 [[cases]]
-id = "deepseek.mlp_w1_m256.default"
+id = "deepseek.mlp_w1_m256"
 workload = "deepseek_fp8"
 suite = "DeepSeek"
 name = "FP8 MLP first projection"
@@ -56,7 +56,7 @@ targets = ["gfx1250"]
 params = { dtype = "fp8", rows = 256, columns = 18432, reduction = 7168 }
 
 [[cases]]
-id = "deepseek.mlp_w2_m64.default"
+id = "deepseek.mlp_w2_m64"
 workload = "deepseek_fp8"
 suite = "DeepSeek"
 name = "FP8 MLP second projection"
@@ -65,7 +65,7 @@ targets = ["gfx950"]
 params = { dtype = "fp8", rows = 64, columns = 7168, reduction = 18432 }
 
 [[cases]]
-id = "deepseek.mlp_w2_m256.default"
+id = "deepseek.mlp_w2_m256"
 workload = "deepseek_fp8"
 suite = "DeepSeek"
 name = "FP8 MLP second projection"
@@ -74,7 +74,7 @@ targets = ["gfx1250"]
 params = { dtype = "fp8", rows = 256, columns = 7168, reduction = 18432 }
 
 [[cases]]
-id = "tensile.bf16_streamk_4096x4096x4096.default"
+id = "tensile.bf16_streamk_4096x4096x4096"
 workload = "tensile_candidate"
 suite = "TensileLite"
 name = "BF16 Stream-K 4096x4096x4096"
@@ -83,7 +83,7 @@ targets = ["gfx950"]
 params = { dtype = "bf16", variant = "bf16_streamk", m = 4096, n = 4096, k = 4096 }
 
 [[cases]]
-id = "tensile.bf16_subtile_4096x4096x4096.default"
+id = "tensile.bf16_subtile_4096x4096x4096"
 workload = "tensile_candidate"
 suite = "TensileLite"
 name = "BF16 subtile 4096x4096x4096"
@@ -92,7 +92,7 @@ targets = ["gfx1250"]
 params = { dtype = "bf16", variant = "bf16_subtile", m = 4096, n = 4096, k = 4096 }
 
 [[cases]]
-id = "tensile.mxfp8_subtile_4096x4096x4096.default"
+id = "tensile.mxfp8_subtile_4096x4096x4096"
 workload = "tensile_candidate"
 suite = "TensileLite"
 name = "MXFP8 subtile 4096x4096x4096"
@@ -101,7 +101,7 @@ targets = ["gfx950"]
 params = { dtype = "mxfp8", variant = "mxfp8_subtile", m = 4096, n = 4096, k = 4096 }
 
 [[cases]]
-id = "tensile.mxfp4_streamk_4096x4096x4096.default"
+id = "tensile.mxfp4_streamk_4096x4096x4096"
 workload = "tensile_candidate"
 suite = "TensileLite"
 name = "MXFP4 Stream-K 4096x4096x4096"
@@ -111,7 +111,7 @@ params = { dtype = "mxfp4", variant = "mxfp4_streamk", m = 4096, n = 4096, k = 4
 
 # Larger gfx1250 cases from rocm-systems#12611, with its fixed launch settings.
 [[cases]]
-id = "deepseek.mlp_w1_m3072.default"
+id = "deepseek.mlp_w1_m3072"
 workload = "deepseek_fp8"
 suite = "DeepSeek"
 name = "FP8 MLP first projection, 3072 tokens"
@@ -120,7 +120,7 @@ targets = ["gfx1250"]
 params = { dtype = "fp8", rows = 3072, columns = 18432, reduction = 7168, configuration = "large_tile" }
 
 [[cases]]
-id = "deepseek.mlp_w2_m3072.default"
+id = "deepseek.mlp_w2_m3072"
 workload = "deepseek_fp8"
 suite = "DeepSeek"
 name = "FP8 MLP second projection, 3072 tokens"
@@ -129,7 +129,7 @@ targets = ["gfx1250"]
 params = { dtype = "fp8", rows = 3072, columns = 7168, reduction = 18432, configuration = "large_tile" }
 
 [[cases]]
-id = "triton.grouped_4x3584.default"
+id = "triton.grouped_4x3584"
 workload = "triton_grouped"
 suite = "Triton"
 name = "FP16 grouped GEMM, 4 groups of 3584x3584x3584"
@@ -138,7 +138,7 @@ targets = ["gfx1250"]
 params = { dtype = "fp16", rows = 3584, columns = 3584, reduction = 3584, groups = 4, configuration = "large_tile" }
 
 [[cases]]
-id = "triton.persistent_8192x8192x4096.default"
+id = "triton.persistent_8192x8192x4096"
 workload = "triton_persistent"
 suite = "Triton"
 name = "FP16 persistent matmul, 8192 x 8192 x 4096"
@@ -148,7 +148,7 @@ params = { dtype = "fp16", rows = 8192, columns = 8192, reduction = 4096, config
 
 # Additional operation coverage from rocm-systems#12611, default threading only.
 [[cases]]
-id = "triton.softmax_131072x2048.default"
+id = "triton.softmax_131072x2048"
 workload = "triton_softmax"
 suite = "Triton"
 name = "FP32 softmax"
@@ -156,7 +156,7 @@ operation = "Softmax"
 params = { dtype = "fp32", rows = 131072, columns = 2048 }
 
 [[cases]]
-id = "triton.layernorm_131072x2048.default"
+id = "triton.layernorm_131072x2048"
 workload = "triton_layernorm"
 suite = "Triton"
 name = "FP32 layer normalization"
@@ -164,7 +164,7 @@ operation = "Layer normalization"
 params = { dtype = "fp32", rows = 131072, columns = 2048, epsilon = 1e-5 }
 
 [[cases]]
-id = "deepseek.act_quant_32768x8192.default"
+id = "deepseek.act_quant_32768x8192"
 workload = "deepseek_act_quant"
 suite = "DeepSeek"
 name = "BF16 activation quantization to FP8"
@@ -172,7 +172,7 @@ operation = "Activation quantization"
 params = { dtype = "bf16", rows = 32768, columns = 8192 }
 
 [[cases]]
-id = "deepseek.weight_dequant_32768x8192.default"
+id = "deepseek.weight_dequant_32768x8192"
 workload = "deepseek_weight_dequant"
 suite = "DeepSeek"
 name = "FP8 weight dequantization to FP32"

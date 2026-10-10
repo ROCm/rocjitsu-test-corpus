@@ -6,7 +6,7 @@ thread_policy = "default"
 timeout_seconds = 60
 
 [[cases]]
-id = "triton.rmsnorm_bf16.default"
+id = "triton.rmsnorm_bf16"
 workload = "rmsnorm"
 suite = "Triton"
 name = "BF16 RMSNorm"
