@@ -543,3 +543,24 @@ def test_check_help_documents_the_exit_codes(monkeypatch, capsys):
         regen.main()
     help_text = " ".join(capsys.readouterr().out.split())
     assert "Exits 0 on a match, 1 on drift, 2 when a case fails to compile, and 3" in help_text
+
+
+# --- A compile failure keeps the compiler's diagnostic -----------------------
+
+
+def test_main_preserves_the_compiler_diagnostic(
+    manifest, corpus_main, monkeypatch, tmp_path, capsys
+):
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    pinned_file = committed / "gfx950" / "kernel.s"
+    pinned_file.parent.mkdir(parents=True)
+    pinned_file.write_text(PINNED)
+    # Replace the fixture's compiler with one that fails the way hipcc does on
+    # a bad flag: exit 1, with the cause on stderr.
+    install_fake_compiler(monkeypatch, tmp_path, "fail")
+    assert run() == 2
+    err = capsys.readouterr().err
+    assert "FAIL: kernel.hip (gfx950):" in err
+    assert "error: unknown argument" in err
+    assert pinned_file.read_text() == PINNED

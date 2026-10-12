@@ -324,7 +324,9 @@ def regenerate(
                 compile_device_asm(kernel, target, out, extra_flags)
                 written += 1
             except CompileError as error:
-                failures.append(str(error).splitlines()[0])
+                # The whole message: the kernel and target, then the
+                # compiler's own diagnostic, which says what to fix.
+                failures.append(str(error))
     return written, failures, skipped
 
 
@@ -372,7 +374,10 @@ def main() -> int:
     for skip in skipped:
         print(f"  skip: {skip}")
     for failure in failures:
-        print(f"  FAIL: {failure}", file=sys.stderr)
+        header, _, diagnostic = failure.partition("\n")
+        print(f"  FAIL: {header}", file=sys.stderr)
+        for line in diagnostic.splitlines():
+            print(f"    {line}", file=sys.stderr)
     if failures:
         print("\nfailed kernels' committed assembly is untouched", file=sys.stderr)
         return 2
