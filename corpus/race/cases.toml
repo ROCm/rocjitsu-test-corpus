@@ -6,11 +6,15 @@
 # scripts/check_cases.py checks this inventory against kernels/ and asm/
 # without a compiler.
 #
+# [corpus] targets lists the gfx targets the corpus is built for. Adding a target
+# is a deliberate edit here: both scripts read this list, so it is what a
+# missing asm/<target>/ directory is checked against.
+#
 # Fields:
 #   id           stable selector for the case
 #   kernel       basename under kernels/, without .hip
-#   requires     gfx targets this kernel assembles for; empty means every
-#                target under asm/
+#   requires     the corpus targets this kernel assembles for; empty means
+#                every one of them
 #   headers      optional: headers outside ROCm's defaults the kernel includes.
 #                regenerate_asm.py skips the case, keeping its committed
 #                assembly, when any is not on the include path.
@@ -18,6 +22,7 @@
 [corpus]
 schema = 1
 name = "race"
+targets = ["gfx950", "gfx1250"]
 
 # --- Global vector loads -----------------------------------------------------
 

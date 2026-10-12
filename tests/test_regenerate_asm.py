@@ -222,3 +222,79 @@ def test_check_fails_on_uncommitted_file(drift_dirs, capsys):
     (fresh_root / "gfx950" / "new.s").write_text(assembly())
     assert check(fresh_root) == 1
     assert "gfx950/new.s: not committed" in capsys.readouterr().err
+
+
+# --- The corpus target set ---------------------------------------------------
+#
+# cases.toml declares the targets the corpus is built for. A portable case builds
+# for exactly those, and a case's requires must name only those, so adding a
+# target is a deliberate edit to the manifest.
+
+
+@pytest.fixture
+def manifest(tmp_path: Path, monkeypatch):
+    """Point the script at a scratch cases.toml written from (targets, cases)."""
+    path = tmp_path / "cases.toml"
+    monkeypatch.setattr(regen, "CASES_PATH", path)
+
+    def write(targets: list[str] | None, cases: str) -> None:
+        corpus_table = 'schema = 1\nname = "race"\n'
+        if targets is not None:
+            corpus_table += f"targets = {targets!r}\n".replace("'", '"')
+        path.write_text(f"[corpus]\n{corpus_table}\n{cases}")
+
+    return write
+
+
+PORTABLE_CASE = '[[case]]\nid = "portable"\nkernel = "kernel"\nrequires = []\n'
+
+
+def test_default_targets_come_from_the_manifest_not_asm(manifest, monkeypatch, tmp_path):
+    manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
+    # An assembly directory for another target does not add it.
+    asm = tmp_path / "asm"
+    for target in ("gfx950", "gfx1250", "gfx1201"):
+        (asm / target).mkdir(parents=True)
+    monkeypatch.setattr(regen, "ASM_DIR", asm)
+    assert regen.targets_for([]) == ["gfx950", "gfx1250"]
+
+
+def test_requested_target_must_be_a_corpus_target(manifest):
+    manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
+    assert regen.targets_for(["gfx1250"]) == ["gfx1250"]
+    with pytest.raises(SystemExit, match="gfx1201.*not in \\[corpus\\] targets"):
+        regen.targets_for(["gfx1201"])
+
+
+def test_requires_outside_the_corpus_targets_is_rejected(manifest):
+    manifest(
+        ["gfx950", "gfx1250"],
+        PORTABLE_CASE + '[[case]]\nid = "new"\nkernel = "new"\nrequires = ["gfx1201"]\n',
+    )
+    with pytest.raises(SystemExit, match="gfx1201.*not in \\[corpus\\] targets"):
+        regen.load_cases()
+
+
+@pytest.mark.parametrize("targets", [None, []])
+def test_manifest_without_targets_is_rejected(manifest, targets):
+    manifest(targets, PORTABLE_CASE)
+    with pytest.raises(SystemExit, match="\\[corpus\\] targets"):
+        regen.load_cases()
+
+
+def test_portable_case_builds_for_every_corpus_target(manifest, monkeypatch, tmp_path, kernel):
+    install_fake_compiler(monkeypatch, tmp_path, "output")
+    manifest(
+        ["gfx950", "gfx1250"],
+        PORTABLE_CASE + '[[case]]\nid = "only"\nkernel = "only"\nrequires = ["gfx1250"]\n',
+    )
+    (kernel.parent / "only.hip").write_text("__global__ void only() {}\n")
+    monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
+    out_root = tmp_path / "out"
+    written, failures, skipped = regen.regenerate(regen.targets_for([]), [], out_root)
+    assert (written, failures, skipped) == (3, [], [])
+    assert sorted(str(p.relative_to(out_root)) for p in out_root.rglob("*.s")) == [
+        "gfx1250/kernel.s",
+        "gfx1250/only.s",
+        "gfx950/kernel.s",
+    ]

@@ -62,6 +62,7 @@ from pathlib import Path
 CORPUS_ROOT = Path(__file__).resolve().parent.parent
 KERNELS_DIR = CORPUS_ROOT / "kernels"
 ASM_DIR = CORPUS_ROOT / "asm"
+CASES_PATH = CORPUS_ROOT / "cases.toml"
 
 # hipcc's per-translation-unit id, which is regenerated on every invocation.
 # See the module docstring for why replacing it is safe.
@@ -232,27 +233,38 @@ def _replace(out: Path, text: str) -> None:
 # --- Corpus ------------------------------------------------------------------
 
 
-def load_cases() -> list[dict]:
-    manifest = tomllib.loads((CORPUS_ROOT / "cases.toml").read_text())
-    if manifest.get("corpus", {}).get("schema") != 1:
+def load_manifest() -> dict:
+    manifest = tomllib.loads(CASES_PATH.read_text())
+    corpus = manifest.get("corpus", {})
+    if corpus.get("schema") != 1:
         raise SystemExit("cases.toml: unsupported corpus schema")
-    return manifest["case"]
+    targets = corpus.get("targets")
+    if not targets or not all(isinstance(target, str) for target in targets):
+        raise SystemExit("cases.toml: [corpus] targets must list the gfx targets the corpus is built for")
+    for case in manifest["case"]:
+        for target in case.get("requires", []):
+            if target not in targets:
+                raise SystemExit(
+                    f"cases.toml [{case['id']}]: requires {target}, which is not in "
+                    f"[corpus] targets; add it there first"
+                )
+    return manifest
 
 
-def targets_for(cases: list[dict], requested: list[str]) -> list[str]:
-    """
-    Every target the corpus mentions, unless the caller named some.
+def load_cases() -> list[dict]:
+    return load_manifest()["case"]
 
-    Derived from the cases themselves so that adding a kernel for a new target
-    does not also require editing this script.
-    """
-    if requested:
-        return requested
-    declared = {target for case in cases for target in case.get("requires", [])}
-    # Portable kernels name no target, so the default set has to come from
-    # somewhere; asm/ is the record of which targets the corpus is built for.
-    existing = {path.name for path in ASM_DIR.iterdir() if path.is_dir()} if ASM_DIR.is_dir() else set()
-    return sorted(declared | existing) or ["gfx950"]
+
+def targets_for(requested: list[str]) -> list[str]:
+    """The targets to regenerate: the ones requested, or every corpus target."""
+    targets = load_manifest()["corpus"]["targets"]
+    for target in requested:
+        if target not in targets:
+            raise SystemExit(
+                f"--target {target}: {target} is not in [corpus] targets in cases.toml; "
+                f"add it there first"
+            )
+    return list(requested) or list(targets)
 
 
 def regenerate(
@@ -296,7 +308,10 @@ def main() -> int:
         "--target",
         action="append",
         default=[],
-        help="gfx target to regenerate; repeat for several. Default: every target in asm/.",
+        help=(
+            "gfx target to regenerate; repeat for several. Default: every target in "
+            "[corpus] targets in cases.toml."
+        ),
     )
     parser.add_argument(
         "--cxxflags",
@@ -314,8 +329,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    cases = load_cases()
-    targets = targets_for(cases, args.target)
+    targets = targets_for(args.target)
     extra_flags = absolute_flags(args.cxxflags.split() if args.cxxflags else [], Path.cwd())
 
     out_root = Path(tempfile.mkdtemp(prefix="race-asm-")) if args.check else ASM_DIR

@@ -11,10 +11,14 @@ case and its pinned assembly cannot drift apart unnoticed::
 
     python corpus/race/scripts/check_cases.py   # exit 1 on any mismatch
 
-It checks that:
+The corpus's target set is ``[corpus] targets`` in ``cases.toml``, not whatever
+happens to be under ``asm/``, so a target whose assembly is missing entirely is
+caught. It checks that:
 
+* ``[corpus] targets`` names at least one target, and ``asm/`` has a directory
+  for each and for nothing else;
 * every case uses only known fields, and no two cases share an id or a kernel;
-* every target a case names has a directory under ``asm/``;
+* every target a case ``requires`` is a corpus target;
 * every case has ``kernels/<kernel>.hip`` and, for each target it builds for,
   ``asm/<target>/<kernel>.s``;
 * every ``asm/<target>/*.s`` belongs to a case that builds for that target.
@@ -35,6 +39,8 @@ KNOWN_FIELDS = frozenset({"id", "kernel", "requires", "headers"})
 
 
 def asm_targets() -> list[str]:
+    if not ASM_DIR.is_dir():
+        return []
     return sorted(path.name for path in ASM_DIR.iterdir() if path.is_dir())
 
 
@@ -44,7 +50,15 @@ def case_targets(case: dict, all_targets: list[str]) -> list[str]:
 
 
 def check(cases: list[dict], all_targets: list[str]) -> list[str]:
+    """Every mismatch between the cases, the corpus targets, and the files."""
     errors: list[str] = []
+    present = asm_targets()
+    for target in all_targets:
+        if target not in present:
+            errors.append(f"asm/{target}/ is missing")
+    for target in present:
+        if target not in all_targets:
+            errors.append(f"asm/{target}/ is not a corpus target; add it to [corpus] targets")
     seen_ids: set[str] = set()
     seen_kernels: set[str] = set()
     owned: set[tuple[str, str]] = set()
@@ -64,14 +78,16 @@ def check(cases: list[dict], all_targets: list[str]) -> list[str]:
             errors.append(f"{where}: kernels/{case['kernel']}.hip is missing")
         for target in case.get("requires", []):
             if target not in all_targets:
-                errors.append(f"{where}: requires {target}, which has no asm/{target}/ directory")
+                errors.append(f"{where}: requires {target}, which is not in [corpus] targets")
 
         for target in case_targets(case, all_targets):
+            if target not in all_targets:
+                continue
             owned.add((target, f"{case['kernel']}.s"))
             if not (ASM_DIR / target / f"{case['kernel']}.s").is_file():
                 errors.append(f"{where}: asm/{target}/{case['kernel']}.s is missing")
 
-    for target in all_targets:
+    for target in sorted(set(all_targets) & set(present)):
         for asm in sorted((ASM_DIR / target).glob("*.s")):
             if (target, asm.name) not in owned:
                 errors.append(f"asm/{target}/{asm.name}: no case builds {asm.stem} for {target}")
@@ -84,7 +100,13 @@ def main() -> int:
         print("cases.toml: unsupported corpus schema", file=sys.stderr)
         return 2
     cases = manifest["case"]
-    targets = asm_targets()
+    targets = manifest["corpus"].get("targets")
+    if not targets or not all(isinstance(target, str) for target in targets):
+        print(
+            "cases.toml: [corpus] targets must list the gfx targets the corpus is built for",
+            file=sys.stderr,
+        )
+        return 2
 
     errors = check(cases, targets)
     for error in errors:
