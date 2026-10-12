@@ -27,7 +27,7 @@ regen = load_script()
 PINNED = "; pinned assembly that must survive a failed regeneration\n"
 
 
-def install_fake_compiler(monkeypatch, tmp_path: Path, behaviour: str) -> None:
+def write_fake_compiler(compiler: Path, behaviour: str) -> Path:
     """
     Stand in for hipcc with a script, so these tests need no ROCm install.
 
@@ -40,7 +40,6 @@ def install_fake_compiler(monkeypatch, tmp_path: Path, behaviour: str) -> None:
       auto-named  ignore -o and write the auto-named file into the working
                   directory, as hipcc sometimes does under --cuda-device-only
     """
-    compiler = tmp_path / "fake-hipcc"
     compiler.write_text(
         textwrap.dedent(
             f"""\
@@ -65,8 +64,15 @@ def install_fake_compiler(monkeypatch, tmp_path: Path, behaviour: str) -> None:
         )
     )
     compiler.chmod(0o755)
-    monkeypatch.setattr(regen, "hipcc", lambda: compiler)
+    return compiler
+
+
+def install_fake_compiler(monkeypatch, tmp_path: Path, behaviour: str) -> None:
+    """Make compiler discovery return a fake compiler; see write_fake_compiler."""
+    compiler = write_fake_compiler(tmp_path / "fake-hipcc", behaviour)
+    monkeypatch.setattr(regen, "find_hip_compiler", lambda: compiler)
     monkeypatch.setattr(regen, "rocm_path", lambda: tmp_path / "rocm")
+
 
 
 @pytest.fixture
@@ -612,3 +618,75 @@ def test_malformed_quoting_is_rejected_before_compiling(manifest, corpus_main, t
     assert exit_info.value.code not in (0, None)
     assert "--cxxflags" in message and "quot" in message
     assert compiler_invocations(tmp_path) == []
+
+
+
+# --- SDK and compiler paths survive the compiler's scratch directory --------
+#
+# The compiler runs from a private scratch directory, so every path handed to it,
+# the executable included, must already be absolute. A relative ROCM_PATH, or a
+# compiler found through a relative PATH entry, means something only from the
+# caller's directory.
+
+
+@pytest.fixture
+def no_sdk_discovery(monkeypatch):
+    """Leave ROCM_PATH as the only way to find an SDK."""
+    monkeypatch.delenv("ROCM_PATH", raising=False)
+    monkeypatch.setattr(regen.shutil, "which", lambda name: None)
+
+
+def fake_sdk(root: Path, layout: str = "bin/hipcc", behaviour: str = "output") -> Path:
+    """An SDK directory holding a fake compiler at *layout* under *root*."""
+    compiler = root / layout
+    compiler.parent.mkdir(parents=True)
+    (root / "include").mkdir()
+    return write_fake_compiler(compiler, behaviour)
+
+
+def test_relative_rocm_path_compiles_from_the_scratch_directory(
+    monkeypatch, tmp_path, pinned, kernel, no_sdk_discovery
+):
+    caller = tmp_path / "caller"
+    fake_sdk(caller / "rocm")
+    monkeypatch.chdir(caller)
+    monkeypatch.setenv("ROCM_PATH", "rocm")
+    regen.compile_device_asm(kernel, "gfx950", pinned, [])
+    assert "s_endpgm" in pinned.read_text()
+    (argv,) = [line for line in (caller / "rocm" / "bin" / "hipcc.argv").read_text().splitlines()]
+    assert f"--rocm-path={caller / 'rocm'}" in argv
+    assert str(caller / "rocm" / "include") in argv
+
+
+def test_rocm_path_is_absolute(monkeypatch, tmp_path, no_sdk_discovery):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ROCM_PATH", "rocm")
+    assert regen.rocm_path() == tmp_path / "rocm"
+
+
+def test_compiler_found_through_a_relative_path_entry_is_absolute(
+    monkeypatch, tmp_path, no_sdk_discovery
+):
+    (tmp_path / "rocm").mkdir()  # an SDK root with neither candidate in it
+    compiler = fake_sdk(tmp_path / "tools", layout="bin/hipcc")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ROCM_PATH", str(tmp_path / "rocm"))
+    monkeypatch.setattr(
+        regen.shutil, "which", lambda name: "tools/bin/hipcc" if name == "hipcc" else None
+    )
+    assert regen.find_hip_compiler() == compiler
+
+
+def test_clang_is_used_when_the_sdk_has_no_hipcc(monkeypatch, tmp_path, no_sdk_discovery):
+    compiler = fake_sdk(tmp_path / "rocm", layout="llvm/bin/clang++")
+    monkeypatch.setenv("ROCM_PATH", str(tmp_path / "rocm"))
+    assert regen.find_hip_compiler() == compiler
+
+
+def test_missing_compiler_error_names_both_candidates(monkeypatch, tmp_path, no_sdk_discovery):
+    (tmp_path / "rocm").mkdir()
+    monkeypatch.setenv("ROCM_PATH", str(tmp_path / "rocm"))
+    with pytest.raises(SystemExit) as exit_info:
+        regen.find_hip_compiler()
+    message = str(exit_info.value.code)
+    assert "bin/hipcc" in message and "llvm/bin/clang++" in message
