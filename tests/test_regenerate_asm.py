@@ -776,3 +776,18 @@ def test_check_leaves_no_temporary_directory(
         expected_code = 3
     assert run("--check") == expected_code
     assert list(temp_root.iterdir()) == []
+
+
+# --- --help is a short description, with the workflow in the README -----------
+
+
+def test_help_is_short_and_points_to_the_readme(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["regenerate_asm.py", "--help"])
+    with pytest.raises(SystemExit):
+        regen.main()
+    help_text = capsys.readouterr().out
+    assert "corpus/race/README.md" in help_text
+    # The rationale and usage examples live in the module docstring and the
+    # README, not in --help.
+    assert "Why the assembly is committed" not in help_text
+    assert "CI drift gate" not in help_text

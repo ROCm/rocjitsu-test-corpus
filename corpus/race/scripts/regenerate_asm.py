@@ -5,16 +5,20 @@
 """
 Regenerate the committed device assembly under ``asm/``.
 
-This is the **only** part of the corpus that needs a HIP compiler, and it is
-meant to be run by a person, not by CI::
+This is the **only** part of the corpus that needs a HIP compiler. It is a
+manual tool, run by a person, not by CI::
 
     python corpus/race/scripts/regenerate_asm.py                 # every target
     python corpus/race/scripts/regenerate_asm.py --target gfx950
-    python corpus/race/scripts/regenerate_asm.py --check         # CI drift gate
+    python corpus/race/scripts/regenerate_asm.py --check         # report drift
 
-``--check`` compares assembly text only. ``scripts/check_cases.py`` checks the
-case inventory in ``cases.toml`` against ``kernels/`` and the committed
-assembly, and needs no compiler; run it after regenerating.
+``--check`` is manual too: it compiles with whatever toolchain is installed, so
+its result changes when the toolchain does, which is not something a CI gate
+should depend on. It compares assembly text only. ``scripts/check_cases.py``
+checks the case inventory in ``cases.toml`` against ``kernels/`` and the
+committed assembly with no compiler; that is the check suited to CI, and
+``tests/test_check_cases.py`` runs it under pytest. The workflow is described
+in ``corpus/race/README.md``.
 
 Why the assembly is committed rather than compiled per run: the compiler decides
 how many ``s_wait_*`` instructions a kernel contains, and the corpus derives one
@@ -360,7 +364,13 @@ def regenerate(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=(
+            "Regenerate the committed device assembly under corpus/race/asm/ from "
+            "the kernels in cases.toml, or check it for drift with --check."
+        ),
+        epilog="The workflow, layout and checks are described in corpus/race/README.md.",
+    )
     parser.add_argument(
         "--target",
         action="append",
