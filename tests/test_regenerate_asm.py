@@ -178,8 +178,11 @@ def drift_dirs(monkeypatch, tmp_path: Path):
     return committed_root / "gfx950", fresh_root
 
 
-def check(fresh_root: Path) -> int:
-    return regen._report_drift(["gfx950"], fresh_root)
+def check(fresh_root: Path, expected: set[tuple[str, str]] | None = None) -> int:
+    """_report_drift for gfx950, expecting by default exactly the generated files."""
+    if expected is None:
+        expected = {("gfx950", path.name) for path in (fresh_root / "gfx950").glob("*.s")}
+    return regen._report_drift(["gfx950"], fresh_root, expected)
 
 
 def test_check_passes_identical_assembly(drift_dirs):
@@ -403,3 +406,140 @@ def test_write_summary_does_not_mention_ordinals(manifest, monkeypatch, tmp_path
     out = " ".join(capsys.readouterr().out.split())
     assert "ordinal" not in out
     assert "pinned assembly" in out
+
+
+
+# --- A --check verdict covers the whole selected inventory ---------------------
+#
+# --check succeeds only when every output the selected cases should produce was
+# generated and compared, and nothing else is committed for the selected
+# targets. A case skipped for a missing header, an obsolete committed file, or a
+# missing target directory must not leave "matches" as the verdict. Update mode
+# keeps skipping cases whose optional headers are unavailable.
+
+ROCWMMA_CASE = (
+    '[[case]]\nid = "wmma"\nkernel = "wmma"\nrequires = []\n'
+    'headers = ["rocwmma/rocwmma.hpp"]\n'
+)
+
+
+@pytest.fixture
+def corpus_main(manifest, monkeypatch, tmp_path, kernel):
+    """
+    Run main() against a scratch corpus whose committed assembly is under
+    ``corpus/race/asm``, with the fake compiler writing ``assembly()``-free
+    output. Returns (run, committed_root).
+    """
+    install_fake_compiler(monkeypatch, tmp_path, "output")
+    (kernel.parent / "wmma.hip").write_text("__global__ void wmma() {}\n")
+    (kernel.parent / "only.hip").write_text("__global__ void only() {}\n")
+    for name in ("CPATH", "CPLUS_INCLUDE_PATH"):
+        monkeypatch.delenv(name, raising=False)
+    root = tmp_path / "corpus" / "race"
+    committed = root / "asm"
+    monkeypatch.setattr(regen, "CORPUS_ROOT", root)
+    monkeypatch.setattr(regen, "ASM_DIR", committed)
+    monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
+
+    def run(*argv: str) -> int:
+        monkeypatch.setattr(sys, "argv", ["regenerate_asm.py", *argv])
+        return regen.main()
+
+    return run, committed
+
+
+def commit_fresh_output(run, committed: Path) -> None:
+    """Populate the committed tree by running update mode, as a person would."""
+    assert run() == 0
+    assert any(committed.rglob("*.s"))
+
+
+def test_check_with_only_a_skipped_case_is_incomplete(manifest, corpus_main, capsys):
+    run, _ = corpus_main
+    manifest(["gfx950"], ROCWMMA_CASE)
+    code = run("--check")
+    out = capsys.readouterr()
+    assert code == 3
+    assert "matches" not in out.out
+    assert "incomplete" in out.err and "wmma" in out.err
+
+
+def test_check_with_some_cases_skipped_is_incomplete(manifest, corpus_main, capsys):
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    commit_fresh_output(run, committed)
+    manifest(["gfx950"], PORTABLE_CASE + ROCWMMA_CASE)
+    capsys.readouterr()
+    assert run("--check") == 3
+    assert "matches" not in capsys.readouterr().out
+
+
+def test_check_with_nothing_selected_is_incomplete(manifest, corpus_main, capsys):
+    run, _ = corpus_main
+    manifest(
+        ["gfx950", "gfx1250"],
+        '[[case]]\nid = "only"\nkernel = "only"\nrequires = ["gfx1250"]\n',
+    )
+    assert run("--check", "--target", "gfx950") == 3
+    out = capsys.readouterr()
+    assert "matches" not in out.out
+    assert "incomplete" in out.err
+
+
+def test_check_passes_a_complete_matching_inventory(manifest, corpus_main, capsys):
+    run, committed = corpus_main
+    manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
+    commit_fresh_output(run, committed)
+    capsys.readouterr()
+    assert run("--check") == 0
+    assert "matches" in capsys.readouterr().out
+
+
+def test_check_reports_an_obsolete_committed_file(manifest, corpus_main, capsys):
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    commit_fresh_output(run, committed)
+    (committed / "gfx950" / "obsolete.s").write_text("; no case builds this\n")
+    capsys.readouterr()
+    assert run("--check") == 1
+    err = capsys.readouterr().err
+    assert "gfx950/obsolete.s" in err and "no selected case" in err
+
+
+def test_check_reports_a_missing_committed_target_directory(manifest, corpus_main, capsys):
+    run, committed = corpus_main
+    manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
+    commit_fresh_output(run, committed)
+    for path in (committed / "gfx1250").iterdir():
+        path.unlink()
+    (committed / "gfx1250").rmdir()
+    capsys.readouterr()
+    assert run("--check") == 1
+    assert "gfx1250/kernel.s: not committed" in capsys.readouterr().err
+
+
+def test_check_reports_an_expected_output_absent_from_both_trees(drift_dirs, capsys):
+    # A selected case whose output was neither generated nor committed.
+    _, fresh_root = drift_dirs
+    assert check(fresh_root, expected={("gfx950", "k.s")}) == 1
+    assert "gfx950/k.s: not generated and not committed" in capsys.readouterr().err
+
+
+def test_update_mode_still_skips_a_case_missing_its_optional_header(
+    manifest, corpus_main, capsys
+):
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE + ROCWMMA_CASE)
+    assert run() == 0
+    out = capsys.readouterr().out
+    assert "skip: wmma" in out
+    assert (committed / "gfx950" / "kernel.s").is_file()
+    assert not (committed / "gfx950" / "wmma.s").exists()
+
+
+def test_check_help_documents_the_exit_codes(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["regenerate_asm.py", "--help"])
+    with pytest.raises(SystemExit):
+        regen.main()
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert "Exits 0 on a match, 1 on drift, 2 when a case fails to compile, and 3" in help_text

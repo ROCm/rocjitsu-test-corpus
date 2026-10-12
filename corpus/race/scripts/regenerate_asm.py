@@ -283,6 +283,16 @@ def targets_for(requested: list[str]) -> list[str]:
     return list(requested) or list(targets)
 
 
+def expected_outputs(cases: list[dict], targets: list[str]) -> set[tuple[str, str]]:
+    """The (target, file) each selected case should produce: ``asm/<target>/<kernel>.s``."""
+    return {
+        (target, f"{case['kernel']}.s")
+        for target in targets
+        for case in cases
+        if not case.get("requires") or target in case["requires"]
+    }
+
+
 def regenerate(
     targets: list[str], extra_flags: list[str], out_root: Path
 ) -> tuple[int, list[str], list[str]]:
@@ -343,7 +353,11 @@ def main() -> int:
             "per-invocation __hip_cuid hash. A file that differs only in its "
             ".ident line came from another compiler that emitted the same text, "
             "and is reported without failing. Any other difference, in an "
-            "instruction, a directive or metadata, is drift and fails the check."
+            "instruction, a directive or metadata, is drift and fails the check, "
+            "as does an expected file that is missing or a committed file no "
+            "selected case builds. Exits 0 on a match, 1 on drift, 2 when a case "
+            "fails to compile, and 3 when the check is incomplete because a case "
+            "was skipped or nothing was selected."
         ),
     )
     args = parser.parse_args()
@@ -370,12 +384,31 @@ def main() -> int:
         print("moved, the mutants of those kernels change with them.")
         return 0
 
-    return _report_drift(targets, out_root)
+    # A verdict covers only what was compared, so a check that skipped a case,
+    # or had nothing to compare, cannot report a match.
+    expected = expected_outputs(load_cases(), targets)
+    if skipped or not expected:
+        reason = (
+            f"{len(skipped)} case(s) were skipped, so their committed assembly was not compared"
+            if skipped
+            else f"no case builds for {', '.join(targets)}, so nothing was compared"
+        )
+        print(f"\ncheck incomplete: {reason}.", file=sys.stderr)
+        if skipped:
+            for skip in skipped:
+                print(f"  not compared: {skip.split(':', 1)[0]}", file=sys.stderr)
+            print("Make the skipped cases' headers available and check again.", file=sys.stderr)
+        return 3
+    return _report_drift(targets, out_root, expected)
 
 
-def _report_drift(targets: list[str], out_root: Path) -> int:
+def _report_drift(targets: list[str], out_root: Path, expected: set[tuple[str, str]]) -> int:
     """
     Compare freshly generated assembly against what is committed.
+
+    Every output the selected cases should produce (*expected*) must have been
+    generated and committed, and nothing else may be committed for the selected
+    targets: a missing or obsolete file is drift, not something to pass over.
 
     The ``.ident`` line is compared apart from everything else. A file whose
     only difference is its ``.ident`` came from a different compiler that
@@ -386,12 +419,25 @@ def _report_drift(targets: list[str], out_root: Path) -> int:
     provenance: dict[tuple[str, str], list[str]] = {}
     for target in targets:
         fresh_dir, committed_dir = out_root / target, ASM_DIR / target
-        if not fresh_dir.is_dir():
-            continue
-        for fresh in sorted(fresh_dir.glob("*.s")):
-            name = f"{target}/{fresh.name}"
-            committed = committed_dir / fresh.name
-            if not committed.is_file():
+        fresh_names = {path.name for path in fresh_dir.glob("*.s")} if fresh_dir.is_dir() else set()
+        committed_names = (
+            {path.name for path in committed_dir.glob("*.s")} if committed_dir.is_dir() else set()
+        )
+        expected_names = {file for expected_target, file in expected if expected_target == target}
+        for file in sorted(expected_names | fresh_names | committed_names):
+            name = f"{target}/{file}"
+            fresh, committed = fresh_dir / file, committed_dir / file
+            if file not in expected_names:
+                if file in committed_names:
+                    drifted.append(f"{name}: committed, but no selected case builds it")
+                else:
+                    drifted.append(f"{name}: generated, but no selected case builds it")
+                continue
+            if file not in fresh_names:
+                state = "not committed" if file not in committed_names else "committed"
+                drifted.append(f"{name}: not generated and {state}")
+                continue
+            if file not in committed_names:
                 drifted.append(f"{name}: not committed")
                 continue
             fresh_body, fresh_ident = split_provenance(fresh.read_text())
