@@ -338,9 +338,12 @@ def main() -> int:
         "--check",
         action="store_true",
         help=(
-            "Do not write. Regenerate into a temporary directory and report any "
-            "difference from what is committed. A difference means this "
-            "toolchain generates different code, not merely a different build."
+            "Do not write. Regenerate into a temporary directory and compare it "
+            "with the committed assembly as text, after replacing hipcc's "
+            "per-invocation __hip_cuid hash. A file that differs only in its "
+            ".ident line came from another compiler that emitted the same text, "
+            "and is reported without failing. Any other difference, in an "
+            "instruction, a directive or metadata, is drift and fails the check."
         ),
     )
     args = parser.parse_args()
@@ -362,9 +365,9 @@ def main() -> int:
 
     if not args.check:
         print(f"\nwrote {written} file(s) under {ASM_DIR.relative_to(CORPUS_ROOT.parent.parent)}")
-        print("Review the diff before committing: regenerating is a deliberate change")
-        print("to the corpus, and where waits or loads moved, the mutation sites the")
-        print("manifest records by ordinal move with them.")
+        print("Review the diff before committing: regenerating is a deliberate change to")
+        print("the pinned assembly. Mutants are derived from it, so where waits or loads")
+        print("moved, the mutants of those kernels change with them.")
         return 0
 
     return _report_drift(targets, out_root)
@@ -424,9 +427,10 @@ def _report_drift(targets: list[str], out_root: Path) -> int:
         "\nThis toolchain's output differs from the committed assembly outside the\n"
         ".ident line: in instructions, directives or metadata. It is not build\n"
         "noise -- the one irreproducible part of hipcc's output is normalized away\n"
-        "before comparing. Regenerate only when you intend to move the corpus onto\n"
-        "current codegen. Where waits or sub-dword loads were added, removed or\n"
-        "reordered, the mutation sites the manifest records by ordinal move too.",
+        "before comparing. Regenerate only when you intend to move the pinned\n"
+        "assembly onto current codegen. Mutants are derived from it, so where waits\n"
+        "or sub-dword loads were added, removed or reordered, the mutants of those\n"
+        "kernels change too.",
         file=sys.stderr,
     )
     return 1

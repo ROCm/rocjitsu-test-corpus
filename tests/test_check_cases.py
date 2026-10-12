@@ -130,3 +130,62 @@ def test_committed_manifest_declares_its_targets():
 
     manifest = tomllib.loads((SCRIPT.parent.parent / "cases.toml").read_text())
     assert manifest["corpus"]["targets"] == ["gfx950", "gfx1250"]
+
+
+# --- The inventory contract --------------------------------------------------
+#
+# No compiler is needed: the checker compares cases.toml with kernels/ and asm/
+# on disk, so pytest is what keeps the manifest and the pinned files from
+# drifting apart.
+
+
+def test_committed_inventory_passes(capsys):
+    # The real corpus, as committed, with no paths redirected.
+    module = load_script()
+    code = module.main()
+    out = capsys.readouterr()
+    assert code == 0, out.err
+
+
+def test_unknown_field_is_reported(corpus, capsys):
+    corpus(["gfx950"], PORTABLE.replace("requires = []", 'requires = []\nordinal = 3'), ["gfx950/portable"])
+    code, out = run(capsys)
+    assert code == 1
+    assert "cases.toml [portable]: unknown field 'ordinal'" in out
+
+
+def test_missing_assembly_is_reported(corpus, capsys):
+    corpus(["gfx950", "gfx1250"], PORTABLE, ["gfx950/portable", "gfx1250/unrelated"])
+    code, out = run(capsys)
+    assert code == 1
+    assert "cases.toml [portable]: asm/gfx1250/portable.s is missing" in out
+
+
+def test_orphan_assembly_is_reported(corpus, capsys):
+    corpus(["gfx950"], PORTABLE, ["gfx950/portable", "gfx950/leftover"])
+    code, out = run(capsys)
+    assert code == 1
+    assert "asm/gfx950/leftover.s: no case builds leftover for gfx950" in out
+
+
+def test_assembly_for_a_target_the_case_does_not_require_is_an_orphan(corpus, capsys):
+    corpus(["gfx950", "gfx1250"], GFX1250_ONLY, ["gfx950/only", "gfx1250/only"])
+    code, out = run(capsys)
+    assert code == 1
+    assert "asm/gfx950/only.s: no case builds only for gfx950" in out
+
+
+def test_missing_kernel_source_is_reported(corpus, capsys, tmp_path):
+    corpus(["gfx950"], PORTABLE, ["gfx950/portable"])
+    (tmp_path / "kernels" / "portable.hip").unlink()
+    code, out = run(capsys)
+    assert code == 1
+    assert "cases.toml [portable]: kernels/portable.hip is missing" in out
+
+
+def test_duplicate_id_and_kernel_are_reported(corpus, capsys):
+    corpus(["gfx950"], PORTABLE + PORTABLE, ["gfx950/portable"])
+    code, out = run(capsys)
+    assert code == 1
+    assert "cases.toml [portable]: duplicate id" in out
+    assert "cases.toml [portable]: kernel portable is already used by another case" in out

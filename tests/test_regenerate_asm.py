@@ -362,3 +362,44 @@ def test_relative_environment_include_path_is_not_searched(
     assert (written, failures) == (0, [])
     assert len(skipped) == 1
     assert pinned.read_text() == PINNED
+
+
+# --- What the script says about regeneration and --check ----------------------
+#
+# cases.toml is an inventory: id, kernel, requires and headers. The messages
+# describe regenerating as a change to the pinned assembly, and --check as the
+# textual comparison it performs, without mutation-site fields cases.toml does
+# not have.
+
+
+def test_check_help_describes_the_textual_comparison(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["regenerate_asm.py", "--help"])
+    with pytest.raises(SystemExit):
+        regen.main()
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert ".ident" in help_text
+    assert "directive" in help_text and "metadata" in help_text
+    assert "means this toolchain generates different code" not in help_text
+
+
+def test_drift_report_does_not_mention_ordinals(drift_dirs, capsys):
+    committed, fresh_root = drift_dirs
+    (committed / "k.s").write_text("s_waitcnt 0\n")
+    (fresh_root / "gfx950" / "k.s").write_text("s_nop 0\n")
+    assert check(fresh_root) == 1
+    err = " ".join(capsys.readouterr().err.split())
+    assert "ordinal" not in err
+    assert "pinned assembly" in err
+
+
+def test_write_summary_does_not_mention_ordinals(manifest, monkeypatch, tmp_path, kernel, capsys):
+    install_fake_compiler(monkeypatch, tmp_path, "output")
+    manifest(["gfx950"], PORTABLE_CASE)
+    monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
+    monkeypatch.setattr(regen, "CORPUS_ROOT", tmp_path / "corpus" / "race")
+    monkeypatch.setattr(regen, "ASM_DIR", tmp_path / "corpus" / "race" / "asm")
+    monkeypatch.setattr(sys, "argv", ["regenerate_asm.py"])
+    assert regen.main() == 0
+    out = " ".join(capsys.readouterr().out.split())
+    assert "ordinal" not in out
+    assert "pinned assembly" in out
