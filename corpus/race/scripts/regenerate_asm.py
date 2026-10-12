@@ -122,8 +122,20 @@ def absolute_flags(flags: list[str], base: Path) -> list[str]:
     return out
 
 
+# Environment variables the compiler adds include directories from. HIP
+# compiles as C++, so CPLUS_INCLUDE_PATH applies and C_INCLUDE_PATH does not.
+_INCLUDE_PATH_VARIABLES = ("CPATH", "CPLUS_INCLUDE_PATH")
+
+
 def include_dirs(flags: list[str]) -> list[Path]:
-    """Where the compiler will look for headers: ROCm's include, then -I/-isystem/-iquote."""
+    """
+    Where the compiler will look for headers.
+
+    ROCm's include, then -I/-isystem/-iquote, then the absolute entries of the
+    include-path environment variables, which the compile inherits. A relative
+    entry is not counted: the compiler runs in a private scratch directory,
+    where it would name nothing.
+    """
     dirs = [rocm_path() / "include"]
     tokens = iter(flags)
     for flag in tokens:
@@ -135,6 +147,10 @@ def include_dirs(flags: list[str]) -> list[Path]:
             else:
                 continue
             break
+    for variable in _INCLUDE_PATH_VARIABLES:
+        for entry in os.environ.get(variable, "").split(os.pathsep):
+            if entry and Path(entry).is_absolute():
+                dirs.append(Path(entry))
     return dirs
 
 
@@ -289,7 +305,7 @@ def regenerate(
             if (missing := missing_headers(case, extra_flags)):
                 skipped.append(
                     f"{case['kernel']} ({target}): {', '.join(missing)} not found; "
-                    f"pass its include directory with --cxxflags"
+                    f"pass its include directory with --cxxflags, or add it to CPATH"
                 )
                 continue
             kernel = KERNELS_DIR / f"{case['kernel']}.hip"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 import textwrap
 from pathlib import Path
@@ -298,3 +299,66 @@ def test_portable_case_builds_for_every_corpus_target(manifest, monkeypatch, tmp
         "gfx1250/only.s",
         "gfx950/kernel.s",
     ]
+
+
+# --- Header preflight and the compiler's environment include paths -----------
+#
+# hipcc also searches CPATH and, for HIP, which compiles as C++,
+# CPLUS_INCLUDE_PATH. A declared header available only through one of those must
+# not be skipped as missing when the compile would find it. The compiler runs in
+# a private scratch directory, so only absolute entries are usable.
+
+
+@pytest.fixture
+def rocwmma_case(monkeypatch, kernel):
+    monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
+    monkeypatch.setattr(
+        regen,
+        "load_cases",
+        lambda: [{"id": "k", "kernel": "kernel", "headers": ["rocwmma/rocwmma.hpp"]}],
+    )
+    for name in ("CPATH", "CPLUS_INCLUDE_PATH", "C_INCLUDE_PATH"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def header_dir(tmp_path: Path) -> Path:
+    include = tmp_path / "env-include"
+    (include / "rocwmma").mkdir(parents=True)
+    (include / "rocwmma" / "rocwmma.hpp").write_text("")
+    return include
+
+
+@pytest.mark.parametrize("variable", ["CPATH", "CPLUS_INCLUDE_PATH"])
+def test_declared_header_found_through_environment_include_path(
+    monkeypatch, tmp_path, pinned, rocwmma_case, variable
+):
+    install_fake_compiler(monkeypatch, tmp_path, "output")
+    monkeypatch.setenv(variable, f"/nonexistent{os.pathsep}{header_dir(tmp_path)}")
+    written, failures, skipped = regen.regenerate(["gfx950"], [], pinned.parent.parent)
+    assert (written, failures, skipped) == (1, [], [])
+    assert "s_endpgm" in pinned.read_text()
+
+
+def test_c_include_path_is_not_searched_for_hip(monkeypatch, tmp_path, pinned, rocwmma_case):
+    install_fake_compiler(monkeypatch, tmp_path, "fail")  # must not be invoked
+    monkeypatch.setenv("C_INCLUDE_PATH", str(header_dir(tmp_path)))
+    written, failures, skipped = regen.regenerate(["gfx950"], [], pinned.parent.parent)
+    assert (written, failures) == (0, [])
+    assert len(skipped) == 1
+    assert pinned.read_text() == PINNED
+
+
+def test_relative_environment_include_path_is_not_searched(
+    monkeypatch, tmp_path, pinned, rocwmma_case
+):
+    # The compiler runs in a scratch directory, where a relative entry names
+    # nothing, so the preflight must not count it even when it resolves from
+    # the caller's directory.
+    install_fake_compiler(monkeypatch, tmp_path, "fail")  # must not be invoked
+    header_dir(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CPATH", "env-include")
+    written, failures, skipped = regen.regenerate(["gfx950"], [], pinned.parent.parent)
+    assert (written, failures) == (0, [])
+    assert len(skipped) == 1
+    assert pinned.read_text() == PINNED

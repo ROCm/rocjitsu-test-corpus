@@ -136,9 +136,9 @@ id = "wmma-rocwmma"
 kernel = "wmma_rocwmma"
 requires = ["gfx1250"]
 # Needs the rocWMMA headers. regenerate_asm.py looks for them under ROCm's
-# include directory and any -I passed with --cxxflags "-I/path/to/include",
-# and skips the case -- leaving its committed assembly as it is -- when they
-# are not found.
+# include directory, any -I passed with --cxxflags "-I/path/to/include", and
+# the absolute entries of CPATH and CPLUS_INCLUDE_PATH, and skips the case --
+# leaving its committed assembly as it is -- when they are not found.
 headers = ["rocwmma/rocwmma.hpp"]
 
 # --- Cross-workgroup global memory -------------------------------------------
