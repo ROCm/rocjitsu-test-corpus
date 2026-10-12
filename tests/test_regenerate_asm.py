@@ -743,3 +743,36 @@ def test_allow_skipped_only_applies_with_check(manifest, corpus_main, capsys):
     assert exit_info.value.code == 2
     assert "--allow-skipped only applies with --check" in capsys.readouterr().err
 
+
+
+# --- --check cleans up its generated assembly ---------------------------------
+
+
+@pytest.fixture
+def temp_root(tmp_path, monkeypatch) -> Path:
+    """Where tempfile creates directories during the test, to see what is left."""
+    root = tmp_path / "system-tmp"
+    root.mkdir()
+    monkeypatch.setattr(regen.tempfile, "tempdir", str(root))
+    return root
+
+
+@pytest.mark.parametrize("outcome", ["match", "drift", "compile-failure", "incomplete"])
+def test_check_leaves_no_temporary_directory(
+    manifest, corpus_main, monkeypatch, tmp_path, temp_root, outcome
+):
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    commit_fresh_output(run, committed)
+    expected_code = 0
+    if outcome == "drift":
+        (committed / "gfx950" / "kernel.s").write_text("; changed by hand\n")
+        expected_code = 1
+    elif outcome == "compile-failure":
+        install_fake_compiler(monkeypatch, tmp_path, "fail")
+        expected_code = 2
+    elif outcome == "incomplete":
+        manifest(["gfx950"], PORTABLE_CASE + ROCWMMA_CASE)
+        expected_code = 3
+    assert run("--check") == expected_code
+    assert list(temp_root.iterdir()) == []

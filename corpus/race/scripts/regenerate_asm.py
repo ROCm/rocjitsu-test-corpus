@@ -411,7 +411,18 @@ def main() -> int:
     targets = targets_for(args.target)
     extra_flags = absolute_flags(parse_cxxflags(args.cxxflags), Path.cwd())
 
-    out_root = Path(tempfile.mkdtemp(prefix="race-asm-")) if args.check else ASM_DIR
+    if not args.check:
+        return _regenerate_and_report(args, targets, extra_flags, ASM_DIR)
+    # The comparison has to finish while the regenerated files still exist, and
+    # the directory is removed however the check ends.
+    with tempfile.TemporaryDirectory(prefix="race-asm-") as scratch:
+        return _regenerate_and_report(args, targets, extra_flags, Path(scratch))
+
+
+def _regenerate_and_report(
+    args: argparse.Namespace, targets: list[str], extra_flags: list[str], out_root: Path
+) -> int:
+    """Regenerate into *out_root* and report: a write summary, or the --check verdict."""
     print(f"regenerating {', '.join(targets)} -> {out_root}")
 
     written, failures, skipped = regenerate(targets, extra_flags, out_root)
