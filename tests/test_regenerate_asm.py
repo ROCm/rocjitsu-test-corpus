@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 import importlib.util
@@ -740,3 +742,4 @@ def test_allow_skipped_only_applies_with_check(manifest, corpus_main, capsys):
         run("--allow-skipped")
     assert exit_info.value.code == 2
     assert "--allow-skipped only applies with --check" in capsys.readouterr().err
+
