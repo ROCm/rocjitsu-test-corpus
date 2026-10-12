@@ -31,6 +31,9 @@ def install_fake_compiler(monkeypatch, tmp_path: Path, behaviour: str) -> None:
     """
     Stand in for hipcc with a script, so these tests need no ROCm install.
 
+    Each invocation appends the arguments it received, as a JSON list, to
+    ``fake-hipcc.argv`` beside it; see compiler_invocations.
+
     *behaviour* is one of:
       fail        exit 1 without writing anything
       output      write to the -o path
@@ -42,8 +45,10 @@ def install_fake_compiler(monkeypatch, tmp_path: Path, behaviour: str) -> None:
         textwrap.dedent(
             f"""\
             #!{sys.executable}
-            import os, sys
+            import json, os, sys
             args = sys.argv[1:]
+            with open(os.path.abspath(__file__) + ".argv", "a") as log:
+                log.write(json.dumps(args) + "\\n")
             if {behaviour!r} == "fail":
                 sys.stderr.write("error: unknown argument\\n")
                 sys.exit(1)
@@ -564,3 +569,46 @@ def test_main_preserves_the_compiler_diagnostic(
     assert "FAIL: kernel.hip (gfx950):" in err
     assert "error: unknown argument" in err
     assert pinned_file.read_text() == PINNED
+
+
+
+# --- --cxxflags is parsed as shell words -------------------------------------
+
+
+def compiler_invocations(tmp_path: Path) -> list[list[str]]:
+    """The argument lists the fake compiler has been run with, in order."""
+    import json
+
+    log = tmp_path / "fake-hipcc.argv"
+    if not log.is_file():
+        return []
+    return [json.loads(line) for line in log.read_text().splitlines()]
+
+
+def test_quoted_include_path_with_spaces_reaches_the_compiler_whole(
+    manifest, corpus_main, monkeypatch, tmp_path
+):
+    run, _ = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    caller = tmp_path / "caller"
+    caller.mkdir()
+    monkeypatch.chdir(caller)
+    assert run("--cxxflags", '-I"headers with spaces" -isystem "/abs dir/inc" -DX=1') == 0
+    (argv,) = compiler_invocations(tmp_path)
+    assert f"-I{caller / 'headers with spaces'}" in argv
+    assert argv[argv.index("-isystem") + 1] == "/abs dir/inc"
+    assert "-DX=1" in argv
+    assert not any(arg in ("with", 'spaces"', "dir/inc\"") for arg in argv)
+
+
+def test_malformed_quoting_is_rejected_before_compiling(manifest, corpus_main, tmp_path, capsys):
+    run, _ = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    # The --flag=value form, as typed on a command line: argparse would read a
+    # separate "-I..." word as an option of its own.
+    with pytest.raises(SystemExit) as exit_info:
+        run('--cxxflags=-I"unterminated')
+    message = str(exit_info.value.code) + capsys.readouterr().err
+    assert exit_info.value.code not in (0, None)
+    assert "--cxxflags" in message and "quot" in message
+    assert compiler_invocations(tmp_path) == []

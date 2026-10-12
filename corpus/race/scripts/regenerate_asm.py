@@ -52,6 +52,7 @@ import argparse
 import difflib
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -94,6 +95,19 @@ class CompileError(RuntimeError):
 
 # Flags whose value is a path, as a separate token or glued to the flag.
 _PATH_FLAGS = ("-isystem", "-iquote", "-include", "-I")
+
+
+def parse_cxxflags(text: str) -> list[str]:
+    """
+    Split ``--cxxflags`` into arguments the way a shell would, without running one.
+
+    A quoted path with spaces, such as ``-I"my headers"``, stays one argument.
+    Malformed quoting is refused here, before any kernel is compiled.
+    """
+    try:
+        return shlex.split(text)
+    except ValueError as error:
+        raise SystemExit(f"--cxxflags: cannot parse {text!r}: {error} (check the quoting)") from None
 
 
 def absolute_flags(flags: list[str], base: Path) -> list[str]:
@@ -344,7 +358,10 @@ def main() -> int:
     parser.add_argument(
         "--cxxflags",
         default="",
-        help="Extra compiler flags, e.g. -I/path/to/rocwmma/include",
+        help=(
+            "Extra compiler flags, split like shell words, so a path with spaces "
+            "can be quoted, e.g. --cxxflags='-I\"/path/to/my headers\"'"
+        ),
     )
     parser.add_argument(
         "--check",
@@ -365,7 +382,7 @@ def main() -> int:
     args = parser.parse_args()
 
     targets = targets_for(args.target)
-    extra_flags = absolute_flags(args.cxxflags.split() if args.cxxflags else [], Path.cwd())
+    extra_flags = absolute_flags(parse_cxxflags(args.cxxflags), Path.cwd())
 
     out_root = Path(tempfile.mkdtemp(prefix="race-asm-")) if args.check else ASM_DIR
     print(f"regenerating {', '.join(targets)} -> {out_root}")
