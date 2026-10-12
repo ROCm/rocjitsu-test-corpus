@@ -668,6 +668,7 @@ def _normalize_timestamp(value: str) -> str | None:
 def _source_info(source_dir: Path) -> dict[str, Any]:
     revision = None
     commit_timestamp = None
+    dirty = None
     try:
         revision = subprocess.check_output(
             ["git", "rev-parse", "HEAD"],
@@ -688,7 +689,17 @@ def _source_info(source_dir: Path) -> dict[str, Any]:
             commit_timestamp = _normalize_timestamp(value)
         except (OSError, subprocess.CalledProcessError):
             pass
+        try:
+            dirty = bool(subprocess.check_output(
+                ["git", "status", "--porcelain"],
+                cwd=source_dir,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).strip())
+        except (OSError, subprocess.CalledProcessError):
+            pass
     return {
+        "dirty": dirty,
         "commit_sha": revision,
         "commit_timestamp": commit_timestamp,
     }
@@ -789,6 +800,8 @@ def _failed_test(cell: Cell, error: str) -> dict[str, Any]:
     return {
         "id": cell.case,
         "suite": metadata.suite,
+        "operation": metadata.operation,
+        "workload": metadata.workload,
         "name": metadata.name,
         "target": cell.target,
         "problem": dict(metadata.params),
@@ -871,6 +884,7 @@ def run_suite(
             "timeout_seconds": suite.timeout_seconds,
             "benchmark_suite": suite.name,
             "threading_mode": suite.thread_policy,
+            "plugin_profile": plugin_profile,
             "timestamp": timestamp,
             "finished_at": None,
             "wall_time_s": 0.0,
@@ -884,6 +898,7 @@ def run_suite(
                 },
                 "rocjitsu": {
                     "rocjitsu_commit_sha": source["commit_sha"],
+                    "rocjitsu_dirty": source["dirty"],
                     "rocjitsu_commit_timestamp": source["commit_timestamp"],
                     "target_config_sha256": {
                         target: target_metadata[target].config_sha256 for target in targets
@@ -892,6 +907,7 @@ def run_suite(
                 },
                 "corpus": {
                     "corpus_commit_sha": corpus["commit_sha"],
+                    "corpus_dirty": corpus["dirty"],
                     "corpus_commit_timestamp": corpus["commit_timestamp"],
                 },
                 "auxiliary": {**environment["packages"], "python": environment["python"]},
