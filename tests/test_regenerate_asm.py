@@ -690,3 +690,53 @@ def test_missing_compiler_error_names_both_candidates(monkeypatch, tmp_path, no_
         regen.find_hip_compiler()
     message = str(exit_info.value.code)
     assert "bin/hipcc" in message and "llvm/bin/clang++" in message
+
+
+# --- Skipping explicitly allowed ----------------------------------------------
+#
+# --allow-skipped lets a --check pass on the cases it could compare, for a
+# machine without an optional dependency, but the verdict still names every
+# case it did not compare. It cannot turn "nothing was compared" into a match.
+
+
+def test_check_allowing_skips_names_the_cases_not_compared(manifest, corpus_main, capsys):
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    commit_fresh_output(run, committed)
+    manifest(["gfx950"], PORTABLE_CASE + ROCWMMA_CASE)
+    capsys.readouterr()
+    assert run("--check", "--allow-skipped") == 0
+    out = capsys.readouterr()
+    verdict = " ".join((out.out + out.err).split())
+    assert "not compared: wmma (gfx950)" in verdict
+    assert "1 case(s) skipped and not compared" in verdict
+    assert "committed assembly matches this toolchain for the compared cases" in verdict
+
+
+def test_check_allowing_skips_still_fails_on_drift(manifest, corpus_main, capsys):
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    commit_fresh_output(run, committed)
+    (committed / "gfx950" / "kernel.s").write_text("; changed by hand\n")
+    manifest(["gfx950"], PORTABLE_CASE + ROCWMMA_CASE)
+    assert run("--check", "--allow-skipped") == 1
+
+
+def test_check_allowing_skips_with_nothing_compared_is_still_incomplete(
+    manifest, corpus_main, capsys
+):
+    run, _ = corpus_main
+    manifest(["gfx950"], ROCWMMA_CASE)
+    assert run("--check", "--allow-skipped") == 3
+    out = capsys.readouterr()
+    assert "matches" not in out.out
+    assert "incomplete" in out.err
+
+
+def test_allow_skipped_only_applies_with_check(manifest, corpus_main, capsys):
+    run, _ = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    with pytest.raises(SystemExit) as exit_info:
+        run("--allow-skipped")
+    assert exit_info.value.code == 2
+    assert "--allow-skipped only applies with --check" in capsys.readouterr().err

@@ -391,10 +391,22 @@ def main() -> int:
             "as does an expected file that is missing or a committed file no "
             "selected case builds. Exits 0 on a match, 1 on drift, 2 when a case "
             "fails to compile, and 3 when the check is incomplete because a case "
-            "was skipped or nothing was selected."
+            "was skipped (see --allow-skipped) or nothing was compared."
+        ),
+    )
+    parser.add_argument(
+        "--allow-skipped",
+        action="store_true",
+        help=(
+            "With --check, pass when every case that could be compared matches, "
+            "even if some were skipped because an optional header is unavailable. "
+            "The skipped cases are still listed as not compared. Without this, a "
+            "skipped case makes the check incomplete (exit 3)."
         ),
     )
     args = parser.parse_args()
+    if args.allow_skipped and not args.check:
+        parser.error("--allow-skipped only applies with --check")
 
     targets = targets_for(args.target)
     extra_flags = absolute_flags(parse_cxxflags(args.cxxflags), Path.cwd())
@@ -421,10 +433,13 @@ def main() -> int:
         print("moved, the mutants of those kernels change with them.")
         return 0
 
-    # A verdict covers only what was compared, so a check that skipped a case,
-    # or had nothing to compare, cannot report a match.
+    # A verdict covers only what was compared. A check that skipped a case is
+    # incomplete unless skipping was allowed, and one that compared nothing
+    # cannot report a match either way.
     expected = expected_outputs(load_cases(), targets)
-    if skipped or not expected:
+    not_generated = {(t, f) for t, f in expected if not (out_root / t / f).is_file()}
+    compared_nothing = not expected or not_generated == expected
+    if compared_nothing or (skipped and not args.allow_skipped):
         reason = (
             f"{len(skipped)} case(s) were skipped, so their committed assembly was not compared"
             if skipped
@@ -434,18 +449,28 @@ def main() -> int:
         if skipped:
             for skip in skipped:
                 print(f"  not compared: {skip.split(':', 1)[0]}", file=sys.stderr)
-            print("Make the skipped cases' headers available and check again.", file=sys.stderr)
+            print("Make the skipped cases' headers available and check again,", file=sys.stderr)
+            print("or pass --allow-skipped to check only the rest.", file=sys.stderr)
         return 3
-    return _report_drift(targets, out_root, expected)
+    return _report_drift(
+        targets, out_root, expected, not_compared=not_generated if skipped else set()
+    )
 
 
-def _report_drift(targets: list[str], out_root: Path, expected: set[tuple[str, str]]) -> int:
+def _report_drift(
+    targets: list[str],
+    out_root: Path,
+    expected: set[tuple[str, str]],
+    not_compared: set[tuple[str, str]] = frozenset(),
+) -> int:
     """
     Compare freshly generated assembly against what is committed.
 
     Every output the selected cases should produce (*expected*) must have been
     generated and committed, and nothing else may be committed for the selected
     targets: a missing or obsolete file is drift, not something to pass over.
+    The exception is *not_compared*: expected outputs of cases skipped with
+    --allow-skipped, which are named in the verdict rather than compared.
 
     The ``.ident`` line is compared apart from everything else. A file whose
     only difference is its ``.ident`` came from a different compiler that
@@ -469,6 +494,8 @@ def _report_drift(targets: list[str], out_root: Path, expected: set[tuple[str, s
                     drifted.append(f"{name}: committed, but no selected case builds it")
                 else:
                     drifted.append(f"{name}: generated, but no selected case builds it")
+                continue
+            if (target, file) in not_compared:
                 continue
             if file not in fresh_names:
                 state = "not committed" if file not in committed_names else "committed"
@@ -499,9 +526,15 @@ def _report_drift(targets: list[str], out_root: Path, expected: set[tuple[str, s
         print("Every other line is identical, so this is not drift; regenerating would")
         print("only update their .ident lines.")
 
+    if not_compared:
+        print(f"\n{len(not_compared)} case(s) skipped and not compared (--allow-skipped):")
+        for target, file in sorted(not_compared):
+            print(f"  not compared: {Path(file).stem} ({target})")
+
     if not drifted:
         suffix = ", apart from .ident" if provenance else ""
-        print(f"\ncommitted assembly matches this toolchain{suffix}")
+        scope = " for the compared cases" if not_compared else ""
+        print(f"\ncommitted assembly matches this toolchain{scope}{suffix}")
         return 0
     print(f"\n{len(drifted)} file(s) differ from what is committed:", file=sys.stderr)
     for entry in drifted:
