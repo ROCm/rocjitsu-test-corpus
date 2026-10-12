@@ -61,6 +61,10 @@ numbers, not strings.
 }
 ```
 
+`provenance.rocjitsu.rocm_sdk_version` records the `rocm-sdk-devel` package
+version in the workload's Python environment; it doesn't describe rocjitsu's
+build toolchain.
+
 ## Reading the results
 
 - **One result per case and target.** The same `id` can occur on both targets;

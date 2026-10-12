@@ -10,6 +10,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from benchmark_adapter_cases import CASES
+
 torch = pytest.importorskip("torch")
 
 
@@ -62,15 +64,6 @@ def adapters(monkeypatch):
         monkeypatch.setattr(modules[name], "to_cpu", lambda tensor: tensor)
         monkeypatch.setitem(sys.modules, f"corpus.benchmarks.triton.{name}", modules[name])
     return measurement, modules
-
-
-CASES = [
-    ("gpt_oss_attention", None),
-    ("triton_softmax", None), ("triton_layernorm", None),
-    ("deepseek_act_quant", None), ("deepseek_weight_dequant", None),
-    *[(name, preset) for name in ("triton_persistent", "triton_grouped", "deepseek_fp8")
-      for preset in (None, "large_tile")],
-]
 
 
 @pytest.mark.parametrize("workload,preset", CASES)

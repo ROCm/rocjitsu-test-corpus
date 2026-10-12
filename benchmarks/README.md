@@ -52,9 +52,11 @@ With either named thread policy, the native worker allocation is recorded in
 `run.json` records the named policy in `execution_summary.threading_mode`.
 
 The runner checks the Release configuration, disabled LTO/sanitizers,
-source root, SDK, and selected plugin binaries. The wrapper must select the
-binary from that build; arbitrary wrapper commands cannot be checked against
-CMake metadata. Rebuild rocjitsu after source changes.
+source root, and selected plugin binaries. SDK preflight requires
+`rocm-sdk-devel` in the workload's Python environment. This check is independent
+of rocjitsu's build toolchain and any cached `ROCM_PATH`. The wrapper must
+select the binary from that build; arbitrary wrapper commands cannot be checked
+against CMake metadata. Rebuild rocjitsu after source changes.
 
 The default `benchmarks/suites/nightly.toml` contains 20 case definitions and
 28 target/case combinations across `gfx950` and `gfx1250`:
@@ -90,8 +92,7 @@ single-threaded launch; those cases remain in the default suite only.
 End-to-end runtime includes setup, compilation, output reset, and CPU validation;
 it is longer than the sum of measured kernel durations.
 
-Run both manifests separately with different output directories. Keep their
-dashboard run IDs and environment IDs distinct so both histories are retained.
+Run both manifests separately with different output directories.
 
 Use `--manifest benchmarks/suites/smoke.toml` for a short suite, repeated
 `--case` and `--target` flags for subsets, and `--warmups`/`--samples` for
@@ -266,7 +267,7 @@ separate output directory. Each enabled profile must produce its report.
 Reports cover the entire process, including setup and warmups; timing samples
 retain the same boundary across profiles.
 
-### Harness tests
+## Harness tests
 
 Run the benchmark harness tests through the repository's pytest configuration,
 without ROCm dependencies. pytest-xdist supplies the plugin used by the root
