@@ -21,7 +21,7 @@ python -m benchmarks.runner \
   --rocjitsu-source-dir "$src" --build-dir "$build" \
   --target-config "gfx950=$gfx950_config" \
   --target-config "gfx1250=$gfx1250_config" \
-  --thread-policy default,single \
+  --thread-policy default --thread-policy single \
   --run-wrapper "\"$rocjitsu\" --config {config} --" \
   --output .benchmark-artifacts/run-001
 ```
@@ -92,12 +92,11 @@ combinations: 38 for this suite, in one invocation and one `run.json`. Explicit
 `--case`, `--target`, and `--thread-policy` filters narrow that supported set;
 they never add unsupported combinations. Use `--thread-policy default` for only
 default-worker cases or `--thread-policy single` for only supported single-worker
-cases. Use `--thread-policy` with comma-separated `default` and/or `single`
-values. Both `default,single` and `single,default` select both policies and are
-equivalent to omitting the policy filter; execution order remains `default` then
-`single` regardless of input order. If the flag is repeated, standard argparse
-behavior keeps the last supplied value; values are not combined. Empty tokens,
-unknown policies and duplicate policies within a value are rejected.
+cases. Repeat `--thread-policy` to select both policies:
+`--thread-policy default --thread-policy single`. Either flag order is equivalent
+to omitting the policy filter; execution order remains `default` then `single`.
+Each occurrence accepts only `default` or `single`; comma-separated values,
+unknown values and repeated copies of the same policy are rejected.
 Cases are not duplicated in TOML.
 
 Use `--manifest benchmarks/suites/smoke.toml` for a short

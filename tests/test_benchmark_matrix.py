@@ -292,38 +292,34 @@ def test_direct_sampling_validation_precedes_launch(
 
 
 @pytest.mark.parametrize(
-    "value", [None, "default", "single", "default,single", "single,default"]
+    "policies",
+    [None, ("default",), ("single",), ("default", "single"), ("single", "default")],
 )
-def test_cli_policy_comma_list_preserves_supported_order(
-    value: str | None,
+def test_cli_append_policies_preserve_supported_order(
+    policies: tuple[str, ...] | None,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     args = ["--list", "--target", "gfx950", "--target", "gfx1250"]
-    policies = ("default", "single") if value is None else tuple(value.split(","))
-    if value is not None:
-        args.extend(["--thread-policy", value])
-    expected = runner.select_matrix(runner.load_manifest(), thread_policies=policies)
+    for policy in policies or ():
+        args.extend(["--thread-policy", policy])
+    expected = runner.select_matrix(
+        runner.load_manifest(),
+        thread_policies=("default", "single") if policies is None else policies,
+    )
     assert runner.main(args) == 0
     listed = [tuple(line.split("\t")) for line in capsys.readouterr().out.splitlines()]
     assert listed == [(cell.case, cell.target, cell.thread_policy) for cell in expected]
 
 
-@pytest.mark.parametrize(
-    "values", [("default", "single"), ("single", "default"), ("default", "default")]
-)
-def test_cli_repeated_policy_keeps_last_value(
+@pytest.mark.parametrize("values", [("default", "single"), ("single", "default")])
+def test_cli_repeated_policy_accumulates_values(
     values: tuple[str, str],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert (
-        runner.build_parser()
-        .parse_args(["--thread-policy", values[0], "--thread-policy", values[1]])
-        .thread_policy
-        == values[1]
-    )
-    expected = runner.select_matrix(
-        runner.load_manifest(), thread_policies=(values[1],)
-    )
+    assert runner.build_parser().parse_args(
+        ["--thread-policy", values[0], "--thread-policy", values[1]]
+    ).thread_policy == list(values)
+    expected = runner.select_matrix(runner.load_manifest(), thread_policies=values)
     assert (
         runner.main(
             ["--list", "--thread-policy", values[0], "--thread-policy", values[1]]
@@ -336,21 +332,10 @@ def test_cli_repeated_policy_keeps_last_value(
 
 @pytest.mark.parametrize(
     "value",
-    [
-        "",
-        ",",
-        "default,",
-        ",single",
-        "default,,single",
-        "unknown",
-        "default,unknown",
-        "default,default",
-        "single,single",
-        "single, default",
-    ],
+    ["", "unknown", "default,single", "single,default"],
 )
 @pytest.mark.parametrize("listing", [False, True])
-def test_invalid_policy_list_rejected_before_loading(
+def test_invalid_policy_choice_rejected_before_loading(
     value: str,
     listing: bool,
     capsys: pytest.CaptureFixture[str],
@@ -367,10 +352,13 @@ def test_invalid_policy_list_rejected_before_loading(
     assert "--thread-policy" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("value", ["default,single", "single,default"])
-def test_policy_list_cli_run_retains_canonical_order(
+@pytest.mark.parametrize(
+    "policies",
+    [None, ("default",), ("single",), ("default", "single"), ("single", "default")],
+)
+def test_append_policy_cli_run_retains_canonical_order(
     runner_context: SimpleNamespace,
-    value: str,
+    policies: tuple[str, ...] | None,
 ) -> None:
     ctx = runner_context
     ctx.suite = replace(ctx.suite, warmups=1, samples=3)
@@ -384,8 +372,6 @@ def test_policy_list_cli_run_retains_canonical_order(
         return _successful_process(ctx, argv, **kwargs)
 
     args = [
-        "--thread-policy",
-        value,
         "--case",
         ctx.suite.cases[0].id,
         "--target",
@@ -401,6 +387,8 @@ def test_policy_list_cli_run_retains_canonical_order(
         "--target-config",
         f"gfx950={ctx.configs['gfx950']}",
     ]
+    for policy in policies or ():
+        args.extend(["--thread-policy", policy])
     with mock.patch.object(
         runner, "load_manifest", return_value=ctx.suite
     ), mock.patch.object(
@@ -412,16 +400,34 @@ def test_policy_list_cli_run_retains_canonical_order(
     ):
         assert runner.main(args) == 0
     raw = json.loads((output / "run.json").read_text())
-    assert budgets == ["0", "1"]
-    assert [row["thread_policy"] for row in raw["benchmark_results"]] == [
-        "default",
-        "single",
+    expected = [
+        policy
+        for policy in ("default", "single")
+        if policies is None or policy in policies
     ]
+    assert budgets == ["0" if policy == "default" else "1" for policy in expected]
+    assert [row["thread_policy"] for row in raw["benchmark_results"]] == expected
     assert all(row["status"] == "completed" for row in raw["benchmark_results"])
     assert (
         raw["execution_summary"]["warmups"],
         raw["execution_summary"]["samples"],
     ) == (1, 3)
+
+
+@pytest.mark.parametrize("policy", ["default", "single"])
+@pytest.mark.parametrize("listing", [False, True])
+def test_duplicate_append_policy_rejected_before_execution(
+    policy: str,
+    listing: bool,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    args = ["--thread-policy", policy, "--thread-policy", policy]
+    if listing:
+        args.append("--list")
+    with mock.patch.object(runner, "run_suite") as execute:
+        assert runner.main(args) == 2
+        execute.assert_not_called()
+    assert "without duplicates" in capsys.readouterr().err
 
 
 def test_consolidated_matrix_and_defaults() -> None:
@@ -444,7 +450,7 @@ def test_consolidated_matrix_and_defaults() -> None:
     assert (args.warmups, args.samples, args.thread_policy) == (
         None,
         None,
-        "default,single",
+        None,
     )
 
 
@@ -479,7 +485,8 @@ def test_cli_and_direct_selection_intersect_manifest_support(
     for case in cases:
         args.extend(["--case", case])
     if policies is not None:
-        args.extend(["--thread-policy", ",".join(policies)])
+        for policy in policies:
+            args.extend(["--thread-policy", policy])
     assert runner.main(args) == 0
     listed = [tuple(line.split("\t")) for line in capsys.readouterr().out.splitlines()]
     assert listed == [(cell.case, cell.target, cell.thread_policy) for cell in matrix]

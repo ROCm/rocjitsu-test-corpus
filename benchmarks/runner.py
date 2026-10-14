@@ -1075,19 +1075,6 @@ class _SingleManifest(argparse.Action):
         namespace._manifest_supplied = True
 
 
-def _policy_list(value: str) -> str:
-    """Validate exact comma-separated policy tokens, retaining their input order."""
-    policies = value.split(",")
-    try:
-        for policy in policies:
-            _thread_policy(policy)
-        if len(set(policies)) != len(policies):
-            raise RunnerError("thread_policy must not contain duplicates")
-    except RunnerError as error:
-        raise argparse.ArgumentTypeError(str(error)) from error
-    return value
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -1097,10 +1084,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--case", action="append", default=[])
     parser.add_argument(
         "--thread-policy",
-        type=_policy_list,
-        metavar="POLICY[,POLICY]",
-        default="default,single",
-        help="Comma-separated default/single policies, either order "
+        action="append",
+        choices=("default", "single"),
+        help="Restrict policies; repeat to select both "
         "(default: all policies supported by each TOML case)",
     )
     parser.add_argument("--warmups", type=int, help="Override manifest warmups")
@@ -1137,7 +1123,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         _resolve_sampling(suite, arguments.warmups, arguments.samples)
         matrix = select_matrix(
             suite, targets=arguments.target, cases=arguments.case,
-            thread_policies=arguments.thread_policy.split(","),
+            thread_policies=(
+                ("default", "single")
+                if arguments.thread_policy is None
+                else arguments.thread_policy
+            ),
         )
         if arguments.list:
             for cell in matrix:
