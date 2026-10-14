@@ -575,6 +575,22 @@ def test_success_writes_compact_artifacts(runner_context) -> None:
     ).read_text() == "out"
 
 
+def test_progress_identifies_actual_policy_in_dual_policy_run(runner_context) -> None:
+    progress = io.StringIO()
+    case = runner_context.suite.cases[0].id
+    matrix = runner.select_matrix(
+        runner_context.suite, cases=(case,), targets=("gfx950",),
+        thread_policies=("default", "single"),
+    )
+    _, result = _run(runner_context, matrix, "dual-policy-progress", progress=progress)
+    messages = progress.getvalue().splitlines()
+    for position, policy in enumerate(("default", "single"), start=1):
+        identity = f"[{position}/2] case={case} target=gfx950 thread_policy={policy}"
+        assert any(f"START {identity} provider=triton " in message for message in messages)
+        assert any(f"DONE  {identity} status=completed " in message for message in messages)
+    assert [item["thread_policy"] for item in result["benchmark_results"]] == ["default", "single"]
+
+
 def test_progress_reports_suite_and_cell_status(runner_context) -> None:
     progress = io.StringIO()
     _run(
@@ -591,10 +607,10 @@ def test_progress_reports_suite_and_cell_status(runner_context) -> None:
     )
     assert (
         messages[1]
-        == "[rocjitsu-benchmark] START [1/1] case=triton.rmsnorm_bf16.threads8 target=gfx950 provider=triton timeout_seconds=300"
+        == "[rocjitsu-benchmark] START [1/1] case=triton.rmsnorm_bf16.threads8 target=gfx950 thread_policy=default provider=triton timeout_seconds=300"
     )
     assert re.search(
-        "^\\[rocjitsu-benchmark\\] DONE  \\[1/1\\] case=triton\\.rmsnorm_bf16\\.threads8 target=gfx950 status=completed elapsed_seconds=\\d+\\.\\d median_s=1e-09$",
+        "^\\[rocjitsu-benchmark\\] DONE  \\[1/1\\] case=triton\\.rmsnorm_bf16\\.threads8 target=gfx950 thread_policy=default status=completed elapsed_seconds=\\d+\\.\\d median_s=1e-09$",
         messages[2],
     )
     assert re.search(
