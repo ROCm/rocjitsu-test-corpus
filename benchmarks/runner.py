@@ -327,7 +327,11 @@ def _policy_wrapper(wrapper: Sequence[str], policy: str) -> tuple[str, ...]:
     """Insert native budget options before the workload separator."""
     _thread_policy(policy)
     budget = ("--cpu-thread-budget", "1" if policy == "single" else "0")
-    position = wrapper.index("--") if "--" in wrapper else len(wrapper)
+    config_end = wrapper.index("{config}") + 1
+    try:
+        position = wrapper.index("--", config_end)
+    except ValueError:
+        position = len(wrapper)
     return (*wrapper[:position], *budget, *wrapper[position:])
 
 

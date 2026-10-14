@@ -9,6 +9,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -1404,6 +1405,55 @@ def test_config_snapshot_preserved_even_if_source_changes(runner_context):
         config = _artifact(output, test, "config.json")
         assert json.loads(config.read_text()) == expected_config
 
+
+
+@pytest.mark.parametrize("thread_policy", ["default", "single"])
+@pytest.mark.parametrize("launcher", ["direct", "env", "taskset"])
+def test_launcher_budget_reaches_probe_and_workload(runner_context, thread_policy, launcher):
+    script = runner_context.root / "rocjitsu stub.py"
+    log = runner_context.root / "stub-arguments.jsonl"
+    script.write_text(
+        "import json, sys\n"
+        f"with open({str(log)!r}, 'a') as stream:\n"
+        "    stream.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "print('Configured | 1 | 1 | 0 | 1' if '--thread-budget-table' in sys.argv else json.dumps(sys.argv[1:]))\n"
+    )
+    prefix = []
+    if launcher == "env":
+        executable = shutil.which("env")
+        if executable is None:
+            pytest.skip("env is unavailable")
+        prefix = [executable, "--"]
+    elif launcher == "taskset":
+        executable = shutil.which("taskset")
+        if executable is None or not hasattr(os, "sched_getaffinity"):
+            pytest.skip("taskset/allowed affinity is unavailable")
+        prefix = [executable, "--cpu-list", "--", str(min(os.sched_getaffinity(0)))]
+    wrapper = runner.parse_run_wrapper(shlex.join(
+        [*prefix, sys.executable, str(script), "--config", "{config}", "--"]
+    ))
+    configuration = runner._load_target_configuration(runner_context.configs["gfx950"])
+    target = runner._native_target_metadata(
+        configuration, "gfx950", runner_context.root / "probe", wrapper, thread_policy
+    )
+    cell = replace(_cell(runner_context, "triton.rmsnorm_bf16.threads8", "gfx950"), thread_policy=thread_policy)
+    command = runner.prepare_command(
+        runner_context.root / "timed", cell, run_wrapper=wrapper,
+        target=target, warmups=1, samples=3,
+    )
+    completed = runner._run_command(
+        command.argv, cwd=command.cwd, env=command.environment, timeout=10
+    )
+    assert completed.returncode == 0, completed.stderr
+    probe, workload = [json.loads(line) for line in log.read_text().splitlines()]
+    budget = "1" if thread_policy == "single" else "0"
+    for argv in (probe, workload):
+        assert argv[:1] == ["--config"]
+        assert argv[2:4] == ["--cpu-thread-budget", budget]
+    assert probe[4:] == ["--thread-budget-table"]
+    assert workload[4:6] == ["--", sys.executable]
+    assert workload[6] == str(runner.WORKLOAD_ROOT / "triton" / "workloads.py")
+    assert workload[workload.index("--samples") + 1] == "3"
 
 
 def test_wrapper_preserves_quoted_paths_and_literal_shell_arguments(runner_context):
