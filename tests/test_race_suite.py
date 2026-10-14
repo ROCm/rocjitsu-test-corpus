@@ -15,7 +15,7 @@ from test_suites import race
 
 def test_configs_preserve_every_moved_gtest() -> None:
     configs = race.load_target_configs(race.default_config_files())
-    expected_counts = {"gfx950": 63, "gfx1151": 21}
+    expected_counts = {"gfx942": 6, "gfx950": 77, "gfx1151": 27}
 
     for target, expected_count in expected_counts.items():
         cases = race.discover(make_target_spec(target), configs)
@@ -24,7 +24,12 @@ def test_configs_preserve_every_moved_gtest() -> None:
             target
         )
         assert all(
-            f"RaceTest.{target}_{case.metadata['name']}" in case.selector_names
+            (
+                f"RaceTest.vmem_{target}_{case.metadata['name'].removeprefix('vmem_')}"
+                if case.metadata["name"].startswith("vmem_")
+                else f"RaceTest.{target}_{case.metadata['name']}"
+            )
+            in case.selector_names
             for case in cases
         )
 
@@ -263,10 +268,14 @@ def _configs_with_exclusions(tmp_path: Path, target: str, **exclusions) -> list[
 
 def _source_gtests(target: str) -> set[str]:
     layout = race.TARGET_LAYOUT[target]
-    source = race.RACE_SOURCE_DIR / f"hip_race_{target}_test.hip"
+    sources = [race.RACE_SOURCE_DIR / "hip_race_vmem_test.hip"]
+    if target != "gfx942":
+        sources.append(race.RACE_SOURCE_DIR / f"hip_race_{target}_test.hip")
     pattern = re.compile(r"^TEST_F\(([^,]+),\s*([^)]+)\)", re.MULTILINE)
     return {
         f"{fixture.strip()}.{name.strip()}"
-        for fixture, name in pattern.findall(source.read_text(encoding="utf-8"))
-        if fixture.strip() == layout["fixture"]
+        for fixture, name in pattern.findall(
+            "\n".join(source.read_text(encoding="utf-8") for source in sources)
+        )
+        if fixture.strip() in (layout["fixture"], "VmemRaceTest")
     }

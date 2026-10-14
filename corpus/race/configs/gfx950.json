@@ -4,6 +4,14 @@
   "cases": [
     "vgpr_waitcnt",
     "vgpr_waitcnt_race",
+    "global_atomic_vmcnt",
+    "global_atomic_both_waits",
+    "global_atomic_no_wait_race",
+    "global_atomic_expcnt_only_race",
+    "global_atomic_masked_vmcnt",
+    "global_atomic_masked_both_waits",
+    "global_atomic_masked_no_wait_race",
+    "global_atomic_masked_expcnt_only_race",
     "flat_global_wait_both",
     "flat_global_vmcnt_only",
     "flat_global_lgkmcnt_only_race",
@@ -64,6 +72,12 @@
     "waw_global_load_then_mfma",
     "f64_vgpr_race",
     "f64_vgpr_safe",
-    "f64_vgpr_waw"
+    "f64_vgpr_waw",
+    "vmem_compiler_generated",
+    "vmem_vmcnt_only",
+    "vmem_no_wait_race",
+    "vmem_expcnt_only_race",
+    "vmem_flat_lds_exchange",
+    "vmem_flat_lds_exchange_race"
   ]
 }

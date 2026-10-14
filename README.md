@@ -74,8 +74,8 @@ uses target `gfx1201` and selects the first three; the other suites are opt-in.
 
 ### RocJITsu race-detector integration
 
-The opt-in `race` suite builds the existing gfx950 and gfx1151 HIP integration
-programs with the corpus HIP toolchain and runs each GoogleTest case separately.
+The opt-in `race` suite builds HIP integration programs for gfx942, gfx950
+and gfx1151 with the corpus HIP toolchain and runs each GoogleTest case separately.
 The caller supplies a plugin-free base simulator config through
 `ROCJITSU_RACE_CONFIG` and a run wrapper containing one standalone `{config}`
 token. The suite derives a private race-plugin config and report directory for
@@ -91,7 +91,11 @@ pytest tests/test_corpus.py \
 ```
 
 Set `ROCJITSU_RACE_BUILD_ROOT` to keep the CMake build outside the checkout.
-The HIP programs retain their original functional and race-report assertions;
+Returning-atomic tests cover compiler-generated and explicit VM-only waits,
+with no-wait and EXP-only controls. FLAT-to-LDS exchanges check both a
+synchronized barrier and a missing-barrier control on all three targets. The
+gfx950 suite also keeps full-wave and lane-zero atomic controls separate.
+The HIP programs retain their functional and race-report assertions;
 the corpus adapter only supplies build and launch isolation. The same build
 also runs the host-only unit tests for the race-log parser and expectation
 matcher used by those programs.

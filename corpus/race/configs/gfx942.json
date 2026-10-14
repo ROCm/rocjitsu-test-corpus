@@ -1,0 +1,12 @@
+{
+  "config_name": "gfx942",
+  "target": "gfx942",
+  "cases": [
+    "vmem_compiler_generated",
+    "vmem_vmcnt_only",
+    "vmem_no_wait_race",
+    "vmem_expcnt_only_race",
+    "vmem_flat_lds_exchange",
+    "vmem_flat_lds_exchange_race"
+  ]
+}
