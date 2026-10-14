@@ -200,7 +200,7 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
                 "each case must contain id, workload, suite, name, operation, "
                 "params, targets, thread_policies"
             )
-        for field in case_fields - {"params", "targets", "thread_policies"}:
+        for field in ("id", "workload", "suite", "name", "operation"):
             if not isinstance(entry[field], str) or not entry[field].strip():
                 raise RunnerError(f"case {field} must be a non-empty string")
         if not CASE_ID.fullmatch(entry["id"]):
@@ -243,29 +243,12 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
     )
 
 
-def combine_suites(suites: Sequence[Suite]) -> Suite:
-    """Combine definitions without hiding duplicates or timeout conflicts."""
-    if not suites:
-        raise RunnerError("manifest selection is empty")
-    if len({suite.timeout_seconds for suite in suites}) != 1:
-        raise RunnerError("manifest timeout_seconds values conflict")
-    cases = tuple(case for suite in suites for case in suite.cases)
-    if len({case.id for case in cases}) != len(cases):
-        raise RunnerError("duplicate case ID across manifests")
-    return Suite(
-        name=",".join(suite.name for suite in suites),
-        targets=tuple(dict.fromkeys(target for case in cases for target in case.targets)),
-        cases=cases,
-        timeout_seconds=suites[0].timeout_seconds,
-    )
-
-
 def select_matrix(
     suite: Suite,
     *,
     targets: Sequence[str] = (),
     cases: Sequence[str] = (),
-    thread_policies: Sequence[str] = ("default",),
+    thread_policies: Sequence[str] = ("default", "single"),
 ) -> tuple[Cell, ...]:
     """Select target/policy groups, retaining case order within each group."""
     for policy in thread_policies:
@@ -1055,14 +1038,34 @@ def run_suite(
     return run
 
 
+class _SingleManifest(argparse.Action):
+    """Reject repeated manifest flags instead of silently replacing a selection."""
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: str | None = None,
+    ) -> None:
+        if getattr(namespace, "_manifest_supplied", False):
+            parser.error("--manifest may only be supplied once")
+        setattr(namespace, self.dest, values)
+        namespace._manifest_supplied = True
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", type=Path, action="append", default=[])
+    parser.add_argument(
+        "--manifest", type=Path, action=_SingleManifest, default=DEFAULT_MANIFEST
+    )
     parser.add_argument("--target", action="append", default=[])
     parser.add_argument("--case", action="append", default=[])
     parser.add_argument(
-        "--thread-policy", choices=("default", "single", "default,single"),
-        default="default",
+        "--thread-policy",
+        choices=("default", "single", "default,single"),
+        default="default,single",
+        help="Restrict policies (default: all policies supported by each TOML case)",
     )
     parser.add_argument("--warmups", type=int, default=0)
     parser.add_argument("--samples", type=int, default=1)
@@ -1094,9 +1097,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         for signum in (signal.SIGHUP, signal.SIGTERM)
     }
     try:
-        suite = combine_suites(tuple(
-            load_manifest(path) for path in arguments.manifest or [DEFAULT_MANIFEST]
-        ))
+        suite = load_manifest(arguments.manifest)
         _integer(arguments.warmups, "warmups", allow_zero=True)
         _sample_count(arguments.samples)
         matrix = select_matrix(

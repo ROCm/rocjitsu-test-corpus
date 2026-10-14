@@ -11,7 +11,7 @@ numbers, not strings.
     "warmups": "<nonnegative integer>",
     "samples": "<positive odd integer>",
     "timeout_seconds": "<positive number>",
-    "benchmark_suite": "<manifest name; comma-joined names for multiple manifests>",
+    "benchmark_suite": "<manifest name>",
     "timestamp": "<run start timestamp>",
     "finished_at": "<run finish timestamp|null while running>",
     "wall_time_s": "<nonnegative number>"

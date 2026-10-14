@@ -72,8 +72,8 @@ DeepSeek W1 and W2 with 3072 tokens, four grouped 3584³ GEMMs, and persistent
 fixed launch settings: Triton tiles 128 × 128 × 64 with four warps and two stages;
 DeepSeek tiles 64 × 64 × 128 with eight warps, three stages, and unit base scales.
 The scale tensors also vary by row, column block, and reduction block for validation.
-Nightly uses zero warmups and one sample after compile-only preparation, with
-Rocjitsu's default CPU thread budget and the caller's CPU affinity.
+The runner defaults to zero warmups and one sample after compile-only preparation,
+with Rocjitsu's default CPU thread budget and the caller's CPU affinity.
 
 Seven of these definitions also support `single`, selecting five cases per
 target (10 target/case combinations):
@@ -87,15 +87,20 @@ single-threaded launch; those cases remain in the default suite only.
 End-to-end runtime includes setup, compilation, output reset, and CPU validation;
 it is longer than the sum of measured kernel durations.
 
-Use `--thread-policy default,single` to run all 38 supported combinations in one
-invocation and one `run.json`. `--thread-policy default` is the default; `single`
-selects only the supported single-worker cases. Cases are not duplicated in TOML.
+Without filters, the runner selects all TOML-supported case/target/policy
+combinations: 38 for this suite, in one invocation and one `run.json`. Explicit
+`--case`, `--target`, and `--thread-policy` filters narrow that supported set;
+they never add unsupported combinations. Use `--thread-policy default` for only
+default-worker cases or `--thread-policy single` for only supported single-worker
+cases. `--thread-policy default,single` explicitly selects both policies and is
+equivalent to omitting the policy filter. Cases are not duplicated in TOML.
 
 Use `--manifest benchmarks/suites/smoke.toml --warmups 1 --samples 3` for a short
 suite, repeated `--case` and `--target` flags for subsets, and
-`--warmups`/`--samples` for experiments (defaults 0/1). Repeat `--manifest` to
-combine standalone definitions; duplicate IDs and conflicting file timeouts
-are rejected, while different target support is allowed. Sample counts must
+`--warmups`/`--samples` for experiments (defaults 0/1). Each invocation accepts
+one manifest; repeated `--manifest` flags are rejected, including identical paths.
+Each file retains its scalar timeout: performance-v1 1200 seconds,
+plugin-overhead 300 seconds, and smoke 60 seconds. Sample counts must
 be positive and odd. `--list` shows case, target and policy columns
 without building or requiring GPU dependencies. Output directories must be new.
 Target/policy groups run sequentially, as do cases within each group. Failures
@@ -111,8 +116,8 @@ After that checkpoint, failures preserve partial results as usual.
 TensileLite cases require `TENSILE_CANDIDATE_ARTIFACTS` to point to generated
 artifacts and `TENSILE_CANDIDATE_RUNNER` to point to the native executable. Follow
 [the build and generation instructions](../corpus/benchmarks/tensile_candidates/README.md)
-before running nightly. The persistent and grouped Triton kernels and DeepSeek
-kernel are vendored in the corpus.
+before running the performance suite. The persistent and grouped Triton kernels
+and DeepSeek kernel are vendored in the corpus.
 
 Triton workloads write `workload.progress.json` beside their result, recording
 preparation, compilation, warmup, sample, and validation stages. Compilation
@@ -153,7 +158,7 @@ with the upstream CPU reference using explicit BF16 bounds (`rtol=0.016`,
 `atol=1e-5`). Reference chunks contain one batch, one KV head, and at most 128
 query positions, retaining all keys and absolute query offsets for causal/window
 masking. Each temporary FP32 attention matrix is at most 12 MiB for the largest
-nightly shape; full input and output storage still scales with the problem.
+performance-v1 shape; full input and output storage still scales with the problem.
 
 The extracted GPT-OSS attention implementation lives in
 `corpus/benchmarks/third_party/gpt_oss/attention.py`. Its `NOTICE.md`
@@ -222,7 +227,7 @@ Supported parameters (all dimensions are positive integers):
 | `deepseek_fp8` | `rows`, `columns`, `reduction`; optional `configuration = "large_tile"` | fp8 |
 
 The legacy `softmax` and `rmsnorm` workloads use local kernels and do not
-validate their outputs. The nightly `triton_softmax` and `triton_layernorm`
+validate their outputs. The performance-v1 `triton_softmax` and `triton_layernorm`
 workloads use pinned upstream kernels, varied inputs, output poisoning, and
 full-output CPU checks. RMSNorm and layer normalization are different operations:
 RMSNorm scales by the root mean square without subtracting the mean; layer

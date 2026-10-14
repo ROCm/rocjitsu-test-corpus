@@ -16,221 +16,27 @@ import sys
 import time
 import types
 from dataclasses import replace
-from functools import partial
 from pathlib import Path
-from types import SimpleNamespace
 from unittest import mock
 
 import pytest
+from support.benchmark_runner import (
+    _artifact,
+    _cell,
+    _matrix,
+    _payload,
+    _run,
+    _successful_process,
+    _with_policy,
+    _write_cache,
+)
 
 from benchmarks import runner
 
 
-# Keep harness behavior tests independent of the scheduled workload selection.
-def harness_suite():
-    return runner.Suite(
-        name="nightly",
-        targets=("gfx950", "gfx1250"),
-        timeout_seconds=300,
-        cases=(
-            runner.Case(
-                id="triton.rmsnorm_bf16.threads8",
-                workload="rmsnorm",
-                suite="Triton",
-                name="BF16 RMSNorm",
-                operation="RMSNorm",
-                targets=("gfx950", "gfx1250"),
-                thread_policies=("default", "single"),
-                params={
-                    "rows": 128,
-                    "columns": 4096,
-                    "dtype": "bf16",
-                    "epsilon": 1e-05,
-                },
-            ),
-            runner.Case(
-                id="triton.gemm_bf16_aligned.threads8",
-                workload="gemm",
-                suite="Triton",
-                name="Aligned BF16 GEMM",
-                operation="GEMM",
-                targets=("gfx950", "gfx1250"),
-                thread_policies=("default", "single"),
-                params={"m": 256, "n": 256, "k": 512, "dtype": "bf16"},
-            ),
-            runner.Case(
-                id="triton.gpt_oss_attention_bf16.threads8",
-                workload="gpt_oss_attention",
-                suite="GPT-OSS",
-                name="GPT-OSS BF16 attention",
-                operation="Attention",
-                targets=("gfx950", "gfx1250"),
-                thread_policies=("default", "single"),
-                params={
-                    "dtype": "bf16",
-                    "batch": 1,
-                    "query_heads": 64,
-                    "key_value_heads": 8,
-                    "sequence": 128,
-                    "window": 128,
-                    "head_dimension": 64,
-                },
-            ),
-        ),
-    )
-
-
-@pytest.fixture
-def runner_context(tmp_path, monkeypatch):
-    ctx = SimpleNamespace(
-        root=tmp_path,
-        build=tmp_path / "build",
-        rocm=tmp_path / "rocm",
-        source=tmp_path / "rocjitsu",
-    )
-    ctx.rocm.mkdir()
-    (ctx.source / "configs").mkdir(parents=True)
-    ctx.configs = {}
-    for target in ("gfx950", "gfx1250"):
-        path = ctx.source / "configs" / f"{target}.json"
-        path.write_text(json.dumps({"exec_mode": "functional", "num_threads": 8}))
-        ctx.configs[target] = path
-    ctx.build.mkdir()
-    _write_cache(ctx)
-    executable = ctx.build / "custom launcher"
-    executable.write_text("#!/bin/sh\n", encoding="utf-8")
-    executable.chmod(0o755)
-    ctx.wrapper = f'"{executable}" --config {{config}} --'
-    for plugin in ("logging", "race", "throughput"):
-        (ctx.build / f"librocjitsu_plugin_{plugin}.so").touch()
-    monkeypatch.setattr(runner, "_installed_rocm_path", lambda: ctx.rocm)
-    ctx.suite = harness_suite()
-    return ctx
-
-
-
-def _write_cache(runner_context, **overrides: str) -> None:
-    values = {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_HOME_DIRECTORY": str(runner_context.source),
-        "LTO": "OFF",
-        "RJ_ENABLE_ASAN": "OFF",
-        "RJ_ENABLE_MSAN": "OFF",
-        "RJ_ENABLE_TSAN": "OFF",
-        "RJ_ENABLE_UBSAN": "OFF",
-    }
-    values.update(overrides)
-    (runner_context.build / "CMakeCache.txt").write_text(
-        "".join((f"{key}:STRING={value}\n" for key, value in values.items())),
-        encoding="utf-8",
-    )
-
-
-def _matrix(runner_context, *cases: str, targets: tuple[str, ...] = ("gfx950",)):
-    return runner.select_matrix(runner_context.suite, cases=cases, targets=targets,
-        thread_policies=(runner_context.suite.cases[0].thread_policies[0],))
-
-
-def _with_policy(suite, policy):
-    return replace(suite, cases=tuple(replace(case, thread_policies=(policy,))
-                                      for case in suite.cases))
-
-
-def _cell(runner_context, case_id: str, target: str) -> runner.Cell:
-    definition = next(case for case in runner_context.suite.cases if case.id == case_id)
-    return runner.Cell(definition, target)
-
-
-def _artifact(output, test, name):
-    return output / test["target"] / test["thread_policy"] / "cases" / test["id"] / name
-
-
-def _payload(cell: runner.Cell, timings: list[int]) -> dict[str, object]:
-    return {
-        "schema": "rocjitsu.benchmark.workload.v1",
-        "case": cell.case,
-        "target": cell.target,
-        "provider": "triton",
-        "parameters": {"fixture": True},
-        "timings_ns": timings,
-    }
-
-
-def _successful_process(runner_context, argv, **_kwargs):
-    case = argv[argv.index("--case") + 1]
-    target = argv[argv.index("--target") + 1]
-    samples = int(argv[argv.index("--samples") + 1])
-    output = Path(argv[argv.index("--output") + 1])
-    output.write_text(
-        json.dumps(
-            _payload(_cell(runner_context, case, target), list(range(1, samples + 1)))
-        ),
-        encoding="utf-8",
-    )
-    config = json.loads(
-        Path(argv[argv.index("--config") + 1]).read_text(encoding="utf-8")
-    )
-    for plugin in config.get("plugins", {}):
-        report = Path(config["sinks"]["dir"]) / f"{plugin}.log"
-        report.write_text(f"{plugin} report\n", encoding="utf-8")
-    return subprocess.CompletedProcess(argv, 0, "out", "")
-
-
-def _run(
-    runner_context,
-    matrix,
-    name: str,
-    process=None,
-    samples=None,
-    plugin_profile: str = "none",
-    progress=None,
-    warmups=None,
-):
-    output = runner_context.root / name
-    def fake_native(config, *_args):
-        return runner.TargetMetadata(config)
-    native_context = (
-        contextlib.nullcontext() if getattr(runner_context, "native_probe", False)
-        else mock.patch.object(runner, "_native_target_metadata", side_effect=fake_native)
-    )
-    packages = {"rocm-sdk-devel": "7.2.0", "torch": "2.10.0", "triton": "3.6.0"}
-    with native_context, mock.patch.object(
-        runner,
-        "_source_info",
-        return_value={
-            "commit_sha": "a" * 40,
-            "commit_timestamp": "2026-09-01T21:42:10Z",
-            },
-    ), mock.patch.object(
-        runner,
-        "_environment_info",
-        return_value={
-            "hostname": "benchmark-host",
-            "platform": "Linux-test",
-            "kernel": "6.14.0",
-            "cpu": "test-cpu",
-            "python": "3.12.0",
-            "packages": packages,
-        },
-    ), mock.patch.object(
-        runner,
-        "_run_command",
-        side_effect=process or partial(_successful_process, runner_context),
-    ):
-        result = runner.run_suite(
-            runner_context.suite,
-            matrix,
-            build_dir=runner_context.build,
-            output=output,
-            samples=1 if samples is None else samples,
-            warmups=0 if warmups is None else warmups,
-            plugin_profile=plugin_profile,
-            progress=progress,
-            rocjitsu_source_dir=runner_context.source,
-            run_wrapper=runner_context.wrapper,
-            target_configs=runner_context.configs,
-        )
-    return (output, result)
+def test_runner_fixture_uses_automatic_thread_configuration(runner_context):
+    for config in runner_context.configs.values():
+        assert json.loads(config.read_text()) == {"exec_mode": "functional"}
 
 
 def test_default_manifest_has_full_ordered_matrix() -> None:
@@ -238,7 +44,7 @@ def test_default_manifest_has_full_ordered_matrix() -> None:
     matrix = runner.select_matrix(suite)
     assert suite.name == "performance-v1"
     assert len(suite.cases) == 20
-    assert len(matrix) == 28
+    assert len(matrix) == 38
     assert {cell.definition.suite for cell in matrix} == {
         "GPT-OSS",
         "DeepSeek",
@@ -249,7 +55,13 @@ def test_default_manifest_has_full_ordered_matrix() -> None:
     assert suite.targets == ("gfx950", "gfx1250")
     assert {
         target: sum(cell.target == target for cell in matrix) for target in suite.targets
-    } == {"gfx950": 12, "gfx1250": 16}
+    } == {"gfx950": 17, "gfx1250": 21}
+    assert {(cell.case, cell.target, cell.thread_policy) for cell in matrix} == {
+        (case.id, target, policy)
+        for case in suite.cases
+        for target in case.targets
+        for policy in case.thread_policies
+    }
     assert all(
         not cell.definition.targets or cell.target in cell.definition.targets
         for cell in matrix
@@ -378,9 +190,10 @@ def test_subsets_keep_manifest_order_and_reject_unknowns(runner_context) -> None
         cases=("triton.gemm_bf16_aligned.threads8", "triton.rmsnorm_bf16.threads8"),
         targets=("gfx1250",),
     )
-    assert matrix == (
-        _cell(runner_context, "triton.rmsnorm_bf16.threads8", "gfx1250"),
-        _cell(runner_context, "triton.gemm_bf16_aligned.threads8", "gfx1250"),
+    assert matrix == tuple(
+        replace(_cell(runner_context, case, "gfx1250"), thread_policy=policy)
+        for policy in ("default", "single")
+        for case in ("triton.rmsnorm_bf16.threads8", "triton.gemm_bf16_aligned.threads8")
     )
     with pytest.raises(runner.RunnerError, match="not in the suite"):
         runner.select_matrix(runner_context.suite, cases=("triton.unknown",))
@@ -475,7 +288,6 @@ def test_commands_forward_measurement_and_parameters(runner_context) -> None:
         assert command.environment["PYTHONHASHSEED"] == "0"
         assert command.environment["TRITON_CACHE_DIR"].endswith("triton/gfx950")
         effective_config = command.config_path.read_bytes()
-        assert json.loads(effective_config)["num_threads"] == 8
         assert json.loads(effective_config) == runner._load_target_configuration(runner_context.configs["gfx950"])
         assert command.argv[command.argv.index("--cpu-thread-budget") + 1] == "0"
 
@@ -756,7 +568,7 @@ def test_build_validation_requires_selected_plugin_binary(runner_context) -> Non
 def test_selected_configuration_is_preserved_without_hash(runner_context) -> None:
     configuration = runner_context.root / "target.json"
     configuration.write_text(
-        json.dumps({"exec_mode": "parallel", "num_threads": 8, "max_ticks": 100000}),
+        json.dumps({"exec_mode": "parallel", "max_ticks": 100000}),
         encoding="utf-8",
     )
     with mock.patch.dict(runner_context.configs, {"gfx950": configuration}, clear=True):
@@ -769,7 +581,6 @@ def test_selected_configuration_is_preserved_without_hash(runner_context) -> Non
             samples=1,
         )
     assert config["exec_mode"] == "parallel"
-    assert config["num_threads"] == 8
     assert "target_config_sha256" not in result["provenance"]["rocjitsu"]
 
 
@@ -814,9 +625,9 @@ def test_target_configuration_rejects_invalid_fields(runner_context) -> None:
     configuration = runner_context.root / "target.json"
     invalid_values = (
         [],
-        {"exec_mode": "", "num_threads": 1},
+        {"exec_mode": ""},
         {"exec_mode": True},
-        {"num_threads": 8},
+        {"max_ticks": 100},
     )
     for value in invalid_values:
         configuration.write_text(json.dumps(value), encoding="utf-8")
@@ -1402,7 +1213,7 @@ def test_config_snapshot_preserved_even_if_source_changes(runner_context):
     expected_config = runner._load_target_configuration(base)
 
     def change_source(argv, **kwargs):
-        base.write_text(json.dumps({"exec_mode": "changed", "num_threads": 99}))
+        base.write_text(json.dumps({"exec_mode": "changed", "max_ticks": 99}))
         return _successful_process(runner_context, argv, **kwargs)
 
     output, result = _run(
@@ -1525,23 +1336,16 @@ def test_missing_wrapper_executable_fails_cell(runner_context):
 
 
 @pytest.mark.parametrize("thread_policy", ["default", "single"])
-@pytest.mark.parametrize("scalar_overrides", [False, True])
 def test_thread_policy_and_recorded_native_allocation(
-    runner_context, thread_policy, scalar_overrides
+    runner_context, thread_policy
 ):
-    import dataclasses
     runner_context.native_probe = True
 
     runner_context.suite = _with_policy(runner_context.suite, thread_policy)
     policy = {
         "exec_mode": "functional",
         "cpu_thread_budget": 0,
-        "thread_allocations": [
-            {"num_threads": 8, "cpu_dispatch_threads": 25, "async_helper_threads": 16}
-        ],
     }
-    if scalar_overrides:
-        policy.update(num_threads=8, cpu_dispatch_threads=25, async_helper_threads=16)
     runner_context.configs["gfx950"].write_text(json.dumps(policy))
     expected_config = {**policy, "max_ticks": 0}
     allocation = (8, 25, 16, 48)
@@ -1593,7 +1397,6 @@ def test_thread_policy_and_recorded_native_allocation(
 def test_single_thread_policy_rejects_parallel_native_allocation(
     runner_context, allocation
 ):
-    import dataclasses
     runner_context.native_probe = True
 
     runner_context.suite = _with_policy(runner_context.suite, "single")
@@ -1673,14 +1476,14 @@ def test_runner_preserves_explicit_custom_ids(runner_context, case_id):
 
 
 def test_single_thread_suite_is_fixed_subset_with_library_coverage():
-    nightly = runner.load_manifest()
-    single = [case for case in nightly.cases if "single" in case.thread_policies]
+    suite = runner.load_manifest()
+    single = [case for case in suite.cases if "single" in case.thread_policies]
     assert len(single) == 7
     for case in single:
         assert not case.id.endswith((".default", ".single"))
         assert case.params.get("configuration") != "large_tile"
-    for target in nightly.targets:
-        matrix = runner.select_matrix(nightly, targets=[target], thread_policies=["single"])
+    for target in suite.targets:
+        matrix = runner.select_matrix(suite, targets=[target], thread_policies=["single"])
         assert len(matrix) == 5
         assert {cell.definition.suite for cell in matrix} == {
             "GPT-OSS",
@@ -1705,7 +1508,6 @@ def test_single_thread_suite_is_fixed_subset_with_library_coverage():
 def test_named_threads_reject_unavailable_native_policy(
     runner_context, code, text, thread_policy
 ):
-    import dataclasses
     runner_context.native_probe = True
 
     runner_context.suite = _with_policy(runner_context.suite, thread_policy)
