@@ -5,11 +5,17 @@
 """
 Check that ``cases.toml`` agrees with ``kernels/`` and the committed ``asm/``.
 
-``regenerate_asm.py --check`` compares assembly text and needs a compiler. This
-needs neither: it checks the kernel inventory against the files on disk, so a
-case and its pinned assembly cannot drift apart unnoticed::
+This needs no compiler: it checks the kernel inventory against the files on
+disk::
 
     python corpus/race/scripts/check_cases.py   # exit 1 on any mismatch
+
+Its guarantee is about the inventory only: every case has its source and its
+assembly, and every assembly file belongs to a case. It does not check that
+the assembly is up to date with its source. A kernel whose signature or body
+changed without regenerating its ``.s`` still passes. That needs the manual
+``regenerate_asm.py --check``, which compiles every case and compares the
+result with the committed assembly.
 
 The corpus's target set is ``[corpus] targets`` in ``cases.toml``, not whatever
 happens to be under ``asm/``, so a target whose assembly is missing entirely is

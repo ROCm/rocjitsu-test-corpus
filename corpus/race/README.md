@@ -116,6 +116,11 @@ python corpus/race/scripts/check_cases.py
 This is the check suited to CI. `tests/test_check_cases.py` runs it against the
 committed corpus under pytest.
 
+It is an inventory check only. It does not check that the assembly is up to date
+with its source: a kernel whose signature or body changed without regenerating
+its `.s` still passes. Only the manual `regenerate_asm.py --check` compiles the
+kernels and compares the result, so run it after changing a kernel.
+
 ## Adding a kernel or a target
 
 - **A kernel:** add `kernels/<kernel>.hip` and a `[[case]]` entry, regenerate,

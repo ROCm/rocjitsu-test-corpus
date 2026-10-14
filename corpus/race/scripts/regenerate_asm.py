@@ -17,7 +17,9 @@ its result changes when the toolchain does, which is not something a CI gate
 should depend on. It compares assembly text only. ``scripts/check_cases.py``
 checks the case inventory in ``cases.toml`` against ``kernels/`` and the
 committed assembly with no compiler; that is the check suited to CI, and
-``tests/test_check_cases.py`` runs it under pytest. The workflow is described
+``tests/test_check_cases.py`` runs it under pytest. It covers the inventory
+only, not whether the assembly is up to date with its source, which only this
+script's ``--check`` can tell. The workflow is described
 in ``corpus/race/README.md``.
 
 Why the assembly is committed rather than compiled per run: the compiler decides

@@ -137,8 +137,9 @@ def test_committed_manifest_declares_its_targets():
 # --- The inventory contract --------------------------------------------------
 #
 # No compiler is needed: the checker compares cases.toml with kernels/ and asm/
-# on disk, so pytest is what keeps the manifest and the pinned files from
-# drifting apart.
+# on disk, so pytest keeps the manifest and the set of pinned files in step. It
+# does not show that the assembly matches its source; that is the manual
+# regenerate_asm.py --check.
 
 
 def test_committed_inventory_passes(capsys):
