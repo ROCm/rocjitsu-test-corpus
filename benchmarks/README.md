@@ -92,8 +92,13 @@ combinations: 38 for this suite, in one invocation and one `run.json`. Explicit
 `--case`, `--target`, and `--thread-policy` filters narrow that supported set;
 they never add unsupported combinations. Use `--thread-policy default` for only
 default-worker cases or `--thread-policy single` for only supported single-worker
-cases. `--thread-policy default,single` explicitly selects both policies and is
-equivalent to omitting the policy filter. Cases are not duplicated in TOML.
+cases. Use `--thread-policy` with comma-separated `default` and/or `single`
+values. Both `default,single` and `single,default` select both policies and are
+equivalent to omitting the policy filter; execution order remains `default` then
+`single` regardless of input order. If the flag is repeated, standard argparse
+behavior keeps the last supplied value; values are not combined. Empty tokens,
+unknown policies and duplicate policies within a value are rejected.
+Cases are not duplicated in TOML.
 
 Use `--manifest benchmarks/suites/smoke.toml` for a short
 suite, repeated `--case` and `--target` flags for subsets, and

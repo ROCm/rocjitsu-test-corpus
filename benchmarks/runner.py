@@ -1075,6 +1075,19 @@ class _SingleManifest(argparse.Action):
         namespace._manifest_supplied = True
 
 
+def _policy_list(value: str) -> str:
+    """Validate exact comma-separated policy tokens, retaining their input order."""
+    policies = value.split(",")
+    try:
+        for policy in policies:
+            _thread_policy(policy)
+        if len(set(policies)) != len(policies):
+            raise RunnerError("thread_policy must not contain duplicates")
+    except RunnerError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -1084,9 +1097,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--case", action="append", default=[])
     parser.add_argument(
         "--thread-policy",
-        choices=("default", "single", "default,single"),
+        type=_policy_list,
+        metavar="POLICY[,POLICY]",
         default="default,single",
-        help="Restrict policies (default: all policies supported by each TOML case)",
+        help="Comma-separated default/single policies, either order "
+        "(default: all policies supported by each TOML case)",
     )
     parser.add_argument("--warmups", type=int, help="Override manifest warmups")
     parser.add_argument("--samples", type=int, help="Override manifest samples")

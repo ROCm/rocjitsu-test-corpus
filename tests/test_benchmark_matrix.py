@@ -291,6 +291,139 @@ def test_direct_sampling_validation_precedes_launch(
     assert not (ctx.root / "invalid-recipe").exists()
 
 
+@pytest.mark.parametrize(
+    "value", [None, "default", "single", "default,single", "single,default"]
+)
+def test_cli_policy_comma_list_preserves_supported_order(
+    value: str | None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    args = ["--list", "--target", "gfx950", "--target", "gfx1250"]
+    policies = ("default", "single") if value is None else tuple(value.split(","))
+    if value is not None:
+        args.extend(["--thread-policy", value])
+    expected = runner.select_matrix(runner.load_manifest(), thread_policies=policies)
+    assert runner.main(args) == 0
+    listed = [tuple(line.split("\t")) for line in capsys.readouterr().out.splitlines()]
+    assert listed == [(cell.case, cell.target, cell.thread_policy) for cell in expected]
+
+
+@pytest.mark.parametrize(
+    "values", [("default", "single"), ("single", "default"), ("default", "default")]
+)
+def test_cli_repeated_policy_keeps_last_value(
+    values: tuple[str, str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert (
+        runner.build_parser()
+        .parse_args(["--thread-policy", values[0], "--thread-policy", values[1]])
+        .thread_policy
+        == values[1]
+    )
+    expected = runner.select_matrix(
+        runner.load_manifest(), thread_policies=(values[1],)
+    )
+    assert (
+        runner.main(
+            ["--list", "--thread-policy", values[0], "--thread-policy", values[1]]
+        )
+        == 0
+    )
+    listed = [tuple(line.split("\t")) for line in capsys.readouterr().out.splitlines()]
+    assert listed == [(cell.case, cell.target, cell.thread_policy) for cell in expected]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        ",",
+        "default,",
+        ",single",
+        "default,,single",
+        "unknown",
+        "default,unknown",
+        "default,default",
+        "single,single",
+        "single, default",
+    ],
+)
+@pytest.mark.parametrize("listing", [False, True])
+def test_invalid_policy_list_rejected_before_loading(
+    value: str,
+    listing: bool,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    args = ["--thread-policy", value, *(["--list"] if listing else [])]
+    with mock.patch.object(runner, "load_manifest") as load, mock.patch.object(
+        runner, "run_suite"
+    ) as execute:
+        with pytest.raises(SystemExit) as error:
+            runner.main(args)
+        assert error.value.code == 2
+        load.assert_not_called()
+        execute.assert_not_called()
+    assert "--thread-policy" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("value", ["default,single", "single,default"])
+def test_policy_list_cli_run_retains_canonical_order(
+    runner_context: SimpleNamespace,
+    value: str,
+) -> None:
+    ctx = runner_context
+    ctx.suite = replace(ctx.suite, warmups=1, samples=3)
+    output = ctx.root / "policy-cli"
+    budgets = []
+
+    def execute(argv: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        budgets.append(argv[argv.index("--cpu-thread-budget") + 1])
+        assert argv[argv.index("--warmups") + 1] == "1"
+        assert argv[argv.index("--samples") + 1] == "3"
+        return _successful_process(ctx, argv, **kwargs)
+
+    args = [
+        "--thread-policy",
+        value,
+        "--case",
+        ctx.suite.cases[0].id,
+        "--target",
+        "gfx950",
+        "--build-dir",
+        str(ctx.build),
+        "--rocjitsu-source-dir",
+        str(ctx.source),
+        "--output",
+        str(output),
+        "--run-wrapper",
+        ctx.wrapper,
+        "--target-config",
+        f"gfx950={ctx.configs['gfx950']}",
+    ]
+    with mock.patch.object(
+        runner, "load_manifest", return_value=ctx.suite
+    ), mock.patch.object(
+        runner,
+        "_native_target_metadata",
+        side_effect=lambda config, *_: runner.TargetMetadata(config),
+    ), mock.patch.object(
+        runner, "_run_command", side_effect=execute
+    ):
+        assert runner.main(args) == 0
+    raw = json.loads((output / "run.json").read_text())
+    assert budgets == ["0", "1"]
+    assert [row["thread_policy"] for row in raw["benchmark_results"]] == [
+        "default",
+        "single",
+    ]
+    assert all(row["status"] == "completed" for row in raw["benchmark_results"])
+    assert (
+        raw["execution_summary"]["warmups"],
+        raw["execution_summary"]["samples"],
+    ) == (1, 3)
+
+
 def test_consolidated_matrix_and_defaults() -> None:
     suite = runner.load_manifest()
     matrix = runner.select_matrix(suite, thread_policies=("default", "single"))
@@ -316,7 +449,8 @@ def test_consolidated_matrix_and_defaults() -> None:
 
 
 @pytest.mark.parametrize(
-    "policies", [None, ("default",), ("single",), ("default", "single")]
+    "policies",
+    [None, ("default",), ("single",), ("default", "single"), ("single", "default")],
 )
 @pytest.mark.parametrize("filtered", [False, True])
 def test_cli_and_direct_selection_intersect_manifest_support(
@@ -469,7 +603,7 @@ def test_cli_rejects_repeated_manifest_before_loading(
 @pytest.mark.parametrize(
     "args",
     [
-        ["--thread-policy", "single,default"],
+        ["--thread-policy", "single,default,single"],
         ["--thread-policy", "unknown"],
         ["--unknown"],
     ],
