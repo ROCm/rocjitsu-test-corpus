@@ -51,7 +51,9 @@ def test_default_manifest_has_full_ordered_matrix() -> None:
         "Triton",
         "TensileLite",
     }
-    assert matrix[:2] == tuple(runner.Cell(case, "gfx950") for case in suite.cases[:2])
+    assert matrix[:2] == tuple(
+        runner.Cell(case, "gfx950", "default") for case in suite.cases[:2]
+    )
     assert suite.targets == ("gfx950", "gfx1250")
     assert {
         target: sum(cell.target == target for cell in matrix) for target in suite.targets
@@ -1546,8 +1548,10 @@ def test_tensile_candidate_command_and_provider(runner_context, tmp_path):
         "Candidate",
         "GEMM",
         {"dtype": "bf16"},
+        targets=("gfx950",),
+        thread_policies=("default",),
     )
-    cell = runner.Cell(case, "gfx950")
+    cell = runner.Cell(case, "gfx950", "default")
     command = runner.prepare_command(
         tmp_path / "out",
         cell,

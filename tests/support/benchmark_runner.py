@@ -141,7 +141,7 @@ def _with_policy(suite: runner.Suite, policy: str) -> runner.Suite:
 
 def _cell(runner_context: SimpleNamespace, case_id: str, target: str) -> runner.Cell:
     definition = next(case for case in runner_context.suite.cases if case.id == case_id)
-    return runner.Cell(definition, target)
+    return runner.Cell(definition, target, "default")
 
 
 def _artifact(output: Path, test: Mapping[str, Any], name: str) -> Path:

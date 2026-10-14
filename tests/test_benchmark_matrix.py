@@ -17,6 +17,52 @@ from support.benchmark_runner import _run, _successful_process
 from benchmarks import runner
 
 
+@pytest.mark.parametrize("missing", ["targets", "thread_policies"])
+def test_case_constructor_requires_support_declarations(missing: str) -> None:
+    arguments: dict[str, Any] = {
+        "id": "copy.small",
+        "workload": "copy",
+        "suite": "Custom",
+        "name": "Small copy",
+        "operation": "Copy",
+        "params": {},
+        "targets": ("gfx950",),
+        "thread_policies": ("default", "single"),
+    }
+    del arguments[missing]
+    with pytest.raises(TypeError, match=missing):
+        runner.Case(**arguments)
+
+
+def test_cell_constructor_requires_explicit_policy() -> None:
+    case = runner.load_manifest().cases[0]
+    with pytest.raises(TypeError, match="thread_policy"):
+        runner.Cell(case, case.targets[0])
+
+
+@pytest.mark.parametrize("policies", [("default",), ("single",), ("default", "single")])
+def test_case_constructor_preserves_explicit_support(
+    policies: tuple[str, ...],
+) -> None:
+    options = {"thread_policies": policies}
+    case = runner.Case(
+        id="copy.small",
+        workload="copy",
+        suite="Custom",
+        name="Small copy",
+        operation="Copy",
+        params={},
+        targets=("gfx950",),
+        **options,
+    )
+    expected = policies
+    assert case.thread_policies == expected
+    suite = runner.Suite("custom", case.targets, (case,), 60)
+    matrix = runner.select_matrix(suite)
+    assert tuple(cell.thread_policy for cell in matrix) == expected
+    assert all(cell.definition is case and cell.target == "gfx950" for cell in matrix)
+
+
 def test_consolidated_matrix_and_defaults() -> None:
     suite = runner.load_manifest()
     matrix = runner.select_matrix(suite, thread_policies=("default", "single"))

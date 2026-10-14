@@ -98,8 +98,8 @@ class Case:
     name: str
     operation: str
     params: dict[str, Any]
-    targets: tuple[str, ...] = ()
-    thread_policies: tuple[str, ...] = ("default",)
+    targets: tuple[str, ...]
+    thread_policies: tuple[str, ...]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -114,7 +114,7 @@ class Suite:
 class Cell:
     definition: Case
     target: str
-    thread_policy: str = "default"
+    thread_policy: str
 
     @property
     def case(self) -> str:
