@@ -25,6 +25,8 @@ def harness_suite() -> runner.Suite:
     return runner.Suite(
         name="nightly",
         targets=("gfx950", "gfx1250"),
+        warmups=0,
+        samples=1,
         timeout_seconds=300,
         cases=(
             runner.Case(
@@ -232,8 +234,8 @@ def _run(
             matrix,
             build_dir=runner_context.build,
             output=output,
-            samples=1 if samples is None else samples,
-            warmups=0 if warmups is None else warmups,
+            **({"samples": samples} if samples is not None else {}),
+            **({"warmups": warmups} if warmups is not None else {}),
             plugin_profile=plugin_profile,
             progress=progress,
             rocjitsu_source_dir=runner_context.source,

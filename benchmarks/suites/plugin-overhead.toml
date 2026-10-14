@@ -1,4 +1,6 @@
 name = "plugin-overhead"
+warmups = 3
+samples = 21
 timeout_seconds = 300
 
 [[cases]]

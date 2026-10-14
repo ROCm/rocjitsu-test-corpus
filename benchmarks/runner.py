@@ -36,6 +36,8 @@ TARGET_NAME = re.compile(r"gfx[0-9A-Za-z]+")
 MANIFEST_FIELDS = {
     "name",
     "cases",
+    "warmups",
+    "samples",
     "timeout_seconds",
 }
 PACKAGE_NAMES = (
@@ -107,6 +109,8 @@ class Suite:
     name: str
     targets: tuple[str, ...]
     cases: tuple[Case, ...]
+    warmups: int
+    samples: int
     timeout_seconds: float
 
 
@@ -166,6 +170,22 @@ def _thread_policy(value: Any) -> Literal["default", "single"]:
     if value not in ("default", "single"):
         raise RunnerError('thread_policy must be "default" or "single"')
     return value
+
+
+def _resolve_sampling(
+    suite: Suite,
+    warmups: int | None,
+    samples: int | None,
+) -> tuple[int, int]:
+    """Resolve each optional override against the validated manifest recipe."""
+    manifest_warmups = _integer(suite.warmups, "warmups", allow_zero=True)
+    manifest_samples = _sample_count(suite.samples)
+    return (
+        manifest_warmups
+        if warmups is None
+        else _integer(warmups, "warmups", allow_zero=True),
+        manifest_samples if samples is None else _sample_count(samples),
+    )
 
 
 def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
@@ -239,6 +259,8 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
         name=name,
         targets=tuple(dict.fromkeys(target for case in cases for target in case.targets)),
         cases=tuple(cases),
+        warmups=_integer(value["warmups"], "warmups", allow_zero=True),
+        samples=_sample_count(value["samples"]),
         timeout_seconds=float(timeout),
     )
 
@@ -819,8 +841,8 @@ def run_suite(
     output: str | Path,
     run_wrapper: str,
     target_configs: Mapping[str, Path],
-    warmups: int = 0,
-    samples: int = 1,
+    warmups: int | None = None,
+    samples: int | None = None,
     plugin_profile: str = "none",
     progress: TextIO | None = None,
 ) -> dict[str, Any]:
@@ -847,8 +869,7 @@ def run_suite(
     output_path = Path(output).expanduser().resolve()
     if output_path.exists():
         raise RunnerError(f"output already exists: {output_path}")
-    selected_warmups = _integer(warmups, "warmups", allow_zero=True)
-    selected_samples = _sample_count(samples)
+    selected_warmups, selected_samples = _resolve_sampling(suite, warmups, samples)
     build = Path(build_dir).expanduser().resolve()
     source_dir = Path(rocjitsu_source_dir).expanduser().resolve()
     wrapper = parse_run_wrapper(run_wrapper)
@@ -1067,8 +1088,8 @@ def build_parser() -> argparse.ArgumentParser:
         default="default,single",
         help="Restrict policies (default: all policies supported by each TOML case)",
     )
-    parser.add_argument("--warmups", type=int, default=0)
-    parser.add_argument("--samples", type=int, default=1)
+    parser.add_argument("--warmups", type=int, help="Override manifest warmups")
+    parser.add_argument("--samples", type=int, help="Override manifest samples")
     parser.add_argument(
         "--plugin-profile", choices=tuple(PLUGIN_PROFILES), default="none"
     )
@@ -1098,8 +1119,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
     try:
         suite = load_manifest(arguments.manifest)
-        _integer(arguments.warmups, "warmups", allow_zero=True)
-        _sample_count(arguments.samples)
+        _resolve_sampling(suite, arguments.warmups, arguments.samples)
         matrix = select_matrix(
             suite, targets=arguments.target, cases=arguments.case,
             thread_policies=arguments.thread_policy.split(","),

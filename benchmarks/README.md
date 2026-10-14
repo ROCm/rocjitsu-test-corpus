@@ -72,7 +72,7 @@ DeepSeek W1 and W2 with 3072 tokens, four grouped 3584³ GEMMs, and persistent
 fixed launch settings: Triton tiles 128 × 128 × 64 with four warps and two stages;
 DeepSeek tiles 64 × 64 × 128 with eight warps, three stages, and unit base scales.
 The scale tensors also vary by row, column block, and reduction block for validation.
-The runner defaults to zero warmups and one sample after compile-only preparation,
+This manifest defaults to zero warmups and one sample after compile-only preparation,
 with Rocjitsu's default CPU thread budget and the caller's CPU affinity.
 
 Seven of these definitions also support `single`, selecting five cases per
@@ -95,9 +95,15 @@ default-worker cases or `--thread-policy single` for only supported single-worke
 cases. `--thread-policy default,single` explicitly selects both policies and is
 equivalent to omitting the policy filter. Cases are not duplicated in TOML.
 
-Use `--manifest benchmarks/suites/smoke.toml --warmups 1 --samples 3` for a short
+Use `--manifest benchmarks/suites/smoke.toml` for a short
 suite, repeated `--case` and `--target` flags for subsets, and
-`--warmups`/`--samples` for experiments (defaults 0/1). Each invocation accepts
+`--warmups`/`--samples` for experiments. Omitted sampling flags use the selected
+manifest's recipe: performance-v1 0 warmups/1 sample, smoke 1/3, and
+plugin-overhead 3/21. Each flag overrides only its corresponding setting;
+for example, smoke with `--warmups 0` uses 0 warmups and 3 samples.
+Warmups must be nonnegative integers, and samples must be positive odd integers.
+Invalid manifest recipes are rejected even when CLI overrides are supplied.
+Each invocation accepts
 one manifest; repeated `--manifest` flags are rejected, including identical paths.
 Each file retains its scalar timeout: performance-v1 1200 seconds,
 plugin-overhead 300 seconds, and smoke 60 seconds. Sample counts must
@@ -197,9 +203,10 @@ Threading is execution policy, recorded separately as each result's
 it is metadata, not identity. The runner carries
 the explicit manifest ID unchanged into selection, raw results, and case output
 paths; it does not derive IDs from display names or strip suffixes at runtime.
-Each file has only `name`, `timeout_seconds` and cases; every case explicitly
+Each file has required `name`, `warmups`, `samples`, `timeout_seconds` and cases;
+every case explicitly
 declares nonempty `targets` and `thread_policies`. There are no includes/profiles
-or file-level target/threading/sampling fields.
+or file-level target/threading fields, and no per-case sampling recipes.
 Dimensions, dtypes, and operation parameters belong in TOML; launch settings
 such as tile sizes, warps, and stages stay in code and are recorded in results.
 To add a new operation, add its preparation and parameter validation, register
@@ -278,7 +285,7 @@ stdout and stderr, retains existing workload and plugin artifacts, and
 finalizes `run.json` with a finish time and failed status for unfinished cells.
 Completed cells retain their results; cells that have not started have no artifacts.
 
-Use `--manifest benchmarks/suites/plugin-overhead.toml --warmups 3 --samples 21` and
+Use `--manifest benchmarks/suites/plugin-overhead.toml` (3 warmups and 21 samples) and
 `--plugin-profile none|logging|race|throughput`, running each profile into a
 separate output directory. Each enabled profile must produce its report.
 Reports cover the entire process, including setup and warmups; timing samples

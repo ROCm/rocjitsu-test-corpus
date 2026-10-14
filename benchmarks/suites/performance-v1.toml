@@ -1,4 +1,6 @@
 name = "performance-v1"
+warmups = 0
+samples = 1
 timeout_seconds = 1200
 
 [[cases]]

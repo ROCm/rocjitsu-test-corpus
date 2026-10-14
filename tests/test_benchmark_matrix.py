@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Multi-target/policy producer contract regression tests."""
 
+import io
 import json
 import subprocess
 from collections.abc import Sequence
@@ -57,10 +58,237 @@ def test_case_constructor_preserves_explicit_support(
     )
     expected = policies
     assert case.thread_policies == expected
-    suite = runner.Suite("custom", case.targets, (case,), 60)
+    suite = runner.Suite("custom", case.targets, (case,), 0, 1, 60)
     matrix = runner.select_matrix(suite)
     assert tuple(cell.thread_policy for cell in matrix) == expected
     assert all(cell.definition is case and cell.target == "gfx950" for cell in matrix)
+
+
+@pytest.mark.parametrize(
+    "manifest,warmups,samples",
+    [("performance-v1", 0, 1), ("smoke", 1, 3), ("plugin-overhead", 3, 21)],
+)
+def test_manifest_sampling_recipes(manifest: str, warmups: int, samples: int) -> None:
+    suite = runner.load_manifest(runner.BENCHMARK_ROOT / "suites" / f"{manifest}.toml")
+    assert (suite.warmups, suite.samples) == (warmups, samples)
+
+
+@pytest.mark.parametrize(
+    "warmups,samples", [(None, None), (0, None), (None, 5), (2, 5)]
+)
+def test_direct_sampling_precedence_reaches_output_commands_and_progress(
+    runner_context: SimpleNamespace,
+    warmups: int | None,
+    samples: int | None,
+) -> None:
+    ctx = runner_context
+    ctx.suite = replace(ctx.suite, warmups=1, samples=3)
+    expected = (1 if warmups is None else warmups, 3 if samples is None else samples)
+    observed = []
+
+    def execute(argv: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        observed.append(
+            (
+                int(argv[argv.index("--warmups") + 1]),
+                int(argv[argv.index("--samples") + 1]),
+            )
+        )
+        return _successful_process(ctx, argv, **kwargs)
+
+    progress = io.StringIO()
+    output, raw = _run(
+        ctx,
+        runner.select_matrix(ctx.suite)[:1],
+        "sampling",
+        process=execute,
+        warmups=warmups,
+        samples=samples,
+        progress=progress,
+    )
+    summary = raw["execution_summary"]
+    assert (summary["warmups"], summary["samples"]) == expected
+    assert observed == [expected]
+    assert f"warmups={expected[0]} samples={expected[1]}" in progress.getvalue()
+    assert len(raw["benchmark_results"][0]["timing_results_s"]) == expected[1]
+    assert raw["benchmark_results"][0]["status"] == "completed"
+    assert json.loads((output / "run.json").read_text())["execution_summary"] == summary
+
+
+@pytest.mark.parametrize("manifest", ["performance-v1", "smoke", "plugin-overhead"])
+@pytest.mark.parametrize(
+    "flags",
+    [[], ["--warmups", "0"], ["--samples", "5"], ["--warmups", "2", "--samples", "5"]],
+)
+def test_cli_sampling_precedence(
+    runner_context: SimpleNamespace,
+    manifest: str,
+    flags: list[str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ctx = runner_context
+    path = runner.BENCHMARK_ROOT / "suites" / f"{manifest}.toml"
+    ctx.suite = runner.load_manifest(path)
+    expected_warmups = (
+        int(flags[flags.index("--warmups") + 1])
+        if "--warmups" in flags
+        else ctx.suite.warmups
+    )
+    expected_samples = (
+        int(flags[flags.index("--samples") + 1])
+        if "--samples" in flags
+        else ctx.suite.samples
+    )
+    output = ctx.root / "cli-sampling"
+    observed = []
+
+    def execute(argv: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        observed.append(
+            (
+                int(argv[argv.index("--warmups") + 1]),
+                int(argv[argv.index("--samples") + 1]),
+            )
+        )
+        return _successful_process(ctx, argv, **kwargs)
+
+    args = [
+        "--manifest",
+        str(path),
+        "--case",
+        ctx.suite.cases[0].id,
+        "--target",
+        ctx.suite.cases[0].targets[0],
+        "--thread-policy",
+        "default",
+        "--build-dir",
+        str(ctx.build),
+        "--rocjitsu-source-dir",
+        str(ctx.source),
+        "--output",
+        str(output),
+        "--run-wrapper",
+        ctx.wrapper,
+        *flags,
+    ]
+    for target, config in ctx.configs.items():
+        args.extend(["--target-config", f"{target}={config}"])
+    with mock.patch.object(
+        runner,
+        "_native_target_metadata",
+        side_effect=lambda config, *_: runner.TargetMetadata(config),
+    ), mock.patch.object(runner, "_run_command", side_effect=execute):
+        assert runner.main(args) == 0
+    raw = json.loads((output / "run.json").read_text())
+    summary = raw["execution_summary"]
+    assert (summary["warmups"], summary["samples"]) == (
+        expected_warmups,
+        expected_samples,
+    )
+    assert observed == [(expected_warmups, expected_samples)]
+    assert len(raw["benchmark_results"][0]["timing_results_s"]) == expected_samples
+    assert (
+        f"warmups={expected_warmups} samples={expected_samples}"
+        in capsys.readouterr().out
+    )
+
+
+@pytest.mark.parametrize("field", ["warmups", "samples"])
+def test_manifest_requires_sampling_fields(tmp_path: Path, field: str) -> None:
+    text = (runner.BENCHMARK_ROOT / "suites/smoke.toml").read_text()
+    path = tmp_path / "missing.toml"
+    path.write_text(
+        "\n".join(
+            line for line in text.splitlines() if not line.startswith(f"{field} =")
+        )
+    )
+    with pytest.raises(runner.RunnerError, match=f"missing=.*{field}"):
+        runner.load_manifest(path)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("warmups", "-1"),
+        ("warmups", "true"),
+        ("warmups", "1.5"),
+        ("warmups", '"1"'),
+        ("warmups", "[]"),
+        ("samples", "0"),
+        ("samples", "-1"),
+        ("samples", "2"),
+        ("samples", "true"),
+        ("samples", "1.5"),
+        ("samples", '"3"'),
+        ("samples", "[]"),
+    ],
+)
+def test_invalid_manifest_sampling_rejected_despite_cli_override(
+    tmp_path: Path,
+    field: str,
+    value: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    text = (runner.BENCHMARK_ROOT / "suites/smoke.toml").read_text()
+    original = "warmups = 1" if field == "warmups" else "samples = 3"
+    path = tmp_path / "invalid.toml"
+    path.write_text(text.replace(original, f"{field} = {value}"))
+    with pytest.raises(runner.RunnerError, match=field):
+        runner.load_manifest(path)
+    with mock.patch.object(runner, "run_suite") as execute:
+        assert (
+            runner.main(
+                ["--manifest", str(path), "--list", "--warmups", "0", "--samples", "1"]
+            )
+            == 2
+        )
+        execute.assert_not_called()
+    assert field in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("warmups", -1),
+        ("warmups", True),
+        ("warmups", 1.5),
+        ("warmups", "1"),
+        ("samples", 0),
+        ("samples", -1),
+        ("samples", 2),
+        ("samples", True),
+        ("samples", 1.5),
+        ("samples", "3"),
+    ],
+)
+@pytest.mark.parametrize("source", ["recipe", "override"])
+def test_direct_sampling_validation_precedes_launch(
+    runner_context: SimpleNamespace,
+    field: str,
+    value: Any,
+    source: str,
+) -> None:
+    ctx = runner_context
+    if source == "recipe":
+        ctx.suite = replace(ctx.suite, **{field: value})
+        overrides: dict[str, Any] = {"warmups": 0, "samples": 1}
+    else:
+        overrides = {field: value}
+    with mock.patch.object(runner, "validate_build") as validate, mock.patch.object(
+        runner, "_run_command"
+    ) as execute:
+        with pytest.raises(runner.RunnerError, match=field):
+            runner.run_suite(
+                ctx.suite,
+                runner.select_matrix(ctx.suite)[:1],
+                build_dir=ctx.build,
+                rocjitsu_source_dir=ctx.source,
+                output=ctx.root / "invalid-recipe",
+                run_wrapper=ctx.wrapper,
+                target_configs=ctx.configs,
+                **overrides,
+            )
+        validate.assert_not_called()
+        execute.assert_not_called()
+    assert not (ctx.root / "invalid-recipe").exists()
 
 
 def test_consolidated_matrix_and_defaults() -> None:
@@ -80,7 +308,11 @@ def test_consolidated_matrix_and_defaults() -> None:
         ("gfx1250", "single"),
     ]
     args = runner.build_parser().parse_args([])
-    assert (args.warmups, args.samples, args.thread_policy) == (0, 1, "default,single")
+    assert (args.warmups, args.samples, args.thread_policy) == (
+        None,
+        None,
+        "default,single",
+    )
 
 
 @pytest.mark.parametrize(

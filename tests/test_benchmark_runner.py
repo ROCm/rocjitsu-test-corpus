@@ -112,7 +112,7 @@ def test_manifest_rejects_unknown_workload(runner_context) -> None:
 def test_manifest_only_variant_forwards_parameters_and_metadata(runner_context) -> None:
     manifest = runner_context.root / "variant.toml"
     manifest.write_text(
-        'name = "custom"\ntimeout_seconds = 60\n\n[[cases]]\nid = "copy.small_bf16"\nworkload = "copy"\nsuite = "Custom suite"\nname = "Small BF16 copy"\noperation = "Copy"\ntargets = ["gfx950"]\nthread_policies = ["default"]\nparams = { dtype = "bf16", elements = 12345 }\n',
+        'name = "custom"\nwarmups = 0\nsamples = 1\ntimeout_seconds = 60\n\n[[cases]]\nid = "copy.small_bf16"\nworkload = "copy"\nsuite = "Custom suite"\nname = "Small BF16 copy"\noperation = "Copy"\ntargets = ["gfx950"]\nthread_policies = ["default"]\nparams = { dtype = "bf16", elements = 12345 }\n',
         encoding="utf-8",
     )
     runner_context.suite = runner.load_manifest(manifest)
@@ -1731,7 +1731,7 @@ def test_output_created_by_other_process_is_preserved(runner_context):
     assert (output / "keep").read_text() == "other process"
 
 
-@pytest.mark.parametrize("field", ["targets", "warmups", "samples", "thread_policy", "num_threads"])
+@pytest.mark.parametrize("field", ["targets", "thread_policy", "num_threads"])
 def test_manifest_rejects_file_level_selection(runner_context, field):
     path = runner_context.root / "ambiguous.toml"
     path.write_text(f'{field} = 1\n' + runner.DEFAULT_MANIFEST.read_text())

@@ -1,4 +1,6 @@
 name = "smoke"
+warmups = 1
+samples = 3
 timeout_seconds = 60
 
 [[cases]]
