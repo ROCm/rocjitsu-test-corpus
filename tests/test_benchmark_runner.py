@@ -177,6 +177,7 @@ def _run(
     plugin_profile: str = "none",
     progress=None,
     warmups=None,
+    source_info=None,
 ):
     output = runner_context.root / name
     def fake_native(config, *_args):
@@ -189,7 +190,8 @@ def _run(
     with native_context, mock.patch.object(
         runner,
         "_source_info",
-        return_value={
+        return_value=source_info or {
+            "dirty": False,
             "commit_sha": "a" * 40,
             "commit_timestamp": "2026-09-01T21:42:10Z",
             },
@@ -535,6 +537,7 @@ def test_success_writes_compact_artifacts(runner_context) -> None:
     assert summary == {
         "warmups": 3, "samples": 3, "timeout_seconds": 300,
         "benchmark_suite": "nightly", "threading_mode": "default",
+        "plugin_profile": "none",
         "timestamp": summary["timestamp"], "finished_at": summary["finished_at"],
         "wall_time_s": summary["wall_time_s"],
     }
@@ -548,6 +551,7 @@ def test_success_writes_compact_artifacts(runner_context) -> None:
     }
     assert provenance["rocjitsu"] == {
         "rocjitsu_commit_sha": "a" * 40,
+        "rocjitsu_dirty": False,
         "rocjitsu_commit_timestamp": "2026-09-01T21:42:10Z",
         "target_config_sha256": {"gfx950": runner._load_target_configuration(
             runner_context.configs["gfx950"], thread_policy="default")[1]},
@@ -555,6 +559,7 @@ def test_success_writes_compact_artifacts(runner_context) -> None:
     }
     assert provenance["corpus"] == {
         "corpus_commit_sha": "a" * 40,
+        "corpus_dirty": False,
         "corpus_commit_timestamp": "2026-09-01T21:42:10Z",
     }
     assert provenance["auxiliary"] == {
@@ -565,6 +570,7 @@ def test_success_writes_compact_artifacts(runner_context) -> None:
     assert test == {
         "id": "triton.rmsnorm_bf16.threads8", "suite": "Triton",
         "name": "BF16 RMSNorm", "target": "gfx950",
+        "operation": "RMSNorm", "workload": "rmsnorm",
         "problem": {"dtype": "bf16", "rows": 128, "columns": 4096, "epsilon": 1e-5},
         "timing_results_s": [1e-9, 2e-9, 3e-9],
         "status": "completed", "exit_code": 0, "error": None,
@@ -842,10 +848,10 @@ def test_source_info_preserves_sha_when_timestamp_is_invalid(runner_context) -> 
     with mock.patch.object(
         runner.subprocess,
         "check_output",
-        side_effect=["abc123\n", "invalid\n"],
+        side_effect=["abc123\n", "invalid\n", ""],
     ) as check_output:
         result = runner._source_info(runner_context.source)
-    assert result == {"commit_sha": "abc123", "commit_timestamp": None}
+    assert result == {"commit_sha": "abc123", "commit_timestamp": None, "dirty": False}
     assert check_output.call_args_list[1].args[0] == [
         "git",
         "show",
@@ -853,7 +859,7 @@ def test_source_info_preserves_sha_when_timestamp_is_invalid(runner_context) -> 
         "--format=%cI",
         "abc123",
     ]
-    assert check_output.call_count == 2
+    assert check_output.call_count == 3
     for call in check_output.call_args_list:
         assert call.kwargs["cwd"] == runner_context.source
         assert call.kwargs["stderr"] is subprocess.DEVNULL
@@ -863,7 +869,7 @@ def test_source_info_ties_timestamp_to_resolved_sha(runner_context) -> None:
     with mock.patch.object(
         runner.subprocess,
         "check_output",
-        side_effect=["abc123\n", "2026-09-02T09:30:00-07:00\n"],
+        side_effect=["abc123\n", "2026-09-02T09:30:00-07:00\n", ""],
     ) as check_output:
         result = runner._source_info(runner_context.source)
     assert result["commit_sha"] == "abc123"
@@ -883,7 +889,7 @@ def test_source_info_falls_back_when_git_is_unavailable(runner_context) -> None:
         runner.subprocess, "check_output", side_effect=[unavailable]
     ) as check_output:
         result = runner._source_info(runner_context.source)
-    assert result == {"commit_sha": None, "commit_timestamp": None}
+    assert result == {"commit_sha": None, "commit_timestamp": None, "dirty": None}
     assert check_output.call_count == 1
 
 
@@ -1877,3 +1883,83 @@ def test_numeric_one_is_not_the_single_worker_policy(runner_context):
     with pytest.raises(runner.RunnerError, match="numeric num_threads is unsupported"):
         _run(runner_context, _matrix(runner_context), "numeric-one")
     assert not (runner_context.root / "numeric-one").exists()
+
+
+def test_raw_plugin_profiles_are_distinguishable(runner_context):
+    records = {}
+    for profile in ("none", "race"):
+        output, _ = _run(
+            runner_context, _matrix(runner_context), f"profile-{profile}",
+            samples=1, plugin_profile=profile,
+        )
+        records[profile] = json.loads((output / "run.json").read_text())
+        summary = records[profile]["execution_summary"]
+        assert summary.pop("plugin_profile") == profile
+        for key in ("timestamp", "finished_at", "wall_time_s"):
+            summary.pop(key)
+    # The profile must distinguish these runs even though the base config hashes
+    # exclude the per-cell plugins and report sinks.
+    assert records["none"] == records["race"]
+
+
+@pytest.mark.parametrize("dirty", [True, False, None])
+def test_raw_provenance_preserves_source_dirty_state(runner_context, dirty):
+    output, _ = _run(
+        runner_context, _matrix(runner_context), "source-state", samples=1,
+        source_info={"commit_sha": "a" * 40, "commit_timestamp": None, "dirty": dirty},
+    )
+    provenance = json.loads((output / "run.json").read_text())["provenance"]
+    for repository in ("rocjitsu", "corpus"):
+        assert provenance[repository][f"{repository}_dirty"] is dirty
+
+
+def test_source_info_detects_modified_checkout(tmp_path):
+    def git(*args):
+        return subprocess.check_output(["git", *args], cwd=tmp_path, text=True).strip()
+
+    git("init", "--quiet")
+    tracked = tmp_path / "tracked.txt"
+    tracked.write_text("original\n")
+    git("add", "tracked.txt")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.com",
+        "commit", "--quiet", "--signoff", "-m", "Initial reference")
+    clean = runner._source_info(tmp_path)
+    assert clean["dirty"] is False
+    tracked.write_text("modified\n")
+    dirty = runner._source_info(tmp_path)
+    assert dirty == {**clean, "dirty": True}
+    git("add", "tracked.txt")
+    assert runner._source_info(tmp_path)["dirty"] is True
+    tracked.write_text("original\n")
+    git("add", "tracked.txt")
+    (tmp_path / "untracked.txt").touch()
+    assert runner._source_info(tmp_path)["dirty"] is True
+
+
+def test_source_info_preserves_revision_when_status_is_unavailable(tmp_path):
+    with mock.patch.object(runner.subprocess, "check_output", side_effect=[
+        "abc123\n", "2026-09-02T09:30:00-07:00\n",
+        subprocess.CalledProcessError(128, ["git", "status"]),
+    ]):
+        result = runner._source_info(tmp_path)
+    assert result == {
+        "commit_sha": "abc123", "commit_timestamp": "2026-09-02T16:30:00Z",
+        "dirty": None,
+    }
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_raw_results_preserve_operation_and_workload(runner_context, exit_code):
+    def early_failure(argv, **kwargs):
+        return subprocess.CompletedProcess(argv, exit_code, "", "early failure")
+
+    process = early_failure if exit_code else None
+    matrix = _matrix(runner_context)
+    output, _ = _run(runner_context, matrix, "classification", samples=1, process=process)
+    records = json.loads((output / "run.json").read_text())["benchmark_results"]
+    for cell, record in zip(matrix, records, strict=True):
+        assert record["operation"] == cell.definition.operation
+        assert record["workload"] == cell.definition.workload
+        assert record["status"] == ("completed" if exit_code == 0 else "failed")
+        if exit_code:
+            assert not _artifact(output, record, "workload.json").exists()
