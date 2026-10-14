@@ -254,6 +254,17 @@ def test_default_manifest_has_full_ordered_matrix() -> None:
     assert suite.timeout_seconds == 1200
 
 
+def test_nightly_triton_pairs_have_launch_reset_coverage():
+    from benchmark_adapter_cases import CASES
+
+    nightly_pairs = {
+        (case.workload, case.params.get("configuration"))
+        for case in runner.load_manifest().cases
+        if case.workload != "tensile_candidate"
+    }
+    assert nightly_pairs == set(CASES)
+
+
 def test_smoke_manifest_has_single_triton_case(runner_context) -> None:
     smoke = runner.load_manifest(runner.BENCHMARK_ROOT / "suites" / "smoke.toml")
     assert smoke.name == "smoke"
@@ -696,13 +707,25 @@ def test_rejects_build_from_another_worktree(runner_context) -> None:
         )
 
 
-@pytest.mark.parametrize("rocm_path", [None, "", "/another-sdk"])
-def test_build_validation_ignores_test_sdk_path(runner_context, rocm_path) -> None:
-    overrides = {} if rocm_path is None else {"ROCM_PATH": rocm_path}
+@pytest.mark.parametrize(
+    "overrides", [{}, {"ROCM_PATH": ""}, {"ROCM_PATH": "/another-sdk"}]
+)
+def test_build_validation_ignores_cached_rocm_path(runner_context, overrides) -> None:
     _write_cache(runner_context, **overrides)
     runner.validate_build(
         runner_context.build, rocjitsu_source_dir=runner_context.source
     )
+
+
+def test_build_validation_requires_installed_sdk(runner_context, monkeypatch) -> None:
+    def missing_sdk():
+        raise runner.RunnerError("the rocm-sdk-devel package is not installed")
+
+    monkeypatch.setattr(runner, "_installed_rocm_path", missing_sdk)
+    with pytest.raises(runner.RunnerError, match="rocm-sdk-devel package is not installed"):
+        runner.validate_build(
+            runner_context.build, rocjitsu_source_dir=runner_context.source
+        )
 
 
 def test_sdk_discovery_requires_installed_package(monkeypatch) -> None:
