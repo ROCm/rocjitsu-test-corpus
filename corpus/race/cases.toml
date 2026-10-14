@@ -16,7 +16,7 @@
 # Fields:
 #   id           stable selector for the case
 #   kernel       basename under kernels/, without .hip
-#   requires     the corpus targets this kernel assembles for; empty means
+#   targets      the corpus targets this kernel assembles for; empty or absent means
 #                every one of them
 #   headers      optional: headers outside ROCm's defaults the kernel includes.
 #                regenerate_asm.py skips the case, keeping its committed
@@ -32,112 +32,112 @@ targets = ["gfx950", "gfx1250"]
 [[case]]
 id = "add-checked"
 kernel = "add_checked"
-requires = []
+targets = []
 
 [[case]]
 id = "add-buffer"
 kernel = "add_buffer"
-requires = []
+targets = []
 
 [[case]]
 id = "double-unsafe"
 kernel = "double_unsafe"
-requires = []
+targets = []
 
 [[case]]
 id = "collatz"
 kernel = "collatz"
-requires = []
+targets = []
 
 [[case]]
 id = "atomic-inc"
 kernel = "atomic_inc"
-requires = []
+targets = []
 
 [[case]]
 id = "pointer-chase"
 kernel = "pointer_chase"
-requires = []
+targets = []
 
 [[case]]
 id = "war-pattern"
 kernel = "war_pattern"
-requires = []
+targets = []
 
 [[case]]
 id = "waw-pattern"
 kernel = "waw_pattern"
-requires = []
+targets = []
 
 # --- Scratch -----------------------------------------------------------------
 
 [[case]]
 id = "scratch-access"
 kernel = "scratch_access"
-requires = []
+targets = []
 
 # --- LDS ---------------------------------------------------------------------
 
 [[case]]
 id = "lds-reduce"
 kernel = "lds_reduce"
-requires = []
+targets = []
 
 [[case]]
 id = "lds-war-pattern"
 kernel = "lds_war_pattern"
-requires = []
+targets = []
 
 [[case]]
 id = "trans-lds"
 kernel = "trans_lds"
-requires = []
+targets = []
 
 # --- Tensor DMA into LDS -----------------------------------------------------
 
 [[case]]
 id = "tensor-lds"
 kernel = "tensor_lds"
-requires = ["gfx1250"]
+targets = ["gfx1250"]
 
 [[case]]
 id = "tensor-lds-offset"
 kernel = "tensor_lds_offset"
-requires = ["gfx1250"]
+targets = ["gfx1250"]
 
 [[case]]
 id = "fa-barrier-epoch"
 kernel = "fa_barrier_epoch"
-requires = ["gfx1250"]
+targets = ["gfx1250"]
 
 # --- Transcendentals ---------------------------------------------------------
 
 [[case]]
 id = "trans-sin-cos"
 kernel = "trans_sin_cos"
-requires = []
+targets = []
 
 [[case]]
 id = "trans-rcp-sqrt"
 kernel = "trans_rcp_sqrt"
-requires = []
+targets = []
 
 [[case]]
 id = "trans-chain"
 kernel = "trans_chain"
-requires = []
+targets = []
 
 # --- WMMA --------------------------------------------------------------------
 
 [[case]]
 id = "wmma-exp"
 kernel = "wmma_exp"
-requires = ["gfx1250"]
+targets = ["gfx1250"]
 
 [[case]]
 id = "wmma-rocwmma"
 kernel = "wmma_rocwmma"
-requires = ["gfx1250"]
+targets = ["gfx1250"]
 # Needs the rocWMMA headers. regenerate_asm.py looks for them under ROCm's
 # include directory, any -I passed with --cxxflags "-I/path/to/include", and
 # the absolute entries of CPATH and CPLUS_INCLUDE_PATH, and skips the case --
@@ -149,4 +149,4 @@ headers = ["rocwmma/rocwmma.hpp"]
 [[case]]
 id = "global-byte-eviction"
 kernel = "global_byte_eviction"
-requires = []
+targets = []

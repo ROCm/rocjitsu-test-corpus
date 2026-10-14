@@ -293,10 +293,10 @@ def load_manifest() -> dict:
     if not targets or not all(isinstance(target, str) for target in targets):
         raise SystemExit("cases.toml: [corpus] targets must list the gfx targets the corpus is built for")
     for case in manifest["case"]:
-        for target in case.get("requires", []):
+        for target in case.get("targets", []):
             if target not in targets:
                 raise SystemExit(
-                    f"cases.toml [{case['id']}]: requires {target}, which is not in "
+                    f"cases.toml [{case['id']}]: lists target {target}, which is not in "
                     f"[corpus] targets; add it there first"
                 )
     return manifest
@@ -324,7 +324,7 @@ def expected_outputs(cases: list[dict], targets: list[str]) -> set[tuple[str, st
         (target, f"{case['kernel']}.s")
         for target in targets
         for case in cases
-        if not case.get("requires") or target in case["requires"]
+        if not case.get("targets") or target in case["targets"]
     }
 
 
@@ -344,8 +344,8 @@ def regenerate(
     skipped: list[str] = []
     for target in targets:
         for case in cases:
-            requires = case.get("requires", [])
-            if requires and target not in requires:
+            case_targets = case.get("targets", [])
+            if case_targets and target not in case_targets:
                 continue
             if (missing := missing_headers(case, extra_flags)):
                 skipped.append(

@@ -27,7 +27,7 @@ Each `[[case]]` names one independently buildable kernel:
 |---|---|
 | `id` | Stable selector for the case. |
 | `kernel` | Basename under `kernels/`, without `.hip`. |
-| `requires` | The corpus targets the kernel builds for. Empty means every corpus target. |
+| `targets` | The corpus targets the kernel builds for. Empty or absent means every corpus target. |
 | `headers` | Optional. Headers outside ROCm's defaults that the kernel includes, such as `rocwmma/rocwmma.hpp`. |
 
 ## Why the assembly is pinned
@@ -108,7 +108,7 @@ python corpus/race/scripts/check_cases.py
 - `[corpus] targets` is set, and `asm/` has a directory for each target and for
   nothing else;
 - cases use only known fields, with unique ids and kernels;
-- every target a case `requires` is a corpus target;
+- every target in a case's `targets` is a corpus target;
 - every case has its `kernels/<kernel>.hip` and, for each target it builds for,
   its `asm/<target>/<kernel>.s`;
 - every committed `.s` file belongs to a case that builds for that target.

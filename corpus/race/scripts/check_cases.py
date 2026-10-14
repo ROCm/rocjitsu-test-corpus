@@ -24,7 +24,7 @@ caught. It checks that:
 * ``[corpus] targets`` names at least one target, and ``asm/`` has a directory
   for each and for nothing else;
 * every case uses only known fields, and no two cases share an id or a kernel;
-* every target a case ``requires`` is a corpus target;
+* every target in a case's ``targets`` is a corpus target;
 * every case has ``kernels/<kernel>.hip`` and, for each target it builds for,
   ``asm/<target>/<kernel>.s``;
 * every ``asm/<target>/*.s`` belongs to a case that builds for that target.
@@ -41,7 +41,7 @@ ASM_DIR = CORPUS_ROOT / "asm"
 KERNELS_DIR = CORPUS_ROOT / "kernels"
 CASES_PATH = CORPUS_ROOT / "cases.toml"
 
-KNOWN_FIELDS = frozenset({"id", "kernel", "requires", "headers"})
+KNOWN_FIELDS = frozenset({"id", "kernel", "targets", "headers"})
 
 
 def asm_targets() -> list[str]:
@@ -51,8 +51,8 @@ def asm_targets() -> list[str]:
 
 
 def case_targets(case: dict, all_targets: list[str]) -> list[str]:
-    """The targets a case builds for: its ``requires``, or every target."""
-    return sorted(case.get("requires") or all_targets)
+    """The targets a case builds for: its ``targets``, or every corpus target."""
+    return sorted(case.get("targets") or all_targets)
 
 
 def check(cases: list[dict], all_targets: list[str]) -> list[str]:
@@ -82,9 +82,9 @@ def check(cases: list[dict], all_targets: list[str]) -> list[str]:
 
         if not (KERNELS_DIR / f"{case['kernel']}.hip").is_file():
             errors.append(f"{where}: kernels/{case['kernel']}.hip is missing")
-        for target in case.get("requires", []):
+        for target in case.get("targets", []):
             if target not in all_targets:
-                errors.append(f"{where}: requires {target}, which is not in [corpus] targets")
+                errors.append(f"{where}: lists target {target}, which is not in [corpus] targets")
 
         for target in case_targets(case, all_targets):
             if target not in all_targets:

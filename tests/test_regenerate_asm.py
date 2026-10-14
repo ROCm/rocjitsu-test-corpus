@@ -244,7 +244,7 @@ def test_check_fails_on_uncommitted_file(drift_dirs, capsys):
 # --- The corpus target set ---------------------------------------------------
 #
 # cases.toml declares the targets the corpus is built for. A portable case builds
-# for exactly those, and a case's requires must name only those, so adding a
+# for exactly those, and a case's targets must name only those, so adding a
 # target is a deliberate edit to the manifest.
 
 
@@ -263,7 +263,7 @@ def manifest(tmp_path: Path, monkeypatch):
     return write
 
 
-PORTABLE_CASE = '[[case]]\nid = "portable"\nkernel = "kernel"\nrequires = []\n'
+PORTABLE_CASE = '[[case]]\nid = "portable"\nkernel = "kernel"\ntargets = []\n'
 
 
 def test_default_targets_come_from_the_manifest_not_asm(manifest, monkeypatch, tmp_path):
@@ -283,10 +283,10 @@ def test_requested_target_must_be_a_corpus_target(manifest):
         regen.targets_for(["gfx1201"])
 
 
-def test_requires_outside_the_corpus_targets_is_rejected(manifest):
+def test_case_target_outside_the_corpus_targets_is_rejected(manifest):
     manifest(
         ["gfx950", "gfx1250"],
-        PORTABLE_CASE + '[[case]]\nid = "new"\nkernel = "new"\nrequires = ["gfx1201"]\n',
+        PORTABLE_CASE + '[[case]]\nid = "new"\nkernel = "new"\ntargets = ["gfx1201"]\n',
     )
     with pytest.raises(SystemExit, match="gfx1201.*not in \\[corpus\\] targets"):
         regen.load_cases()
@@ -303,7 +303,7 @@ def test_portable_case_builds_for_every_corpus_target(manifest, monkeypatch, tmp
     install_fake_compiler(monkeypatch, tmp_path, "output")
     manifest(
         ["gfx950", "gfx1250"],
-        PORTABLE_CASE + '[[case]]\nid = "only"\nkernel = "only"\nrequires = ["gfx1250"]\n',
+        PORTABLE_CASE + '[[case]]\nid = "only"\nkernel = "only"\ntargets = ["gfx1250"]\n',
     )
     (kernel.parent / "only.hip").write_text("__global__ void only() {}\n")
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
@@ -382,7 +382,7 @@ def test_relative_environment_include_path_is_not_searched(
 
 # --- What the script says about regeneration and --check ----------------------
 #
-# cases.toml is an inventory: id, kernel, requires and headers. The messages
+# cases.toml is an inventory: id, kernel, targets and headers. The messages
 # describe regenerating as a change to the pinned assembly, and --check as the
 # textual comparison it performs, without mutation-site fields cases.toml does
 # not have.
@@ -431,7 +431,7 @@ def test_write_summary_does_not_mention_ordinals(manifest, monkeypatch, tmp_path
 # keeps skipping cases whose optional headers are unavailable.
 
 ROCWMMA_CASE = (
-    '[[case]]\nid = "wmma"\nkernel = "wmma"\nrequires = []\n'
+    '[[case]]\nid = "wmma"\nkernel = "wmma"\ntargets = []\n'
     'headers = ["rocwmma/rocwmma.hpp"]\n'
 )
 
@@ -491,7 +491,7 @@ def test_check_with_nothing_selected_is_incomplete(manifest, corpus_main, capsys
     run, _ = corpus_main
     manifest(
         ["gfx950", "gfx1250"],
-        '[[case]]\nid = "only"\nkernel = "only"\nrequires = ["gfx1250"]\n',
+        '[[case]]\nid = "only"\nkernel = "only"\ntargets = ["gfx1250"]\n',
     )
     assert run("--check", "--target", "gfx950") == 3
     out = capsys.readouterr()
@@ -791,3 +791,31 @@ def test_help_is_short_and_points_to_the_readme(monkeypatch, capsys):
     # README, not in --help.
     assert "Why the assembly is committed" not in help_text
     assert "CI drift gate" not in help_text
+
+
+
+# --- The per-case field is targets ---------------------------------------------
+
+
+def test_case_without_targets_regenerates_for_every_corpus_target(
+    manifest, monkeypatch, tmp_path, kernel
+):
+    install_fake_compiler(monkeypatch, tmp_path, "output")
+    manifest(["gfx950", "gfx1250"], '[[case]]\nid = "portable"\nkernel = "kernel"\n')
+    monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
+    out_root = tmp_path / "out"
+    assert regen.regenerate(regen.targets_for([]), [], out_root) == (2, [], [])
+    assert sorted(str(p.relative_to(out_root)) for p in out_root.rglob("*.s")) == [
+        "gfx1250/kernel.s",
+        "gfx950/kernel.s",
+    ]
+
+
+def test_requires_is_rejected_rather_than_ignored(manifest):
+    # Ignoring it would turn a target-specific case into a portable one.
+    manifest(
+        ["gfx950", "gfx1250"],
+        '[[case]]\nid = "only"\nkernel = "only"\nrequires = ["gfx1250"]\n',
+    )
+    with pytest.raises(SystemExit, match="'requires' is now 'targets'"):
+        regen.load_cases()

@@ -25,8 +25,8 @@ def load_script():
 
 check_cases = load_script()
 
-PORTABLE = '[[case]]\nid = "portable"\nkernel = "portable"\nrequires = []\n'
-GFX1250_ONLY = '[[case]]\nid = "only"\nkernel = "only"\nrequires = ["gfx1250"]\n'
+PORTABLE = '[[case]]\nid = "portable"\nkernel = "portable"\ntargets = []\n'
+GFX1250_ONLY = '[[case]]\nid = "only"\nkernel = "only"\ntargets = ["gfx1250"]\n'
 
 
 @pytest.fixture
@@ -86,24 +86,24 @@ def test_missing_target_directory_is_reported(corpus, capsys):
     assert "asm/gfx950/portable.s is missing" in out
 
 
-def test_requires_outside_the_corpus_targets_is_reported(corpus, capsys):
+def test_case_target_outside_the_corpus_targets_is_reported(corpus, capsys):
     corpus(
         ["gfx950", "gfx1250"],
-        PORTABLE + '[[case]]\nid = "only"\nkernel = "only"\nrequires = ["gfx1201"]\n',
+        PORTABLE + '[[case]]\nid = "only"\nkernel = "only"\ntargets = ["gfx1201"]\n',
         ["gfx950/portable", "gfx1250/portable"],
     )
     code, out = run(capsys)
     assert code == 1
-    assert "requires gfx1201, which is not in [corpus] targets" in out
+    assert "lists target gfx1201, which is not in [corpus] targets" in out
 
 
-def test_requires_does_not_widen_portable_cases(corpus, capsys):
+def test_case_target_does_not_widen_portable_cases(corpus, capsys):
     # A case requiring a new target, even with its assembly committed, does not
     # make every portable case build for that target: the portable case is not
     # expected under asm/gfx1201/, and the undeclared directory is reported.
     corpus(
         ["gfx950", "gfx1250"],
-        PORTABLE + '[[case]]\nid = "only"\nkernel = "only"\nrequires = ["gfx1201"]\n',
+        PORTABLE + '[[case]]\nid = "only"\nkernel = "only"\ntargets = ["gfx1201"]\n',
         ["gfx950/portable", "gfx1250/portable", "gfx1201/only"],
     )
     code, out = run(capsys)
@@ -151,7 +151,7 @@ def test_committed_inventory_passes(capsys):
 
 
 def test_unknown_field_is_reported(corpus, capsys):
-    corpus(["gfx950"], PORTABLE.replace("requires = []", 'requires = []\nordinal = 3'), ["gfx950/portable"])
+    corpus(["gfx950"], PORTABLE.replace("targets = []", 'targets = []\nordinal = 3'), ["gfx950/portable"])
     code, out = run(capsys)
     assert code == 1
     assert "cases.toml [portable]: unknown field 'ordinal'" in out
@@ -192,3 +192,32 @@ def test_duplicate_id_and_kernel_are_reported(corpus, capsys):
     assert code == 1
     assert "cases.toml [portable]: duplicate id" in out
     assert "cases.toml [portable]: kernel portable is already used by another case" in out
+
+
+
+# --- The per-case field is targets ---------------------------------------------
+#
+# A case's target allowlist is ``targets``, matching ``[corpus] targets``.
+# ``requires`` means capabilities elsewhere in the repository, so it is not
+# accepted here, and a case without ``targets`` builds for every corpus target.
+
+
+def test_case_without_targets_builds_for_every_corpus_target(corpus, capsys):
+    corpus(
+        ["gfx950", "gfx1250"],
+        '[[case]]\nid = "portable"\nkernel = "portable"\n',
+        ["gfx950/portable", "gfx1250/portable"],
+    )
+    code, out = run(capsys)
+    assert code == 0, out
+
+
+def test_requires_is_rejected_with_its_new_name(corpus, capsys):
+    corpus(
+        ["gfx950", "gfx1250"],
+        '[[case]]\nid = "only"\nkernel = "only"\nrequires = ["gfx1250"]\n',
+        ["gfx1250/only"],
+    )
+    code, out = run(capsys)
+    assert code == 1
+    assert "cases.toml [only]: 'requires' is now 'targets'" in out
