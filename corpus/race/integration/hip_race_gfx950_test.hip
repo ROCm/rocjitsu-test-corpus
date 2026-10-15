@@ -8,7 +8,7 @@
 // the test parses the structured race log to verify that races were
 // (or were not) detected.
 //
-// ctest runs each TEST() in its own process (via --gtest_filter) so that
+// The pytest race adapter runs each TEST_F in its own process (via --gtest_filter) so that
 // each test gets a fresh output directory (RJ_SINK_DIR). The race plugin
 // writes to RJ_SINK_DIR/race.log via the plugin sink system.
 //
@@ -76,6 +76,7 @@ __global__ void vgpr_race_kernel(const float *src, float *dst) {
 TEST_F(Gfx950RaceTest, vgpr_waitcnt) {
   auto *src = allocWithData<float>(64), *dst = alloc<float>(64);
   vgpr_no_race_kernel<<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -83,6 +84,7 @@ TEST_F(Gfx950RaceTest, vgpr_waitcnt) {
 TEST_F(Gfx950RaceTest, vgpr_waitcnt_race) {
   auto *src = allocWithData<float>(64), *dst = alloc<float>(64);
   vgpr_race_kernel<<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kVgprWaitcntRaceExpectation);
 }
@@ -135,6 +137,7 @@ static constexpr RaceExpectation kFlatPartialWaitRaceExpectation{
 TEST_F(Gfx950RaceTest, flat_global_wait_both) {
   auto *src = allocWithData<float>(64), *dst = alloc<float>(64);
   flat_global_wait_kernel<0, 0><<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -142,6 +145,7 @@ TEST_F(Gfx950RaceTest, flat_global_wait_both) {
 TEST_F(Gfx950RaceTest, flat_global_vmcnt_only) {
   auto *src = allocWithData<float>(64), *dst = alloc<float>(64);
   flat_global_wait_kernel<0, kFlatLgkmcntNoWait><<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -149,24 +153,28 @@ TEST_F(Gfx950RaceTest, flat_global_vmcnt_only) {
 TEST_F(Gfx950RaceTest, flat_global_lgkmcnt_only_race) {
   auto *src = allocWithData<float>(64), *dst = alloc<float>(64);
   flat_global_wait_kernel<kFlatVmcntNoWait, 0><<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kFlatPartialWaitRaceExpectation);
 }
 
 TEST_F(Gfx950RaceTest, flat_lds_wait_both) {
   flat_lds_wait_kernel<0, 0><<<1, 64>>>(alloc<int>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
 
 TEST_F(Gfx950RaceTest, flat_lds_vmcnt_only_race) {
   flat_lds_wait_kernel<0, kFlatLgkmcntNoWait><<<1, 64>>>(alloc<int>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kFlatPartialWaitRaceExpectation);
 }
 
 TEST_F(Gfx950RaceTest, flat_lds_lgkmcnt_only) {
   flat_lds_wait_kernel<kFlatVmcntNoWait, 0><<<1, 64>>>(alloc<int>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -190,6 +198,7 @@ __global__ void flat_global_copy_kernel(const int *src, int *dst) {
 TEST_F(Gfx950RaceTest, flat_global_copy_vmcnt) {
   auto *src = allocWithData<int>(64), *dst = alloc<int>(64);
   flat_global_copy_kernel<0><<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
   ExpectNoRace();
 
@@ -203,6 +212,7 @@ TEST_F(Gfx950RaceTest, flat_global_copy_vmcnt) {
 TEST_F(Gfx950RaceTest, flat_global_copy_missing_vmcnt_race) {
   auto *src = allocWithData<int>(64), *dst = alloc<int>(64);
   flat_global_copy_kernel<kFlatVmcntNoWait><<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
   ExpectRace({.findings = FindingCount::OneOrMore,
               .kernel = "flat_global_copy_kernel",
@@ -246,6 +256,7 @@ static constexpr RaceExpectation kVmcntNoWaitRaceExpectation{
 TEST_F(Gfx950RaceTest, vmcnt_no_wait_race) {
   auto *src = allocWithData<float>(64), *dst = alloc<float>(64);
   vmcnt_no_wait_race_kernel<<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kVmcntNoWaitRaceExpectation);
 }
@@ -276,6 +287,7 @@ static constexpr RaceExpectation kLgkmcntNoWaitRaceExpectation{
 TEST_F(Gfx950RaceTest, lgkmcnt_no_wait_race) {
   auto *dst = alloc<int>(64);
   lgkmcnt_no_wait_race_kernel<<<1, 64>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kLgkmcntNoWaitRaceExpectation);
 }
@@ -294,12 +306,14 @@ static constexpr RaceExpectation kLgkmcntBelowCapacityRaceExpectation{
 
 TEST_F(Gfx950RaceTest, lgkmcnt_capacity_boundary) {
   lgkmcnt_capacity_kernel<kCdnaLgkmcntCapacity><<<1, 64>>>(alloc<int>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
 
 TEST_F(Gfx950RaceTest, lgkmcnt_below_capacity_race) {
   lgkmcnt_capacity_kernel<kCdnaLgkmcntCapacity - 1><<<1, 64>>>(alloc<int>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kLgkmcntBelowCapacityRaceExpectation);
 }
@@ -307,6 +321,7 @@ TEST_F(Gfx950RaceTest, lgkmcnt_below_capacity_race) {
 TEST_F(Gfx950RaceTest, mixed_lgkmcnt_capacity_boundary) {
   mixed_lgkmcnt_capacity_kernel<kCdnaLgkmcntCapacity - 1>
       <<<1, 64>>>(allocWithData<int>(1), alloc<int>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -314,6 +329,7 @@ TEST_F(Gfx950RaceTest, mixed_lgkmcnt_capacity_boundary) {
 TEST_F(Gfx950RaceTest, mixed_lgkmcnt_below_capacity_race) {
   mixed_lgkmcnt_capacity_kernel<kCdnaLgkmcntCapacity - 2>
       <<<1, 64>>>(allocWithData<int>(1), alloc<int>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kLgkmcntBelowCapacityRaceExpectation);
 }
@@ -321,6 +337,7 @@ TEST_F(Gfx950RaceTest, mixed_lgkmcnt_below_capacity_race) {
 TEST_F(Gfx950RaceTest, wide_scalar_lgkmcnt_capacity_boundary) {
   wide_scalar_lgkmcnt_capacity_kernel<kCdnaLgkmcntCapacity - 2>
       <<<1, 64>>>(allocWithData<uint64_t>(1), alloc<int>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -328,6 +345,7 @@ TEST_F(Gfx950RaceTest, wide_scalar_lgkmcnt_capacity_boundary) {
 TEST_F(Gfx950RaceTest, wide_scalar_lgkmcnt_below_capacity_race) {
   wide_scalar_lgkmcnt_capacity_kernel<kCdnaLgkmcntCapacity - 3>
       <<<1, 64>>>(allocWithData<uint64_t>(1), alloc<int>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kLgkmcntBelowCapacityRaceExpectation);
 }
@@ -342,6 +360,7 @@ static constexpr RaceExpectation kVmcntBelowCapacityRaceExpectation{
 TEST_F(Gfx950RaceTest, vmcnt_capacity_boundary) {
   auto *src = allocWithData<float>(64), *dst = alloc<float>(64);
   vmcnt_capacity_kernel<kCdnaVmcntCapacity><<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -349,6 +368,7 @@ TEST_F(Gfx950RaceTest, vmcnt_capacity_boundary) {
 TEST_F(Gfx950RaceTest, vmcnt_below_capacity_race) {
   auto *src = allocWithData<float>(64), *dst = alloc<float>(64);
   vmcnt_capacity_kernel<kCdnaVmcntCapacity - 1><<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kVmcntBelowCapacityRaceExpectation);
 }
@@ -419,36 +439,42 @@ __global__ void flat_after_full_vmcnt_kernel(const int *src, int *dst) {
 
 TEST_F(Gfx950RaceTest, flat_global_does_not_advance_lgkmcnt_race) {
   flat_after_full_lgkmcnt_kernel<false, false><<<1, 64>>>(allocWithData<int>(64), alloc<int>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
   ExpectRace(kLgkmcntBelowCapacityRaceExpectation);
 }
 
 TEST_F(Gfx950RaceTest, flat_global_full_lgkmcnt_waited) {
   flat_after_full_lgkmcnt_kernel<false, true><<<1, 64>>>(allocWithData<int>(64), alloc<int>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
   ExpectNoRace();
 }
 
 TEST_F(Gfx950RaceTest, flat_lds_advances_lgkmcnt_at_capacity) {
   flat_after_full_lgkmcnt_kernel<true, false><<<1, 64>>>(allocWithData<int>(64), alloc<int>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
   ExpectNoRace();
 }
 
 TEST_F(Gfx950RaceTest, flat_lds_does_not_advance_vmcnt_race) {
   flat_after_full_vmcnt_kernel<true, false><<<1, 64>>>(allocWithData<int>(64), alloc<int>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
   ExpectRace(kVmcntBelowCapacityRaceExpectation);
 }
 
 TEST_F(Gfx950RaceTest, flat_lds_full_vmcnt_waited) {
   flat_after_full_vmcnt_kernel<true, true><<<1, 64>>>(allocWithData<int>(64), alloc<int>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
   ExpectNoRace();
 }
 
 TEST_F(Gfx950RaceTest, flat_global_advances_vmcnt_at_capacity) {
   flat_after_full_vmcnt_kernel<false, false><<<1, 64>>>(allocWithData<int>(64), alloc<int>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
   ExpectNoRace();
 }
@@ -487,6 +513,7 @@ __global__ void sgpr_race_kernel(const int *src, int *dst) {
 TEST_F(Gfx950RaceTest, sgpr_waitcnt) {
   auto *src = allocWithData<int>(64), *dst = alloc<int>(64);
   sgpr_no_race_kernel<<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -494,6 +521,7 @@ TEST_F(Gfx950RaceTest, sgpr_waitcnt) {
 TEST_F(Gfx950RaceTest, sgpr_waitcnt_race) {
   auto *src = allocWithData<int>(64), *dst = alloc<int>(64);
   sgpr_race_kernel<<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kSgprWaitcntRaceExpectation);
 }
@@ -568,6 +596,7 @@ __global__ void sgpr_waw_load_then_load_race_kernel(const int *src0, const int *
 TEST_F(Gfx950RaceTest, sgpr_waw_load_then_mov) {
   auto *src = allocWithData<int>(64), *dst = alloc<int>(64);
   sgpr_waw_load_then_mov_kernel<<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -575,6 +604,7 @@ TEST_F(Gfx950RaceTest, sgpr_waw_load_then_mov) {
 TEST_F(Gfx950RaceTest, sgpr_waw_load_then_mov_race) {
   auto *src = allocWithData<int>(64), *dst = alloc<int>(64);
   sgpr_waw_load_then_mov_race_kernel<<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kSgprWawLoadThenMovExpectation);
 }
@@ -583,6 +613,7 @@ TEST_F(Gfx950RaceTest, sgpr_waw_load_then_load) {
   auto *src0 = allocWithData<int>(64), *src1 = allocWithData<int>(64);
   auto *dst = alloc<int>(64);
   sgpr_waw_load_then_load_kernel<<<1, 64>>>(src0, src1, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -591,6 +622,7 @@ TEST_F(Gfx950RaceTest, sgpr_waw_load_then_load_race) {
   auto *src0 = allocWithData<int>(64), *src1 = allocWithData<int>(64);
   auto *dst = alloc<int>(64);
   sgpr_waw_load_then_load_race_kernel<<<1, 64>>>(src0, src1, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kSgprWawLoadThenLoadExpectation);
 }
@@ -629,12 +661,14 @@ __global__ void lds_cross_wave_race_kernel(int *out) {
 
 TEST_F(Gfx950RaceTest, lds_cross_wave) {
   lds_cross_wave_safe_kernel<<<1, 128>>>(alloc<int>(128));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
 
 TEST_F(Gfx950RaceTest, lds_cross_wave_race) {
   lds_cross_wave_race_kernel<<<5, 128>>>(alloc<int>(5 * 128));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kLdsCrossWaveRaceExpectation);
 }
@@ -699,21 +733,23 @@ __global__ void lds_same_wave_read_write_order_kernel(uint32_t *out) {
 TEST_F(Gfx950RaceTest, lds_same_wave_order) {
   auto *write_read_out = alloc<uint32_t>(64);
   lds_same_wave_write_read_order_kernel<<<1, 64, 64>>>(write_read_out);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
 
   std::vector<uint32_t> write_read_host(64);
-  (void)hipMemcpy(write_read_host.data(), write_read_out,
-                  write_read_host.size() * sizeof(uint32_t), hipMemcpyDeviceToHost);
+  RACE_HIP_CHECK(hipMemcpy(write_read_host.data(), write_read_out,
+                  write_read_host.size() * sizeof(uint32_t), hipMemcpyDeviceToHost));
   for (uint32_t lane = 0; lane < write_read_host.size(); ++lane)
     EXPECT_EQ(write_read_host[lane], ((lane + 1) & 63) + 1);
 
   auto *read_write_out = alloc<uint32_t>(128);
   lds_same_wave_read_write_order_kernel<<<1, 64, 64>>>(read_write_out);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
 
   std::vector<uint32_t> read_write_host(128);
-  (void)hipMemcpy(read_write_host.data(), read_write_out,
-                  read_write_host.size() * sizeof(uint32_t), hipMemcpyDeviceToHost);
+  RACE_HIP_CHECK(hipMemcpy(read_write_host.data(), read_write_out,
+                  read_write_host.size() * sizeof(uint32_t), hipMemcpyDeviceToHost));
   for (uint32_t lane = 0; lane < 64; ++lane) {
     EXPECT_EQ(read_write_host[2 * lane], ((lane + 1) & 63) + 1);
     EXPECT_EQ(read_write_host[2 * lane + 1], (lane + 1) ^ 0xff);
@@ -821,11 +857,12 @@ TEST_F(Gfx950RaceTest, global_to_lds_buffer) {
   constexpr int N = 3 * 128;
   auto *src = allocWithData<int>(N), *out = alloc<int>(N);
   buffer_load_lds_kernel<<<3, 128>>>(src, out);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
 
   std::vector<int> h_src(N), h_out(N);
   for (int i = 0; i < N; ++i) h_src[i] = i;
-  (void)hipMemcpy(h_out.data(), out, N * sizeof(int), hipMemcpyDeviceToHost);
+  RACE_HIP_CHECK(hipMemcpy(h_out.data(), out, N * sizeof(int), hipMemcpyDeviceToHost));
   int errors = 0;
   for (int i = 0; i < N; ++i)
     if (h_out[i] != h_src[i] && errors++ < 5)
@@ -836,6 +873,7 @@ TEST_F(Gfx950RaceTest, global_to_lds_buffer) {
 
 TEST_F(Gfx950RaceTest, global_to_lds_buffer_race) {
   buffer_load_lds_race_kernel<<<3, 128>>>(alloc<int>(384), alloc<int>(384));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kGlobalToLdsBufferRaceExpectation);
 }
@@ -870,6 +908,7 @@ __global__ void partial_vmcnt_kernel(const float *src_a, const float *src_b,
 TEST_F(Gfx950RaceTest, partial_vmcnt_race) {
   partial_vmcnt_kernel<<<1, 64>>>(alloc<float>(64), alloc<float>(64),
                                    alloc<float>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kPartialVmcntRaceExpectation);
 }
@@ -900,6 +939,7 @@ __global__ void two_races_kernel(const float *src_a, const float *src_b,
 TEST_F(Gfx950RaceTest, multiple_race) {
   two_races_kernel<<<1, 64>>>(alloc<float>(64), alloc<float>(64),
                                alloc<float>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   // Both loads race against v_add_f32, but dedup by PC collapses them to 1.
   ExpectRace(kMultipleRaceExpectation);
@@ -939,9 +979,13 @@ __global__ void racy_kernel(const float *src, float *dst) {
 TEST_F(Gfx950RaceTest, multi_kernel) {
   auto *s = alloc<float>(1000), *d = alloc<float>(1000);
   clean_kernel_a<<<1, 64>>>(s, d);
+  RACE_HIP_CHECK(hipGetLastError());
   clean_kernel_b<<<3, 128>>>(s, d);
+  RACE_HIP_CHECK(hipGetLastError());
   clean_kernel_a<<<5, 64>>>(s, d);
+  RACE_HIP_CHECK(hipGetLastError());
   clean_kernel_b<<<2, 64>>>(s, d);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -949,9 +993,13 @@ TEST_F(Gfx950RaceTest, multi_kernel) {
 TEST_F(Gfx950RaceTest, multi_kernel_race) {
   auto *s = alloc<float>(1000), *d = alloc<float>(1000);
   clean_kernel_a<<<1, 64>>>(s, d);
+  RACE_HIP_CHECK(hipGetLastError());
   clean_kernel_a<<<3, 128>>>(s, d);
+  RACE_HIP_CHECK(hipGetLastError());
   racy_kernel<<<1, 64>>>(s, d);
+  RACE_HIP_CHECK(hipGetLastError());
   clean_kernel_a<<<5, 64>>>(s, d);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kMultiKernelRaceExpectation);
 }
@@ -992,6 +1040,7 @@ __global__ void multi_wg_race_kernel(const float *src, float *dst) {
 TEST_F(Gfx950RaceTest, multi_workgroup) {
   auto *s = alloc<float>(256), *d = alloc<float>(256);
   multi_wg_clean_kernel<<<4, 64>>>(s, d);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -999,6 +1048,7 @@ TEST_F(Gfx950RaceTest, multi_workgroup) {
 TEST_F(Gfx950RaceTest, multi_workgroup_race) {
   auto *s = alloc<float>(401 * 64), *d = alloc<float>(401 * 64);
   multi_wg_race_kernel<<<401, 64>>>(s, d);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kMultiWorkgroupRaceExpectation);
 }
@@ -1033,6 +1083,7 @@ __global__ void mixed_counters_kernel(const float *vsrc, const int *ssrc,
 TEST_F(Gfx950RaceTest, mixed_counters_race) {
   mixed_counters_kernel<<<1, 64>>>(alloc<float>(64), alloc<int>(64),
                                     alloc<float>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kMixedCountersRaceExpectation);
 }
@@ -1072,7 +1123,9 @@ __global__ void stress_racy(const float *src, float *dst) {
 TEST_F(Gfx950RaceTest, stress_wavefront_reuse) {
   auto *s = alloc<float>(64000), *d = alloc<float>(64000);
   stress_clean_a<<<1000, 64>>>(s, d);
+  RACE_HIP_CHECK(hipGetLastError());
   stress_clean_b<<<1000, 64>>>(s, d);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -1080,7 +1133,9 @@ TEST_F(Gfx950RaceTest, stress_wavefront_reuse) {
 TEST_F(Gfx950RaceTest, stress_wavefront_reuse_race) {
   auto *s = alloc<float>(64000), *d = alloc<float>(64000);
   stress_clean_a<<<1000, 64>>>(s, d);
+  RACE_HIP_CHECK(hipGetLastError());
   stress_racy<<<1000, 64>>>(s, d);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kStressWavefrontReuseRaceExpectation);
 }
@@ -1122,12 +1177,14 @@ __global__ void exec_mask_race_kernel(int *out) {
 
 TEST_F(Gfx950RaceTest, exec_mask) {
   exec_mask_safe_kernel<<<1, 128>>>(alloc<int>(128));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
 
 TEST_F(Gfx950RaceTest, exec_mask_race) {
   exec_mask_race_kernel<<<1, 128>>>(alloc<int>(128));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kExecMaskRaceExpectation);
 }
@@ -1222,12 +1279,13 @@ static std::vector<int> simulate_exec_mask_lds(int n, int lo, int hi) {
 TEST_F(Gfx950RaceTest, exec_mask_same_wave) {
   auto *out = alloc<int>(256);
   exec_mask_same_wave_kernel<<<1, 256>>>(out);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 
   auto expected = simulate_exec_mask_lds(256, 0, 32);
   std::vector<int> h_out(256);
-  (void)hipMemcpy(h_out.data(), out, 256 * sizeof(int), hipMemcpyDeviceToHost);
+  RACE_HIP_CHECK(hipMemcpy(h_out.data(), out, 256 * sizeof(int), hipMemcpyDeviceToHost));
   int errors = 0;
   for (int i = 0; i < 256; ++i)
     if (h_out[i] != expected[i] && errors++ < 5)
@@ -1238,6 +1296,7 @@ TEST_F(Gfx950RaceTest, exec_mask_same_wave) {
 
 TEST_F(Gfx950RaceTest, exec_mask_cross_wave_race) {
   exec_mask_cross_wave_race_kernel<<<1, 256>>>(alloc<int>(256));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kExecMaskCrossWaveRaceExpectation);
 }
@@ -1245,12 +1304,13 @@ TEST_F(Gfx950RaceTest, exec_mask_cross_wave_race) {
 TEST_F(Gfx950RaceTest, exec_mask_cross_wave) {
   auto *out = alloc<int>(256);
   exec_mask_cross_wave_barrier_kernel<<<1, 256>>>(out);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 
   auto expected = simulate_exec_mask_lds(256, 1, 33);
   std::vector<int> h_out(256);
-  (void)hipMemcpy(h_out.data(), out, 256 * sizeof(int), hipMemcpyDeviceToHost);
+  RACE_HIP_CHECK(hipMemcpy(h_out.data(), out, 256 * sizeof(int), hipMemcpyDeviceToHost));
   int errors = 0;
   for (int i = 0; i < 256; ++i) {
     if (h_out[i] != expected[i]) {
@@ -1323,11 +1383,12 @@ __global__ void lds_transpose_race_kernel(int *out) {
 TEST_F(Gfx950RaceTest, lds_transpose) {
   auto *out = alloc<int>(128);
   lds_transpose_safe_kernel<<<1, 128>>>(out);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 
   std::vector<int> h_out(128);
-  (void)hipMemcpy(h_out.data(), out, 128 * sizeof(int), hipMemcpyDeviceToHost);
+  RACE_HIP_CHECK(hipMemcpy(h_out.data(), out, 128 * sizeof(int), hipMemcpyDeviceToHost));
   int errors = 0;
   for (int i = 0; i < 128; ++i)
     if (h_out[i] != (i + 64) % 128 && errors++ < 5)
@@ -1338,6 +1399,7 @@ TEST_F(Gfx950RaceTest, lds_transpose) {
 
 TEST_F(Gfx950RaceTest, lds_transpose_race) {
   lds_transpose_race_kernel<<<1, 128>>>(alloc<int>(128));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kLdsTransposeRaceExpectation);
 }
@@ -1400,12 +1462,14 @@ __global__ void dual_offset_lds_race_kernel(int *out) {
 
 TEST_F(Gfx950RaceTest, dual_offset_lds) {
   dual_offset_lds_safe_kernel<<<1, 128>>>(alloc<int>(128));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
 
 TEST_F(Gfx950RaceTest, dual_offset_lds_race) {
   dual_offset_lds_race_kernel<<<1, 128>>>(alloc<int>(128));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kDualOffsetLdsRaceExpectation);
 }
@@ -1465,6 +1529,7 @@ __global__ void scratch_vmcnt_race_kernel(const float *src, float *dst) {
 TEST_F(Gfx950RaceTest, scratch_vmcnt) {
   auto *src = allocWithData<float>(64), *dst = alloc<float>(64);
   scratch_vmcnt_safe_kernel<<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -1472,6 +1537,7 @@ TEST_F(Gfx950RaceTest, scratch_vmcnt) {
 TEST_F(Gfx950RaceTest, scratch_vmcnt_race) {
   auto *src = allocWithData<float>(64), *dst = alloc<float>(64);
   scratch_vmcnt_race_kernel<<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kScratchVmcntRaceExpectation);
 }
@@ -1546,6 +1612,7 @@ __global__ void waw_global_load_then_mfma_kernel(const int *src, int *out) {
 TEST_F(Gfx950RaceTest, waw_global_load_then_alu) {
   auto *src = allocWithData<float>(64), *dst = alloc<float>(64);
   waw_global_load_then_alu_kernel<<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kWawGlobalLoadThenAluExpectation);
 }
@@ -1553,6 +1620,7 @@ TEST_F(Gfx950RaceTest, waw_global_load_then_alu) {
 TEST_F(Gfx950RaceTest, waw_global_load_then_alu_safe) {
   auto *src = allocWithData<float>(64), *dst = alloc<float>(64);
   waw_global_load_then_alu_safe_kernel<<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -1560,6 +1628,7 @@ TEST_F(Gfx950RaceTest, waw_global_load_then_alu_safe) {
 TEST_F(Gfx950RaceTest, waw_global_load_then_mfma) {
   auto *src = allocWithData<int>(256), *out = alloc<int>(64);
   waw_global_load_then_mfma_kernel<<<1, 64>>>(src, out);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kWawGlobalLoadThenMfmaExpectation);
 }
@@ -1591,6 +1660,7 @@ TEST_F(Gfx950RaceTest, f64_vgpr_race) {
   double *src = allocWithData<double>(64);
   double *dst = alloc<double>(64);
   f64_vgpr_race_kernel<<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kF64VgprRaceExpectation);
 }
@@ -1611,6 +1681,7 @@ TEST_F(Gfx950RaceTest, f64_vgpr_safe) {
   double *src = allocWithData<double>(64);
   double *dst = alloc<double>(64);
   f64_vgpr_safe_kernel<<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -1641,6 +1712,7 @@ TEST_F(Gfx950RaceTest, f64_vgpr_waw) {
   double *src = allocWithData<double>(64);
   double *dst = alloc<double>(64);
   f64_vgpr_waw_kernel<<<1, 64>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kF64VgprWawExpectation);
 }

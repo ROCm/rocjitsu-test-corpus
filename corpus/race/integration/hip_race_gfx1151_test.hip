@@ -15,7 +15,11 @@
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
   int rc = RUN_ALL_TESTS();
-  (void)hipDeviceReset();
+  const hipError_t reset_status = hipDeviceReset();
+  if (reset_status != hipSuccess) {
+    std::fprintf(stderr, "hipDeviceReset failed: %s\n", hipGetErrorString(reset_status));
+    return 1;
+  }
   return rc;
 }
 
@@ -44,6 +48,7 @@ TEST_F(Gfx1151RaceTest, vgpr_waitcnt) {
   auto *src = allocWithData<float>(32);
   auto *dst = alloc<float>(32);
   vgpr_no_race_kernel<<<1, 32>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -69,6 +74,7 @@ TEST_F(Gfx1151RaceTest, vgpr_waitcnt_race) {
   auto *src = allocWithData<float>(32);
   auto *dst = alloc<float>(32);
   vgpr_race_kernel<<<1, 32>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kVgprWaitcntRaceExpectation);
 }
@@ -93,6 +99,7 @@ TEST_F(Gfx1151RaceTest, standalone_vmcnt_waits_for_vmem) {
   auto *src = allocWithData<float>(32);
   auto *dst = alloc<float>(32);
   standalone_vmcnt_waits_for_vmem_kernel<<<1, 32>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -121,6 +128,7 @@ static constexpr RaceExpectation kStandaloneVmcntDoesNotWaitForLdsExpectation{
 
 TEST_F(Gfx1151RaceTest, standalone_vmcnt_does_not_wait_for_lds) {
   standalone_vmcnt_does_not_wait_for_lds_kernel<<<1, 32>>>(alloc<int>(32));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kStandaloneVmcntDoesNotWaitForLdsExpectation);
 }
@@ -142,6 +150,7 @@ __global__ void standalone_lgkmcnt_waits_for_lds_kernel(int *dst) {
 
 TEST_F(Gfx1151RaceTest, standalone_lgkmcnt_waits_for_lds) {
   standalone_lgkmcnt_waits_for_lds_kernel<<<1, 32>>>(alloc<int>(32));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -167,6 +176,7 @@ TEST_F(Gfx1151RaceTest, standalone_lgkmcnt_does_not_wait_for_vmem) {
   auto *src = allocWithData<float>(32);
   auto *dst = alloc<float>(32);
   standalone_lgkmcnt_does_not_wait_for_vmem_kernel<<<1, 32>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kStandaloneLgkmcntDoesNotWaitForVmemExpectation);
 }
@@ -188,6 +198,7 @@ TEST_F(Gfx1151RaceTest, vmcnt_capacity_boundary) {
   auto *src = allocWithData<float>(32);
   auto *dst = alloc<float>(32);
   vmcnt_capacity_kernel<kGfx11CounterCapacity><<<1, 32>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -196,6 +207,7 @@ TEST_F(Gfx1151RaceTest, vmcnt_below_capacity_race) {
   auto *src = allocWithData<float>(32);
   auto *dst = alloc<float>(32);
   vmcnt_capacity_kernel<kGfx11CounterCapacity - 1><<<1, 32>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kVmcntBelowCapacityRaceExpectation);
 }
@@ -229,6 +241,7 @@ TEST_F(Gfx1151RaceTest, vscnt_pressure_does_not_advance_vmcnt) {
   auto *scratch = alloc<float>(32);
   auto *dst = alloc<float>(32);
   vscnt_pressure_does_not_advance_vmcnt_kernel<<<1, 32>>>(src, scratch, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kVscntPressureDoesNotAdvanceVmcntExpectation);
 }
@@ -242,12 +255,14 @@ static constexpr RaceExpectation kLgkmcntBelowCapacityRaceExpectation{
 
 TEST_F(Gfx1151RaceTest, lgkmcnt_capacity_boundary) {
   lgkmcnt_capacity_kernel<kGfx11CounterCapacity><<<1, 32>>>(alloc<int>(32));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
 
 TEST_F(Gfx1151RaceTest, lgkmcnt_below_capacity_race) {
   lgkmcnt_capacity_kernel<kGfx11CounterCapacity - 1><<<1, 32>>>(alloc<int>(32));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kLgkmcntBelowCapacityRaceExpectation);
 }
@@ -255,6 +270,7 @@ TEST_F(Gfx1151RaceTest, lgkmcnt_below_capacity_race) {
 TEST_F(Gfx1151RaceTest, mixed_lgkmcnt_capacity_boundary) {
   mixed_lgkmcnt_capacity_kernel<kGfx11CounterCapacity - 1>
       <<<1, 32>>>(allocWithData<int>(1), alloc<int>(32));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -262,6 +278,7 @@ TEST_F(Gfx1151RaceTest, mixed_lgkmcnt_capacity_boundary) {
 TEST_F(Gfx1151RaceTest, mixed_lgkmcnt_below_capacity_race) {
   mixed_lgkmcnt_capacity_kernel<kGfx11CounterCapacity - 2>
       <<<1, 32>>>(allocWithData<int>(1), alloc<int>(32));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kLgkmcntBelowCapacityRaceExpectation);
 }
@@ -269,6 +286,7 @@ TEST_F(Gfx1151RaceTest, mixed_lgkmcnt_below_capacity_race) {
 TEST_F(Gfx1151RaceTest, wide_scalar_lgkmcnt_capacity_boundary) {
   wide_scalar_lgkmcnt_capacity_kernel<kGfx11CounterCapacity - 2>
       <<<1, 32>>>(allocWithData<uint64_t>(1), alloc<int>(32));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
@@ -276,6 +294,7 @@ TEST_F(Gfx1151RaceTest, wide_scalar_lgkmcnt_capacity_boundary) {
 TEST_F(Gfx1151RaceTest, wide_scalar_lgkmcnt_below_capacity_race) {
   wide_scalar_lgkmcnt_capacity_kernel<kGfx11CounterCapacity - 3>
       <<<1, 32>>>(allocWithData<uint64_t>(1), alloc<int>(32));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kLgkmcntBelowCapacityRaceExpectation);
 }
@@ -379,10 +398,11 @@ TEST_F(Gfx1151RaceTest, d16_global_load_merge_no_race) {
   auto *src = allocWithData<uint8_t>(32);
   auto *dst = alloc<uint32_t>(32);
   d16_global_load_merge_kernel<<<1, 32>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
 
   std::vector<uint32_t> h(32);
-  (void)hipMemcpy(h.data(), dst, h.size() * sizeof(uint32_t), hipMemcpyDeviceToHost);
+  RACE_HIP_CHECK(hipMemcpy(h.data(), dst, h.size() * sizeof(uint32_t), hipMemcpyDeviceToHost));
   for (uint32_t i = 0; i < h.size(); ++i)
     EXPECT_EQ(h[i], 0xABCD0000u | i);
   ExpectNoRace();
@@ -392,10 +412,11 @@ TEST_F(Gfx1151RaceTest, d16_global_load_hi_merge_no_race) {
   auto *src = allocWithData<uint8_t>(32);
   auto *dst = alloc<uint32_t>(32);
   d16_global_load_hi_merge_kernel<<<1, 32>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
 
   std::vector<uint32_t> h(32);
-  (void)hipMemcpy(h.data(), dst, h.size() * sizeof(uint32_t), hipMemcpyDeviceToHost);
+  RACE_HIP_CHECK(hipMemcpy(h.data(), dst, h.size() * sizeof(uint32_t), hipMemcpyDeviceToHost));
   for (uint32_t i = 0; i < h.size(); ++i)
     EXPECT_EQ(h[i], (i << 16) | 0xABCDu);
   ExpectNoRace();
@@ -405,6 +426,7 @@ TEST_F(Gfx1151RaceTest, d16_global_load_missing_waitcnt_race) {
   auto *src = allocWithData<uint8_t>(32);
   auto *dst = alloc<uint32_t>(32);
   d16_global_load_missing_waitcnt_kernel<<<1, 32>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
 
   ExpectRace(kD16GlobalLoadMissingWaitcntRaceExpectation);
@@ -412,12 +434,14 @@ TEST_F(Gfx1151RaceTest, d16_global_load_missing_waitcnt_race) {
 
 TEST_F(Gfx1151RaceTest, lds_wave32_cross_wave) {
   lds_wave32_cross_wave_safe_kernel<<<1, 64>>>(alloc<int>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
 
 TEST_F(Gfx1151RaceTest, lds_wave32_cross_wave_race) {
   lds_wave32_cross_wave_race_kernel<<<1, 64>>>(alloc<int>(64));
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kLdsWave32CrossWaveRaceExpectation);
 }
@@ -426,6 +450,7 @@ TEST_F(Gfx1151RaceTest, waw_global_load_then_wmma) {
   auto *src = allocWithData<int>(128);
   auto *out = alloc<int>(32);
   waw_global_load_then_wmma_kernel<<<1, 32>>>(src, out);
+  RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kWawGlobalLoadThenWmmaExpectation);
 }

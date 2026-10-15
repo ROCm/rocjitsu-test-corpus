@@ -68,6 +68,7 @@ if(NOT TARGET GTest::gtest)
     include(FetchContent)
     set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    # Offline builds can use -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=<local checkout>.
     FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
@@ -101,6 +102,9 @@ function(add_rocjitsu_race_test target_name source)
     target_include_directories(${target_name} PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
     target_link_libraries(${target_name} PRIVATE GTest::gtest hip::device)
 endfunction()
+
+add_rocjitsu_race_test(race_test_support_test "${CMAKE_CURRENT_LIST_DIR}/race_test_support_test.hip")
+target_link_libraries(race_test_support_test PRIVATE GTest::gtest_main)
 
 list(LENGTH CMAKE_HIP_ARCHITECTURES race_arch_count)
 if(NOT race_arch_count EQUAL 1)

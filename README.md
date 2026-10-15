@@ -15,7 +15,7 @@ corpus/
   llama/      llama.cpp test-backend-ops cases and vendored GGML sources.
   vulkan/     Pinned Vulkan compute and texel-buffer CTS selections.
   runtime-cts/ Direct-KFD aql/ and capability-gated pm4/ suites.
-  race/       RocJITsu race-detector HIP integration cases.
+  race/       Race-detector integration programs and standalone mutation kernels.
   tensile/    gfx1250 TensileLite configs and generated artifacts.
   benchmarks/ Parameterized Triton benchmarks and reused upstream kernels.
 
@@ -74,16 +74,32 @@ uses target `gfx1201` and selects the first three; the other suites are opt-in.
 
 ### RocJITsu race-detector integration
 
-The opt-in `race` suite builds the existing gfx950 and gfx1151 HIP integration
-programs with the corpus HIP toolchain and runs each GoogleTest case separately.
+`corpus/race/integration/` owns the gfx950 and gfx1151 GoogleTest programs,
+their shared fixture, race-log matcher, CMake build, and case-list configs.
+The opt-in `--suite race` adapter builds these integration programs with the
+corpus HIP toolchain and runs each GoogleTest case separately. It covers this
+integration collection only. `corpus/race/kernels/` contains the separate
+standalone kernels used for baseline/mutant comparisons by the mutation tooling;
+they are not collected by this pytest adapter. Assembly snapshots, inventory,
+and regeneration scripts for that collection also belong under `corpus/race/`.
+
 The caller supplies a plugin-free base simulator config through
 `ROCJITSU_RACE_CONFIG` and a run wrapper containing one standalone `{config}`
 token. The suite derives a private race-plugin config and report directory for
-every case:
+every case. Run execution separately from other suites, whose wrappers use a
+fixed configuration rather than per-case substitution. Collection with
+`--collect-only` and build-only use with `--skip-all-runs` do not require a
+launcher or base simulator config and may select multiple suites.
+
+The base config must match `--target`. For gfx950 use
+`emulation/rocjitsu/tests/race-detector/race_test_config.json` from rocm-systems:
+its 1-XCD/4-CU topology avoids the memory cost of a full MI350X simulation for
+each parallel test. For gfx1151 use `emulation/rocjitsu/configs/gfx1151.json`.
+With `ROCM_SYSTEMS` pointing to that checkout, a gfx950 run is:
 
 ```bash
 ROCM_PATH=/path/to/rocm-sdk \
-ROCJITSU_RACE_CONFIG=/path/to/gfx950-race-test.json \
+ROCJITSU_RACE_CONFIG="$ROCM_SYSTEMS/emulation/rocjitsu/tests/race-detector/race_test_config.json" \
 pytest tests/test_corpus.py \
   --target gfx950 \
   --suite race \
@@ -91,18 +107,32 @@ pytest tests/test_corpus.py \
 ```
 
 Set `ROCJITSU_RACE_BUILD_ROOT` to keep the CMake build outside the checkout.
-The HIP programs retain their original functional and race-report assertions;
-the corpus adapter only supplies build and launch isolation. The same build
-also runs the host-only unit tests for the race-log parser and expectation
-matcher used by those programs.
+Relative launcher executables are resolved against the corpus checkout before
+entering each private case directory. Parallel workers share one successful
+build and matcher result per target for the current pytest invocation; a new
+invocation reruns the incremental build. Set `CMAKE_BUILD_PARALLEL_LEVEL` to
+control compiler concurrency (otherwise the pytest worker count is used).
+The HIP programs retain their functional and race-report assertions and reject
+allocation, copy, launch, and synchronization errors, including in deliberately
+racy tests. The same build runs the host-only race-log parser and matcher
+tests, plus GPU-free fixture tests that inject HIP failures.
 Each invocation records a GoogleTest XML report and requires the selected case
 to complete successfully; empty selections and skipped cases fail the corpus test.
+The race log must also contain a test-kernel dispatch; a runtime copy dispatch
+alone cannot establish that the integration kernel executed.
 
-The target configs in `corpus/race/configs/` accept `skip_compile_tests` to omit
+The target configs in `corpus/race/integration/configs/` accept `skip_compile_tests` to omit
 cases from discovery and `skip_run_tests` to build without launching those cases.
 Both lists use bare case names such as `vgpr_waitcnt`. The HIP program is shared
 by all cases for an architecture, so discovery exclusions do not remove test
 bodies from that program's compilation.
+
+CI orchestration remains in rocm-systems. Its race-test migration has already
+landed, and both the `corpus_ref` dispatch default and `ROCJITSU_DBT_CORPUS_REF`
+in `.github/workflows/rocjitsu-corpus-tests.yml` select the earlier migration
+revision. After this corpus change merges, update both pins to the merged
+revision and validate that corpus/emulator pair in CI. Changes to the corpus
+branch do not change the revision selected by those pins.
 
 ### gfx1250 memory CTS
 
