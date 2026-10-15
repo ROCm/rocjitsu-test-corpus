@@ -98,8 +98,12 @@ class CompileError(RuntimeError):
     """A kernel could not be compiled for the requested target."""
 
 
-# Flags whose value is a path, as a separate token or glued to the flag.
-_PATH_FLAGS = ("-isystem", "-iquote", "-include", "-I")
+# Flags that add a directory to the header search path. Each takes its value as
+# a separate token or glued to the flag.
+_INCLUDE_DIR_FLAGS = ("-isystem", "-iquote", "-I")
+# Flags whose value is a path: the search directories, and -include, whose value
+# is a file to include rather than a directory to search.
+_PATH_FLAGS = (*_INCLUDE_DIR_FLAGS, "-include")
 
 
 def parse_cxxflags(text: str) -> list[str]:
@@ -158,7 +162,7 @@ def include_dirs(flags: list[str]) -> list[Path]:
     dirs = [rocm_path() / "include"]
     tokens = iter(flags)
     for flag in tokens:
-        for prefix in ("-isystem", "-iquote", "-I"):
+        for prefix in _INCLUDE_DIR_FLAGS:
             if flag == prefix:
                 dirs.append(Path(next(tokens, "")))
             elif flag.startswith(prefix) and len(flag) > len(prefix):

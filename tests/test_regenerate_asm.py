@@ -847,3 +847,32 @@ def test_main_reads_the_manifest_once(manifest, corpus_main, monkeypatch):
     )
     assert run("--check") == 0
     assert len(reads) == 1
+
+
+# --- One list of include-directory flags --------------------------------------
+#
+# The header preflight and the relative-path rewrite read include directories
+# from the same flags, so a flag added to one is understood by both.
+
+
+@pytest.mark.parametrize("flag", regen._INCLUDE_DIR_FLAGS)
+def test_every_include_directory_flag_is_searched_and_made_absolute(
+    monkeypatch, tmp_path, flag
+):
+    monkeypatch.setenv("ROCM_PATH", str(tmp_path / "rocm"))
+    for name in ("CPATH", "CPLUS_INCLUDE_PATH"):
+        monkeypatch.delenv(name, raising=False)
+    base = tmp_path / "caller"
+    for flags in ([flag, "inc"], [f"{flag}inc"]):
+        assert regen.include_dirs(flags)[1:] == [Path("inc")]
+        assert str(base / "inc") in "".join(regen.absolute_flags(flags, base))
+
+
+def test_forced_include_file_is_made_absolute_but_not_searched(monkeypatch, tmp_path):
+    monkeypatch.setenv("ROCM_PATH", str(tmp_path / "rocm"))
+    for name in ("CPATH", "CPLUS_INCLUDE_PATH"):
+        monkeypatch.delenv(name, raising=False)
+    base = tmp_path / "caller"
+    flags = ["-include", "pre.h"]
+    assert regen.include_dirs(flags) == [tmp_path / "rocm" / "include"]
+    assert regen.absolute_flags(flags, base) == ["-include", str(base / "pre.h")]
