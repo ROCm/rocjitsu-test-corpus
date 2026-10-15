@@ -191,7 +191,7 @@ def test_orphan_assembly_is_reported(corpus, capsys):
     assert "asm/gfx950/leftover.s: no case builds leftover for gfx950" in out
 
 
-def test_assembly_for_a_target_the_case_does_not_require_is_an_orphan(corpus, capsys):
+def test_assembly_for_a_target_the_case_does_not_build_for_is_an_orphan(corpus, capsys):
     corpus(["gfx950", "gfx1250"], GFX1250_ONLY, ["gfx950/only", "gfx1250/only"])
     code, out = run(capsys)
     assert code == 1
