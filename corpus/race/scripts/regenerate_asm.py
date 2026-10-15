@@ -62,7 +62,6 @@ deliberately mismatched cuid and running it successfully.
 
 import argparse
 import difflib
-import json
 import os
 import re
 import shlex
@@ -70,9 +69,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import tomllib
 
 import inventory
+import recipe
 
 from pathlib import Path
 from typing import NamedTuple
@@ -117,13 +116,6 @@ _FLAG_INJECTION_VARIABLES = (
     "HIPCC_LINK_FLAGS_APPEND",
     "CCC_OVERRIDE_OPTIONS",
 )
-
-# Beside each target's assembly: how it was regenerated. See Recipe.
-RECIPE_NAME = "recipe.toml"
-
-# The recipe fields that identify the toolchain, as opposed to the flags the
-# person regenerating chose.
-_TOOLCHAIN_FIELDS = ("compiler", "compiler_version", "rocm_version")
 
 
 def split_provenance(assembly: str) -> tuple[list[str], list[str]]:
@@ -273,31 +265,6 @@ def ignored_environment() -> list[str]:
 # --- Recipe ------------------------------------------------------------------
 
 
-class Recipe(NamedTuple):
-    """
-    How a target's assembly was regenerated, recorded in ``asm/<target>/recipe.toml``.
-
-    ``.ident`` in each ``.s`` names the compiler, but not the SDK or the flags,
-    so the same ``.ident`` can come with different code. --check compares the
-    recipe it would write with the committed one, and reports a changed recipe
-    apart from a toolchain update.
-
-    Attributes:
-        compiler: The compiler's file name: ``hipcc``, or ``clang++`` when the
-            SDK's clang is used directly.
-        compiler_version: The ``clang version`` line of ``--version``.
-        rocm_version: The SDK's ``.info/version``, or ``unknown``.
-        flags: The explicit flags: the baseline recipe, then ``--cxxflags`` as
-            given. The flags every compile gets, such as the target and the
-            SDK's include directory, are implied.
-    """
-
-    compiler: str
-    compiler_version: str
-    rocm_version: str
-    flags: tuple[str, ...]
-
-
 def compiler_version(tool: Path) -> str:
     """The ``clang version`` line *tool* reports, or its first line."""
     proc = subprocess.run(
@@ -311,12 +278,12 @@ def compiler_version(tool: Path) -> str:
     return next((line for line in lines if "clang version" in line), lines[0] if lines else "unknown")
 
 
-def current_recipe(cxxflags: list[str]) -> Recipe:
+def current_recipe(cxxflags: list[str]) -> recipe.Recipe:
     """The recipe a regeneration with *cxxflags*, as given, uses on this machine."""
     tool = find_hip_compiler()
     version_file = rocm_path() / ".info" / "version"
     rocm_version = version_file.read_text().strip() if version_file.is_file() else ""
-    return Recipe(
+    return recipe.Recipe(
         compiler=tool.name,
         compiler_version=compiler_version(tool),
         rocm_version=rocm_version or "unknown",
@@ -324,34 +291,17 @@ def current_recipe(cxxflags: list[str]) -> Recipe:
     )
 
 
-def write_recipe(path: Path, recipe: Recipe) -> None:
-    """Record *recipe* at *path*, as TOML."""
-    lines = [
-        "# How the .s files beside this one were regenerated. Written by",
-        "# regenerate_asm.py and compared by regenerate_asm.py --check.",
-        *(f"{field} = {json.dumps(getattr(recipe, field))}" for field in _TOOLCHAIN_FIELDS),
-        f"flags = {json.dumps(list(recipe.flags))}",
-    ]
-    _replace(path, "\n".join(lines) + "\n")
-
-
-def read_recipe(path: Path) -> Recipe | None:
-    """The recipe recorded at *path*, or None if there is none."""
-    if not path.is_file():
-        return None
-    fields = tomllib.loads(path.read_text())
-    return Recipe(
-        compiler=fields.get("compiler", ""),
-        compiler_version=fields.get("compiler_version", ""),
-        rocm_version=fields.get("rocm_version", ""),
-        flags=tuple(fields.get("flags", ())),
-    )
-
-
-def compare_recipes(target: str, committed: Recipe | None, current: Recipe) -> list[str]:
-    """What changed between the committed recipe for *target* and *current*."""
+def compare_recipes(target: str, current: recipe.Recipe) -> list[str]:
+    """What changed between *target*'s committed recipe and *current*."""
+    try:
+        committed = recipe.load(ASM_DIR / target / recipe.FILE_NAME)
+    except recipe.RecipeError as error:
+        return [
+            f"{target}: {recipe.FILE_NAME} cannot be compared: {problem}"
+            for problem in error.problems
+        ]
     if committed is None:
-        return [f"{target}: no {RECIPE_NAME} committed, so the recipe cannot be compared"]
+        return [f"{target}: no {recipe.FILE_NAME} committed, so the recipe cannot be compared"]
     if committed == current:
         return [f"{target}: recipe unchanged"]
     notes = []
@@ -361,7 +311,7 @@ def compare_recipes(target: str, committed: Recipe | None, current: Recipe) -> l
         )
     toolchain = [
         f"{field} {getattr(committed, field)!r} -> {getattr(current, field)!r}"
-        for field in _TOOLCHAIN_FIELDS
+        for field in recipe.TOOLCHAIN_FIELDS
         if getattr(committed, field) != getattr(current, field)
     ]
     if toolchain:
@@ -558,7 +508,7 @@ def main(argv: list[str]) -> int:
     if (ignored := ignored_environment()):
         print(
             f"note: ignoring {', '.join(ignored)} for the compile; pass flags with "
-            f"--cxxflags, so they are recorded in {RECIPE_NAME}",
+            f"--cxxflags, so they are recorded in {recipe.FILE_NAME}",
             file=sys.stderr,
         )
     build = Build(corpus, targets, extra_flags, current_recipe(cxxflags))
@@ -577,7 +527,7 @@ class Build(NamedTuple):
     corpus: inventory.Inventory
     targets: list[str]
     extra_flags: list[str]
-    recipe: Recipe
+    recipe: recipe.Recipe
 
 
 def _regenerate_and_report(args: argparse.Namespace, build: Build, out_root: Path) -> int:
@@ -599,7 +549,7 @@ def _regenerate_and_report(args: argparse.Namespace, build: Build, out_root: Pat
 
     if not args.check:
         for target in targets:
-            write_recipe(ASM_DIR / target / RECIPE_NAME, build.recipe)
+            _replace(ASM_DIR / target / recipe.FILE_NAME, recipe.dumps(build.recipe))
         print(f"\nwrote {written} file(s) under {ASM_DIR.relative_to(CORPUS_ROOT.parent.parent)}")
         print("Review the diff before committing: regenerating is a deliberate change to")
         print("the pinned assembly. Mutants are derived from it, so where waits or loads")
@@ -611,8 +561,7 @@ def _regenerate_and_report(args: argparse.Namespace, build: Build, out_root: Pat
     # cannot report a match either way.
     print()
     for target in targets:
-        committed = read_recipe(ASM_DIR / target / RECIPE_NAME)
-        for note in compare_recipes(target, committed, build.recipe):
+        for note in compare_recipes(target, build.recipe):
             print(note)
     expected = corpus.outputs(targets)
     not_generated = {(t, f) for t, f in expected if not (out_root / t / f).is_file()}

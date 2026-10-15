@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import pytest
+from test_recipe import BAD_RECIPES
 import sys
 import tomllib
 
@@ -305,35 +306,19 @@ def test_missing_recipe_is_reported(corpus, capsys, tmp_path):
     assert "asm/gfx950/recipe.toml is missing" in out
 
 
-def test_recipe_without_a_field_is_reported(corpus, capsys, tmp_path):
+
+
+
+
+# --- The recipe is read by the shared loader ----------------------------------------
+
+
+@pytest.mark.parametrize("text, problem", BAD_RECIPES.values(), ids=BAD_RECIPES.keys())
+def test_invalid_recipe_is_reported_as_the_shared_loader_reports_it(
+    corpus, capsys, tmp_path, text, problem
+):
     corpus(["gfx950"], PORTABLE, ["gfx950/portable"])
-    recipe = tmp_path / "asm" / "gfx950" / "recipe.toml"
-    recipe.write_text(RECIPE.replace('rocm_version = "10.1.0"\n', ""))
+    (tmp_path / "asm" / "gfx950" / "recipe.toml").write_text(text)
     code, out = run(capsys)
     assert code == 1
-    assert "asm/gfx950/recipe.toml: rocm_version is missing" in out
-
-
-def test_recipe_with_flags_that_are_not_a_list_is_reported(corpus, capsys, tmp_path):
-    corpus(["gfx950"], PORTABLE, ["gfx950/portable"])
-    recipe = tmp_path / "asm" / "gfx950" / "recipe.toml"
-    recipe.write_text(RECIPE.replace('flags = ["-O3", "-x", "hip"]', 'flags = "-O3"'))
-    code, out = run(capsys)
-    assert code == 1
-    assert "asm/gfx950/recipe.toml: flags must be a list of strings" in out
-
-
-def test_unreadable_recipe_is_reported(corpus, capsys, tmp_path):
-    corpus(["gfx950"], PORTABLE, ["gfx950/portable"])
-    (tmp_path / "asm" / "gfx950" / "recipe.toml").write_text("compiler = \n")
-    code, out = run(capsys)
-    assert code == 1
-    assert "asm/gfx950/recipe.toml: not valid TOML" in out
-
-
-def test_committed_recipes_are_checked(capsys):
-    # The real corpus, as committed: each target has a complete recipe.
-    for target in tomllib.loads((SCRIPT.parent.parent / "cases.toml").read_text())["corpus"][
-        "targets"
-    ]:
-        assert (SCRIPT.parent.parent / "asm" / target / "recipe.toml").is_file()
+    assert f"asm/gfx950/recipe.toml: {problem}" in out

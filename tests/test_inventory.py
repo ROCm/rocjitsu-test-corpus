@@ -1,5 +1,6 @@
 # Copyright (c) 2026 Advanced Micro Devices, Inc.
 # SPDX-License-Identifier: MIT
+import dataclasses
 import importlib.util
 import sys
 from pathlib import Path
@@ -39,6 +40,21 @@ def test_load_gives_named_case_records(tmp_path):
     portable, only = loaded.cases
     assert portable == inventory.Case(id="portable", kernel="portable", targets=(), headers=())
     assert only.targets == ("gfx1250",) and only.headers == ("x/y.hpp",)
+
+
+@pytest.mark.parametrize("record", [inventory.Case, inventory.Inventory])
+def test_records_are_frozen_dataclasses(record):
+    # Both inventory records are represented the same way: immutable fields,
+    # and no tuple behaviour such as indexing or unpacking to depend on.
+    assert dataclasses.is_dataclass(record)
+    assert record.__dataclass_params__.frozen
+    assert not issubclass(record, tuple)
+
+
+def test_case_fields_cannot_be_reassigned():
+    case = inventory.Case(id="a", kernel="a", targets=(), headers=())
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        case.kernel = "b"
 
 
 def test_absent_targets_means_every_corpus_target(tmp_path):

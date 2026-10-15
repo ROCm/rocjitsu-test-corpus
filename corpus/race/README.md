@@ -16,6 +16,7 @@ corpus/race/
     regenerate_asm.py     Regenerates asm/ from kernels/, or checks it for drift.
     check_cases.py        Checks cases.toml against kernels/ and asm/ (no compiler).
     inventory.py          Reads and validates cases.toml for both scripts.
+    recipe.py             Reads, validates and writes recipe.toml for both scripts.
 ```
 
 ## `cases.toml`
@@ -101,7 +102,8 @@ python corpus/race/scripts/regenerate_asm.py --check
 committed assembly as text, and removes the directory. It also compares the
 recipe it would write with each target's committed `recipe.toml`, and says
 whether the recipe is unchanged, whether the flags changed (`recipe changed`),
-or whether the compiler or SDK changed (`toolchain changed`). That tells a
+or whether the compiler or SDK changed (`toolchain changed`). A committed recipe
+that is invalid is reported as one that cannot be compared. That tells a
 changed recipe apart from a toolchain update. The recipe comparison is
 informational: the exit code depends only on the assembly. It is a manual tool, not
 a CI gate: it compiles with whatever toolchain is installed, so its result

@@ -39,9 +39,9 @@ caught. It checks that:
 import argparse
 import re
 import sys
-import tomllib
 
 import inventory
+import recipe
 
 from pathlib import Path
 
@@ -54,10 +54,6 @@ CASES_PATH = CORPUS_ROOT / "cases.toml"
 # triple and processor, e.g. "amdgcn-amd-amdhsa-unknown-gfx950:xnack-". Group 1
 # is the processor, without target features.
 _AMDGCN_TARGET_RE = re.compile(r'^\s*\.amdgcn_target\s+"[^"]*-([^-":]+)(?::[^"]*)?"', re.MULTILINE)
-
-# How each target's assembly was regenerated, written by regenerate_asm.py.
-RECIPE_NAME = "recipe.toml"
-_RECIPE_TEXT_FIELDS = ("compiler", "compiler_version", "rocm_version")
 
 
 def asm_targets() -> list[str]:
@@ -78,28 +74,15 @@ def target_mismatch(asm: Path, target: str) -> str | None:
 
 
 def recipe_problems(target: str) -> list[str]:
-    """What is wrong with *target*'s recipe.toml, if anything."""
-    where = f"asm/{target}/{RECIPE_NAME}"
-    path = ASM_DIR / target / RECIPE_NAME
-    if not path.is_file():
-        return [f"{where} is missing; regenerate {target} to write it"]
+    """What is wrong with *target*'s recipe.toml, as recipe.load reports it."""
+    where = f"asm/{target}/{recipe.FILE_NAME}"
     try:
-        recipe = tomllib.loads(path.read_text())
-    except tomllib.TOMLDecodeError as error:
-        return [f"{where}: not valid TOML ({error})"]
-
-    problems = []
-    for field in _RECIPE_TEXT_FIELDS:
-        if field not in recipe:
-            problems.append(f"{where}: {field} is missing")
-        elif not isinstance(recipe[field], str) or not recipe[field]:
-            problems.append(f"{where}: {field} must be a non-empty string")
-    flags = recipe.get("flags")
-    if flags is None:
-        problems.append(f"{where}: flags is missing")
-    elif not isinstance(flags, list) or not all(isinstance(flag, str) for flag in flags):
-        problems.append(f"{where}: flags must be a list of strings")
-    return problems
+        loaded = recipe.load(ASM_DIR / target / recipe.FILE_NAME)
+    except recipe.RecipeError as error:
+        return [f"{where}: {problem}" for problem in error.problems]
+    if loaded is None:
+        return [f"{where} is missing; regenerate {target} to write it"]
+    return []
 
 
 def check(corpus: inventory.Inventory) -> list[str]:

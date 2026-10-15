@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 import pytest
+from test_recipe import BAD_RECIPES
 import sys
 import textwrap
 import tomllib
@@ -1066,3 +1067,22 @@ def test_check_without_a_committed_recipe_says_so(manifest, corpus_main, capsys)
     capsys.readouterr()
     assert run("--check") == 0
     assert "gfx950: no recipe.toml committed" in capsys.readouterr().out
+
+
+# --- An invalid committed recipe is reported, not raised -----------------------------
+
+
+@pytest.mark.parametrize("text, problem", BAD_RECIPES.values(), ids=BAD_RECIPES.keys())
+def test_check_reports_an_invalid_committed_recipe(
+    manifest, corpus_main, capsys, text, problem
+):
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    commit_fresh_output(run, committed)
+    (committed / "gfx950" / "recipe.toml").write_text(text)
+    capsys.readouterr()
+    # The recipe comparison is informational: the assembly still matches.
+    assert run("--check") == 0
+    out = capsys.readouterr().out
+    assert "gfx950: recipe.toml cannot be compared" in out
+    assert problem in out
