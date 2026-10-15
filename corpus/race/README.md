@@ -140,7 +140,9 @@ python corpus/race/scripts/check_cases.py
   its `asm/<target>/<kernel>.s`;
 - every committed `.s` file belongs to a case that builds for that target;
 - every committed `.s` file declares `.amdgcn_target` for the target its
-  directory names.
+  directory names;
+- every target directory has its `recipe.toml`, with all of its fields. Commit
+  it with the `.s` files the same regeneration wrote.
 
 This is the check suited to CI. `tests/test_check_cases.py` runs it against the
 committed corpus under pytest.

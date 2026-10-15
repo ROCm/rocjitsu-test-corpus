@@ -34,6 +34,14 @@ PORTABLE = '[[case]]\nid = "portable"\nkernel = "portable"\ntargets = []\n'
 GFX1250_ONLY = '[[case]]\nid = "only"\nkernel = "only"\ntargets = ["gfx1250"]\n'
 
 
+RECIPE = (
+    'compiler = "hipcc"\n'
+    'compiler_version = "AMD clang version 23.0.0git"\n'
+    'rocm_version = "10.1.0"\n'
+    'flags = ["-O3", "-x", "hip"]\n'
+)
+
+
 def listing(target: str) -> str:
     """The start of a device assembly listing for *target*, as hipcc writes it."""
     return f'\t.amdgcn_target "amdgcn-amd-amdhsa-unknown-{target}"\n\ts_endpgm\n'
@@ -64,6 +72,7 @@ def corpus(tmp_path: Path, monkeypatch):
         for path in asm:
             target, kernel = path.split("/")
             (tmp_path / "asm" / target).mkdir(exist_ok=True)
+            (tmp_path / "asm" / target / "recipe.toml").write_text(RECIPE)
             (tmp_path / "asm" / target / f"{kernel}.s").write_text(listing(target))
 
     return build
@@ -279,3 +288,52 @@ def test_target_name_that_only_starts_with_the_directory_is_reported(corpus, cap
     code, out = run(capsys)
     assert code == 1
     assert ".amdgcn_target is gfx9500, not gfx950" in out
+
+
+# --- Each target records its recipe ----------------------------------------------
+#
+# regenerate_asm.py writes asm/<target>/recipe.toml beside the assembly, and
+# --check compares it to tell a changed recipe from a toolchain update. A
+# regeneration commit that leaves it out is caught here, without a compiler.
+
+
+def test_missing_recipe_is_reported(corpus, capsys, tmp_path):
+    corpus(["gfx950"], PORTABLE, ["gfx950/portable"])
+    (tmp_path / "asm" / "gfx950" / "recipe.toml").unlink()
+    code, out = run(capsys)
+    assert code == 1
+    assert "asm/gfx950/recipe.toml is missing" in out
+
+
+def test_recipe_without_a_field_is_reported(corpus, capsys, tmp_path):
+    corpus(["gfx950"], PORTABLE, ["gfx950/portable"])
+    recipe = tmp_path / "asm" / "gfx950" / "recipe.toml"
+    recipe.write_text(RECIPE.replace('rocm_version = "10.1.0"\n', ""))
+    code, out = run(capsys)
+    assert code == 1
+    assert "asm/gfx950/recipe.toml: rocm_version is missing" in out
+
+
+def test_recipe_with_flags_that_are_not_a_list_is_reported(corpus, capsys, tmp_path):
+    corpus(["gfx950"], PORTABLE, ["gfx950/portable"])
+    recipe = tmp_path / "asm" / "gfx950" / "recipe.toml"
+    recipe.write_text(RECIPE.replace('flags = ["-O3", "-x", "hip"]', 'flags = "-O3"'))
+    code, out = run(capsys)
+    assert code == 1
+    assert "asm/gfx950/recipe.toml: flags must be a list of strings" in out
+
+
+def test_unreadable_recipe_is_reported(corpus, capsys, tmp_path):
+    corpus(["gfx950"], PORTABLE, ["gfx950/portable"])
+    (tmp_path / "asm" / "gfx950" / "recipe.toml").write_text("compiler = \n")
+    code, out = run(capsys)
+    assert code == 1
+    assert "asm/gfx950/recipe.toml: not valid TOML" in out
+
+
+def test_committed_recipes_are_checked(capsys):
+    # The real corpus, as committed: each target has a complete recipe.
+    for target in tomllib.loads((SCRIPT.parent.parent / "cases.toml").read_text())["corpus"][
+        "targets"
+    ]:
+        assert (SCRIPT.parent.parent / "asm" / target / "recipe.toml").is_file()
