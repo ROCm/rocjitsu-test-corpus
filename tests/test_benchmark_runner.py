@@ -26,7 +26,9 @@ from benchmarks import runner
 
 
 @pytest.mark.parametrize("thread_policy", ["default", "single"])
-def test_harness_cell_preserves_complete_identity(runner_context, thread_policy) -> None:
+def test_harness_cell_preserves_complete_identity(
+    runner_context, thread_policy
+) -> None:
     definition = runner_context.suite.cases[0]
     cell = harness.cell(
         runner_context, definition.id, "gfx950", thread_policy=thread_policy
@@ -34,7 +36,9 @@ def test_harness_cell_preserves_complete_identity(runner_context, thread_policy)
     assert cell.definition is definition
     assert cell.target == "gfx950"
     assert cell.thread_policy == thread_policy
-    assert harness.cell(runner_context, definition.id, "gfx950").thread_policy == "default"
+    assert (
+        harness.cell(runner_context, definition.id, "gfx950").thread_policy == "default"
+    )
 
 
 def test_runner_fixture_uses_automatic_thread_configuration(runner_context):
@@ -339,7 +343,9 @@ def test_raw_problem_preserves_nested_parameter_keys(runner_context):
         "nested_list": [{"threads_per_block": 256}],
     })
     runner_context.suite = replace(runner_context.suite, cases=(case,))
-    output, result = harness.run_harness(runner_context, harness.matrix(runner_context), "nested", samples=1)
+    output, result = harness.run_harness(
+        runner_context, harness.matrix(runner_context), "nested", samples=1
+    )
     assert result["benchmark_results"][0]["problem"] == case.params
     assert json.loads((output / "run.json").read_text())["benchmark_results"][0]["problem"] == case.params
 
@@ -399,7 +405,9 @@ def test_progress_identifies_actual_policy_in_dual_policy_run(runner_context) ->
         runner_context.suite, cases=(case,), targets=("gfx950",),
         thread_policies=("default", "single"),
     )
-    _, result = harness.run_harness(runner_context, matrix, "dual-policy-progress", progress=progress)
+    _, result = harness.run_harness(
+        runner_context, matrix, "dual-policy-progress", progress=progress
+    )
     messages = progress.getvalue().splitlines()
     for position, policy in enumerate(("default", "single"), start=1):
         identity = f"[{position}/2] case={case} target=gfx950 thread_policy={policy}"
@@ -608,7 +616,9 @@ def test_missing_plugin_report_fails_the_cell(runner_context) -> None:
         target = argv[argv.index("--target") + 1]
         output = Path(argv[argv.index("--output") + 1])
         output.write_text(
-            json.dumps(harness.payload(harness.cell(runner_context, case, target), [1])),
+            json.dumps(
+                harness.payload(harness.cell(runner_context, case, target), [1])
+            ),
             encoding="utf-8",
         )
         return subprocess.CompletedProcess(argv, 0, "", "")
@@ -765,7 +775,9 @@ def test_malformed_samples_fail_validation(runner_context) -> None:
         target = argv[argv.index("--target") + 1]
         output = Path(argv[argv.index("--output") + 1])
         output.write_text(
-            json.dumps(harness.payload(harness.cell(runner_context, case, target), [1, 0, 3])),
+            json.dumps(
+                harness.payload(harness.cell(runner_context, case, target), [1, 0, 3])
+            ),
             encoding="utf-8",
         )
         return subprocess.CompletedProcess(argv, 0, "", "")
@@ -914,7 +926,10 @@ def test_interruption_retains_completed_and_unrun_matrix_cells(
     assert [test["status"] for test in raw["benchmark_results"]] == ["completed", "failed", "failed"]
     assert raw["execution_summary"]["finished_at"] is not None
     assert raw["benchmark_results"][0]["timing_results_s"]
-    assert harness.artifact(output, raw["benchmark_results"][0], "stdout.txt").read_text() == "out"
+    assert (
+        harness.artifact(output, raw["benchmark_results"][0], "stdout.txt").read_text()
+        == "out"
+    )
     active = raw["benchmark_results"][1]
     assert active["timing_results_s"] == []
     assert active["error"] == "workload interrupted: SIGTERM"
@@ -929,8 +944,12 @@ def test_interruption_retains_completed_and_unrun_matrix_cells(
     else:
         assert not harness.artifact(output, active, "workload.json").exists()
         assert not harness.artifact(output, active, "plugins/logging.log").exists()
-    assert not harness.artifact(output, raw["benchmark_results"][2], "stdout.txt").exists()
-    assert not harness.artifact(output, raw["benchmark_results"][2], "config.json").exists()
+    assert not harness.artifact(
+        output, raw["benchmark_results"][2], "stdout.txt"
+    ).exists()
+    assert not harness.artifact(
+        output, raw["benchmark_results"][2], "config.json"
+    ).exists()
 
 
 def test_interruption_finalizes_the_run_artifact(runner_context) -> None:
@@ -1044,8 +1063,12 @@ def test_signal_preserves_flushed_workload_output(runner_context, signum) -> Non
     assert active["status"] == "failed"
     assert active["timing_results_s"] == []
     assert "interrupted" in active["error"]
-    assert harness.artifact(output, active, "stdout.txt").read_text() == "flushed stdout\n"
-    assert harness.artifact(output, active, "stderr.txt").read_text() == "flushed stderr\n"
+    assert (
+        harness.artifact(output, active, "stdout.txt").read_text() == "flushed stdout\n"
+    )
+    assert (
+        harness.artifact(output, active, "stderr.txt").read_text() == "flushed stderr\n"
+    )
     assert harness.artifact(output, active, "config.json").is_file()
     assert not harness.artifact(output, active, "workload.json").exists()
 
@@ -1375,7 +1398,9 @@ def test_thread_policy_and_recorded_native_allocation(
         return harness.successful_process(runner_context, argv, **kwargs)
 
     matrix = harness.matrix(runner_context, runner_context.suite.cases[0].id)
-    output, result = harness.run_harness(runner_context, matrix, thread_policy, process=execute)
+    output, result = harness.run_harness(
+        runner_context, matrix, thread_policy, process=execute
+    )
     assert result["benchmark_results"][0]["thread_policy"] == thread_policy
     assert (
         commands[0][0]
@@ -1392,7 +1417,9 @@ def test_thread_policy_and_recorded_native_allocation(
     for argv in commands:
         assert argv[argv.index("--cpu-thread-budget") + 1] == ("1" if thread_policy == "single" else "0")
     snapshot = json.loads(
-        harness.artifact(output, result["benchmark_results"][0], "config.json").read_text()
+        harness.artifact(
+            output, result["benchmark_results"][0], "config.json"
+        ).read_text()
     )
     assert snapshot == expected_config
     assert json.loads(runner_context.configs["gfx950"].read_text()) == policy
@@ -1438,7 +1465,9 @@ def test_workload_ids_preserve_sizes_selection_and_raw_output(
     runner_context, capsys, manifest_name, thread_policy
 ):
     manifest = runner.BENCHMARK_ROOT / "suites" / f"{manifest_name}.toml"
-    runner_context.suite = harness.with_policy(runner.load_manifest(manifest), thread_policy)
+    runner_context.suite = harness.with_policy(
+        runner.load_manifest(manifest), thread_policy
+    )
     ids = ["deepseek.mlp_w1_m64", "deepseek.mlp_w1_m256"]
     matrix = harness.matrix(runner_context, *ids, targets=("gfx950", "gfx1250"))
     assert [cell.case for cell in matrix] == ids
@@ -1476,7 +1505,9 @@ def test_workload_ids_preserve_sizes_selection_and_raw_output(
 def test_runner_preserves_explicit_custom_ids(runner_context, case_id):
     case = replace(runner_context.suite.cases[0], id=case_id)
     runner_context.suite = replace(runner_context.suite, cases=(case,))
-    output, result = harness.run_harness(runner_context, harness.matrix(runner_context, case_id), "custom")
+    output, result = harness.run_harness(
+        runner_context, harness.matrix(runner_context, case_id), "custom"
+    )
     assert result["benchmark_results"][0]["id"] == case_id
     assert result["benchmark_results"][0]["status"] == "completed"
     assert (output / "gfx950/default/cases" / case_id / "workload.json").is_file()
@@ -1613,7 +1644,11 @@ def test_invalid_second_config_does_not_create_output(
     output = runner_context.root / "invalid-config"
     with mock.patch.object(runner, "_native_target_metadata") as probe:
         with pytest.raises(runner.RunnerError):
-            harness.run_harness(runner_context, harness.matrix(runner_context, targets=runner_context.suite.targets), output.name)
+            harness.run_harness(
+                runner_context,
+                harness.matrix(runner_context, targets=runner_context.suite.targets),
+                output.name,
+            )
     probe.assert_not_called()
     assert not output.exists()
 
@@ -1660,7 +1695,9 @@ def test_native_setup_failure_on_second_target_allows_retry(
         assert "probe error" in str(caught.value)
         assert "; see " not in str(caught.value)
     failure = None
-    _, result = harness.run_harness(runner_context, matrix, output.name, process=execute)
+    _, result = harness.run_harness(
+        runner_context, matrix, output.name, process=execute
+    )
     assert result["execution_summary"]["finished_at"] is not None
     assert all(item["status"] == "completed" for item in result["benchmark_results"])
     assert (output / "run.json").exists()
@@ -1732,7 +1769,9 @@ def test_output_created_by_other_process_is_preserved(runner_context):
 
     with mock.patch.object(Path, "mkdir", mkdir):
         with pytest.raises(FileExistsError):
-            harness.run_harness(runner_context, runner.select_matrix(runner_context.suite), output.name)
+            harness.run_harness(
+                runner_context, runner.select_matrix(runner_context.suite), output.name
+            )
     assert (output / "keep").read_text() == "other process"
 
 

@@ -20,7 +20,10 @@ from benchmarks import runner
 
 
 def test_policy_definition_preserves_order_and_budgets() -> None:
-    assert tuple(runner.THREAD_POLICY_BUDGETS.items()) == (("default", 0), ("single", 1))
+    assert tuple(runner.THREAD_POLICY_BUDGETS.items()) == (
+        ("default", 0),
+        ("single", 1),
+    )
     assert runner.THREAD_POLICIES == ("default", "single")
     assert runner.build_parser().parse_args([]).thread_policy is None
 
