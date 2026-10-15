@@ -37,16 +37,23 @@ invoking directory. Every selected target needs a mapping; extra mappings are
 allowed for convenience when selecting a subset. The runner snapshots selected
 configs before execution and derives each cell's config from that snapshot.
 It removes the simulation tick limit and adds selected plugin/report paths.
-Base configs must not enable plugins or sinks. Threading config values are not
-overridden: the runner passes `--cpu-thread-budget 0` for `default` and
-`--cpu-thread-budget 1` for `single`, to both probes and workload commands.
-Independent budget flags in `--run-wrapper` are rejected. Zero means automatic
-allocation, not guaranteed multithreading. Explicit engine/dispatch/helper
-config settings can exceed the budget; the native `--thread-budget-table` probe
-must resolve exactly 1/1/0 (one total worker) for `single` or setup fails.
-Each selected target/policy is probed once; its allocation and config snapshot
-are retained under `<target>/<thread-policy>/`. Policy is recorded on each raw
-result, not in the execution summary.
+Base configs must not enable plugins or sinks. Engine/dispatch/helper counts are
+preserved, but the runner overrides `cpu_thread_budget` at launch: it passes
+`--cpu-thread-budget 0` for `default` and `--cpu-thread-budget 1` for `single`,
+to both native probes and workload commands. Zero selects automatic sizing even
+when the input config contains a nonzero budget; it does not guarantee
+multithreading. Independent budget flags in `--run-wrapper` are rejected.
+Explicit engine/dispatch/helper config settings can exceed the budget; the native
+`--thread-budget-table` probe must resolve exactly 1/1/0 (one total worker) for
+`single` or setup fails.
+Each selected target/policy is probed once. Under `<target>/<thread-policy>/`,
+`config.json` retains the input budget, while `allocation.json` records the
+resolved native probe allocation and **probe command**, not the timed workload
+command; `policy.txt` retains the raw probe output. Per-cell `config.json` files
+also retain the input budget. For example, an input `cpu_thread_budget` of 7 stays
+7 in both saved configs, but the launch arguments select 0 for `default` or 1 for
+`single`. The saved budget alone does not describe the effective allocation.
+Policy is recorded on each raw result, not in the execution summary.
 
 The runner checks the Release configuration, disabled LTO/sanitizers,
 source root, SDK, and selected plugin binaries. The wrapper must select the
