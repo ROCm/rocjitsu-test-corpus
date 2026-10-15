@@ -973,7 +973,9 @@ TEST_F(Gfx950RaceTest, global_to_lds_buffer) {
 }
 
 TEST_F(Gfx950RaceTest, global_to_lds_buffer_race) {
-  buffer_load_lds_race_kernel<<<3, 128>>>(alloc<int>(384), alloc<int>(384));
+  // Inline assembly hides LDS accesses from the compiler. Reserve backing
+  // explicitly even when the unused static array is optimized away.
+  buffer_load_lds_race_kernel<<<3, 128, 128 * sizeof(int)>>>(alloc<int>(384), alloc<int>(384));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kGlobalToLdsBufferRaceExpectation);
