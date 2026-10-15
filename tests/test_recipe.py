@@ -1,5 +1,6 @@
 # Copyright (c) 2026 Advanced Micro Devices, Inc.
 # SPDX-License-Identifier: MIT
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -65,7 +66,17 @@ def test_every_problem_is_reported_at_once(tmp_path):
 
 def test_toolchain_fields_are_every_field_but_the_flags():
     assert recipe.TOOLCHAIN_FIELDS == ("compiler", "compiler_version", "rocm_version")
-    assert set(recipe.Recipe._fields) == {*recipe.TOOLCHAIN_FIELDS, "flags"}
+    assert recipe.FIELDS == (*recipe.TOOLCHAIN_FIELDS, "flags")
+
+
+def test_recipe_is_a_frozen_dataclass():
+    # Represented like the inventory's records: immutable fields, and no tuple
+    # behaviour such as indexing or unpacking to depend on.
+    assert dataclasses.is_dataclass(recipe.Recipe)
+    assert recipe.Recipe.__dataclass_params__.frozen
+    assert not issubclass(recipe.Recipe, tuple)
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        GOOD.compiler = "clang++"
 
 
 def test_committed_recipes_load():

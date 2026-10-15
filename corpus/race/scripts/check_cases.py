@@ -39,11 +39,10 @@ caught. It checks that:
 import argparse
 import re
 import sys
+from pathlib import Path
 
 import inventory
 import recipe
-
-from pathlib import Path
 
 CORPUS_ROOT = Path(__file__).resolve().parent.parent
 ASM_DIR = CORPUS_ROOT / "asm"

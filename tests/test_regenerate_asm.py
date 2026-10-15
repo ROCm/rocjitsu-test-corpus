@@ -2,16 +2,18 @@
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 
+import dataclasses
 import importlib.util
 import json
 import os
-import pytest
-from test_recipe import BAD_RECIPES
 import sys
 import textwrap
 import tomllib
-
 from pathlib import Path
+
+import pytest
+
+from test_recipe import BAD_RECIPES
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "corpus" / "race" / "scripts" / "regenerate_asm.py"
@@ -60,7 +62,8 @@ def write_fake_compiler(compiler: Path, behaviour: str) -> Path:
     Each compile appends the arguments it received, as a JSON list, to
     ``<name>.argv`` beside it, and the variables in WATCHED_ENVIRONMENT it saw
     to ``<name>.env``; see compiler_invocations and compiler_environments.
-    ``--version`` prints ``FAKE_COMPILER_VERSION`` and is not logged.
+    ``--version`` prints ``FAKE_COMPILER_VERSION`` and is not logged. A kernel
+    named in ``FAKE_COMPILER_FAIL`` fails whatever *behaviour* says.
 
     *behaviour* is one of:
       fail        exit 1 without writing anything
@@ -82,7 +85,9 @@ def write_fake_compiler(compiler: Path, behaviour: str) -> Path:
             with open(os.path.abspath(__file__) + ".env", "a") as log:
                 seen = {{name: os.environ.get(name) for name in {WATCHED_ENVIRONMENT!r}}}
                 log.write(json.dumps(seen) + "\\n")
-            if {behaviour!r} == "fail":
+            source = next((a for a in args if a.endswith(".hip")), "")
+            failing = os.environ.get("FAKE_COMPILER_FAIL")
+            if {behaviour!r} == "fail" or (failing and os.path.basename(source) == failing + ".hip"):
                 sys.stderr.write("error: unknown argument\\n")
                 sys.exit(1)
             text = "kernel:\\n\\ts_endpgm\\n.globl __hip_cuid_0123abcd\\n"
@@ -467,6 +472,9 @@ def corpus_main(manifest, monkeypatch, tmp_path, kernel):
     output. Returns (run, committed_root).
     """
     install_fake_compiler(monkeypatch, tmp_path, "output")
+    # A rocm-sdk that describes no SDK these tests select, so the recipe falls
+    # back to .info/version, without starting the real, slower, rocm-sdk.
+    install_fake_rocm_sdk(monkeypatch, tmp_path, tmp_path / "no-sdk", "0.0.0")
     (kernel.parent / "wmma.hip").write_text("__global__ void wmma() {}\n")
     (kernel.parent / "only.hip").write_text("__global__ void only() {}\n")
     for name in ("CPATH", "CPLUS_INCLUDE_PATH"):
@@ -560,16 +568,18 @@ def test_check_reports_an_expected_output_absent_from_both_trees(drift_dirs, cap
     assert "gfx950/k.s: not generated and not committed" in capsys.readouterr().err
 
 
-def test_update_mode_still_skips_a_case_missing_its_optional_header(
+def test_update_mode_reports_a_skipped_case_and_leaves_its_target(
     manifest, corpus_main, capsys
 ):
+    # The skip is still reported, but the target's other listing is not written
+    # either: its recipe could not describe both.
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE + ROCWMMA_CASE)
-    assert run() == 0
+    assert run() == 3
     out = capsys.readouterr().out
     assert "skip: wmma" in out
-    assert (committed / "gfx950" / "kernel.s").is_file()
-    assert not (committed / "gfx950" / "wmma.s").exists()
+    assert not (committed / "gfx950" / "kernel.s").exists()
+    assert not (committed / "gfx950" / "recipe.toml").exists()
 
 
 def test_check_help_documents_the_exit_codes(monkeypatch, capsys):
@@ -1086,3 +1096,125 @@ def test_check_reports_an_invalid_committed_recipe(
     out = capsys.readouterr().out
     assert "gfx950: recipe.toml cannot be compared" in out
     assert problem in out
+
+
+# --- A target's listings and recipe are replaced together, or not at all --------
+#
+# The recipe describes every listing beside it. So a run replaces a target's
+# assembly only when every case for that target compiled, and writes the recipe
+# with it; a failed or skipped case leaves the whole target as it was.
+
+OLD_RECIPE = regen.recipe.Recipe(
+    compiler="old-hipcc", compiler_version="old clang", rocm_version="1.0", flags=("-O3", "-x", "hip")
+)
+
+
+def seed_target(committed: Path, target: str, kernels: list[str]) -> None:
+    """A committed target directory: an old listing per kernel, and the old recipe."""
+    (committed / target).mkdir(parents=True, exist_ok=True)
+    for kernel in kernels:
+        (committed / target / f"{kernel}.s").write_text(f"old {kernel}\n")
+    (committed / target / "recipe.toml").write_text(regen.recipe.dumps(OLD_RECIPE))
+
+
+def assert_untouched(committed: Path, target: str, kernels: list[str]) -> None:
+    for kernel in kernels:
+        assert (committed / target / f"{kernel}.s").read_text() == f"old {kernel}\n"
+    assert regen.recipe.load(committed / target / "recipe.toml") == OLD_RECIPE
+
+
+def test_partial_skip_leaves_the_target_as_it_was(manifest, corpus_main, capsys):
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE + ROCWMMA_CASE)
+    seed_target(committed, "gfx950", ["kernel", "wmma"])
+    assert run("--cxxflags=-O1") == 3
+    assert_untouched(committed, "gfx950", ["kernel", "wmma"])
+    assert "gfx950: not updated" in capsys.readouterr().err
+
+
+def test_partial_failure_leaves_the_target_as_it_was(
+    manifest, corpus_main, monkeypatch, capsys
+):
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE + '[[case]]\nid = "only"\nkernel = "only"\n')
+    seed_target(committed, "gfx950", ["kernel", "only"])
+    monkeypatch.setenv("FAKE_COMPILER_FAIL", "only")
+    assert run("--cxxflags=-O1") == 2
+    assert_untouched(committed, "gfx950", ["kernel", "only"])
+    assert "gfx950: not updated" in capsys.readouterr().err
+
+
+def test_all_skipped_run_leaves_the_recipe_as_it_was(manifest, corpus_main):
+    run, committed = corpus_main
+    manifest(["gfx950"], ROCWMMA_CASE)
+    seed_target(committed, "gfx950", ["wmma"])
+    assert run("--cxxflags=-O1") == 3
+    assert_untouched(committed, "gfx950", ["wmma"])
+
+
+def test_complete_target_is_written_while_a_blocked_one_is_kept(manifest, corpus_main, capsys):
+    run, committed = corpus_main
+    manifest(
+        ["gfx950", "gfx1250"],
+        PORTABLE_CASE + ROCWMMA_CASE.replace("targets = []", 'targets = ["gfx1250"]'),
+    )
+    seed_target(committed, "gfx950", ["kernel"])
+    seed_target(committed, "gfx1250", ["kernel", "wmma"])
+    assert run("--cxxflags=-O1") == 3
+    # gfx950 compiled completely: its listing and its recipe are both new.
+    assert "s_endpgm" in (committed / "gfx950" / "kernel.s").read_text()
+    assert regen.recipe.load(committed / "gfx950" / "recipe.toml").flags[-1] == "-O1"
+    # gfx1250 skipped a case, so nothing in it changed.
+    assert_untouched(committed, "gfx1250", ["kernel", "wmma"])
+    err = capsys.readouterr().err
+    assert "gfx1250: not updated" in err and "gfx950: not updated" not in err
+
+
+# --- The recipe names the SDK build ----------------------------------------------
+#
+# rocm-sdk reports the installed build, such as 10.1.0a20260822, where
+# .info/version has only the release, 10.1.0. The build is recorded when rocm-sdk
+# describes the SDK that was selected; otherwise .info/version is the fallback.
+
+
+def install_fake_rocm_sdk(monkeypatch, tmp_path: Path, root: Path, version: str) -> None:
+    """Put a rocm-sdk on PATH that reports *root* and *version*."""
+    bin_dir = tmp_path / "rocm-sdk-bin"
+    bin_dir.mkdir(exist_ok=True)
+    tool = bin_dir / "rocm-sdk"
+    tool.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        f"print({str(root)!r} if sys.argv[1:] == ['path', '--root'] else {version!r})\n"
+    )
+    tool.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+
+def test_recipe_records_the_build_of_the_selected_sdk(manifest, corpus_main, monkeypatch, tmp_path):
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    set_rocm_version(tmp_path, "10.1.0")
+    install_fake_rocm_sdk(monkeypatch, tmp_path, tmp_path / "rocm", "10.1.0a20260822")
+    assert run() == 0
+    assert read_recipe(committed, "gfx950")["rocm_version"] == "10.1.0a20260822"
+
+
+def test_recipe_falls_back_to_info_version_for_another_sdk(
+    manifest, corpus_main, monkeypatch, tmp_path
+):
+    # rocm-sdk describes a different install than the one selected, so its
+    # version says nothing about the compiler used.
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    set_rocm_version(tmp_path, "10.1.0")
+    install_fake_rocm_sdk(monkeypatch, tmp_path, tmp_path / "elsewhere", "9.9.9a1")
+    assert run() == 0
+    assert read_recipe(committed, "gfx950")["rocm_version"] == "10.1.0"
+
+
+def test_build_is_a_frozen_dataclass():
+    # Like the inventory and recipe records: a plain record with immutable fields.
+    assert dataclasses.is_dataclass(regen.Build)
+    assert regen.Build.__dataclass_params__.frozen
+    assert not issubclass(regen.Build, tuple)

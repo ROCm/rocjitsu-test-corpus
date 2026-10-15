@@ -10,10 +10,10 @@ on its fields and on what makes it valid. A change to the recipe is a change
 here, not in each script.
 """
 
+import dataclasses
 import json
 import tomllib
 from pathlib import Path
-from typing import NamedTuple
 
 FILE_NAME = "recipe.toml"
 
@@ -26,7 +26,8 @@ class RecipeError(ValueError):
         self.problems = problems
 
 
-class Recipe(NamedTuple):
+@dataclasses.dataclass(frozen=True)
+class Recipe:
     """
     How a target's assembly was regenerated.
 
@@ -39,7 +40,9 @@ class Recipe(NamedTuple):
         compiler: The compiler's file name: ``hipcc``, or ``clang++`` when the
             SDK's clang is used directly.
         compiler_version: The ``clang version`` line of ``--version``.
-        rocm_version: The SDK's ``.info/version``, or ``unknown``.
+        rocm_version: The SDK build, such as ``10.1.0a20260822``, from
+            ``rocm-sdk version`` when it describes the selected SDK; otherwise
+            the SDK's ``.info/version``, or ``unknown``.
         flags: The explicit flags: the baseline recipe, then ``--cxxflags`` as
             given. The flags every compile gets, such as the target and the
             SDK's include directory, are implied.
@@ -51,9 +54,12 @@ class Recipe(NamedTuple):
     flags: tuple[str, ...]
 
 
+# Every field of a recipe, in the order recipe.toml lists them.
+FIELDS = tuple(field.name for field in dataclasses.fields(Recipe))
+
 # The fields that identify the toolchain, as opposed to the flags the person
 # regenerating chose. Each is a non-empty string.
-TOOLCHAIN_FIELDS = tuple(field for field in Recipe._fields if field != "flags")
+TOOLCHAIN_FIELDS = tuple(field for field in FIELDS if field != "flags")
 
 
 def dumps(recipe: Recipe) -> str:
@@ -80,7 +86,7 @@ def load(path: Path) -> Recipe | None:
     except tomllib.TOMLDecodeError as error:
         raise RecipeError([f"not valid TOML ({error})"]) from None
 
-    problems = [f"unknown field {name!r}" for name in sorted(set(fields) - set(Recipe._fields))]
+    problems = [f"unknown field {name!r}" for name in sorted(set(fields) - set(FIELDS))]
     for name in TOOLCHAIN_FIELDS:
         if name not in fields:
             problems.append(f"{name} is missing")

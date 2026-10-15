@@ -61,6 +61,7 @@ deliberately mismatched cuid and running it successfully.
 """
 
 import argparse
+import dataclasses
 import difflib
 import os
 import re
@@ -69,12 +70,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 import inventory
 import recipe
-
-from pathlib import Path
-from typing import NamedTuple
 
 CORPUS_ROOT = Path(__file__).resolve().parent.parent
 KERNELS_DIR = CORPUS_ROOT / "kernels"
@@ -278,15 +277,38 @@ def compiler_version(tool: Path) -> str:
     return next((line for line in lines if "clang version" in line), lines[0] if lines else "unknown")
 
 
+def sdk_version(root: Path) -> str:
+    """
+    The build of the SDK at *root*, such as ``10.1.0a20260822``.
+
+    ``rocm-sdk version`` names the build, where ``.info/version`` has only the
+    release, which two builds can share along with their clang revision. It is
+    used only when ``rocm-sdk`` describes this SDK; otherwise, as for an SDK
+    selected with ROCM_PATH, ``.info/version`` is the fallback.
+    """
+    if shutil.which("rocm-sdk"):
+        where = subprocess.run(
+            ["rocm-sdk", "path", "--root"], capture_output=True, text=True, check=False
+        )
+        if where.returncode == 0 and Path(where.stdout.strip()).absolute() == root:
+            version = subprocess.run(
+                ["rocm-sdk", "version"], capture_output=True, text=True, check=False
+            )
+            if version.returncode == 0 and version.stdout.strip():
+                return version.stdout.strip()
+    version_file = root / ".info" / "version"
+    if version_file.is_file() and (release := version_file.read_text().strip()):
+        return release
+    return "unknown"
+
+
 def current_recipe(cxxflags: list[str]) -> recipe.Recipe:
     """The recipe a regeneration with *cxxflags*, as given, uses on this machine."""
     tool = find_hip_compiler()
-    version_file = rocm_path() / ".info" / "version"
-    rocm_version = version_file.read_text().strip() if version_file.is_file() else ""
     return recipe.Recipe(
         compiler=tool.name,
         compiler_version=compiler_version(tool),
-        rocm_version=rocm_version or "unknown",
+        rocm_version=sdk_version(rocm_path()),
         flags=(*_BASELINE_COMPILER_FLAGS, *cxxflags),
     )
 
@@ -513,15 +535,15 @@ def main(argv: list[str]) -> int:
         )
     build = Build(corpus, targets, extra_flags, current_recipe(cxxflags))
 
-    if not args.check:
-        return _regenerate_and_report(args, build, ASM_DIR)
-    # The comparison has to finish while the regenerated files still exist, and
-    # the directory is removed however the check ends.
+    # Both modes compile into a scratch directory, removed however the run ends:
+    # --check compares it with the committed assembly, and an update installs a
+    # target from it only once all of that target's cases have compiled.
     with tempfile.TemporaryDirectory(prefix="race-asm-") as scratch:
         return _regenerate_and_report(args, build, Path(scratch))
 
 
-class Build(NamedTuple):
+@dataclasses.dataclass(frozen=True)
+class Build:
     """What one run regenerates, and how."""
 
     corpus: inventory.Inventory
@@ -535,7 +557,12 @@ def _regenerate_and_report(args: argparse.Namespace, build: Build, out_root: Pat
     corpus, targets = build.corpus, build.targets
     print(f"regenerating {', '.join(targets)} -> {out_root}")
 
-    written, failures, skipped = regenerate(corpus, targets, build.extra_flags, out_root)
+    # One target at a time, so an update can tell which targets are complete.
+    outcomes = {
+        target: regenerate(corpus, [target], build.extra_flags, out_root) for target in targets
+    }
+    failures = [failure for _, target_failures, _ in outcomes.values() for failure in target_failures]
+    skipped = [skip for _, _, target_skipped in outcomes.values() for skip in target_skipped]
     for skip in skipped:
         print(f"  skip: {skip}")
     for failure in failures:
@@ -543,18 +570,11 @@ def _regenerate_and_report(args: argparse.Namespace, build: Build, out_root: Pat
         print(f"  FAIL: {header}", file=sys.stderr)
         for line in diagnostic.splitlines():
             print(f"    {line}", file=sys.stderr)
+    if not args.check:
+        return _install(build, out_root, outcomes)
     if failures:
         print("\nfailed kernels' committed assembly is untouched", file=sys.stderr)
         return 2
-
-    if not args.check:
-        for target in targets:
-            _replace(ASM_DIR / target / recipe.FILE_NAME, recipe.dumps(build.recipe))
-        print(f"\nwrote {written} file(s) under {ASM_DIR.relative_to(CORPUS_ROOT.parent.parent)}")
-        print("Review the diff before committing: regenerating is a deliberate change to")
-        print("the pinned assembly. Mutants are derived from it, so where waits or loads")
-        print("moved, the mutants of those kernels change with them.")
-        return 0
 
     # A verdict covers only what was compared. A check that skipped a case is
     # incomplete unless skipping was allowed, and one that compared nothing
@@ -582,6 +602,51 @@ def _regenerate_and_report(args: argparse.Namespace, build: Build, out_root: Pat
     return _report_drift(
         targets, out_root, expected, not_compared=not_generated if skipped else set()
     )
+
+
+def _install(
+    build: Build, scratch: Path, outcomes: dict[str, tuple[int, list[str], list[str]]]
+) -> int:
+    """
+    Replace each complete target's committed assembly and recipe from *scratch*.
+
+    The recipe describes every listing beside it, so a target is installed only
+    when all of its cases compiled: its listings, then its recipe. A target with
+    a failed or skipped case is left exactly as it was, listings and recipe
+    alike, rather than mixing new listings with old ones under one recipe.
+    """
+    installed = 0
+    blocked = []
+    for target, (written, failures, skipped) in outcomes.items():
+        if failures or skipped:
+            blocked.append(
+                f"{target}: not updated: {len(failures)} case(s) failed and "
+                f"{len(skipped)} skipped, and its recipe covers every listing"
+            )
+            continue
+        if not written:
+            continue
+        for listing in sorted((scratch / target).glob("*.s")):
+            _replace(ASM_DIR / target / listing.name, listing.read_text())
+            installed += 1
+        _replace(ASM_DIR / target / recipe.FILE_NAME, recipe.dumps(build.recipe))
+
+    print(f"\nwrote {installed} file(s) under {ASM_DIR.relative_to(CORPUS_ROOT.parent.parent)}")
+    for note in blocked:
+        print(note, file=sys.stderr)
+    if installed:
+        print("Review the diff before committing: regenerating is a deliberate change to")
+        print("the pinned assembly. Mutants are derived from it, so where waits or loads")
+        print("moved, the mutants of those kernels change with them.")
+    if any(failures for _, failures, _ in outcomes.values()):
+        return 2
+    if blocked:
+        print(
+            "Make the skipped cases' headers available and regenerate those targets again.",
+            file=sys.stderr,
+        )
+        return 3
+    return 0
 
 
 def _report_drift(

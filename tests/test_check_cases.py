@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import importlib.util
-import pytest
-from test_recipe import BAD_RECIPES
 import sys
 import tomllib
-
 from pathlib import Path
+
+import pytest
+
+from test_recipe import BAD_RECIPES
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "corpus" / "race" / "scripts" / "check_cases.py"

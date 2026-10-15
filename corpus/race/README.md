@@ -54,12 +54,11 @@ produce different code under the same `.ident`. So regenerating also writes
 |---|---|
 | `compiler` | `hipcc`, or `clang++` when the SDK's clang is used directly. |
 | `compiler_version` | The `clang version` line of the compiler's `--version`. |
-| `rocm_version` | The SDK's `.info/version`, or `unknown`. |
+| `rocm_version` | The SDK build, from `rocm-sdk version` when `rocm-sdk` describes the selected SDK, such as `10.1.0a20260822`. Otherwise the SDK's `.info/version`, which has only the release, or `unknown`. |
 | `flags` | The explicit flags: `-O3 -x hip`, then `--cxxflags` as given. |
 
-The recipe covers the whole target directory. A case that a run skipped or
-failed to compile keeps its earlier `.s`, which may have been built with an
-earlier recipe.
+The recipe describes every listing in its target directory, so a target is
+replaced as a whole or not at all: see Failures and Optional headers below.
 
 ## Regenerating the assembly
 
@@ -77,12 +76,17 @@ python corpus/race/scripts/regenerate_asm.py --target gfx950    # one target
 - **Extra flags.** `--cxxflags` passes extra compiler flags, split like shell
   words, so a path with spaces can be quoted:
   `--cxxflags='-I"/path/to/my headers"'`.
-- **Optional headers.** A case that declares `headers` is skipped, and its
-  committed assembly is left as it is, when a header is not found. The search
+- **Whole targets.** Every case is compiled into a temporary directory first.
+  A target's listings and its `recipe.toml` are replaced only when all of that
+  target's cases compiled. A target with a failed or skipped case is left
+  exactly as it was, so a recipe never describes listings built another way.
+  Other, complete targets are still written.
+- **Optional headers.** A case that declares `headers` is skipped when a header
+  is not found, and so its target is not updated (exit 3). The search
   covers ROCm's include directory, `-I`/`-isystem`/`-iquote` from
   `--cxxflags`, and the absolute entries of `CPATH` and `CPLUS_INCLUDE_PATH`.
-- **Failures.** A kernel that fails to compile keeps its committed assembly, and
-  the compiler's diagnostic is printed.
+- **Failures.** A kernel that fails to compile leaves its target as it was, and
+  the compiler's diagnostic is printed (exit 2).
 - **Environment.** `HIPCC_COMPILE_FLAGS_APPEND`, `HIPCC_LINK_FLAGS_APPEND` and
   `CCC_OVERRIDE_OPTIONS` add to the compiler's command line from the
   environment, so they would change the assembly without being recorded. They
