@@ -123,7 +123,7 @@ def _corpus_targets(path: Path, value: object, problems: list[str]) -> tuple[str
 
 
 def _cases(
-    path: Path, entries: list[dict], corpus_targets: tuple[str, ...], problems: list[str]
+    path: Path, entries: list[dict[str, object]], corpus_targets: tuple[str, ...], problems: list[str]
 ) -> Iterable[Case]:
     seen_ids: set[str] = set()
     seen_kernels: set[str] = set()
