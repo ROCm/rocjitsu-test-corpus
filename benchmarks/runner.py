@@ -33,6 +33,8 @@ CORPUS_ROOT = BENCHMARK_ROOT.parent
 WORKLOAD_ROOT = CORPUS_ROOT / "corpus" / "benchmarks"
 DEFAULT_MANIFEST = BENCHMARK_ROOT / "suites" / "performance-v1.toml"
 TARGET_NAME = re.compile(r"gfx[0-9A-Za-z]+")
+THREAD_POLICY_BUDGETS = {"default": 0, "single": 1}
+THREAD_POLICIES = tuple(THREAD_POLICY_BUDGETS)
 MANIFEST_FIELDS = {
     "name",
     "cases",
@@ -167,7 +169,7 @@ def _sample_count(value: Any, field: str = "samples") -> int:
 
 
 def _thread_policy(value: Any) -> Literal["default", "single"]:
-    if value not in ("default", "single"):
+    if value not in THREAD_POLICIES:
         raise RunnerError('thread_policy must be "default" or "single"')
     return value
 
@@ -270,7 +272,7 @@ def select_matrix(
     *,
     targets: Sequence[str] = (),
     cases: Sequence[str] = (),
-    thread_policies: Sequence[str] = ("default", "single"),
+    thread_policies: Sequence[str] = THREAD_POLICIES,
 ) -> tuple[Cell, ...]:
     """Select target/policy groups, retaining case order within each group."""
     for policy in thread_policies:
@@ -299,7 +301,7 @@ def select_matrix(
     matrix = tuple(
         Cell(case, target, policy)
         for target in chosen_targets
-        for policy in ("default", "single")
+        for policy in THREAD_POLICIES
         if policy in thread_policies
         for case in chosen_cases
         if target in case.targets and policy in case.thread_policies
@@ -331,7 +333,7 @@ def parse_run_wrapper(value: str) -> tuple[str, ...]:
 def _policy_wrapper(wrapper: Sequence[str], policy: str) -> tuple[str, ...]:
     """Insert native budget options before the workload separator."""
     _thread_policy(policy)
-    budget = ("--cpu-thread-budget", "1" if policy == "single" else "0")
+    budget = ("--cpu-thread-budget", str(THREAD_POLICY_BUDGETS[policy]))
     config_end = wrapper.index("{config}") + 1
     try:
         position = wrapper.index("--", config_end)
@@ -1085,7 +1087,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--thread-policy",
         action="append",
-        choices=("default", "single"),
+        choices=THREAD_POLICIES,
         help="Restrict policies; repeat to select both "
         "(default: all policies supported by each TOML case)",
     )
@@ -1124,7 +1126,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         matrix = select_matrix(
             suite, targets=arguments.target, cases=arguments.case,
             thread_policies=(
-                ("default", "single")
+                THREAD_POLICIES
                 if arguments.thread_policy is None
                 else arguments.thread_policy
             ),

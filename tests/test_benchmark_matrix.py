@@ -18,6 +18,20 @@ from support.benchmark_runner import _run, _successful_process
 from benchmarks import runner
 
 
+def test_policy_definition_preserves_order_and_budgets() -> None:
+    assert tuple(runner.THREAD_POLICY_BUDGETS.items()) == (("default", 0), ("single", 1))
+    assert runner.THREAD_POLICIES == ("default", "single")
+    assert runner.build_parser().parse_args([]).thread_policy is None
+
+
+@pytest.mark.parametrize("value", [[], {}, ["default"], {"default": 0}])
+def test_policy_validator_rejects_unhashable_values(value: Any) -> None:
+    with pytest.raises(
+        runner.RunnerError, match='thread_policy must be "default" or "single"'
+    ):
+        runner._thread_policy(value)
+
+
 @pytest.mark.parametrize("missing", ["targets", "thread_policies"])
 def test_case_constructor_requires_support_declarations(missing: str) -> None:
     arguments: dict[str, Any] = {
