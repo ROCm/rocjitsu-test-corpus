@@ -5,8 +5,10 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <string>
 
@@ -81,6 +83,28 @@ private:
   std::string name_;
   std::string value_;
   bool was_set_ = false;
+};
+
+class TemporaryCaseDirectory {
+public:
+  TemporaryCaseDirectory()
+      : original_(std::filesystem::current_path()),
+        directory_(std::filesystem::temp_directory_path() /
+                   ("rocjitsu-race-log-test-" +
+                    std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()))) {
+    std::filesystem::create_directory(directory_);
+    std::filesystem::current_path(directory_);
+  }
+
+  ~TemporaryCaseDirectory() {
+    std::error_code ignored;
+    std::filesystem::current_path(original_, ignored);
+    std::filesystem::remove_all(directory_, ignored);
+  }
+
+private:
+  std::filesystem::path original_;
+  std::filesystem::path directory_;
 };
 
 TEST(RaceLogExpectationTest, ParsesValidEmptyLog) {
@@ -196,6 +220,34 @@ TEST(RaceLogExpectationTest, MissingEnvironmentFails) {
 
   EXPECT_FALSE(parsed.ok());
   EXPECT_EQ(parsed.error, "RJ_SINK_DIR is not set");
+}
+
+TEST(RaceLogExpectationTest, RejectsEnvironmentOutsideCurrentCase) {
+  EnvironmentGuard environment("RJ_SINK_DIR");
+  for (const auto &directory : {std::filesystem::current_path().parent_path() / "plugins",
+                               std::filesystem::path("../plugins")}) {
+    environment.set(directory.string());
+    const RaceLogParseResult parsed = parseRaceLogFromEnvironment();
+    EXPECT_FALSE(parsed.ok());
+    EXPECT_EQ(parsed.error, "RJ_SINK_DIR must name the current case's plugins directory");
+  }
+}
+
+TEST(RaceLogExpectationTest, ReadsCurrentCaseLog) {
+  TemporaryCaseDirectory case_directory;
+  const auto directory = std::filesystem::current_path() / "plugins";
+  ASSERT_FALSE(std::filesystem::exists(directory));
+  ASSERT_TRUE(std::filesystem::create_directory(directory));
+  {
+    std::ofstream log(directory / "race.log");
+    ASSERT_TRUE(log.is_open());
+    log << kValidRaceLog;
+  }
+  EnvironmentGuard environment("RJ_SINK_DIR");
+  environment.set(directory.string());
+  const RaceLogParseResult parsed = parseRaceLogFromEnvironment();
+  EXPECT_TRUE(parsed.ok()) << parsed.error;
+  EXPECT_EQ(parsed.records.size(), 1u);
 }
 
 TEST(RaceLogExpectationTest, MissingFileFails) {
