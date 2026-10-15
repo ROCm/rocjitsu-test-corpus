@@ -52,8 +52,6 @@ linking committed assembly against a freshly compiled host object with a
 deliberately mismatched cuid and running it successfully.
 """
 
-from __future__ import annotations
-
 import argparse
 import difflib
 import os
@@ -63,8 +61,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import tomllib
 from pathlib import Path
+
+import inventory
 
 CORPUS_ROOT = Path(__file__).resolve().parent.parent
 KERNELS_DIR = CORPUS_ROOT / "kernels"
@@ -174,10 +173,10 @@ def include_dirs(flags: list[str]) -> list[Path]:
     return dirs
 
 
-def missing_headers(case: dict, flags: list[str]) -> list[str]:
+def missing_headers(case: inventory.Case, flags: list[str]) -> list[str]:
     """The case's declared ``headers`` that no include directory provides."""
     dirs = include_dirs(flags)
-    return [h for h in case.get("headers", []) if not any((d / h).is_file() for d in dirs)]
+    return [h for h in case.headers if not any((d / h).is_file() for d in dirs)]
 
 
 # --- Toolchain ---------------------------------------------------------------
@@ -284,31 +283,17 @@ def _replace(out: Path, text: str) -> None:
 # --- Corpus ------------------------------------------------------------------
 
 
-def load_manifest() -> dict:
-    manifest = tomllib.loads(CASES_PATH.read_text())
-    corpus = manifest.get("corpus", {})
-    if corpus.get("schema") != 1:
-        raise SystemExit("cases.toml: unsupported corpus schema")
-    targets = corpus.get("targets")
-    if not targets or not all(isinstance(target, str) for target in targets):
-        raise SystemExit("cases.toml: [corpus] targets must list the gfx targets the corpus is built for")
-    for case in manifest["case"]:
-        for target in case.get("targets", []):
-            if target not in targets:
-                raise SystemExit(
-                    f"cases.toml [{case['id']}]: lists target {target}, which is not in "
-                    f"[corpus] targets; add it there first"
-                )
-    return manifest
+def load_inventory() -> inventory.Inventory:
+    """cases.toml, validated by the inventory module that check_cases.py also uses."""
+    try:
+        return inventory.load(CASES_PATH)
+    except inventory.InventoryError as error:
+        raise SystemExit("\n".join(error.problems)) from None
 
 
-def load_cases() -> list[dict]:
-    return load_manifest()["case"]
-
-
-def targets_for(requested: list[str]) -> list[str]:
+def targets_for(corpus: inventory.Inventory, requested: list[str]) -> list[str]:
     """The targets to regenerate: the ones requested, or every corpus target."""
-    targets = load_manifest()["corpus"]["targets"]
+    targets = corpus.targets
     for target in requested:
         if target not in targets:
             raise SystemExit(
@@ -318,43 +303,31 @@ def targets_for(requested: list[str]) -> list[str]:
     return list(requested) or list(targets)
 
 
-def expected_outputs(cases: list[dict], targets: list[str]) -> set[tuple[str, str]]:
-    """The (target, file) each selected case should produce: ``asm/<target>/<kernel>.s``."""
-    return {
-        (target, f"{case['kernel']}.s")
-        for target in targets
-        for case in cases
-        if not case.get("targets") or target in case["targets"]
-    }
-
-
 def regenerate(
-    targets: list[str], extra_flags: list[str], out_root: Path
+    corpus: inventory.Inventory, targets: list[str], extra_flags: list[str], out_root: Path
 ) -> tuple[int, list[str], list[str]]:
     """
-    Compile every case for every target into *out_root*.
+    Compile every case in *corpus* for every target into *out_root*.
 
     Returns the number written, the failures, and the skips: cases whose
     declared ``headers`` are not on the include path. A skipped or failed
     case's existing file under *out_root* is left untouched.
     """
-    cases = load_cases()
     written = 0
     failures: list[str] = []
     skipped: list[str] = []
     for target in targets:
-        for case in cases:
-            case_targets = case.get("targets", [])
-            if case_targets and target not in case_targets:
+        for case in corpus.cases:
+            if not case.builds_for(target):
                 continue
             if (missing := missing_headers(case, extra_flags)):
                 skipped.append(
-                    f"{case['kernel']} ({target}): {', '.join(missing)} not found; "
+                    f"{case.kernel} ({target}): {', '.join(missing)} not found; "
                     f"pass its include directory with --cxxflags, or add it to CPATH"
                 )
                 continue
-            kernel = KERNELS_DIR / f"{case['kernel']}.hip"
-            out = out_root / target / f"{case['kernel']}.s"
+            kernel = KERNELS_DIR / f"{case.kernel}.hip"
+            out = out_root / target / f"{case.kernel}.s"
             try:
                 compile_device_asm(kernel, target, out, extra_flags)
                 written += 1
@@ -365,7 +338,7 @@ def regenerate(
     return written, failures, skipped
 
 
-def main() -> int:
+def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Regenerate the committed device assembly under corpus/race/asm/ from "
@@ -416,28 +389,34 @@ def main() -> int:
             "skipped case makes the check incomplete (exit 3)."
         ),
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.allow_skipped and not args.check:
         parser.error("--allow-skipped only applies with --check")
 
-    targets = targets_for(args.target)
+    # Read once: regenerating and the --check verdict see the same inventory.
+    corpus = load_inventory()
+    targets = targets_for(corpus, args.target)
     extra_flags = absolute_flags(parse_cxxflags(args.cxxflags), Path.cwd())
 
     if not args.check:
-        return _regenerate_and_report(args, targets, extra_flags, ASM_DIR)
+        return _regenerate_and_report(args, corpus, targets, extra_flags, ASM_DIR)
     # The comparison has to finish while the regenerated files still exist, and
     # the directory is removed however the check ends.
     with tempfile.TemporaryDirectory(prefix="race-asm-") as scratch:
-        return _regenerate_and_report(args, targets, extra_flags, Path(scratch))
+        return _regenerate_and_report(args, corpus, targets, extra_flags, Path(scratch))
 
 
 def _regenerate_and_report(
-    args: argparse.Namespace, targets: list[str], extra_flags: list[str], out_root: Path
+    args: argparse.Namespace,
+    corpus: inventory.Inventory,
+    targets: list[str],
+    extra_flags: list[str],
+    out_root: Path,
 ) -> int:
     """Regenerate into *out_root* and report: a write summary, or the --check verdict."""
     print(f"regenerating {', '.join(targets)} -> {out_root}")
 
-    written, failures, skipped = regenerate(targets, extra_flags, out_root)
+    written, failures, skipped = regenerate(corpus, targets, extra_flags, out_root)
     for skip in skipped:
         print(f"  skip: {skip}")
     for failure in failures:
@@ -459,7 +438,7 @@ def _regenerate_and_report(
     # A verdict covers only what was compared. A check that skipped a case is
     # incomplete unless skipping was allowed, and one that compared nothing
     # cannot report a match either way.
-    expected = expected_outputs(load_cases(), targets)
+    expected = corpus.outputs(targets)
     not_generated = {(t, f) for t, f in expected if not (out_root / t / f).is_file()}
     compared_nothing = not expected or not_generated == expected
     if compared_nothing or (skipped and not args.allow_skipped):
@@ -576,4 +555,4 @@ def _report_drift(
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main(sys.argv[1:]))

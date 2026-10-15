@@ -14,6 +14,7 @@ corpus/race/
   scripts/
     regenerate_asm.py     Regenerates asm/ from kernels/, or checks it for drift.
     check_cases.py        Checks cases.toml against kernels/ and asm/ (no compiler).
+    inventory.py          Reads and validates cases.toml for both scripts.
 ```
 
 ## `cases.toml`

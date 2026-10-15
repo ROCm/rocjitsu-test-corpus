@@ -13,6 +13,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "corpus" / "race" / "scripts" / "check_cases.py"
 
 
+# The scripts import their shared inventory module as a sibling, as they do when
+# run directly from scripts/.
+sys.path.insert(0, str(SCRIPT.parent))
+
+
 def load_script():
     spec = importlib.util.spec_from_file_location("check_cases", SCRIPT)
     assert spec is not None
@@ -60,7 +65,7 @@ def corpus(tmp_path: Path, monkeypatch):
 
 
 def run(capsys) -> tuple[int, str]:
-    code = check_cases.main()
+    code = check_cases.main([])
     captured = capsys.readouterr()
     return code, captured.out + captured.err
 
@@ -98,9 +103,11 @@ def test_case_target_outside_the_corpus_targets_is_reported(corpus, capsys):
 
 
 def test_case_target_does_not_widen_portable_cases(corpus, capsys):
-    # A case requiring a new target, even with its assembly committed, does not
-    # make every portable case build for that target: the portable case is not
-    # expected under asm/gfx1201/, and the undeclared directory is reported.
+    # A case naming a new target, even with its assembly committed, does not make
+    # every portable case build for that target: the manifest is rejected for
+    # the case's target, and the portable case is not expected under
+    # asm/gfx1201/. The stray directory is reported once the manifest is valid;
+    # see test_assembly_directory_for_an_undeclared_target_is_reported.
     corpus(
         ["gfx950", "gfx1250"],
         PORTABLE + '[[case]]\nid = "only"\nkernel = "only"\ntargets = ["gfx1201"]\n',
@@ -108,8 +115,8 @@ def test_case_target_does_not_widen_portable_cases(corpus, capsys):
     )
     code, out = run(capsys)
     assert code == 1
+    assert "cases.toml [only]: lists target gfx1201, which is not in [corpus] targets" in out
     assert "asm/gfx1201/portable.s is missing" not in out
-    assert "asm/gfx1201/ is not a corpus target" in out
 
 
 def test_assembly_directory_for_an_undeclared_target_is_reported(corpus, capsys):
@@ -145,7 +152,7 @@ def test_committed_manifest_declares_its_targets():
 def test_committed_inventory_passes(capsys):
     # The real corpus, as committed, with no paths redirected.
     module = load_script()
-    code = module.main()
+    code = module.main([])
     out = capsys.readouterr()
     assert code == 0, out.err
 

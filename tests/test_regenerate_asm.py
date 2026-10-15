@@ -14,6 +14,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "corpus" / "race" / "scripts" / "regenerate_asm.py"
 
 
+# The scripts import their shared inventory module as a sibling, as they do when
+# run directly from scripts/.
+sys.path.insert(0, str(SCRIPT.parent))
+
+
 def load_script():
     spec = importlib.util.spec_from_file_location("regenerate_asm", SCRIPT)
     assert spec is not None
@@ -25,6 +30,12 @@ def load_script():
 
 
 regen = load_script()
+
+# A case that needs the rocWMMA headers, as inventory.load returns it.
+ROCWMMA_RECORD = regen.inventory.Case(
+    id="k", kernel="kernel", targets=(), headers=("rocwmma/rocwmma.hpp",)
+)
+ROCWMMA_INVENTORY = regen.inventory.Inventory(targets=("gfx950",), cases=(ROCWMMA_RECORD,))
 
 PINNED = "; pinned assembly that must survive a failed regeneration\n"
 
@@ -133,12 +144,9 @@ def test_auto_named_output_stays_in_scratch(monkeypatch, tmp_path, pinned, kerne
 def test_missing_header_skips_case_and_keeps_pinned_file(monkeypatch, tmp_path, pinned, kernel):
     install_fake_compiler(monkeypatch, tmp_path, "fail")  # must not even be invoked
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
-    monkeypatch.setattr(
-        regen,
-        "load_cases",
-        lambda: [{"id": "k", "kernel": "kernel", "headers": ["rocwmma/rocwmma.hpp"]}],
+    written, failures, skipped = regen.regenerate(
+        ROCWMMA_INVENTORY, ["gfx950"], [], pinned.parent.parent
     )
-    written, failures, skipped = regen.regenerate(["gfx950"], [], pinned.parent.parent)
     assert (written, failures) == (0, [])
     assert len(skipped) == 1 and "rocwmma/rocwmma.hpp" in skipped[0]
     assert pinned.read_text() == PINNED
@@ -150,12 +158,9 @@ def test_declared_header_found_through_include_flag(monkeypatch, tmp_path, pinne
     (include / "rocwmma").mkdir(parents=True)
     (include / "rocwmma" / "rocwmma.hpp").write_text("")
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
-    monkeypatch.setattr(
-        regen,
-        "load_cases",
-        lambda: [{"id": "k", "kernel": "kernel", "headers": ["rocwmma/rocwmma.hpp"]}],
+    written, failures, skipped = regen.regenerate(
+        ROCWMMA_INVENTORY, ["gfx950"], [f"-I{include}"], pinned.parent.parent
     )
-    written, failures, skipped = regen.regenerate(["gfx950"], [f"-I{include}"], pinned.parent.parent)
     assert (written, failures, skipped) == (1, [], [])
     assert "s_endpgm" in pinned.read_text()
 
@@ -273,14 +278,15 @@ def test_default_targets_come_from_the_manifest_not_asm(manifest, monkeypatch, t
     for target in ("gfx950", "gfx1250", "gfx1201"):
         (asm / target).mkdir(parents=True)
     monkeypatch.setattr(regen, "ASM_DIR", asm)
-    assert regen.targets_for([]) == ["gfx950", "gfx1250"]
+    assert regen.targets_for(regen.load_inventory(), []) == ["gfx950", "gfx1250"]
 
 
 def test_requested_target_must_be_a_corpus_target(manifest):
     manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
-    assert regen.targets_for(["gfx1250"]) == ["gfx1250"]
+    corpus = regen.load_inventory()
+    assert regen.targets_for(corpus, ["gfx1250"]) == ["gfx1250"]
     with pytest.raises(SystemExit, match="gfx1201.*not in \\[corpus\\] targets"):
-        regen.targets_for(["gfx1201"])
+        regen.targets_for(corpus, ["gfx1201"])
 
 
 def test_case_target_outside_the_corpus_targets_is_rejected(manifest):
@@ -289,14 +295,14 @@ def test_case_target_outside_the_corpus_targets_is_rejected(manifest):
         PORTABLE_CASE + '[[case]]\nid = "new"\nkernel = "new"\ntargets = ["gfx1201"]\n',
     )
     with pytest.raises(SystemExit, match="gfx1201.*not in \\[corpus\\] targets"):
-        regen.load_cases()
+        regen.load_inventory()
 
 
 @pytest.mark.parametrize("targets", [None, []])
 def test_manifest_without_targets_is_rejected(manifest, targets):
     manifest(targets, PORTABLE_CASE)
     with pytest.raises(SystemExit, match="\\[corpus\\] targets"):
-        regen.load_cases()
+        regen.load_inventory()
 
 
 def test_portable_case_builds_for_every_corpus_target(manifest, monkeypatch, tmp_path, kernel):
@@ -308,7 +314,10 @@ def test_portable_case_builds_for_every_corpus_target(manifest, monkeypatch, tmp
     (kernel.parent / "only.hip").write_text("__global__ void only() {}\n")
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
     out_root = tmp_path / "out"
-    written, failures, skipped = regen.regenerate(regen.targets_for([]), [], out_root)
+    corpus = regen.load_inventory()
+    written, failures, skipped = regen.regenerate(
+        corpus, regen.targets_for(corpus, []), [], out_root
+    )
     assert (written, failures, skipped) == (3, [], [])
     assert sorted(str(p.relative_to(out_root)) for p in out_root.rglob("*.s")) == [
         "gfx1250/kernel.s",
@@ -328,11 +337,6 @@ def test_portable_case_builds_for_every_corpus_target(manifest, monkeypatch, tmp
 @pytest.fixture
 def rocwmma_case(monkeypatch, kernel):
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
-    monkeypatch.setattr(
-        regen,
-        "load_cases",
-        lambda: [{"id": "k", "kernel": "kernel", "headers": ["rocwmma/rocwmma.hpp"]}],
-    )
     for name in ("CPATH", "CPLUS_INCLUDE_PATH", "C_INCLUDE_PATH"):
         monkeypatch.delenv(name, raising=False)
 
@@ -350,7 +354,7 @@ def test_declared_header_found_through_environment_include_path(
 ):
     install_fake_compiler(monkeypatch, tmp_path, "output")
     monkeypatch.setenv(variable, f"/nonexistent{os.pathsep}{header_dir(tmp_path)}")
-    written, failures, skipped = regen.regenerate(["gfx950"], [], pinned.parent.parent)
+    written, failures, skipped = regen.regenerate(ROCWMMA_INVENTORY, ["gfx950"], [], pinned.parent.parent)
     assert (written, failures, skipped) == (1, [], [])
     assert "s_endpgm" in pinned.read_text()
 
@@ -358,7 +362,7 @@ def test_declared_header_found_through_environment_include_path(
 def test_c_include_path_is_not_searched_for_hip(monkeypatch, tmp_path, pinned, rocwmma_case):
     install_fake_compiler(monkeypatch, tmp_path, "fail")  # must not be invoked
     monkeypatch.setenv("C_INCLUDE_PATH", str(header_dir(tmp_path)))
-    written, failures, skipped = regen.regenerate(["gfx950"], [], pinned.parent.parent)
+    written, failures, skipped = regen.regenerate(ROCWMMA_INVENTORY, ["gfx950"], [], pinned.parent.parent)
     assert (written, failures) == (0, [])
     assert len(skipped) == 1
     assert pinned.read_text() == PINNED
@@ -374,7 +378,7 @@ def test_relative_environment_include_path_is_not_searched(
     header_dir(tmp_path)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CPATH", "env-include")
-    written, failures, skipped = regen.regenerate(["gfx950"], [], pinned.parent.parent)
+    written, failures, skipped = regen.regenerate(ROCWMMA_INVENTORY, ["gfx950"], [], pinned.parent.parent)
     assert (written, failures) == (0, [])
     assert len(skipped) == 1
     assert pinned.read_text() == PINNED
@@ -389,9 +393,8 @@ def test_relative_environment_include_path_is_not_searched(
 
 
 def test_check_help_describes_the_textual_comparison(monkeypatch, capsys):
-    monkeypatch.setattr(sys, "argv", ["regenerate_asm.py", "--help"])
     with pytest.raises(SystemExit):
-        regen.main()
+        regen.main(["--help"])
     help_text = " ".join(capsys.readouterr().out.split())
     assert ".ident" in help_text
     assert "directive" in help_text and "metadata" in help_text
@@ -414,8 +417,7 @@ def test_write_summary_does_not_mention_ordinals(manifest, monkeypatch, tmp_path
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
     monkeypatch.setattr(regen, "CORPUS_ROOT", tmp_path / "corpus" / "race")
     monkeypatch.setattr(regen, "ASM_DIR", tmp_path / "corpus" / "race" / "asm")
-    monkeypatch.setattr(sys, "argv", ["regenerate_asm.py"])
-    assert regen.main() == 0
+    assert regen.main([]) == 0
     out = " ".join(capsys.readouterr().out.split())
     assert "ordinal" not in out
     assert "pinned assembly" in out
@@ -455,8 +457,7 @@ def corpus_main(manifest, monkeypatch, tmp_path, kernel):
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
 
     def run(*argv: str) -> int:
-        monkeypatch.setattr(sys, "argv", ["regenerate_asm.py", *argv])
-        return regen.main()
+        return regen.main([*argv])
 
     return run, committed
 
@@ -551,9 +552,8 @@ def test_update_mode_still_skips_a_case_missing_its_optional_header(
 
 
 def test_check_help_documents_the_exit_codes(monkeypatch, capsys):
-    monkeypatch.setattr(sys, "argv", ["regenerate_asm.py", "--help"])
     with pytest.raises(SystemExit):
-        regen.main()
+        regen.main(["--help"])
     help_text = " ".join(capsys.readouterr().out.split())
     assert "Exits 0 on a match, 1 on drift, 2 when a case fails to compile, and 3" in help_text
 
@@ -782,9 +782,8 @@ def test_check_leaves_no_temporary_directory(
 
 
 def test_help_is_short_and_points_to_the_readme(monkeypatch, capsys):
-    monkeypatch.setattr(sys, "argv", ["regenerate_asm.py", "--help"])
     with pytest.raises(SystemExit):
-        regen.main()
+        regen.main(["--help"])
     help_text = capsys.readouterr().out
     assert "corpus/race/README.md" in help_text
     # The rationale and usage examples live in the module docstring and the
@@ -804,7 +803,8 @@ def test_case_without_targets_regenerates_for_every_corpus_target(
     manifest(["gfx950", "gfx1250"], '[[case]]\nid = "portable"\nkernel = "kernel"\n')
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
     out_root = tmp_path / "out"
-    assert regen.regenerate(regen.targets_for([]), [], out_root) == (2, [], [])
+    corpus = regen.load_inventory()
+    assert regen.regenerate(corpus, regen.targets_for(corpus, []), [], out_root) == (2, [], [])
     assert sorted(str(p.relative_to(out_root)) for p in out_root.rglob("*.s")) == [
         "gfx1250/kernel.s",
         "gfx950/kernel.s",
@@ -818,4 +818,32 @@ def test_requires_is_rejected_rather_than_ignored(manifest):
         '[[case]]\nid = "only"\nkernel = "only"\nrequires = ["gfx1250"]\n',
     )
     with pytest.raises(SystemExit, match="'requires' is now 'targets'"):
-        regen.load_cases()
+        regen.load_inventory()
+
+
+# --- One validated inventory ---------------------------------------------------
+
+
+def test_misspelled_case_field_is_rejected(manifest):
+    # Regeneration used to accept a field the checker rejects.
+    manifest(
+        ["gfx950"],
+        '[[case]]\nid = "wmma"\nkernel = "wmma"\nheader = ["rocwmma/rocwmma.hpp"]\n',
+    )
+    with pytest.raises(SystemExit, match="unknown field 'header'"):
+        regen.load_inventory()
+
+
+def test_main_reads_the_manifest_once(manifest, corpus_main, monkeypatch):
+    # Regenerating and the --check verdict must judge the same inventory, so
+    # cases.toml is read once and passed down rather than re-read per step.
+    run, committed = corpus_main
+    manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
+    commit_fresh_output(run, committed)
+    reads = []
+    real_load = regen.inventory.load
+    monkeypatch.setattr(
+        regen.inventory, "load", lambda path: reads.append(path) or real_load(path)
+    )
+    assert run("--check") == 0
+    assert len(reads) == 1
