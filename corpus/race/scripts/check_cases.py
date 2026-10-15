@@ -27,10 +27,14 @@ caught. It checks that:
   ids and kernels, and every target in a case's ``targets`` a corpus target;
 * every case has ``kernels/<kernel>.hip`` and, for each target it builds for,
   ``asm/<target>/<kernel>.s``;
-* every ``asm/<target>/*.s`` belongs to a case that builds for that target.
+* every ``asm/<target>/*.s`` belongs to a case that builds for that target;
+* every ``asm/<target>/*.s`` declares ``.amdgcn_target`` for that target, which
+  catches an empty file or a listing copied into the wrong directory. This is a
+  sanity check on the files, not proof that they match their source.
 """
 
 import argparse
+import re
 import sys
 
 import inventory
@@ -42,11 +46,27 @@ ASM_DIR = CORPUS_ROOT / "asm"
 KERNELS_DIR = CORPUS_ROOT / "kernels"
 CASES_PATH = CORPUS_ROOT / "cases.toml"
 
+# The directive hipcc writes at the top of each listing, naming the target
+# triple and processor, e.g. "amdgcn-amd-amdhsa-unknown-gfx950:xnack-". Group 1
+# is the processor, without target features.
+_AMDGCN_TARGET_RE = re.compile(r'^\s*\.amdgcn_target\s+"[^"]*-([^-":]+)(?::[^"]*)?"', re.MULTILINE)
+
 
 def asm_targets() -> list[str]:
     if not ASM_DIR.is_dir():
         return []
     return sorted(path.name for path in ASM_DIR.iterdir() if path.is_dir())
+
+
+def target_mismatch(asm: Path, target: str) -> str | None:
+    """Why *asm* is not a listing for *target*, or None if it is."""
+    declared = _AMDGCN_TARGET_RE.findall(asm.read_text(errors="replace"))
+    if not declared:
+        return f"asm/{target}/{asm.name}: no .amdgcn_target directive"
+    for processor in declared:
+        if processor != target:
+            return f"asm/{target}/{asm.name}: .amdgcn_target is {processor}, not {target}"
+    return None
 
 
 def check(corpus: inventory.Inventory) -> list[str]:
@@ -78,6 +98,8 @@ def check(corpus: inventory.Inventory) -> list[str]:
         for asm in sorted((ASM_DIR / target).glob("*.s")):
             if (target, asm.name) not in owned:
                 errors.append(f"asm/{target}/{asm.name}: no case builds {asm.stem} for {target}")
+            if (mismatch := target_mismatch(asm, target)) is not None:
+                errors.append(mismatch)
     return errors
 
 

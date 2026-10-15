@@ -112,7 +112,9 @@ python corpus/race/scripts/check_cases.py
 - every target in a case's `targets` is a corpus target;
 - every case has its `kernels/<kernel>.hip` and, for each target it builds for,
   its `asm/<target>/<kernel>.s`;
-- every committed `.s` file belongs to a case that builds for that target.
+- every committed `.s` file belongs to a case that builds for that target;
+- every committed `.s` file declares `.amdgcn_target` for the target its
+  directory names.
 
 This is the check suited to CI. `tests/test_check_cases.py` runs it against the
 committed corpus under pytest.

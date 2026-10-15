@@ -34,6 +34,11 @@ PORTABLE = '[[case]]\nid = "portable"\nkernel = "portable"\ntargets = []\n'
 GFX1250_ONLY = '[[case]]\nid = "only"\nkernel = "only"\ntargets = ["gfx1250"]\n'
 
 
+def listing(target: str) -> str:
+    """The start of a device assembly listing for *target*, as hipcc writes it."""
+    return f'\t.amdgcn_target "amdgcn-amd-amdhsa-unknown-{target}"\n\ts_endpgm\n'
+
+
 @pytest.fixture
 def corpus(tmp_path: Path, monkeypatch):
     """
@@ -59,7 +64,7 @@ def corpus(tmp_path: Path, monkeypatch):
         for path in asm:
             target, kernel = path.split("/")
             (tmp_path / "asm" / target).mkdir(exist_ok=True)
-            (tmp_path / "asm" / target / f"{kernel}.s").write_text("")
+            (tmp_path / "asm" / target / f"{kernel}.s").write_text(listing(target))
 
     return build
 
@@ -228,3 +233,51 @@ def test_requires_is_rejected_with_its_new_name(corpus, capsys):
     code, out = run(capsys)
     assert code == 1
     assert "cases.toml [only]: 'requires' is now 'targets'" in out
+
+
+# --- Each listing is for the target its directory names -------------------------
+#
+# A basic sanity check on the artifacts, not proof that they match their source:
+# an empty file, or a listing for another target copied into the wrong directory,
+# is caught without a compiler.
+
+
+def write_asm(tmp_path: Path, target: str, kernel: str, text: str) -> None:
+    (tmp_path / "asm" / target / f"{kernel}.s").write_text(text)
+
+
+def test_empty_listing_is_reported(corpus, capsys, tmp_path):
+    corpus(["gfx950"], PORTABLE, ["gfx950/portable"])
+    write_asm(tmp_path, "gfx950", "portable", "")
+    code, out = run(capsys)
+    assert code == 1
+    assert "asm/gfx950/portable.s: no .amdgcn_target directive" in out
+
+
+def test_listing_for_another_target_is_reported(corpus, capsys, tmp_path):
+    corpus(["gfx950", "gfx1250"], PORTABLE, ["gfx950/portable", "gfx1250/portable"])
+    write_asm(tmp_path, "gfx1250", "portable", listing("gfx950"))
+    code, out = run(capsys)
+    assert code == 1
+    assert "asm/gfx1250/portable.s: .amdgcn_target is gfx950, not gfx1250" in out
+
+
+def test_target_features_do_not_change_the_processor(corpus, capsys, tmp_path):
+    corpus(["gfx950"], PORTABLE, ["gfx950/portable"])
+    write_asm(
+        tmp_path,
+        "gfx950",
+        "portable",
+        '\t.amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx950:sramecc+:xnack-"\n',
+    )
+    code, out = run(capsys)
+    assert code == 0, out
+
+
+def test_target_name_that_only_starts_with_the_directory_is_reported(corpus, capsys, tmp_path):
+    # gfx9500 is not gfx950: the processor is compared whole.
+    corpus(["gfx950"], PORTABLE, ["gfx950/portable"])
+    write_asm(tmp_path, "gfx950", "portable", listing("gfx9500"))
+    code, out = run(capsys)
+    assert code == 1
+    assert ".amdgcn_target is gfx9500, not gfx950" in out
