@@ -5,6 +5,7 @@
 import io
 import json
 import subprocess
+import tomllib
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -774,8 +775,6 @@ def test_cli_default_and_explicit_single_manifest(
 def test_manifest_string_fields_reject_wrong_types_and_blanks(
     field: str, value: Any
 ) -> None:
-    import tomllib
-
     manifest = runner.BENCHMARK_ROOT / "suites" / "smoke.toml"
     parsed = tomllib.loads(manifest.read_text())
     parsed["cases"][0][field] = value
@@ -799,8 +798,6 @@ def test_manifest_string_fields_reject_wrong_types_and_blanks(
     ],
 )
 def test_manifest_nonstring_fields_remain_validated(field: str, value: Any) -> None:
-    import tomllib
-
     manifest = runner.BENCHMARK_ROOT / "suites" / "smoke.toml"
     parsed = tomllib.loads(manifest.read_text())
     parsed["cases"][0][field] = value
@@ -812,8 +809,6 @@ def test_manifest_nonstring_fields_remain_validated(field: str, value: Any) -> N
 
 @pytest.mark.parametrize("change", ["missing", "unknown"])
 def test_manifest_case_field_set_remains_exact(change: str) -> None:
-    import tomllib
-
     manifest = runner.BENCHMARK_ROOT / "suites" / "smoke.toml"
     parsed = tomllib.loads(manifest.read_text())
     if change == "missing":
