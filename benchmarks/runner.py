@@ -947,10 +947,14 @@ def run_suite(
     try:
         for position, cell in enumerate(matrix, start=1):
             cell_started = time.monotonic()
+            provider = (
+                "tensile" if cell.definition.workload == "tensile_candidate" else "triton"
+            )
             _progress(
                 progress,
                 f"START [{position}/{total_cells}] case={cell.case} "
-                f"target={cell.target} thread_policy={cell.thread_policy} provider={'tensile' if cell.definition.workload == 'tensile_candidate' else 'triton'} "
+                f"target={cell.target} thread_policy={cell.thread_policy} "
+                f"provider={provider} "
                 f"timeout_seconds={suite.timeout_seconds:g}",
             )
             command = prepare_command(
@@ -1028,7 +1032,8 @@ def run_suite(
             _progress(
                 progress,
                 f"DONE  [{position}/{total_cells}] case={cell.case} "
-                f"target={cell.target} thread_policy={cell.thread_policy} status={result['status']} "
+                f"target={cell.target} thread_policy={cell.thread_policy} "
+                f"status={result['status']} "
                 f"elapsed_seconds={time.monotonic() - cell_started:.1f}{detail}",
             )
     except BaseException:
