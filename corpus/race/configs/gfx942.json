@@ -2,6 +2,8 @@
   "config_name": "gfx942",
   "target": "gfx942",
   "cases": [
+    "vmem_atomic_global_same_vgpr",
+    "vmem_atomic_valu_overwrite_race",
     "vmem_compiler_generated",
     "vmem_vmcnt_only",
     "vmem_no_wait_race",

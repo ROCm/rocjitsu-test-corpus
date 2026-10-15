@@ -95,6 +95,14 @@ Returning-atomic tests cover compiler-generated and explicit VM-only waits,
 with no-wait and EXP-only controls. FLAT-to-LDS exchanges check both a
 synchronized barrier and a missing-barrier control on all three targets. The
 gfx950 suite also keeps full-wave and lane-zero atomic controls separate.
+The ordering pair issues a returning GLOBAL atomic followed by a GLOBAL load
+into the same VGPR, without an intervening wait; a final `vmcnt(0)` precedes
+checking the loaded value. Replacing that load with a VALU overwrite must report
+a VGPR write race. These cases distinguish same-class writeback ordering from
+result readiness. Select them with
+`--case RaceTest.vmem_gfx942_atomic_global_same_vgpr` and
+`--case RaceTest.vmem_gfx942_atomic_valu_overwrite_race`, substituting gfx950 or
+gfx1151 to test those targets.
 The HIP programs retain their functional and race-report assertions;
 the corpus adapter only supplies build and launch isolation. The same build
 also runs the host-only unit tests for the race-log parser and expectation

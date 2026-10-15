@@ -118,6 +118,89 @@ TEST_F(VmemRaceTest, expcnt_only_race) {
   ExpectRace(kMissingVmWait);
 }
 
+// Keep both writes to the same VGPR inside one asm block. The atomic result
+// must remain pending when the second producer issues; only the final wait
+// precedes the result read. GLOBAL writeback shares the atomic's VMEM ordering
+// class, while a VALU overwrite has no such ordering guarantee.
+template <bool GlobalOverwrite>
+__global__ void atomic_waw_kernel(unsigned *values, const unsigned *loaded, unsigned *output) {
+  const unsigned lane = threadIdx.x;
+  unsigned value;
+  if constexpr (GlobalOverwrite) {
+#if defined(__gfx1151__)
+    asm volatile("global_atomic_add_u32 %[value], %[atomic_address], %[increment], off glc\n"
+                 "global_load_b32 %[value], %[load_address], off\n"
+#else
+    asm volatile("global_atomic_add %[value], %[atomic_address], %[increment], off sc0\n"
+                 "global_load_dword %[value], %[load_address], off\n"
+#endif
+                 "s_waitcnt vmcnt(0) expcnt(7)\n"
+                 : [value] "=&v"(value)
+                 : [atomic_address] "v"(values + lane), [increment] "v"(1u),
+                   [load_address] "v"(loaded + lane)
+                 : "memory");
+  } else {
+#if defined(__gfx1151__)
+    asm volatile("global_atomic_add_u32 %[value], %[atomic_address], %[increment], off glc\n"
+#else
+    asm volatile("global_atomic_add %[value], %[atomic_address], %[increment], off sc0\n"
+#endif
+                 "v_mov_b32 %[value], 101\n"
+                 "s_waitcnt vmcnt(0) expcnt(7)\n"
+                 : [value] "=&v"(value)
+                 : [atomic_address] "v"(values + lane), [increment] "v"(1u)
+                 : "memory");
+  }
+  output[lane] = value;
+}
+
+template <bool GlobalOverwrite> void check_atomic_waw_values() {
+  constexpr unsigned lanes = 32;
+  std::vector<unsigned> input(lanes), loaded(lanes), result(lanes);
+  for (unsigned lane = 0; lane < lanes; ++lane) {
+    input[lane] = 17 + lane;
+    loaded[lane] = 101 + lane;
+  }
+  unsigned *values = nullptr, *load_source = nullptr, *output = nullptr;
+  ASSERT_EQ(hipMalloc(&values, lanes * sizeof(unsigned)), hipSuccess);
+  ASSERT_EQ(hipMalloc(&load_source, lanes * sizeof(unsigned)), hipSuccess);
+  ASSERT_EQ(hipMalloc(&output, lanes * sizeof(unsigned)), hipSuccess);
+  ASSERT_EQ(hipMemcpy(values, input.data(), lanes * sizeof(unsigned), hipMemcpyHostToDevice),
+            hipSuccess);
+  ASSERT_EQ(hipMemcpy(load_source, loaded.data(), lanes * sizeof(unsigned), hipMemcpyHostToDevice),
+            hipSuccess);
+  atomic_waw_kernel<GlobalOverwrite><<<1, lanes>>>(values, load_source, output);
+  ASSERT_EQ(hipGetLastError(), hipSuccess);
+  ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+  ASSERT_EQ(hipMemcpy(input.data(), values, lanes * sizeof(unsigned), hipMemcpyDeviceToHost),
+            hipSuccess);
+  ASSERT_EQ(hipMemcpy(result.data(), output, lanes * sizeof(unsigned), hipMemcpyDeviceToHost),
+            hipSuccess);
+  for (unsigned lane = 0; lane < lanes; ++lane) {
+    EXPECT_EQ(input[lane], 18 + lane);
+    EXPECT_EQ(result[lane], GlobalOverwrite ? loaded[lane] : 101u);
+  }
+  EXPECT_EQ(hipFree(output), hipSuccess);
+  EXPECT_EQ(hipFree(load_source), hipSuccess);
+  EXPECT_EQ(hipFree(values), hipSuccess);
+}
+
+TEST_F(VmemRaceTest, atomic_global_same_vgpr) {
+  ASSERT_NO_FATAL_FAILURE(check_atomic_waw_values<true>());
+  ExpectNoRace();
+}
+
+TEST_F(VmemRaceTest, atomic_valu_overwrite_race) {
+  ASSERT_NO_FATAL_FAILURE(check_atomic_waw_values<false>());
+  ExpectRace({.kernel = "atomic_waw_kernel",
+              .type = "VGPR",
+              .access = "write",
+              .wave = 0,
+              .lane = 0,
+              .producer = "global_atomic_add",
+              .consumer = "v_mov_b32"});
+}
+
 // Exchange data across waves through generic FLAT accesses. Drain the memory
 // counters without waiting on EXP; the synchronized case must retire its LDS
 // writes at the barrier, while the missing-barrier case must still report.

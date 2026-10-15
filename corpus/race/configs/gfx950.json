@@ -73,6 +73,8 @@
     "f64_vgpr_race",
     "f64_vgpr_safe",
     "f64_vgpr_waw",
+    "vmem_atomic_global_same_vgpr",
+    "vmem_atomic_valu_overwrite_race",
     "vmem_compiler_generated",
     "vmem_vmcnt_only",
     "vmem_no_wait_race",
