@@ -61,9 +61,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
 
 import inventory
+
+from pathlib import Path
 
 CORPUS_ROOT = Path(__file__).resolve().parent.parent
 KERNELS_DIR = CORPUS_ROOT / "kernels"
@@ -75,9 +76,25 @@ CASES_PATH = CORPUS_ROOT / "cases.toml"
 _CUID_RE = re.compile(r"__hip_cuid_[0-9a-f]+")
 _CUID_PLACEHOLDER = "__hip_cuid_corpus"
 
-
 # The line naming the compiler that produced a file. See the module docstring.
 _IDENT_RE = re.compile(r"^\s*\.ident\s")
+
+# Flags that add a directory to the header search path. Each takes its value as
+# a separate token or glued to the flag.
+_INCLUDE_DIR_FLAGS = ("-isystem", "-iquote", "-I")
+# Flags whose value is a path: the search directories, and -include, whose value
+# is a file to include rather than a directory to search.
+_PATH_FLAGS = (*_INCLUDE_DIR_FLAGS, "-include")
+
+# Environment variables the compiler adds include directories from. HIP
+# compiles as C++, so CPLUS_INCLUDE_PATH applies and C_INCLUDE_PATH does not.
+_INCLUDE_PATH_VARIABLES = ("CPATH", "CPLUS_INCLUDE_PATH")
+
+# The recipe the pinned assembly is built with. hipcc adds these on its own, but
+# the clang++ fallback does not: without them it compiles at -O0, and the
+# instructions and wait sites the mutants are derived from change. They come
+# before --cxxflags, so a flag there still overrides them.
+_BASELINE_COMPILER_FLAGS = ("-O3", "-x", "hip")
 
 
 def split_provenance(assembly: str) -> tuple[list[str], list[str]]:
@@ -96,14 +113,6 @@ def normalize(assembly: str) -> str:
 
 class CompileError(RuntimeError):
     """A kernel could not be compiled for the requested target."""
-
-
-# Flags that add a directory to the header search path. Each takes its value as
-# a separate token or glued to the flag.
-_INCLUDE_DIR_FLAGS = ("-isystem", "-iquote", "-I")
-# Flags whose value is a path: the search directories, and -include, whose value
-# is a file to include rather than a directory to search.
-_PATH_FLAGS = (*_INCLUDE_DIR_FLAGS, "-include")
 
 
 def parse_cxxflags(text: str) -> list[str]:
@@ -143,11 +152,6 @@ def absolute_flags(flags: list[str], base: Path) -> list[str]:
         else:
             out.append(flag)
     return out
-
-
-# Environment variables the compiler adds include directories from. HIP
-# compiles as C++, so CPLUS_INCLUDE_PATH applies and C_INCLUDE_PATH does not.
-_INCLUDE_PATH_VARIABLES = ("CPATH", "CPLUS_INCLUDE_PATH")
 
 
 def include_dirs(flags: list[str]) -> list[Path]:
@@ -247,6 +251,7 @@ def compile_device_asm(kernel: Path, target: str, out: Path, extra_flags: list[s
         argv = [
             str(tool),
             f"--rocm-path={root}",
+            *_BASELINE_COMPILER_FLAGS,
             "-S",
             "--cuda-device-only",
             f"--offload-arch={target}",

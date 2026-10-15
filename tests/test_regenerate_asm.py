@@ -30,6 +30,7 @@ def load_script():
 
 
 regen = load_script()
+FIND_HIP_COMPILER = regen.find_hip_compiler
 
 # A case that needs the rocWMMA headers, as inventory.load returns it.
 ROCWMMA_RECORD = regen.inventory.Case(
@@ -583,11 +584,11 @@ def test_main_preserves_the_compiler_diagnostic(
 # --- --cxxflags is parsed as shell words -------------------------------------
 
 
-def compiler_invocations(tmp_path: Path) -> list[list[str]]:
-    """The argument lists the fake compiler has been run with, in order."""
+def compiler_invocations(tmp_path: Path, name: str = "fake-hipcc") -> list[list[str]]:
+    """The argument lists the fake compiler *name* has been run with, in order."""
     import json
 
-    log = tmp_path / "fake-hipcc.argv"
+    log = tmp_path / f"{name}.argv"
     if not log.is_file():
         return []
     return [json.loads(line) for line in log.read_text().splitlines()]
@@ -876,3 +877,39 @@ def test_forced_include_file_is_made_absolute_but_not_searched(monkeypatch, tmp_
     flags = ["-include", "pre.h"]
     assert regen.include_dirs(flags) == [tmp_path / "rocm" / "include"]
     assert regen.absolute_flags(flags, base) == ["-include", str(base / "pre.h")]
+
+
+# --- The baseline recipe is explicit -------------------------------------------
+#
+# hipcc adds -O3 and -x hip itself; the documented clang++ fallback does not. So
+# the compile passes them explicitly, before --cxxflags, and both compilers build
+# the pinned assembly the same way.
+
+
+@pytest.mark.parametrize("sdk_compiler", ["bin/hipcc", "llvm/bin/clang++"])
+def test_baseline_recipe_is_passed_to_either_compiler(
+    manifest, corpus_main, monkeypatch, tmp_path, sdk_compiler
+):
+    run, _ = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    # An SDK with only this compiler, found by the script's own discovery.
+    sdk = tmp_path / "sdk"
+    (sdk / sdk_compiler).parent.mkdir(parents=True)
+    compiler = write_fake_compiler(sdk / sdk_compiler, "output")
+    monkeypatch.setattr(regen, "rocm_path", lambda: sdk)
+    monkeypatch.setattr(regen, "find_hip_compiler", FIND_HIP_COMPILER)
+    assert run() == 0
+    (argv,) = compiler_invocations(compiler.parent, compiler.name)
+    assert "-O3" in argv
+    assert argv[argv.index("-x") + 1] == "hip"
+    # -x applies to the files after it, so it has to precede the kernel.
+    assert argv.index("-x") < next(i for i, arg in enumerate(argv) if arg.endswith(".hip"))
+
+
+def test_cxxflags_come_after_the_baseline_recipe(manifest, corpus_main, tmp_path):
+    run, _ = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    assert run("--cxxflags=-O1") == 0
+    (argv,) = compiler_invocations(tmp_path)
+    # The last -O wins, so --cxxflags can still override the baseline.
+    assert argv.index("-O3") < argv.index("-O1")
