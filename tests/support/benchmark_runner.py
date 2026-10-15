@@ -141,9 +141,15 @@ def with_policy(suite: runner.Suite, policy: str) -> runner.Suite:
     )
 
 
-def cell(runner_context: SimpleNamespace, case_id: str, target: str) -> runner.Cell:
+def cell(
+    runner_context: SimpleNamespace,
+    case_id: str,
+    target: str,
+    *,
+    thread_policy: str = "default",
+) -> runner.Cell:
     definition = next(case for case in runner_context.suite.cases if case.id == case_id)
-    return runner.Cell(definition, target, "default")
+    return runner.Cell(definition, target, thread_policy)
 
 
 def artifact(output: Path, test: Mapping[str, Any], name: str) -> Path:

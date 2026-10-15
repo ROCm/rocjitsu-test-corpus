@@ -25,6 +25,18 @@ from support import benchmark_runner as harness
 from benchmarks import runner
 
 
+@pytest.mark.parametrize("thread_policy", ["default", "single"])
+def test_harness_cell_preserves_complete_identity(runner_context, thread_policy) -> None:
+    definition = runner_context.suite.cases[0]
+    cell = harness.cell(
+        runner_context, definition.id, "gfx950", thread_policy=thread_policy
+    )
+    assert cell.definition is definition
+    assert cell.target == "gfx950"
+    assert cell.thread_policy == thread_policy
+    assert harness.cell(runner_context, definition.id, "gfx950").thread_policy == "default"
+
+
 def test_runner_fixture_uses_automatic_thread_configuration(runner_context):
     for config in runner_context.configs.values():
         assert json.loads(config.read_text()) == {"exec_mode": "functional"}
@@ -184,7 +196,7 @@ def test_subsets_keep_manifest_order_and_reject_unknowns(runner_context) -> None
         targets=("gfx1250",),
     )
     assert matrix == tuple(
-        replace(harness.cell(runner_context, case, "gfx1250"), thread_policy=policy)
+        harness.cell(runner_context, case, "gfx1250", thread_policy=policy)
         for policy in ("default", "single")
         for case in ("triton.rmsnorm_bf16.threads8", "triton.gemm_bf16_aligned.threads8")
     )
@@ -1256,7 +1268,9 @@ def test_launcher_budget_reaches_probe_and_workload(runner_context, thread_polic
     target = runner._native_target_metadata(
         configuration, "gfx950", runner_context.root / "probe", wrapper, thread_policy
     )
-    cell = replace(harness.cell(runner_context, "triton.rmsnorm_bf16.threads8", "gfx950"), thread_policy=thread_policy)
+    cell = harness.cell(
+        runner_context, "triton.rmsnorm_bf16.threads8", "gfx950", thread_policy=thread_policy
+    )
     command = runner.prepare_command(
         runner_context.root / "timed", cell, run_wrapper=wrapper,
         target=target, warmups=1, samples=3,
