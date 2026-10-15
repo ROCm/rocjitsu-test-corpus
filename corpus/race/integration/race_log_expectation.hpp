@@ -274,7 +274,14 @@ inline RaceLogParseResult parseRaceLogFromEnvironment() {
   const char *directory = std::getenv("RJ_SINK_DIR");
   if (directory == nullptr || directory[0] == '\0')
     return detail::parseFailure("RJ_SINK_DIR is not set");
-  return parseRaceLogFile(std::filesystem::path(directory) / "race.log");
+
+  // The adapter runs each case in its private directory with this fixed sink.
+  // Validate the environment contract, then open a fixed path so an inherited
+  // RJ_SINK_DIR cannot redirect the matcher to another case's report.
+  const auto expected_directory = std::filesystem::current_path() / "plugins";
+  if (std::filesystem::path(directory).lexically_normal() != expected_directory)
+    return detail::parseFailure("RJ_SINK_DIR must name the current case's plugins directory");
+  return parseRaceLogFile(std::filesystem::path("plugins") / "race.log");
 }
 
 inline std::string stripTraceMarkPrefix(const std::string &line) {
