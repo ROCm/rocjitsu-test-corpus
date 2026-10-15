@@ -30,7 +30,7 @@ def harness_suite() -> runner.Suite:
         timeout_seconds=300,
         cases=(
             runner.Case(
-                id="triton.rmsnorm_bf16.threads8",
+                id="triton.rmsnorm_bf16",
                 workload="rmsnorm",
                 suite="Triton",
                 name="BF16 RMSNorm",
@@ -45,7 +45,7 @@ def harness_suite() -> runner.Suite:
                 },
             ),
             runner.Case(
-                id="triton.gemm_bf16_aligned.threads8",
+                id="triton.gemm_bf16_aligned",
                 workload="gemm",
                 suite="Triton",
                 name="Aligned BF16 GEMM",
@@ -55,7 +55,7 @@ def harness_suite() -> runner.Suite:
                 params={"m": 256, "n": 256, "k": 512, "dtype": "bf16"},
             ),
             runner.Case(
-                id="triton.gpt_oss_attention_bf16.threads8",
+                id="triton.gpt_oss_attention_bf16",
                 workload="gpt_oss_attention",
                 suite="GPT-OSS",
                 name="GPT-OSS BF16 attention",

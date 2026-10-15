@@ -178,7 +178,7 @@ def test_even_sample_count_is_rejected(runner_context) -> None:
     with pytest.raises(runner.RunnerError, match="must be odd"):
         runner.run_suite(
             runner_context.suite,
-            harness.matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+            harness.matrix(runner_context, "triton.rmsnorm_bf16"),
             build_dir=runner_context.build,
             output=runner_context.root / "even-samples",
             samples=2,
@@ -192,13 +192,13 @@ def test_even_sample_count_is_rejected(runner_context) -> None:
 def test_subsets_keep_manifest_order_and_reject_unknowns(runner_context) -> None:
     matrix = runner.select_matrix(
         runner_context.suite,
-        cases=("triton.gemm_bf16_aligned.threads8", "triton.rmsnorm_bf16.threads8"),
+        cases=("triton.gemm_bf16_aligned", "triton.rmsnorm_bf16"),
         targets=("gfx1250",),
     )
     assert matrix == tuple(
         harness.cell(runner_context, case, "gfx1250", thread_policy=policy)
         for policy in ("default", "single")
-        for case in ("triton.rmsnorm_bf16.threads8", "triton.gemm_bf16_aligned.threads8")
+        for case in ("triton.rmsnorm_bf16", "triton.gemm_bf16_aligned")
     )
     with pytest.raises(runner.RunnerError, match="not in the suite"):
         runner.select_matrix(runner_context.suite, cases=("triton.unknown",))
@@ -236,7 +236,7 @@ def test_measurement_excludes_warmups(runner_context) -> None:
 def test_python_adapter_dispatch_is_independent_of_rocjitsu_source(
     runner_context,
 ) -> None:
-    case = "triton.gpt_oss_attention_bf16.threads8"
+    case = "triton.gpt_oss_attention_bf16"
     command = runner.prepare_command(
         runner_context.root / case,
         harness.cell(runner_context, case, "gfx950"),
@@ -264,8 +264,8 @@ def test_missing_selected_python_adapter_is_actionable(runner_context) -> None:
 def test_commands_forward_measurement_and_parameters(runner_context) -> None:
     output = runner_context.root / "out"
     expected_programs = {
-        "triton.rmsnorm_bf16.threads8": "workloads.py",
-        "triton.gemm_bf16_aligned.threads8": "workloads.py",
+        "triton.rmsnorm_bf16": "workloads.py",
+        "triton.gemm_bf16_aligned": "workloads.py",
     }
     for case, marker in expected_programs.items():
         cell = harness.cell(runner_context, case, "gfx950")
@@ -298,7 +298,7 @@ def test_commands_forward_measurement_and_parameters(runner_context) -> None:
 
 
 def test_plugin_config_is_derived_without_modifying_base(runner_context) -> None:
-    cell = harness.cell(runner_context, "triton.rmsnorm_bf16.threads8", "gfx950")
+    cell = harness.cell(runner_context, "triton.rmsnorm_bf16", "gfx950")
     base = runner_context.configs[cell.target]
     original = base.read_bytes()
     command = runner.prepare_command(
@@ -321,7 +321,7 @@ def test_plugin_config_is_derived_without_modifying_base(runner_context) -> None
 
 def test_validate_and_aggregate_workload(runner_context) -> None:
     path = runner_context.root / "workload.json"
-    cell = harness.cell(runner_context, "triton.rmsnorm_bf16.threads8", "gfx950")
+    cell = harness.cell(runner_context, "triton.rmsnorm_bf16", "gfx950")
     payload = harness.payload(cell, [30, 10, 20])
     payload["parameters"] = {
         "threads_per_block": 64,
@@ -345,7 +345,7 @@ def test_raw_problem_preserves_nested_parameter_keys(runner_context):
 
 
 def test_success_writes_compact_artifacts(runner_context) -> None:
-    matrix = harness.matrix(runner_context, "triton.rmsnorm_bf16.threads8")
+    matrix = harness.matrix(runner_context, "triton.rmsnorm_bf16")
     output, result = harness.run_harness(runner_context, matrix, "success", samples=3)
     assert set(result) == {"execution_summary", "benchmark_results", "provenance"}
     summary = result["execution_summary"]
@@ -378,7 +378,7 @@ def test_success_writes_compact_artifacts(runner_context) -> None:
     }
     test = result["benchmark_results"][0]
     assert test == {
-        "id": "triton.rmsnorm_bf16.threads8", "suite": "Triton",
+        "id": "triton.rmsnorm_bf16", "suite": "Triton",
         "name": "BF16 RMSNorm", "target": "gfx950",
         "operation": "RMSNorm", "thread_policy": "default",
         "problem": {"dtype": "bf16", "rows": 128, "columns": 4096, "epsilon": 1e-5},
@@ -388,7 +388,7 @@ def test_success_writes_compact_artifacts(runner_context) -> None:
     assert (output / "run.json").is_file()
     assert json.loads((output / "run.json").read_text(encoding="utf-8")) == result
     assert (
-        output / "gfx950/default/cases/triton.rmsnorm_bf16.threads8/stdout.txt"
+        output / "gfx950/default/cases/triton.rmsnorm_bf16/stdout.txt"
     ).read_text() == "out"
 
 
@@ -412,7 +412,7 @@ def test_progress_reports_suite_and_cell_status(runner_context) -> None:
     progress = io.StringIO()
     harness.run_harness(
         runner_context,
-        harness.matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "progress",
         samples=1,
         progress=progress,
@@ -424,10 +424,10 @@ def test_progress_reports_suite_and_cell_status(runner_context) -> None:
     )
     assert (
         messages[1]
-        == "[rocjitsu-benchmark] START [1/1] case=triton.rmsnorm_bf16.threads8 target=gfx950 thread_policy=default provider=triton timeout_seconds=300"
+        == "[rocjitsu-benchmark] START [1/1] case=triton.rmsnorm_bf16 target=gfx950 thread_policy=default provider=triton timeout_seconds=300"
     )
     assert re.search(
-        "^\\[rocjitsu-benchmark\\] DONE  \\[1/1\\] case=triton\\.rmsnorm_bf16\\.threads8 target=gfx950 thread_policy=default status=completed elapsed_seconds=\\d+\\.\\d median_s=1e-09$",
+        "^\\[rocjitsu-benchmark\\] DONE  \\[1/1\\] case=triton\\.rmsnorm_bf16 target=gfx950 thread_policy=default status=completed elapsed_seconds=\\d+\\.\\d median_s=1e-09$",
         messages[2],
     )
     assert re.search(
@@ -447,7 +447,7 @@ def test_initial_checkpoint_is_a_running_raw_run(runner_context) -> None:
 
     harness.run_harness(
         runner_context,
-        harness.matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "running-checkpoint",
         process=inspect_checkpoint,
         samples=1,
@@ -462,10 +462,10 @@ def test_initial_checkpoint_is_a_running_raw_run(runner_context) -> None:
 def test_first_partial_run_preserved_and_failed_case_can_later_succeed(
     runner_context,
 ) -> None:
-    failed_id = "triton.gpt_oss_attention_bf16.threads8"
+    failed_id = "triton.gpt_oss_attention_bf16"
     matrix = harness.matrix(
         runner_context,
-        "triton.rmsnorm_bf16.threads8",
+        "triton.rmsnorm_bf16",
         failed_id,
         targets=("gfx950", "gfx1250"),
     )
@@ -497,7 +497,7 @@ def test_nonzero_exit_preserves_logs(runner_context) -> None:
 
     output, result = harness.run_harness(
         runner_context,
-        harness.matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "nonzero",
         process=fail,
     )
@@ -516,7 +516,7 @@ def test_nonzero_exit_preserves_logs(runner_context) -> None:
     assert test["timing_results_s"] == []
     assert not harness.artifact(output, test, "workload.json").exists()
     assert (
-        output / "gfx950/default/cases/triton.rmsnorm_bf16.threads8/stderr.txt"
+        output / "gfx950/default/cases/triton.rmsnorm_bf16/stderr.txt"
     ).read_text() == "failure text"
 
 
@@ -581,7 +581,7 @@ def test_selected_configuration_is_preserved_without_hash(runner_context) -> Non
         assert config["max_ticks"] == 0
         _, result = harness.run_harness(
             runner_context,
-            harness.matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+            harness.matrix(runner_context, "triton.rmsnorm_bf16"),
             "target-metadata",
             samples=1,
         )
@@ -592,12 +592,12 @@ def test_selected_configuration_is_preserved_without_hash(runner_context) -> Non
 def test_plugin_report_is_retained(runner_context) -> None:
     output, result = harness.run_harness(
         runner_context,
-        harness.matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "race-profile",
         samples=1,
         plugin_profile="race",
     )
-    report = "gfx950/default/cases/triton.rmsnorm_bf16.threads8/plugins/race.log"
+    report = "gfx950/default/cases/triton.rmsnorm_bf16/plugins/race.log"
     assert (output / report).read_text(encoding="utf-8") == "race report\n"
 
 
@@ -615,7 +615,7 @@ def test_missing_plugin_report_fails_the_cell(runner_context) -> None:
 
     _, result = harness.run_harness(
         runner_context,
-        harness.matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "missing-plugin-report",
         process=no_report,
         samples=1,
@@ -718,7 +718,7 @@ def test_timeout_preserves_captured_output(runner_context) -> None:
 
     output, result = harness.run_harness(
         runner_context,
-        harness.matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "timeout",
         process=timeout,
     )
@@ -736,7 +736,7 @@ def test_timeout_preserves_captured_output(runner_context) -> None:
     }
     assert test["timing_results_s"] == []
     assert (
-        output / "gfx950/default/cases/triton.rmsnorm_bf16.threads8/stdout.txt"
+        output / "gfx950/default/cases/triton.rmsnorm_bf16/stdout.txt"
     ).read_text() == "partial out"
 
 
@@ -747,7 +747,7 @@ def test_zero_exit_without_workload_is_a_failed_test(runner_context) -> None:
 
     output, result = harness.run_harness(
         runner_context,
-        harness.matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "missing-workload",
         process=missing,
     )
@@ -772,7 +772,7 @@ def test_malformed_samples_fail_validation(runner_context) -> None:
 
     _, result = harness.run_harness(
         runner_context,
-        harness.matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "malformed",
         process=malformed,
         samples=3,
@@ -797,7 +797,7 @@ def test_nonfinite_parameters_fail_without_aborting_suite(runner_context) -> Non
 
     output, result = harness.run_harness(
         runner_context,
-        harness.matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "nonfinite",
         process=nonfinite,
         samples=1,
@@ -884,9 +884,9 @@ def test_interruption_retains_completed_and_unrun_matrix_cells(
 ) -> None:
     matrix = harness.matrix(
         runner_context,
-        "triton.rmsnorm_bf16.threads8",
-        "triton.gemm_bf16_aligned.threads8",
-        "triton.gpt_oss_attention_bf16.threads8",
+        "triton.rmsnorm_bf16",
+        "triton.gemm_bf16_aligned",
+        "triton.gpt_oss_attention_bf16",
     )
     calls = 0
 
@@ -942,7 +942,7 @@ def test_interruption_finalizes_the_run_artifact(runner_context) -> None:
     with pytest.raises(KeyboardInterrupt):
         harness.run_harness(
             runner_context,
-            harness.matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+            harness.matrix(runner_context, "triton.rmsnorm_bf16"),
             "interrupted",
             process=interrupt,
             samples=1,
@@ -1061,7 +1061,7 @@ def test_existing_output_is_never_overwritten(runner_context, thread_policy) -> 
         with pytest.raises(runner.RunnerError, match="already exists"):
             runner.run_suite(
                 runner_context.suite,
-                harness.matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+                harness.matrix(runner_context, "triton.rmsnorm_bf16"),
                 build_dir=runner_context.build,
                 output=output,
                 rocjitsu_source_dir=runner_context.source,
@@ -1084,8 +1084,8 @@ def test_failures_do_not_stop_later_cells(runner_context) -> None:
 
     matrix = harness.matrix(
         runner_context,
-        "triton.rmsnorm_bf16.threads8",
-        "triton.gemm_bf16_aligned.threads8",
+        "triton.rmsnorm_bf16",
+        "triton.gemm_bf16_aligned",
     )
     output, result = harness.run_harness(
         runner_context, matrix, "partial", process=one_failure, samples=3
@@ -1205,7 +1205,7 @@ def test_unselected_config_is_not_opened(runner_context):
     runner_context.configs["gfx1250"] = runner_context.root / "does-not-exist.json"
     _, result = harness.run_harness(
         runner_context,
-        harness.matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "subset",
         samples=1,
     )
@@ -1225,8 +1225,8 @@ def test_config_snapshot_preserved_even_if_source_changes(runner_context):
         runner_context,
         harness.matrix(
             runner_context,
-            "triton.rmsnorm_bf16.threads8",
-            "triton.gemm_bf16_aligned.threads8",
+            "triton.rmsnorm_bf16",
+            "triton.gemm_bf16_aligned",
         ),
         "snapshot",
         process=change_source,
@@ -1269,7 +1269,7 @@ def test_launcher_budget_reaches_probe_and_workload(runner_context, thread_polic
         configuration, "gfx950", runner_context.root / "probe", wrapper, thread_policy
     )
     cell = harness.cell(
-        runner_context, "triton.rmsnorm_bf16.threads8", "gfx950", thread_policy=thread_policy
+        runner_context, "triton.rmsnorm_bf16", "gfx950", thread_policy=thread_policy
     )
     command = runner.prepare_command(
         runner_context.root / "timed", cell, run_wrapper=wrapper,
@@ -1298,7 +1298,7 @@ def test_wrapper_preserves_quoted_paths_and_literal_shell_arguments(runner_conte
     wrapper = shlex.join(
         [sys.executable, str(script), literal, "--config", "{config}", "--"]
     )
-    cell = harness.cell(runner_context, "triton.rmsnorm_bf16.threads8", "gfx950")
+    cell = harness.cell(runner_context, "triton.rmsnorm_bf16", "gfx950")
     command = runner.prepare_command(
         runner_context.root / "output with spaces",
         cell,
@@ -1331,7 +1331,7 @@ def test_missing_wrapper_executable_fails_cell(runner_context):
     )
     _, result = harness.run_harness(
         runner_context,
-        harness.matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "missing-launcher",
         process=runner._run_command,
         samples=1,
