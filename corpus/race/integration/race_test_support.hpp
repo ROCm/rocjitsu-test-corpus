@@ -9,9 +9,25 @@
 #include "race_log_expectation.hpp"
 
 #include <cstdio>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace rocjitsu::test {
+
+// Throwing stops the current GoogleTest body, including callers of pointer-
+// returning fixture helpers. A nonfatal expectation would continue with an
+// invalid allocation or incomplete copy. Deliberately racy kernels still
+// require successful HIP operations; only their detector findings may differ.
+inline void checkHip(hipError_t status, const char *operation, const char *file, int line) {
+  if (status != hipSuccess)
+    throw std::runtime_error(std::string(operation) + " failed: " + hipGetErrorString(status) +
+                             " (" + std::to_string(status) + ") at " + file + ":" +
+                             std::to_string(line));
+}
+
+#define RACE_HIP_CHECK(operation)                                                                  \
+  ::rocjitsu::test::checkHip((operation), #operation, __FILE__, __LINE__)
 
 /// Common issue-capacity probes. Target suites instantiate these with their
 /// architectural counter capacities and keep target-specific expectations.
@@ -102,7 +118,7 @@ class RaceTestBase : public ::testing::Test {
 protected:
   template <typename T> T *alloc(int count) {
     T *pointer = nullptr;
-    (void)hipMalloc(&pointer, count * sizeof(T));
+    RACE_HIP_CHECK(hipMalloc(&pointer, count * sizeof(T)));
     return pointer;
   }
 
@@ -111,11 +127,11 @@ protected:
     std::vector<T> host(count);
     for (int index = 0; index < count; ++index)
       host[index] = static_cast<T>(index);
-    (void)hipMemcpy(pointer, host.data(), count * sizeof(T), hipMemcpyHostToDevice);
+    RACE_HIP_CHECK(hipMemcpy(pointer, host.data(), count * sizeof(T), hipMemcpyHostToDevice));
     return pointer;
   }
 
-  void sync() { (void)hipDeviceSynchronize(); }
+  void sync() { RACE_HIP_CHECK(hipDeviceSynchronize()); }
 
   void ExpectNoRace() {
     const RaceLogParseResult parsed = parseRaceLogFromEnvironment();

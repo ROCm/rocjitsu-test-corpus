@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import os
+import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -9,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from support.prepare_inputs import make_target_spec
-from support.define_contracts import BuildResult, RunContext
+from support.define_contracts import BuildResult, BuildState, RunContext
 from test_suites import race
 
 
@@ -56,7 +58,7 @@ def test_run_honors_run_exclusions(tmp_path: Path, monkeypatch, target: str) -> 
     )
     excluded, control = race.discover(make_target_spec(target), configs)
     base = tmp_path / "base.json"
-    base.write_text('{"vm": {}}', encoding="utf-8")
+    _write_base_config(base, target)
     monkeypatch.setenv("ROCJITSU_RACE_CONFIG", str(base))
     context = RunContext(
         repo_root=race.REPO_ROOT,
@@ -84,9 +86,9 @@ def test_materialize_config_adds_required_race_plugin(tmp_path: Path) -> None:
     sink = tmp_path / "case" / "plugins"
     output.parent.mkdir()
     sink.mkdir()
-    base.write_text('{"max_ticks": 123, "vm": {}}\n', encoding="utf-8")
+    _write_base_config(base, "gfx950", max_ticks=123)
 
-    race._materialize_config(base, output, sink)
+    race._materialize_config(base, output, sink, target="gfx950")
 
     value = json.loads(output.read_text(encoding="utf-8"))
     assert value["max_ticks"] == 123
@@ -102,7 +104,7 @@ def test_materialize_config_rejects_preconfigured_plugins(tmp_path: Path) -> Non
     base.write_text('{"plugins": {"logging": {}}}\n', encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="must not enable plugins or sinks"):
-        race._materialize_config(base, output, sink)
+        race._materialize_config(base, output, sink, target="gfx950")
 
 
 def test_run_wrapper_substitutes_private_config(tmp_path: Path) -> None:
@@ -132,7 +134,7 @@ def test_run_can_bind_private_daemon_socket_under_long_artifact_directory(
         race.load_target_configs(race.default_config_files()),
     )[:2]
     base = tmp_path / "base.json"
-    base.write_text('{"vm": {}}', encoding="utf-8")
+    _write_base_config(base, "gfx950")
     monkeypatch.setenv("ROCJITSU_RACE_CONFIG", str(base))
     context = RunContext(
         repo_root=race.REPO_ROOT,
@@ -157,7 +159,9 @@ def test_run_can_bind_private_daemon_socket_under_long_artifact_directory(
             ],
             **kwargs,
         )
-        (Path(kwargs["env"]["RJ_SINK_DIR"]) / "race.log").touch()
+        (Path(kwargs["env"]["RJ_SINK_DIR"]) / "race.log").write_text(
+            '[rocjitsu] Kernel dispatch: "test_kernel" symbol="test_kernel"\n'
+        )
 
     monkeypatch.setattr(race, "_run_command", bind_daemon_socket)
     monkeypatch.setattr(race, "_validate_gtest_report", lambda *args: None)
@@ -170,6 +174,7 @@ def test_run_can_bind_private_daemon_socket_under_long_artifact_directory(
     "outcome, error",
     [
         ("passed", None),
+        ("copy_only", "did not dispatch a test kernel"),
         ("empty", "exactly one"),
         ("multiple", "exactly one"),
         ("wrong_case", "did not pass the requested case"),
@@ -187,7 +192,7 @@ def test_run_requires_the_requested_gtest_to_pass(
         race.load_target_configs(race.default_config_files()),
     )[0]
     base = tmp_path / "base.json"
-    base.write_text('{"vm": {}}', encoding="utf-8")
+    _write_base_config(base, "gfx950")
     monkeypatch.setenv("ROCJITSU_RACE_CONFIG", str(base))
     context = RunContext(
         repo_root=race.REPO_ROOT,
@@ -212,9 +217,16 @@ def test_run_requires_the_requested_gtest_to_pass(
         assert command[2] == str(case_dir / "config.json")
         assert f"--gtest_filter={case.metadata['test_filter']}" in command
         assert cwd / env["ROCJITSU_RUNTIME_DIR"] == case_dir / "runtime"
-        # An empty race log is valid for clean kernels, so it cannot prove
-        # that GoogleTest executed the requested test.
-        (Path(env["RJ_SINK_DIR"]) / "race.log").touch()
+        # A clean runtime copy and passing GoogleTest XML must not substitute
+        # for the selected no-race kernel actually being dispatched.
+        (Path(env["RJ_SINK_DIR"]) / "race.log").write_text(
+            '[rocjitsu] Kernel dispatch: "__amd_rocclr_copyBuffer" symbol="__amd_rocclr_copyBuffer"\n'
+            + (
+                ""
+                if outcome == "copy_only"
+                else '[rocjitsu] Kernel dispatch: "test_kernel" symbol="test_kernel"\n'
+            )
+        )
         if outcome == "missing":
             return
         report_arg = next(arg for arg in command if arg.startswith("--gtest_output="))
@@ -279,3 +291,204 @@ def _source_gtests(target: str) -> set[str]:
         )
         if fixture.strip() in (layout["fixture"], "VmemRaceTest")
     }
+
+
+@pytest.mark.parametrize(
+    "target,base_target", [("gfx950", "gfx1151"), ("gfx1151", "gfx950")]
+)
+def test_mismatched_simulator_target_fails_before_launch(
+    tmp_path: Path, monkeypatch, target: str, base_target: str
+) -> None:
+    case = race.discover(
+        make_target_spec(target), race.load_target_configs(race.default_config_files())
+    )[0]
+    base = tmp_path / "base.json"
+    _write_base_config(base, base_target)
+    monkeypatch.setenv("ROCJITSU_RACE_CONFIG", str(base))
+    context = RunContext(
+        race.REPO_ROOT, tmp_path / "artifacts", False, "rocjitsu --config {config} --"
+    )
+    monkeypatch.setattr(
+        race,
+        "_run_command",
+        lambda *args, **kwargs: pytest.fail("launched mismatched target"),
+    )
+    with pytest.raises(RuntimeError, match=f"does not match {target}"):
+        race.run(case, BuildResult(None, tmp_path / "test"), context)
+
+
+@pytest.mark.parametrize(
+    "output,passes",
+    [
+        ("", False),
+        (
+            '[rocjitsu] Kernel dispatch: "__amd_rocclr_copyBuffer" symbol="__amd_rocclr_copyBuffer"\n',
+            False,
+        ),
+        ('[rocjitsu] Kernel dispatch: "<unknown>" symbol="<unknown>"\n', False),
+        ('[rocjitsu] Kernel dispatch: "?" symbol="?"\n', False),
+        (
+            '[rocjitsu] Kernel dispatch: "vgpr_no_race_kernel" symbol="_Z19vgpr_no_race_kernelPKfPf"\n',
+            True,
+        ),
+    ],
+)
+def test_copy_dispatch_alone_cannot_pass(
+    tmp_path: Path, output: str, passes: bool
+) -> None:
+    report = tmp_path / "race.log"
+    report.write_text(output)
+    if passes:
+        race._validate_kernel_dispatch(report)
+    else:
+        with pytest.raises(RuntimeError, match="did not dispatch a test kernel"):
+            race._validate_kernel_dispatch(report)
+
+
+@pytest.mark.parametrize("prefix", ["", "env "])
+def test_relative_launcher_runs_from_private_directory(
+    tmp_path: Path, monkeypatch, prefix: str
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    launcher = tmp_path / "launcher"
+    launcher.write_text("#!/bin/sh\nprintf '%s\\n' \"$PWD\"\n")
+    launcher.chmod(0o755)
+    case_dir = tmp_path / "case"
+    case_dir.mkdir()
+    monkeypatch.setattr(race, "REPO_ROOT", repo)
+    command = race._run_wrapper_command(
+        prefix + "../launcher {config}", case_dir / "config.json"
+    )
+    race._run_command(command, cwd=case_dir, log_path=case_dir / "run.log", phase="run")
+    assert f"stdout:\n{case_dir}\n" in (case_dir / "run.log").read_text()
+
+
+def test_build_completion_is_shared_only_within_invocation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    case = race.discover(
+        make_target_spec("gfx950"),
+        race.load_target_configs(race.default_config_files()),
+    )[0]
+    context = RunContext(race.REPO_ROOT, tmp_path, True)
+    calls = []
+
+    def command(argv, **kwargs):
+        calls.append(kwargs["phase"])
+        if kwargs["phase"] == "build":
+            build_dir = tmp_path / "race-build" / "gfx950" / "build"
+            build_dir.mkdir()
+            (build_dir / "hip_race_tests_gfx950").touch()
+
+    monkeypatch.delenv("ROCJITSU_RACE_BUILD_ROOT", raising=False)
+    monkeypatch.setenv("PYTEST_XDIST_TESTRUNUID", "first")
+    monkeypatch.setattr(race, "_run_command", command)
+    race.build(case, context, BuildState())
+    race.build(case, context, BuildState())
+    assert calls == [
+        "configure",
+        "build",
+        "race-log expectation test",
+        "HIP fixture error test",
+    ]
+    monkeypatch.setenv("PYTEST_XDIST_TESTRUNUID", "second")
+    # Simulate the existing build directory on the next invocation.
+    original = command
+
+    def rebuild(argv, **kwargs):
+        if kwargs["phase"] == "build":
+            calls.append("build")
+        else:
+            original(argv, **kwargs)
+
+    monkeypatch.setattr(race, "_run_command", rebuild)
+    race.build(case, context, BuildState())
+    assert len(calls) == 8
+
+
+def test_failed_matcher_does_not_stamp_build(tmp_path: Path, monkeypatch) -> None:
+    case = race.discover(
+        make_target_spec("gfx950"),
+        race.load_target_configs(race.default_config_files()),
+    )[0]
+    monkeypatch.delenv("ROCJITSU_RACE_BUILD_ROOT", raising=False)
+    monkeypatch.setenv("PYTEST_XDIST_TESTRUNUID", "failed")
+
+    def fail_matcher(argv, **kwargs):
+        if kwargs["phase"] == "race-log expectation test":
+            raise RuntimeError("matcher failed")
+
+    monkeypatch.setattr(race, "_run_command", fail_matcher)
+    with pytest.raises(RuntimeError, match="matcher failed"):
+        race.build(case, RunContext(race.REPO_ROOT, tmp_path, True), BuildState())
+    assert not list(tmp_path.rglob("*.complete"))
+
+
+@pytest.mark.parametrize(
+    "suites,wrapper,extra,error",
+    [
+        (
+            "race,cts",
+            "rocjitsu --config {config} --",
+            [],
+            "Run the race suite separately",
+        ),
+        ("race", "rocjitsu --config fixed.json --", [], "exactly one standalone"),
+        ("race", None, [], "requires --run-wrapper"),
+        ("race,cts", None, ["--skip-all-runs"], None),
+        ("race,cts", None, ["--collect-only"], None),
+    ],
+)
+def test_entrypoint_validates_execution_before_build(
+    tmp_path: Path,
+    suites: str,
+    wrapper: str | None,
+    extra: list[str],
+    error: str | None,
+) -> None:
+    # For build-only runs select an unsupported target: collection is empty,
+    # so this exercises option validation without invoking a toolchain.
+    target = "gfx950" if error or "--collect-only" in extra else "gfx9999"
+    command = [
+        sys.executable,
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_corpus.py",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--suite",
+        suites,
+        "--target",
+        target,
+        "--basetemp",
+        str(tmp_path / "temp"),
+        *extra,
+    ]
+    if wrapper is not None:
+        command.extend(["--run-wrapper", wrapper])
+    result = subprocess.run(
+        command,
+        cwd=race.REPO_ROOT,
+        env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"),
+        capture_output=True,
+        text=True,
+    )
+    if error:
+        assert result.returncode == 2
+        assert error in result.stdout + result.stderr
+        assert "Race test configure failed" not in result.stdout
+    else:
+        assert result.returncode == 0, result.stdout + result.stderr
+
+
+def _write_base_config(path: Path, target: str, **fields) -> None:
+    version = {"gfx950": 90500, "gfx1151": 110501}[target]
+    path.write_text(
+        json.dumps(
+            {"vm": {"gpu": {"device": {"gfx_target_version": version}}}, **fields}
+        ),
+        encoding="utf-8",
+    )

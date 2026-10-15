@@ -133,6 +133,25 @@ def pytest_generate_tests(metafunc):
     config._corpus_target = target.target
     config._corpus_case_count = len(cases)
 
+    if not config.option.collectonly and not config.getoption("skip_all_runs"):
+        executing = [
+            case
+            for case in cases
+            if not matches_case_selector(case, skip_tests_config.get(case.suite, ()))
+            and case.metadata.get("name")
+            not in case.metadata.get("target_config", {}).get("skip_run_tests", ())
+        ]
+        if any(case.suite == "race" for case in executing):
+            if any(case.suite != "race" for case in executing):
+                raise pytest.UsageError(
+                    "Run the race suite separately from other suites: its "
+                    "--run-wrapper substitutes a private {config} per case"
+                )
+            try:
+                race.validate_execution(config.getoption("run_wrapper"), target.target)
+            except RuntimeError as error:
+                raise pytest.UsageError(f"race suite: {error}") from error
+
     params = []
     for case in cases:
         marks = []

@@ -1,9 +1,9 @@
 """RocJITsu race-detector HIP integration suite.
 
-The HIP programs and their GoogleTest assertions are intentionally kept
-unchanged from their original in-tree form. This adapter only builds the
-selected architecture, gives every filtered test a private plugin config and
-sink directory, and runs it through the caller-supplied RocJITsu wrapper.
+The integration programs preserve the original functional and race assertions,
+check HIP operations, and run through a caller-supplied RocJITsu wrapper. Each
+filtered test gets a private plugin config and sink directory. The standalone
+mutation kernels in corpus/race/kernels are outside this suite.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import contextlib
 import fcntl
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -28,7 +29,7 @@ from support.define_contracts import (
 from support.prepare_inputs import load_suite_target_configs, supports_target
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RACE_SOURCE_DIR = REPO_ROOT / "corpus" / "race"
+RACE_SOURCE_DIR = REPO_ROOT / "corpus" / "race" / "integration"
 CONFIGS_ROOT = RACE_SOURCE_DIR / "configs"
 TARGET_LAYOUT = {
     "gfx942": {
@@ -128,53 +129,74 @@ def build(
     build_dir = build_root / "build"
     logs_dir = build_root / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
+    executable = build_dir / layout["binary"]
+    run_uid = os.getenv("PYTEST_XDIST_TESTRUNUID", f"pid-{os.getpid()}")
+    completion_stamp = build_root / f"{run_uid}.complete"
 
     with _build_lock(build_root / ".build.lock"):
-        configure = [
-            "cmake",
-            "-S",
-            str(RACE_SOURCE_DIR),
-            "-B",
-            str(build_dir),
-            "-G",
-            "Ninja",
-            f"-DCMAKE_HIP_ARCHITECTURES={case.target}",
-        ]
-        if rocm_path := os.getenv("ROCM_PATH"):
-            configure.append(f"-DROCM_PATH={rocm_path}")
-        _run_command(
-            configure,
-            cwd=REPO_ROOT,
-            log_path=logs_dir / "configure.log",
-            phase="configure",
-        )
-        _run_command(
-            [
-                "cmake",
-                "--build",
-                str(build_dir),
-                "--target",
-                layout["binary"],
-                "race_log_expectation_test",
-            ],
-            cwd=REPO_ROOT,
-            log_path=logs_dir / "build.log",
-            phase="build",
-        )
-        _run_command(
-            [str(build_dir / "race_log_expectation_test"), "--gtest_brief=1"],
-            cwd=REPO_ROOT,
-            log_path=logs_dir / "race_log_expectation_test.log",
-            phase="race-log expectation test",
-        )
+        if not completion_stamp.exists():
+            _build_programs(case, context, build_dir, logs_dir)
+            if not executable.is_file():
+                raise RuntimeError(f"Race test build did not produce {executable}")
+            completion_stamp.touch()
 
-    executable = build_dir / layout["binary"]
     if not executable.is_file():
         raise RuntimeError(f"Race test build did not produce {executable}")
     return BuildResult(
         build_dir=build_dir,
         executable_path=executable,
-        metadata={"logs_dir": str(logs_dir)},
+        metadata={"logs_dir": str(logs_dir), "completion_stamp": str(completion_stamp)},
+    )
+
+
+def _build_programs(
+    case: CorpusCase, context: RunContext, build_dir: Path, logs_dir: Path
+) -> None:
+    configure = [
+        "cmake",
+        "-S",
+        str(RACE_SOURCE_DIR),
+        "-B",
+        str(build_dir),
+        "-G",
+        "Ninja",
+        f"-DCMAKE_HIP_ARCHITECTURES={case.target}",
+    ]
+    if rocm_path := os.getenv("ROCM_PATH"):
+        configure.append(f"-DROCM_PATH={rocm_path}")
+    _run_command(
+        configure,
+        cwd=REPO_ROOT,
+        log_path=logs_dir / "configure.log",
+        phase="configure",
+    )
+    _run_command(
+        [
+            "cmake",
+            "--build",
+            str(build_dir),
+            "--target",
+            TARGET_LAYOUT[case.target]["binary"],
+            "race_log_expectation_test",
+            "race_test_support_test",
+            "--parallel",
+            os.getenv("CMAKE_BUILD_PARALLEL_LEVEL", str(context.worker_count)),
+        ],
+        cwd=REPO_ROOT,
+        log_path=logs_dir / "build.log",
+        phase="build",
+    )
+    _run_command(
+        [str(build_dir / "race_log_expectation_test"), "--gtest_brief=1"],
+        cwd=REPO_ROOT,
+        log_path=logs_dir / "race_log_expectation_test.log",
+        phase="race-log expectation test",
+    )
+    _run_command(
+        [str(build_dir / "race_test_support_test"), "--gtest_brief=1"],
+        cwd=REPO_ROOT,
+        log_path=logs_dir / "race_test_support_test.log",
+        phase="HIP fixture error test",
     )
 
 
@@ -203,7 +225,7 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
 
     base_config = _base_config_path()
     config_path = case_dir / "config.json"
-    _materialize_config(base_config, config_path, sink_dir)
+    _materialize_config(base_config, config_path, sink_dir, target=case.target)
     gtest_report = case_dir / "gtest.xml"
     command = [
         *_run_wrapper_command(context.run_wrapper, config_path),
@@ -227,6 +249,29 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     report = sink_dir / "race.log"
     if not report.is_file():
         raise RuntimeError(f"Race test did not produce {report}")
+    _validate_kernel_dispatch(report)
+
+
+def validate_execution(run_wrapper: str | None, target: str) -> None:
+    """Check launcher/config requirements before building execution cases."""
+    _run_wrapper_command(run_wrapper, Path("/private/config.json"))
+    _load_base_config(_base_config_path(), target=target)
+
+
+def _validate_kernel_dispatch(path: Path) -> None:
+    # HIP copies can dispatch successfully even when no test code object
+    # matches the simulator. They do not establish integration coverage.
+    dispatch = re.compile(r'^\[rocjitsu\] Kernel dispatch: "([^"]+)" symbol="([^"]+)"$')
+    with path.open(encoding="utf-8") as log:
+        for line in log:
+            match = dispatch.fullmatch(line.rstrip("\n"))
+            if match and all(
+                name not in ("?", "unknown", "<unknown>")
+                and not name.startswith("__amd_rocclr_")
+                for name in match.groups()
+            ):
+                return
+    raise RuntimeError(f"Race test did not dispatch a test kernel: {path}")
 
 
 def _validate_gtest_report(path: Path, expected_filter: str) -> None:
@@ -275,7 +320,7 @@ def _base_config_path() -> Path:
     return path
 
 
-def _materialize_config(base_path: Path, output_path: Path, sink_dir: Path) -> None:
+def _load_base_config(base_path: Path, *, target: str) -> dict:
     try:
         value = json.loads(base_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -289,6 +334,27 @@ def _materialize_config(base_path: Path, output_path: Path, sink_dir: Path) -> N
             "Race simulator base config must not enable plugins or sinks: "
             f"{base_path}"
         )
+    try:
+        version = value["vm"]["gpu"]["device"]["gfx_target_version"]
+    except (KeyError, TypeError) as error:
+        raise RuntimeError(
+            f"Race simulator config must specify vm.gpu.device.gfx_target_version: {base_path}"
+        ) from error
+    # KFD encodes gfx950 as 9.5.0 -> 90500, gfx1151 as 11.5.1 -> 110501.
+    digits = target.removeprefix("gfx")
+    expected = int(digits[:-2]) * 10000 + int(digits[-2]) * 100 + int(digits[-1])
+    if type(version) is not int or version != expected:
+        raise RuntimeError(
+            f"Race simulator target {version!r} does not match {target} "
+            f"(gfx_target_version={expected}): {base_path}"
+        )
+    return value
+
+
+def _materialize_config(
+    base_path: Path, output_path: Path, sink_dir: Path, *, target: str
+) -> None:
+    value = _load_base_config(base_path, target=target)
     value["require_all_plugins"] = True
     value["plugins"] = {"race": {}}
     value["sinks"] = {"types": ["file"], "dir": str(sink_dir)}
@@ -313,9 +379,17 @@ def _run_wrapper_command(run_wrapper: str | None, config_path: Path) -> list[str
         )
     if any("{config}" in argument and argument != "{config}" for argument in wrapper):
         raise RuntimeError("{config} must be a standalone --run-wrapper token")
-    return [
+    wrapper = [
         str(config_path) if argument == "{config}" else argument for argument in wrapper
     ]
+    # The private cwd keeps daemon sockets short. Resolve relative launcher
+    # paths while still using the repository as the caller's reference cwd.
+    for index, argument in enumerate(wrapper):
+        if os.sep in argument and not Path(argument).is_absolute():
+            path = REPO_ROOT / argument
+            if index == 0 or (path.is_file() and os.access(path, os.X_OK)):
+                wrapper[index] = str(path.resolve())
+    return wrapper
 
 
 @contextlib.contextmanager
