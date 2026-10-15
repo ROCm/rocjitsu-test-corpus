@@ -72,7 +72,14 @@ def test_case_constructor_preserves_explicit_support(
     )
     expected = policies
     assert case.thread_policies == expected
-    suite = runner.Suite("custom", case.targets, (case,), 0, 1, 60)
+    suite = runner.Suite(
+        name="custom",
+        targets=case.targets,
+        cases=(case,),
+        warmups=0,
+        samples=1,
+        timeout_seconds=60,
+    )
     matrix = runner.select_matrix(suite)
     assert tuple(cell.thread_policy for cell in matrix) == expected
     assert all(cell.definition is case and cell.target == "gfx950" for cell in matrix)
