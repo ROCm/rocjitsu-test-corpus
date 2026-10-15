@@ -13,7 +13,7 @@ from typing import Any
 from unittest import mock
 
 import pytest
-from support.benchmark_runner import _run, _successful_process
+from support import benchmark_runner as harness
 
 from benchmarks import runner
 
@@ -107,10 +107,10 @@ def test_direct_sampling_precedence_reaches_output_commands_and_progress(
                 int(argv[argv.index("--samples") + 1]),
             )
         )
-        return _successful_process(ctx, argv, **kwargs)
+        return harness.successful_process(ctx, argv, **kwargs)
 
     progress = io.StringIO()
-    output, raw = _run(
+    output, raw = harness.run_harness(
         ctx,
         runner.select_matrix(ctx.suite)[:1],
         "sampling",
@@ -162,7 +162,7 @@ def test_cli_sampling_precedence(
                 int(argv[argv.index("--samples") + 1]),
             )
         )
-        return _successful_process(ctx, argv, **kwargs)
+        return harness.successful_process(ctx, argv, **kwargs)
 
     args = [
         "--manifest",
@@ -383,7 +383,7 @@ def test_append_policy_cli_run_retains_canonical_order(
         budgets.append(argv[argv.index("--cpu-thread-budget") + 1])
         assert argv[argv.index("--warmups") + 1] == "1"
         assert argv[argv.index("--samples") + 1] == "3"
-        return _successful_process(ctx, argv, **kwargs)
+        return harness.successful_process(ctx, argv, **kwargs)
 
     args = [
         "--case",
@@ -556,7 +556,7 @@ def test_grouped_run_contract_and_native_budgets(
             return subprocess.CompletedProcess(argv, 7, "", "mock failure")
         if case == ctx.suite.cases[2].id:
             raise subprocess.TimeoutExpired(argv, 300, output="partial")
-        return _successful_process(ctx, argv, **kwargs)
+        return harness.successful_process(ctx, argv, **kwargs)
 
     output = ctx.root / "multi"
     with mock.patch.object(runner, "_run_command", side_effect=execute):
@@ -657,10 +657,10 @@ def test_interruption_retains_all_group_identities(
         calls += 1
         if calls == 4:
             raise runner._CommandInterrupted("SIGTERM", "partial", "interrupted")
-        return _successful_process(ctx, argv, **kwargs)
+        return harness.successful_process(ctx, argv, **kwargs)
 
     with pytest.raises(KeyboardInterrupt):
-        _run(ctx, matrix, "group-interrupt", process=execute, samples=3)
+        harness.run_harness(ctx, matrix, "group-interrupt", process=execute, samples=3)
     output = ctx.root / "group-interrupt"
     raw = json.loads((output / "run.json").read_text())
     assert raw["execution_summary"]["finished_at"] is not None
@@ -686,7 +686,7 @@ def test_composite_operation_is_metadata_on_failure(
     ctx = runner_context
     case = replace(ctx.suite.cases[0], operation="GEMM + activation + reduction")
     ctx.suite = replace(ctx.suite, cases=(case,))
-    _, raw = _run(
+    _, raw = harness.run_harness(
         ctx,
         runner.select_matrix(ctx.suite),
         "composite",
@@ -707,7 +707,7 @@ def test_nonfinite_config_rejected_before_output(
         '{"exec_mode":"functional", "extra":' + value + "}"
     )
     with pytest.raises(runner.RunnerError, match="finite"):
-        _run(
+        harness.run_harness(
             ctx, runner.select_matrix(ctx.suite, targets=["gfx950"]), "nonfinite-config"
         )
     assert not (ctx.root / "nonfinite-config").exists()
@@ -732,9 +732,9 @@ def test_single_manifest_timeout_forwarding_and_metadata(
 
     def execute(argv: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         forwarded.append(kwargs["timeout"])
-        return _successful_process(ctx, argv, **kwargs)
+        return harness.successful_process(ctx, argv, **kwargs)
 
-    output, raw = _run(ctx, matrix, "scalar-timeout", process=execute)
+    output, raw = harness.run_harness(ctx, matrix, "scalar-timeout", process=execute)
     assert forwarded == [timeout]
     assert raw["execution_summary"]["timeout_seconds"] == timeout
     assert raw["execution_summary"]["benchmark_suite"] == manifest_name

@@ -92,7 +92,7 @@ def runner_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNam
         path.write_text(json.dumps({"exec_mode": "functional"}))
         ctx.configs[target] = path
     ctx.build.mkdir()
-    _write_cache(ctx)
+    write_cache(ctx)
     executable = ctx.build / "custom launcher"
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
     executable.chmod(0o755)
@@ -104,7 +104,7 @@ def runner_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNam
     return ctx
 
 
-def _write_cache(runner_context: SimpleNamespace, **overrides: str) -> None:
+def write_cache(runner_context: SimpleNamespace, **overrides: str) -> None:
     values = {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_HOME_DIRECTORY": str(runner_context.source),
@@ -121,7 +121,7 @@ def _write_cache(runner_context: SimpleNamespace, **overrides: str) -> None:
     )
 
 
-def _matrix(
+def matrix(
     runner_context: SimpleNamespace,
     *cases: str,
     targets: tuple[str, ...] = ("gfx950",),
@@ -134,23 +134,23 @@ def _matrix(
     )
 
 
-def _with_policy(suite: runner.Suite, policy: str) -> runner.Suite:
+def with_policy(suite: runner.Suite, policy: str) -> runner.Suite:
     return replace(
         suite,
         cases=tuple(replace(case, thread_policies=(policy,)) for case in suite.cases),
     )
 
 
-def _cell(runner_context: SimpleNamespace, case_id: str, target: str) -> runner.Cell:
+def cell(runner_context: SimpleNamespace, case_id: str, target: str) -> runner.Cell:
     definition = next(case for case in runner_context.suite.cases if case.id == case_id)
     return runner.Cell(definition, target, "default")
 
 
-def _artifact(output: Path, test: Mapping[str, Any], name: str) -> Path:
+def artifact(output: Path, test: Mapping[str, Any], name: str) -> Path:
     return output / test["target"] / test["thread_policy"] / "cases" / test["id"] / name
 
 
-def _payload(cell: runner.Cell, timings: list[int]) -> dict[str, object]:
+def payload(cell: runner.Cell, timings: list[int]) -> dict[str, object]:
     return {
         "schema": "rocjitsu.benchmark.workload.v1",
         "case": cell.case,
@@ -161,7 +161,7 @@ def _payload(cell: runner.Cell, timings: list[int]) -> dict[str, object]:
     }
 
 
-def _successful_process(
+def successful_process(
     runner_context: SimpleNamespace, argv: Sequence[str], **_kwargs: Any
 ) -> subprocess.CompletedProcess[str]:
     case = argv[argv.index("--case") + 1]
@@ -170,7 +170,7 @@ def _successful_process(
     output = Path(argv[argv.index("--output") + 1])
     output.write_text(
         json.dumps(
-            _payload(_cell(runner_context, case, target), list(range(1, samples + 1)))
+            payload(cell(runner_context, case, target), list(range(1, samples + 1)))
         ),
         encoding="utf-8",
     )
@@ -183,7 +183,7 @@ def _successful_process(
     return subprocess.CompletedProcess(argv, 0, "out", "")
 
 
-def _run(
+def run_harness(
     runner_context: SimpleNamespace,
     matrix: Sequence[runner.Cell],
     name: str,
@@ -227,7 +227,7 @@ def _run(
     ), mock.patch.object(
         runner,
         "_run_command",
-        side_effect=process or partial(_successful_process, runner_context),
+        side_effect=process or partial(successful_process, runner_context),
     ):
         result = runner.run_suite(
             runner_context.suite,
