@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
+import pytest
 import sys
 import textwrap
-from pathlib import Path
+import tomllib
 
-import pytest
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "corpus" / "race" / "scripts" / "regenerate_asm.py"
@@ -41,12 +43,23 @@ ROCWMMA_INVENTORY = regen.inventory.Inventory(targets=("gfx950",), cases=(ROCWMM
 PINNED = "; pinned assembly that must survive a failed regeneration\n"
 
 
+# The variables the fake compiler records from its environment.
+WATCHED_ENVIRONMENT = (
+    "HIPCC_COMPILE_FLAGS_APPEND",
+    "HIPCC_LINK_FLAGS_APPEND",
+    "CCC_OVERRIDE_OPTIONS",
+    "CPATH",
+)
+
+
 def write_fake_compiler(compiler: Path, behaviour: str) -> Path:
     """
     Stand in for hipcc with a script, so these tests need no ROCm install.
 
-    Each invocation appends the arguments it received, as a JSON list, to
-    ``fake-hipcc.argv`` beside it; see compiler_invocations.
+    Each compile appends the arguments it received, as a JSON list, to
+    ``<name>.argv`` beside it, and the variables in WATCHED_ENVIRONMENT it saw
+    to ``<name>.env``; see compiler_invocations and compiler_environments.
+    ``--version`` prints ``FAKE_COMPILER_VERSION`` and is not logged.
 
     *behaviour* is one of:
       fail        exit 1 without writing anything
@@ -60,8 +73,14 @@ def write_fake_compiler(compiler: Path, behaviour: str) -> Path:
             #!{sys.executable}
             import json, os, sys
             args = sys.argv[1:]
+            if args == ["--version"]:
+                print(os.environ.get("FAKE_COMPILER_VERSION", "fake clang version 1.0"))
+                sys.exit(0)
             with open(os.path.abspath(__file__) + ".argv", "a") as log:
                 log.write(json.dumps(args) + "\\n")
+            with open(os.path.abspath(__file__) + ".env", "a") as log:
+                seen = {{name: os.environ.get(name) for name in {WATCHED_ENVIRONMENT!r}}}
+                log.write(json.dumps(seen) + "\\n")
             if {behaviour!r} == "fail":
                 sys.stderr.write("error: unknown argument\\n")
                 sys.exit(1)
@@ -584,10 +603,16 @@ def test_main_preserves_the_compiler_diagnostic(
 # --- --cxxflags is parsed as shell words -------------------------------------
 
 
+def compiler_environments(tmp_path: Path, name: str = "fake-hipcc") -> list[dict[str, str | None]]:
+    """The watched environment of each compile by the fake compiler *name*, in order."""
+    log = tmp_path / f"{name}.env"
+    if not log.is_file():
+        return []
+    return [json.loads(line) for line in log.read_text().splitlines()]
+
+
 def compiler_invocations(tmp_path: Path, name: str = "fake-hipcc") -> list[list[str]]:
     """The argument lists the fake compiler *name* has been run with, in order."""
-    import json
-
     log = tmp_path / f"{name}.argv"
     if not log.is_file():
         return []
@@ -913,3 +938,131 @@ def test_cxxflags_come_after_the_baseline_recipe(manifest, corpus_main, tmp_path
     (argv,) = compiler_invocations(tmp_path)
     # The last -O wins, so --cxxflags can still override the baseline.
     assert argv.index("-O3") < argv.index("-O1")
+
+
+# --- hipcc's flag-injecting environment is not inherited -------------------------
+#
+# hipcc appends HIPCC_COMPILE_FLAGS_APPEND to every compile, and clang edits its
+# own command line from CCC_OVERRIDE_OPTIONS. Either would change the pinned
+# assembly without leaving a trace in it, so they are removed from the compile's
+# environment, with a note, and flags go through --cxxflags, which is recorded.
+
+
+@pytest.mark.parametrize("variable", regen._FLAG_INJECTION_VARIABLES)
+def test_flag_injecting_variable_does_not_reach_the_compiler(
+    manifest, corpus_main, monkeypatch, tmp_path, capsys, variable
+):
+    run, _ = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    monkeypatch.setenv(variable, "-O1")
+    monkeypatch.setenv("CPATH", "/kept")
+    assert run() == 0
+    (environment,) = compiler_environments(tmp_path)
+    assert environment[variable] is None
+    # Only the flag-injecting variables are removed.
+    assert environment["CPATH"] == "/kept"
+    err = capsys.readouterr().err
+    assert variable in err and "--cxxflags" in err
+
+
+def test_clean_environment_prints_no_note(manifest, corpus_main, monkeypatch, capsys):
+    run, _ = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    for variable in regen._FLAG_INJECTION_VARIABLES:
+        monkeypatch.delenv(variable, raising=False)
+    assert run() == 0
+    assert "ignoring" not in capsys.readouterr().err
+
+
+# --- The recipe is recorded beside the pinned assembly ----------------------------
+#
+# .ident names the compiler, but not the SDK or the flags. Regeneration writes
+# asm/<target>/recipe.toml, and --check compares it, so a changed recipe can be
+# told apart from a toolchain update.
+
+
+def read_recipe(committed: Path, target: str) -> dict:
+    return tomllib.loads((committed / target / "recipe.toml").read_text())
+
+
+def set_rocm_version(tmp_path: Path, version: str) -> None:
+    info = tmp_path / "rocm" / ".info"
+    info.mkdir(parents=True, exist_ok=True)
+    (info / "version").write_text(f"{version}\n")
+
+
+def test_regeneration_records_the_recipe(manifest, corpus_main, tmp_path):
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    set_rocm_version(tmp_path, "7.3.0")
+    assert run("--cxxflags=-DX=1") == 0
+    assert read_recipe(committed, "gfx950") == {
+        "compiler": "fake-hipcc",
+        "compiler_version": "fake clang version 1.0",
+        "rocm_version": "7.3.0",
+        "flags": ["-O3", "-x", "hip", "-DX=1"],
+    }
+
+
+def test_regenerating_one_target_records_only_its_recipe(manifest, corpus_main):
+    run, committed = corpus_main
+    manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
+    assert run("--target", "gfx1250") == 0
+    assert (committed / "gfx1250" / "recipe.toml").is_file()
+    assert not (committed / "gfx950" / "recipe.toml").exists()
+
+
+def test_check_does_not_rewrite_the_committed_recipe(manifest, corpus_main):
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    commit_fresh_output(run, committed)
+    before = (committed / "gfx950" / "recipe.toml").read_text()
+    run("--check", "--cxxflags=-DX=1")
+    assert (committed / "gfx950" / "recipe.toml").read_text() == before
+
+
+def test_check_reports_an_unchanged_recipe(manifest, corpus_main, capsys):
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    commit_fresh_output(run, committed)
+    capsys.readouterr()
+    assert run("--check") == 0
+    assert "gfx950: recipe unchanged" in capsys.readouterr().out
+
+
+def test_check_reports_changed_flags_as_a_recipe_change(manifest, corpus_main, capsys):
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    commit_fresh_output(run, committed)
+    capsys.readouterr()
+    run("--check", "--cxxflags=-DX=1")
+    out = capsys.readouterr().out
+    assert "gfx950: recipe changed: flags" in out and "-DX=1" in out
+    assert "toolchain changed" not in out
+
+
+def test_check_reports_a_new_compiler_as_a_toolchain_change(
+    manifest, corpus_main, monkeypatch, tmp_path, capsys
+):
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    set_rocm_version(tmp_path, "7.3.0")
+    commit_fresh_output(run, committed)
+    monkeypatch.setenv("FAKE_COMPILER_VERSION", "fake clang version 2.0")
+    set_rocm_version(tmp_path, "7.4.0")
+    capsys.readouterr()
+    run("--check")
+    out = capsys.readouterr().out
+    assert "gfx950: toolchain changed" in out
+    assert "fake clang version 2.0" in out and "7.4.0" in out
+    assert "recipe changed" not in out
+
+
+def test_check_without_a_committed_recipe_says_so(manifest, corpus_main, capsys):
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    commit_fresh_output(run, committed)
+    (committed / "gfx950" / "recipe.toml").unlink()
+    capsys.readouterr()
+    assert run("--check") == 0
+    assert "gfx950: no recipe.toml committed" in capsys.readouterr().out

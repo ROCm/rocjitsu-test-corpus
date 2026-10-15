@@ -41,6 +41,14 @@ kept, but ``--check`` compares it apart from the rest of the file: a compiler
 revision changes every ``.ident`` line even when it emits identical code, and
 that is reported as a provenance change, not as drift.
 
+``.ident`` names clang, but not the SDK or the flags, so regenerating also
+writes ``asm/<target>/recipe.toml``: the compiler, its version, the SDK version
+and the explicit flags. ``--check`` compares it with the recipe it would use,
+and reports a changed recipe apart from a toolchain update. Variables that add
+flags from the environment, such as ``HIPCC_COMPILE_FLAGS_APPEND``, would leave
+no record, so they are removed from the compile's environment; see
+``_FLAG_INJECTION_VARIABLES``.
+
 One normalization is applied on the way out. hipcc stamps each translation unit
 with a ``__hip_cuid_<hash>`` symbol that changes on every invocation, even for
 identical input on an identical toolchain, which would make every regeneration
@@ -54,6 +62,7 @@ deliberately mismatched cuid and running it successfully.
 
 import argparse
 import difflib
+import json
 import os
 import re
 import shlex
@@ -61,10 +70,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 
 import inventory
 
 from pathlib import Path
+from typing import NamedTuple
 
 CORPUS_ROOT = Path(__file__).resolve().parent.parent
 KERNELS_DIR = CORPUS_ROOT / "kernels"
@@ -95,6 +106,24 @@ _INCLUDE_PATH_VARIABLES = ("CPATH", "CPLUS_INCLUDE_PATH")
 # instructions and wait sites the mutants are derived from change. They come
 # before --cxxflags, so a flag there still overrides them.
 _BASELINE_COMPILER_FLAGS = ("-O3", "-x", "hip")
+
+# Variables that add to or edit the compiler's command line from the
+# environment: hipcc appends HIPCC_*_FLAGS_APPEND to every invocation, and clang
+# rewrites its arguments from CCC_OVERRIDE_OPTIONS. Either would change the
+# pinned assembly without leaving a trace in it or in the recipe, so they are
+# removed from the compile's environment. Flags go through --cxxflags instead.
+_FLAG_INJECTION_VARIABLES = (
+    "HIPCC_COMPILE_FLAGS_APPEND",
+    "HIPCC_LINK_FLAGS_APPEND",
+    "CCC_OVERRIDE_OPTIONS",
+)
+
+# Beside each target's assembly: how it was regenerated. See Recipe.
+RECIPE_NAME = "recipe.toml"
+
+# The recipe fields that identify the toolchain, as opposed to the flags the
+# person regenerating chose.
+_TOOLCHAIN_FIELDS = ("compiler", "compiler_version", "rocm_version")
 
 
 def split_provenance(assembly: str) -> tuple[list[str], list[str]]:
@@ -231,6 +260,118 @@ def find_hip_compiler() -> Path:
     )
 
 
+def compiler_environment() -> dict[str, str]:
+    """This process's environment, without the flag-injecting variables."""
+    return {k: v for k, v in os.environ.items() if k not in _FLAG_INJECTION_VARIABLES}
+
+
+def ignored_environment() -> list[str]:
+    """The flag-injecting variables that are set, and that the compile will not see."""
+    return [name for name in _FLAG_INJECTION_VARIABLES if name in os.environ]
+
+
+# --- Recipe ------------------------------------------------------------------
+
+
+class Recipe(NamedTuple):
+    """
+    How a target's assembly was regenerated, recorded in ``asm/<target>/recipe.toml``.
+
+    ``.ident`` in each ``.s`` names the compiler, but not the SDK or the flags,
+    so the same ``.ident`` can come with different code. --check compares the
+    recipe it would write with the committed one, and reports a changed recipe
+    apart from a toolchain update.
+
+    Attributes:
+        compiler: The compiler's file name: ``hipcc``, or ``clang++`` when the
+            SDK's clang is used directly.
+        compiler_version: The ``clang version`` line of ``--version``.
+        rocm_version: The SDK's ``.info/version``, or ``unknown``.
+        flags: The explicit flags: the baseline recipe, then ``--cxxflags`` as
+            given. The flags every compile gets, such as the target and the
+            SDK's include directory, are implied.
+    """
+
+    compiler: str
+    compiler_version: str
+    rocm_version: str
+    flags: tuple[str, ...]
+
+
+def compiler_version(tool: Path) -> str:
+    """The ``clang version`` line *tool* reports, or its first line."""
+    proc = subprocess.run(
+        [str(tool), "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=compiler_environment(),
+    )
+    lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+    return next((line for line in lines if "clang version" in line), lines[0] if lines else "unknown")
+
+
+def current_recipe(cxxflags: list[str]) -> Recipe:
+    """The recipe a regeneration with *cxxflags*, as given, uses on this machine."""
+    tool = find_hip_compiler()
+    version_file = rocm_path() / ".info" / "version"
+    rocm_version = version_file.read_text().strip() if version_file.is_file() else ""
+    return Recipe(
+        compiler=tool.name,
+        compiler_version=compiler_version(tool),
+        rocm_version=rocm_version or "unknown",
+        flags=(*_BASELINE_COMPILER_FLAGS, *cxxflags),
+    )
+
+
+def write_recipe(path: Path, recipe: Recipe) -> None:
+    """Record *recipe* at *path*, as TOML."""
+    lines = [
+        "# How the .s files beside this one were regenerated. Written by",
+        "# regenerate_asm.py and compared by regenerate_asm.py --check.",
+        *(f"{field} = {json.dumps(getattr(recipe, field))}" for field in _TOOLCHAIN_FIELDS),
+        f"flags = {json.dumps(list(recipe.flags))}",
+    ]
+    _replace(path, "\n".join(lines) + "\n")
+
+
+def read_recipe(path: Path) -> Recipe | None:
+    """The recipe recorded at *path*, or None if there is none."""
+    if not path.is_file():
+        return None
+    fields = tomllib.loads(path.read_text())
+    return Recipe(
+        compiler=fields.get("compiler", ""),
+        compiler_version=fields.get("compiler_version", ""),
+        rocm_version=fields.get("rocm_version", ""),
+        flags=tuple(fields.get("flags", ())),
+    )
+
+
+def compare_recipes(target: str, committed: Recipe | None, current: Recipe) -> list[str]:
+    """What changed between the committed recipe for *target* and *current*."""
+    if committed is None:
+        return [f"{target}: no {RECIPE_NAME} committed, so the recipe cannot be compared"]
+    if committed == current:
+        return [f"{target}: recipe unchanged"]
+    notes = []
+    if committed.flags != current.flags:
+        notes.append(
+            f"{target}: recipe changed: flags {list(committed.flags)} -> {list(current.flags)}"
+        )
+    toolchain = [
+        f"{field} {getattr(committed, field)!r} -> {getattr(current, field)!r}"
+        for field in _TOOLCHAIN_FIELDS
+        if getattr(committed, field) != getattr(current, field)
+    ]
+    if toolchain:
+        notes.append(f"{target}: toolchain changed: {'; '.join(toolchain)}")
+    return notes
+
+
+# --- Compiling ---------------------------------------------------------------
+
+
 def compile_device_asm(kernel: Path, target: str, out: Path, extra_flags: list[str]) -> None:
     """
     ``hipcc -S --cuda-device-only`` for one kernel, replacing *out* on success.
@@ -263,7 +404,14 @@ def compile_device_asm(kernel: Path, target: str, out: Path, extra_flags: list[s
             argv += ["-I", str(root / "include")]
         argv += extra_flags
 
-        proc = subprocess.run(argv, cwd=scratch, capture_output=True, text=True, check=False)
+        proc = subprocess.run(
+            argv,
+            cwd=scratch,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=compiler_environment(),
+        )
         if proc.returncode != 0:
             raise CompileError(f"{kernel.name} ({target}):\n{proc.stderr.strip()}")
         if not compiled.is_file():
@@ -405,27 +553,39 @@ def main(argv: list[str]) -> int:
     # Read once: regenerating and the --check verdict see the same inventory.
     corpus = load_inventory()
     targets = targets_for(corpus, args.target)
-    extra_flags = absolute_flags(parse_cxxflags(args.cxxflags), Path.cwd())
+    cxxflags = parse_cxxflags(args.cxxflags)
+    extra_flags = absolute_flags(cxxflags, Path.cwd())
+    if (ignored := ignored_environment()):
+        print(
+            f"note: ignoring {', '.join(ignored)} for the compile; pass flags with "
+            f"--cxxflags, so they are recorded in {RECIPE_NAME}",
+            file=sys.stderr,
+        )
+    build = Build(corpus, targets, extra_flags, current_recipe(cxxflags))
 
     if not args.check:
-        return _regenerate_and_report(args, corpus, targets, extra_flags, ASM_DIR)
+        return _regenerate_and_report(args, build, ASM_DIR)
     # The comparison has to finish while the regenerated files still exist, and
     # the directory is removed however the check ends.
     with tempfile.TemporaryDirectory(prefix="race-asm-") as scratch:
-        return _regenerate_and_report(args, corpus, targets, extra_flags, Path(scratch))
+        return _regenerate_and_report(args, build, Path(scratch))
 
 
-def _regenerate_and_report(
-    args: argparse.Namespace,
-    corpus: inventory.Inventory,
-    targets: list[str],
-    extra_flags: list[str],
-    out_root: Path,
-) -> int:
+class Build(NamedTuple):
+    """What one run regenerates, and how."""
+
+    corpus: inventory.Inventory
+    targets: list[str]
+    extra_flags: list[str]
+    recipe: Recipe
+
+
+def _regenerate_and_report(args: argparse.Namespace, build: Build, out_root: Path) -> int:
     """Regenerate into *out_root* and report: a write summary, or the --check verdict."""
+    corpus, targets = build.corpus, build.targets
     print(f"regenerating {', '.join(targets)} -> {out_root}")
 
-    written, failures, skipped = regenerate(corpus, targets, extra_flags, out_root)
+    written, failures, skipped = regenerate(corpus, targets, build.extra_flags, out_root)
     for skip in skipped:
         print(f"  skip: {skip}")
     for failure in failures:
@@ -438,6 +598,8 @@ def _regenerate_and_report(
         return 2
 
     if not args.check:
+        for target in targets:
+            write_recipe(ASM_DIR / target / RECIPE_NAME, build.recipe)
         print(f"\nwrote {written} file(s) under {ASM_DIR.relative_to(CORPUS_ROOT.parent.parent)}")
         print("Review the diff before committing: regenerating is a deliberate change to")
         print("the pinned assembly. Mutants are derived from it, so where waits or loads")
@@ -447,6 +609,11 @@ def _regenerate_and_report(
     # A verdict covers only what was compared. A check that skipped a case is
     # incomplete unless skipping was allowed, and one that compared nothing
     # cannot report a match either way.
+    print()
+    for target in targets:
+        committed = read_recipe(ASM_DIR / target / RECIPE_NAME)
+        for note in compare_recipes(target, committed, build.recipe):
+            print(note)
     expected = corpus.outputs(targets)
     not_generated = {(t, f) for t, f in expected if not (out_root / t / f).is_file()}
     compared_nothing = not expected or not_generated == expected

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
-import sys
-import textwrap
-from pathlib import Path
-
 import pytest
+import sys
+import tomllib
+
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "corpus" / "race" / "scripts" / "check_cases.py"
@@ -140,8 +140,6 @@ def test_manifest_without_targets_is_rejected(corpus, capsys, targets):
 
 
 def test_committed_manifest_declares_its_targets():
-    import tomllib
-
     manifest = tomllib.loads((SCRIPT.parent.parent / "cases.toml").read_text())
     assert manifest["corpus"]["targets"] == ["gfx950", "gfx1250"]
 

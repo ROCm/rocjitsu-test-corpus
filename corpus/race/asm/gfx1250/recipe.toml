@@ -1,0 +1,6 @@
+# How the .s files beside this one were regenerated. Written by
+# regenerate_asm.py and compared by regenerate_asm.py --check.
+compiler = "hipcc"
+compiler_version = "AMD clang version 23.0.0git (https://github.com/ROCm/llvm-project.git 0bace1908348b840e6aa1b4b6e12151dae208158)"
+rocm_version = "10.1.0"
+flags = ["-O3", "-x", "hip"]

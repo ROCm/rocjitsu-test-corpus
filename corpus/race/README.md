@@ -11,6 +11,7 @@ corpus/race/
   cases.toml              Kernel inventory and the corpus target set.
   kernels/<kernel>.hip    HIP source for each case.
   asm/<target>/<kernel>.s Pinned device assembly, one file per case and target.
+  asm/<target>/recipe.toml How that target's assembly was regenerated.
   scripts/
     regenerate_asm.py     Regenerates asm/ from kernels/, or checks it for drift.
     check_cases.py        Checks cases.toml against kernels/ and asm/ (no compiler).
@@ -44,6 +45,21 @@ it. hipcc's per-invocation `__hip_cuid_<hash>` symbol is replaced with a fixed
 placeholder, so regenerating with the same toolchain reproduces the committed
 files exactly.
 
+`.ident` names clang, but not the SDK or the flags, and different flags can
+produce different code under the same `.ident`. So regenerating also writes
+`asm/<target>/recipe.toml`, which records:
+
+| Field | Meaning |
+|---|---|
+| `compiler` | `hipcc`, or `clang++` when the SDK's clang is used directly. |
+| `compiler_version` | The `clang version` line of the compiler's `--version`. |
+| `rocm_version` | The SDK's `.info/version`, or `unknown`. |
+| `flags` | The explicit flags: `-O3 -x hip`, then `--cxxflags` as given. |
+
+The recipe covers the whole target directory. A case that a run skipped or
+failed to compile keeps its earlier `.s`, which may have been built with an
+earlier recipe.
+
 ## Regenerating the assembly
 
 Regenerating is a manual step that needs a ROCm toolchain. Run it from the
@@ -66,6 +82,11 @@ python corpus/race/scripts/regenerate_asm.py --target gfx950    # one target
   `--cxxflags`, and the absolute entries of `CPATH` and `CPLUS_INCLUDE_PATH`.
 - **Failures.** A kernel that fails to compile keeps its committed assembly, and
   the compiler's diagnostic is printed.
+- **Environment.** `HIPCC_COMPILE_FLAGS_APPEND`, `HIPCC_LINK_FLAGS_APPEND` and
+  `CCC_OVERRIDE_OPTIONS` add to the compiler's command line from the
+  environment, so they would change the assembly without being recorded. They
+  are removed from the compile's environment, with a note. Pass extra flags with
+  `--cxxflags` instead.
 
 Review the diff before committing. Where waits or loads moved, the mutants of
 those kernels change with them. Then run the inventory check below.
@@ -77,7 +98,12 @@ python corpus/race/scripts/regenerate_asm.py --check
 ```
 
 `--check` regenerates into a temporary directory, compares the result with the
-committed assembly as text, and removes the directory. It is a manual tool, not
+committed assembly as text, and removes the directory. It also compares the
+recipe it would write with each target's committed `recipe.toml`, and says
+whether the recipe is unchanged, whether the flags changed (`recipe changed`),
+or whether the compiler or SDK changed (`toolchain changed`). That tells a
+changed recipe apart from a toolchain update. The recipe comparison is
+informational: the exit code depends only on the assembly. It is a manual tool, not
 a CI gate: it compiles with whatever toolchain is installed, so its result
 changes when the toolchain does.
 
