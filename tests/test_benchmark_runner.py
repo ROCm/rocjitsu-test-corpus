@@ -143,7 +143,7 @@ def test_manifest_only_variant_forwards_parameters_and_metadata(runner_context) 
     assert case["problem"]["dtype"] == "bf16"
 
 
-def test_manifest_rejects_invalid_thread_count(runner_context) -> None:
+def test_manifest_rejects_removed_num_threads_field(runner_context) -> None:
     manifest = runner_context.root / "suite.toml"
     text = runner.DEFAULT_MANIFEST.read_text(encoding="utf-8")
     for value in ("0", "-1", "true"):
