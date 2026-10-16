@@ -7,6 +7,11 @@ if(NOT CMAKE_HIP_ARCHITECTURES)
         "RocJITsu race tests require -DCMAKE_HIP_ARCHITECTURES=<gfx target>")
 endif()
 
+# HIP toolchain detection for corpus tests:
+#   1. Respect an explicit -DROCM_PATH or inherited $ROCM_PATH.
+#   2. Otherwise ask the ROCm Python SDK (`rocm-sdk path --root`), which is how
+#      TheRock/venv-based ROCm artifacts are exposed in this corpus workflow.
+#   3. Require the discovered root to contain hip-config.cmake before enabling HIP.
 set(ROCM_PATH "" CACHE PATH "ROCm SDK root")
 if(NOT ROCM_PATH AND DEFINED ENV{ROCM_PATH})
     set(ROCM_PATH "$ENV{ROCM_PATH}" CACHE PATH "ROCm SDK root" FORCE)
