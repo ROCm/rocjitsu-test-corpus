@@ -21,6 +21,7 @@ python -m benchmarks.runner \
   --rocjitsu-source-dir "$src" --build-dir "$build" \
   --target-config "gfx950=$gfx950_config" \
   --target-config "gfx1250=$gfx1250_config" \
+  --thread-policy default --thread-policy single \
   --run-wrapper "\"$rocjitsu\" --config {config} --" \
   --output .benchmark-artifacts/run-001
 ```
@@ -35,28 +36,31 @@ operators and variable expansion are not interpreted by the runner.
 invoking directory. Every selected target needs a mapping; extra mappings are
 allowed for convenience when selecting a subset. The runner snapshots selected
 configs before execution and derives each cell's config from that snapshot.
-It applies the suite's thread policy, removes the simulation tick limit, and
-adds the selected plugin and report paths. With `thread_policy = "default"`,
-the runner preserves the native allocation policy and records the allocation
-reported by `--thread-budget-table`. Base configs must not enable plugins or sinks.
-With `thread_policy = "single"`, the runner sets the CPU budget to one and overrides
-engine, dispatch, and helper counts to 1/1/0. It verifies that the native CLI
-resolves exactly one total worker. Setting the integer `num_threads = 1` alone
-only limits simulator engines; dispatch and helper workers can still run in parallel.
-Each manifest must specify exactly one of `thread_policy` or integer `num_threads`.
-The keys cannot be combined; string-valued `num_threads` is not supported.
-Execution requires `thread_policy = "default"` or `"single"`. Numeric-thread
-manifests can still be loaded and listed, but cannot produce new raw runs.
-With either named thread policy, the native worker allocation is recorded in
-`thread-policy/<target>/allocation.json` under the output directory.
-`run.json` records the named policy in `execution_summary.threading_mode`.
+It removes the simulation tick limit and adds selected plugin/report paths.
+Base configs must not enable plugins or sinks. Engine/dispatch/helper counts are
+preserved, but the runner overrides `cpu_thread_budget` at launch: it passes
+`--cpu-thread-budget 0` for `default` and `--cpu-thread-budget 1` for `single`,
+to both native probes and workload commands. Zero selects automatic sizing even
+when the input config contains a nonzero budget; it does not guarantee
+multithreading. Independent budget flags in `--run-wrapper` are rejected.
+Explicit engine/dispatch/helper config settings can exceed the budget; the native
+`--thread-budget-table` probe must resolve exactly 1/1/0 (one total worker) for
+`single` or setup fails.
+Each selected target/policy is probed once. Under `<target>/<thread-policy>/`,
+`config.json` retains the input budget, while `allocation.json` records the
+resolved native probe allocation and **probe command**, not the timed workload
+command; `policy.txt` retains the raw probe output. Per-cell `config.json` files
+also retain the input budget. For example, an input `cpu_thread_budget` of 7 stays
+7 in both saved configs, but the launch arguments select 0 for `default` or 1 for
+`single`. The saved budget alone does not describe the effective allocation.
+Policy is recorded on each raw result, not in the execution summary.
 
 The runner checks the Release configuration, disabled LTO/sanitizers,
 source root, SDK, and selected plugin binaries. The wrapper must select the
 binary from that build; arbitrary wrapper commands cannot be checked against
 CMake metadata. Rebuild rocjitsu after source changes.
 
-The default `benchmarks/suites/nightly.toml` contains 20 case definitions and
+The default `benchmarks/suites/performance-v1.toml` contains 20 case definitions and
 28 target/case combinations across `gfx950` and `gfx1250`:
 
 - GPT-OSS windowed and full causal attention on both targets.
@@ -75,11 +79,11 @@ DeepSeek W1 and W2 with 3072 tokens, four grouped 3584³ GEMMs, and persistent
 fixed launch settings: Triton tiles 128 × 128 × 64 with four warps and two stages;
 DeepSeek tiles 64 × 64 × 128 with eight warps, three stages, and unit base scales.
 The scale tensors also vary by row, column block, and reduction block for validation.
-Nightly uses zero warmups and one sample after compile-only preparation, with
-Rocjitsu's default CPU thread budget and the caller's CPU affinity.
+This manifest defaults to zero warmups and one sample after compile-only preparation,
+with Rocjitsu's default CPU thread budget and the caller's CPU affinity.
 
-`benchmarks/suites/nightly-single.toml` uses the same sampling settings and a
-single CPU worker. It selects five cases per target (10 target/case combinations):
+Seven of these definitions also support `single`, selecting five cases per
+target (10 target/case combinations):
 full causal attention, persistent matmul, grouped GEMM, the smaller DeepSeek W1
 projection, and BF16 TensileLite. All shapes and kernel settings match their
 default-threaded counterparts. This keeps all four libraries while excluding
@@ -90,14 +94,34 @@ single-threaded launch; those cases remain in the default suite only.
 End-to-end runtime includes setup, compilation, output reset, and CPU validation;
 it is longer than the sum of measured kernel durations.
 
-Run both manifests separately with different output directories. Keep their
-dashboard run IDs and environment IDs distinct so both histories are retained.
+Without filters, the runner selects all TOML-supported case/target/policy
+combinations: 38 for this suite, in one invocation and one `run.json`. Explicit
+`--case`, `--target`, and `--thread-policy` filters narrow that supported set;
+they never add unsupported combinations. Use `--thread-policy default` for only
+default-worker cases or `--thread-policy single` for only supported single-worker
+cases. Repeat `--thread-policy` to select both policies:
+`--thread-policy default --thread-policy single`. Either flag order is equivalent
+to omitting the policy filter; execution order remains `default` then `single`.
+Each occurrence accepts only `default` or `single`; comma-separated values,
+unknown values and repeated copies of the same policy are rejected.
+Cases are not duplicated in TOML.
 
-Use `--manifest benchmarks/suites/smoke.toml` for a short suite, repeated
-`--case` and `--target` flags for subsets, and `--warmups`/`--samples` for
-experiments. Sample counts must be positive and odd. `--list` shows the matrix
+Use `--manifest benchmarks/suites/smoke.toml` for a short
+suite, repeated `--case` and `--target` flags for subsets, and
+`--warmups`/`--samples` for experiments. Omitted sampling flags use the selected
+manifest's recipe: performance-v1 0 warmups/1 sample, smoke 1/3, and
+plugin-overhead 3/21. Each flag overrides only its corresponding setting;
+for example, smoke with `--warmups 0` uses 0 warmups and 3 samples.
+Warmups must be nonnegative integers, and samples must be positive odd integers.
+Invalid manifest recipes are rejected even when CLI overrides are supplied.
+Each invocation accepts
+one manifest; repeated `--manifest` flags are rejected, including identical paths.
+Each file retains its scalar timeout: performance-v1 1200 seconds,
+plugin-overhead 300 seconds, and smoke 60 seconds. Sample counts must
+be positive and odd. `--list` shows case, target and policy columns
 without building or requiring GPU dependencies. Output directories must be new.
-All cells run sequentially. Failures and timeouts leave finalized partial results;
+Target/policy groups run sequentially, as do cases within each group. Failures
+and timeouts leave finalized partial results;
 the runner returns failure if any selected cell fails.
 Invalid base configurations are rejected before creating the output directory.
 If a native policy probe or setup fails before the initial `run.json` checkpoint,
@@ -109,8 +133,8 @@ After that checkpoint, failures preserve partial results as usual.
 TensileLite cases require `TENSILE_CANDIDATE_ARTIFACTS` to point to generated
 artifacts and `TENSILE_CANDIDATE_RUNNER` to point to the native executable. Follow
 [the build and generation instructions](../corpus/benchmarks/tensile_candidates/README.md)
-before running nightly. The persistent and grouped Triton kernels and DeepSeek
-kernel are vendored in the corpus.
+before running the performance suite. The persistent and grouped Triton kernels
+and DeepSeek kernel are vendored in the corpus.
 
 Triton workloads write `workload.progress.json` beside their result, recording
 preparation, compilation, warmup, sample, and validation stages. Compilation
@@ -151,7 +175,7 @@ with the upstream CPU reference using explicit BF16 bounds (`rtol=0.016`,
 `atol=1e-5`). Reference chunks contain one batch, one KV head, and at most 128
 query positions, retaining all keys and absolute query offsets for causal/window
 masking. Each temporary FP32 attention matrix is at most 12 MiB for the largest
-nightly shape; full input and output storage still scales with the problem.
+performance-v1 shape; full input and output storage still scales with the problem.
 
 The extracted GPT-OSS attention implementation lives in
 `corpus/benchmarks/third_party/gpt_oss/attention.py`. Its `NOTICE.md`
@@ -169,21 +193,31 @@ case using an existing workload; no Python change is needed:
 
 ```toml
 [[cases]]
-id = "triton.copy_fp32_32m.default"
+id = "triton.copy_fp32_32m"
 workload = "copy"
 suite = "Triton"
 name = "32 MiB contiguous FP32 copy"
 operation = "Copy"
+targets = ["gfx950", "gfx1250"]
+thread_policies = ["default"]
 params = { dtype = "fp32", elements = 8388608 }
 ```
 
 `workload` selects the preparation function; `id` identifies the case in
 `--case` selection and dashboard history. Give different parameter variants
-distinct IDs. The bundled suites use case IDs ending in `.default` for native
-allocation or `.single` for one total CPU worker. Smoke and plugin-overhead use
-the default policy too. Give cases with different thread policies distinct IDs
-to keep their dashboard histories separate.
-Repeat the complete definition in each suite that uses it.
+distinct IDs, even when their display names match (for example,
+`deepseek.mlp_w1_m64` and `deepseek.mlp_w1_m256`). The bundled suites use the same
+workload ID across thread policies, without a `.default` or `.single` suffix.
+Threading is execution policy, recorded separately as each result's
+`thread_policy`, not a workload change. Result identity is `(id, target, thread_policy)`.
+`operation` describes the overall computation, including composite operations;
+it is metadata, not identity. The runner carries
+the explicit manifest ID unchanged into selection, raw results, and case output
+paths; it does not derive IDs from display names or strip suffixes at runtime.
+Each file has required `name`, `warmups`, `samples`, `timeout_seconds` and cases;
+every case explicitly
+declares nonempty `targets` and `thread_policies`. There are no includes/profiles
+or file-level target/threading fields, and no per-case sampling recipes.
 Dimensions, dtypes, and operation parameters belong in TOML; launch settings
 such as tile sizes, warps, and stages stay in code and are recorded in results.
 To add a new operation, add its preparation and parameter validation, register
@@ -211,7 +245,7 @@ Supported parameters (all dimensions are positive integers):
 | `deepseek_fp8` | `rows`, `columns`, `reduction`; optional `configuration = "large_tile"` | fp8 |
 
 The legacy `softmax` and `rmsnorm` workloads use local kernels and do not
-validate their outputs. The nightly `triton_softmax` and `triton_layernorm`
+validate their outputs. The performance-v1 `triton_softmax` and `triton_layernorm`
 workloads use pinned upstream kernels, varied inputs, output poisoning, and
 full-output CPU checks. RMSNorm and layer normalization are different operations:
 RMSNorm scales by the root mean square without subtracting the mean; layer
@@ -247,10 +281,12 @@ not launch these benchmark kernels again.
 
 `run.json` follows the [raw run schema](raw-run-schema.md): `execution_summary`,
 `benchmark_results`, and `provenance`. Raw timing samples are in seconds.
-The schema records cell status, problem parameters, configuration hashes,
+The schema records cell status, operation, policy, problem parameters,
 package versions, and both rocjitsu and corpus revisions and commit timestamps.
 Each cell retains `workload.json`,
-`stdout.txt`, `stderr.txt`, and its generated `config.json` under `cases/`.
+`stdout.txt`, `stderr.txt`, and its generated `config.json` under
+`<target>/<thread-policy>/cases/<case-id>/`. No target config hashes are emitted.
+The group contains `config.json`, `policy.txt`, `stderr.txt` and `allocation.json`.
 Problem definitions come from TOML parameters for both successful and failed
 cases. Derived launch and source metadata remain in `workload.json`.
 A workload that fails early may have no `workload.json`.
@@ -260,7 +296,7 @@ stdout and stderr, retains existing workload and plugin artifacts, and
 finalizes `run.json` with a finish time and failed status for unfinished cells.
 Completed cells retain their results; cells that have not started have no artifacts.
 
-Use `--manifest benchmarks/suites/plugin-overhead.toml` and
+Use `--manifest benchmarks/suites/plugin-overhead.toml` (3 warmups and 21 samples) and
 `--plugin-profile none|logging|race|throughput`, running each profile into a
 separate output directory. Each enabled profile must produce its report.
 Reports cover the entire process, including setup and warmups; timing samples

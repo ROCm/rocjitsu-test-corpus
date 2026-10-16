@@ -3,234 +3,55 @@
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import importlib.util
 import io
 import json
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
 import time
 import types
 from dataclasses import replace
-from functools import partial
 from pathlib import Path
-from types import SimpleNamespace
 from unittest import mock
 
 import pytest
+from support import benchmark_runner as harness
 
 from benchmarks import runner
 
 
-# Keep harness behavior tests independent of the scheduled workload selection.
-def harness_suite():
-    return runner.Suite(
-        name="nightly",
-        targets=("gfx950", "gfx1250"),
-        warmups=3,
-        samples=21,
-        num_threads=None,
-        thread_policy="default",
-        timeout_seconds=300,
-        cases=(
-            runner.Case(
-                id="triton.rmsnorm_bf16.threads8",
-                workload="rmsnorm",
-                suite="Triton",
-                name="BF16 RMSNorm",
-                operation="RMSNorm",
-                params={
-                    "rows": 128,
-                    "columns": 4096,
-                    "dtype": "bf16",
-                    "epsilon": 1e-05,
-                },
-            ),
-            runner.Case(
-                id="triton.gemm_bf16_aligned.threads8",
-                workload="gemm",
-                suite="Triton",
-                name="Aligned BF16 GEMM",
-                operation="GEMM",
-                params={"m": 256, "n": 256, "k": 512, "dtype": "bf16"},
-            ),
-            runner.Case(
-                id="triton.gpt_oss_attention_bf16.threads8",
-                workload="gpt_oss_attention",
-                suite="GPT-OSS",
-                name="GPT-OSS BF16 attention",
-                operation="Attention",
-                params={
-                    "dtype": "bf16",
-                    "batch": 1,
-                    "query_heads": 64,
-                    "key_value_heads": 8,
-                    "sequence": 128,
-                    "window": 128,
-                    "head_dimension": 64,
-                },
-            ),
-        ),
+@pytest.mark.parametrize("thread_policy", ["default", "single"])
+def test_harness_cell_preserves_complete_identity(
+    runner_context, thread_policy
+) -> None:
+    definition = runner_context.suite.cases[0]
+    cell = harness.cell(
+        runner_context, definition.id, "gfx950", thread_policy=thread_policy
+    )
+    assert cell.definition is definition
+    assert cell.target == "gfx950"
+    assert cell.thread_policy == thread_policy
+    assert (
+        harness.cell(runner_context, definition.id, "gfx950").thread_policy == "default"
     )
 
 
-@pytest.fixture
-def runner_context(tmp_path, monkeypatch):
-    ctx = SimpleNamespace(
-        root=tmp_path,
-        build=tmp_path / "build",
-        rocm=tmp_path / "rocm",
-        source=tmp_path / "rocjitsu",
-    )
-    ctx.rocm.mkdir()
-    (ctx.source / "configs").mkdir(parents=True)
-    ctx.configs = {}
-    for target in ("gfx950", "gfx1250"):
-        path = ctx.source / "configs" / f"{target}.json"
-        path.write_text(json.dumps({"exec_mode": "functional", "num_threads": 8}))
-        ctx.configs[target] = path
-    ctx.build.mkdir()
-    _write_cache(ctx)
-    executable = ctx.build / "custom launcher"
-    executable.write_text("#!/bin/sh\n", encoding="utf-8")
-    executable.chmod(0o755)
-    ctx.wrapper = f'"{executable}" --config {{config}} --'
-    for plugin in ("logging", "race", "throughput"):
-        (ctx.build / f"librocjitsu_plugin_{plugin}.so").touch()
-    monkeypatch.setattr(runner, "_installed_rocm_path", lambda: ctx.rocm)
-    ctx.suite = harness_suite()
-    return ctx
-
-
-
-def _write_cache(runner_context, **overrides: str) -> None:
-    values = {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_HOME_DIRECTORY": str(runner_context.source),
-        "LTO": "OFF",
-        "RJ_ENABLE_ASAN": "OFF",
-        "RJ_ENABLE_MSAN": "OFF",
-        "RJ_ENABLE_TSAN": "OFF",
-        "RJ_ENABLE_UBSAN": "OFF",
-    }
-    values.update(overrides)
-    (runner_context.build / "CMakeCache.txt").write_text(
-        "".join((f"{key}:STRING={value}\n" for key, value in values.items())),
-        encoding="utf-8",
-    )
-
-
-def _matrix(runner_context, *cases: str, targets: tuple[str, ...] = ("gfx950",)):
-    return runner.select_matrix(runner_context.suite, cases=cases, targets=targets)
-
-
-def _cell(runner_context, case_id: str, target: str) -> runner.Cell:
-    definition = next(case for case in runner_context.suite.cases if case.id == case_id)
-    return runner.Cell(definition, target)
-
-
-def _artifact(output, test, name):
-    return output / "cases" / test["id"] / test["target"] / name
-
-
-def _payload(cell: runner.Cell, timings: list[int]) -> dict[str, object]:
-    return {
-        "schema": "rocjitsu.benchmark.workload.v1",
-        "case": cell.case,
-        "target": cell.target,
-        "provider": "triton",
-        "parameters": {"fixture": True},
-        "timings_ns": timings,
-    }
-
-
-def _successful_process(runner_context, argv, **_kwargs):
-    case = argv[argv.index("--case") + 1]
-    target = argv[argv.index("--target") + 1]
-    samples = int(argv[argv.index("--samples") + 1])
-    output = Path(argv[argv.index("--output") + 1])
-    output.write_text(
-        json.dumps(
-            _payload(_cell(runner_context, case, target), list(range(1, samples + 1)))
-        ),
-        encoding="utf-8",
-    )
-    config = json.loads(
-        Path(argv[argv.index("--config") + 1]).read_text(encoding="utf-8")
-    )
-    for plugin in config.get("plugins", {}):
-        report = Path(config["sinks"]["dir"]) / f"{plugin}.log"
-        report.write_text(f"{plugin} report\n", encoding="utf-8")
-    return subprocess.CompletedProcess(argv, 0, "out", "")
-
-
-def _run(
-    runner_context,
-    matrix,
-    name: str,
-    process=None,
-    samples=None,
-    plugin_profile: str = "none",
-    progress=None,
-    warmups=None,
-):
-    output = runner_context.root / name
-    def fake_native(config, *_args):
-        return runner.TargetMetadata(config[0], config[1])
-    native_context = (
-        contextlib.nullcontext() if getattr(runner_context, "native_probe", False)
-        else mock.patch.object(runner, "_native_target_metadata", side_effect=fake_native)
-    )
-    packages = {"rocm-sdk-devel": "7.2.0", "torch": "2.10.0", "triton": "3.6.0"}
-    with native_context, mock.patch.object(
-        runner,
-        "_source_info",
-        return_value={
-            "commit_sha": "a" * 40,
-            "commit_timestamp": "2026-09-01T21:42:10Z",
-            },
-    ), mock.patch.object(
-        runner,
-        "_environment_info",
-        return_value={
-            "hostname": "benchmark-host",
-            "platform": "Linux-test",
-            "kernel": "6.14.0",
-            "cpu": "test-cpu",
-            "python": "3.12.0",
-            "packages": packages,
-        },
-    ), mock.patch.object(
-        runner,
-        "_run_command",
-        side_effect=process or partial(_successful_process, runner_context),
-    ):
-        result = runner.run_suite(
-            runner_context.suite,
-            matrix,
-            build_dir=runner_context.build,
-            output=output,
-            samples=samples,
-            warmups=warmups,
-            plugin_profile=plugin_profile,
-            progress=progress,
-            rocjitsu_source_dir=runner_context.source,
-            run_wrapper=runner_context.wrapper,
-            target_configs=runner_context.configs,
-        )
-    return (output, result)
+def test_runner_fixture_uses_automatic_thread_configuration(runner_context):
+    for config in runner_context.configs.values():
+        assert json.loads(config.read_text()) == {"exec_mode": "functional"}
 
 
 def test_default_manifest_has_full_ordered_matrix() -> None:
     suite = runner.load_manifest()
     matrix = runner.select_matrix(suite)
-    assert suite.name == "nightly"
+    assert suite.name == "performance-v1"
     assert len(suite.cases) == 20
-    assert len(matrix) == 28
+    assert len(matrix) == 38
     assert {cell.definition.suite for cell in matrix} == {
         "GPT-OSS",
         "DeepSeek",
@@ -238,19 +59,23 @@ def test_default_manifest_has_full_ordered_matrix() -> None:
         "TensileLite",
     }
     assert matrix[:2] == tuple(
-        runner.Cell(suite.cases[0], target) for target in suite.targets
+        runner.Cell(case, "gfx950", "default") for case in suite.cases[:2]
     )
     assert suite.targets == ("gfx950", "gfx1250")
     assert {
         target: sum(cell.target == target for cell in matrix) for target in suite.targets
-    } == {"gfx950": 12, "gfx1250": 16}
+    } == {"gfx950": 17, "gfx1250": 21}
+    assert {(cell.case, cell.target, cell.thread_policy) for cell in matrix} == {
+        (case.id, target, policy)
+        for case in suite.cases
+        for target in case.targets
+        for policy in case.thread_policies
+    }
     assert all(
         not cell.definition.targets or cell.target in cell.definition.targets
         for cell in matrix
     )
-    assert suite.warmups == 0
-    assert suite.samples == 1
-    assert suite.thread_policy == "default"
+    assert all("default" in case.thread_policies for case in suite.cases)
     assert suite.timeout_seconds == 1200
 
 
@@ -258,10 +83,8 @@ def test_smoke_manifest_has_single_triton_case(runner_context) -> None:
     smoke = runner.load_manifest(runner.BENCHMARK_ROOT / "suites" / "smoke.toml")
     assert smoke.name == "smoke"
     assert smoke.targets == ("gfx950",)
-    assert tuple(case.id for case in smoke.cases) == ("triton.rmsnorm_bf16.default",)
-    assert smoke.warmups == 1
-    assert smoke.samples == 3
-    assert smoke.thread_policy == "default"
+    assert tuple(case.id for case in smoke.cases) == ("triton.rmsnorm_bf16",)
+    assert smoke.cases[0].thread_policies == ("default",)
     assert smoke.timeout_seconds == 60
 
 
@@ -296,7 +119,7 @@ def test_manifest_rejects_unknown_workload(runner_context) -> None:
 def test_manifest_only_variant_forwards_parameters_and_metadata(runner_context) -> None:
     manifest = runner_context.root / "variant.toml"
     manifest.write_text(
-        'name = "custom"\ntargets = ["gfx950"]\nwarmups = 1\nsamples = 3\nthread_policy = "default"\ntimeout_seconds = 60\n\n[[cases]]\nid = "copy.small_bf16"\nworkload = "copy"\nsuite = "Custom suite"\nname = "Small BF16 copy"\noperation = "Copy"\nparams = { dtype = "bf16", elements = 12345 }\n',
+        'name = "custom"\nwarmups = 0\nsamples = 1\ntimeout_seconds = 60\n\n[[cases]]\nid = "copy.small_bf16"\nworkload = "copy"\nsuite = "Custom suite"\nname = "Small BF16 copy"\noperation = "Copy"\ntargets = ["gfx950"]\nthread_policies = ["default"]\nparams = { dtype = "bf16", elements = 12345 }\n',
         encoding="utf-8",
     )
     runner_context.suite = runner.load_manifest(manifest)
@@ -308,9 +131,9 @@ def test_manifest_only_variant_forwards_parameters_and_metadata(runner_context) 
     def execute(argv, **kwargs):
         observed["workload"] = argv[argv.index("--workload") + 1]
         observed["params"] = json.loads(argv[argv.index("--params") + 1])
-        return _successful_process(runner_context, argv, **kwargs)
+        return harness.successful_process(runner_context, argv, **kwargs)
 
-    _, result = _run(runner_context, matrix, "variant", process=execute)
+    _, result = harness.run_harness(runner_context, matrix, "variant", process=execute)
     assert observed == {
         "workload": "copy",
         "params": {"dtype": "bf16", "elements": 12345},
@@ -324,16 +147,16 @@ def test_manifest_only_variant_forwards_parameters_and_metadata(runner_context) 
     assert case["problem"]["dtype"] == "bf16"
 
 
-def test_manifest_rejects_invalid_thread_count(runner_context) -> None:
+def test_manifest_rejects_removed_num_threads_field(runner_context) -> None:
     manifest = runner_context.root / "suite.toml"
     text = runner.DEFAULT_MANIFEST.read_text(encoding="utf-8")
     for value in ("0", "-1", "true"):
         manifest.write_text(
-            text.replace('thread_policy = "default"', f"num_threads = {value}"),
+            f"num_threads = {value}\n" + text,
             encoding="utf-8",
         )
         with pytest.raises(
-            runner.RunnerError, match="num_threads must be a positive integer"
+            runner.RunnerError, match="extra=.*num_threads"
         ):
             runner.load_manifest(manifest)
 
@@ -341,7 +164,7 @@ def test_manifest_rejects_invalid_thread_count(runner_context) -> None:
 def test_manifest_rejects_case_path_traversal(runner_context) -> None:
     manifest = runner_context.root / "suite.toml"
     text = runner.DEFAULT_MANIFEST.read_text(encoding="utf-8").replace(
-        '"gpt_oss.window_batch4_seq3072.default"', '"triton./../../../escaped"'
+        '"gpt_oss.window_batch4_seq3072"', '"triton./../../../escaped"'
     )
     manifest.write_text(text, encoding="utf-8")
     with pytest.raises(runner.RunnerError, match="invalid benchmark case ID"):
@@ -359,7 +182,7 @@ def test_even_sample_count_is_rejected(runner_context) -> None:
     with pytest.raises(runner.RunnerError, match="must be odd"):
         runner.run_suite(
             runner_context.suite,
-            _matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+            harness.matrix(runner_context, "triton.rmsnorm_bf16"),
             build_dir=runner_context.build,
             output=runner_context.root / "even-samples",
             samples=2,
@@ -373,12 +196,13 @@ def test_even_sample_count_is_rejected(runner_context) -> None:
 def test_subsets_keep_manifest_order_and_reject_unknowns(runner_context) -> None:
     matrix = runner.select_matrix(
         runner_context.suite,
-        cases=("triton.gemm_bf16_aligned.threads8", "triton.rmsnorm_bf16.threads8"),
+        cases=("triton.gemm_bf16_aligned", "triton.rmsnorm_bf16"),
         targets=("gfx1250",),
     )
-    assert matrix == (
-        _cell(runner_context, "triton.rmsnorm_bf16.threads8", "gfx1250"),
-        _cell(runner_context, "triton.gemm_bf16_aligned.threads8", "gfx1250"),
+    assert matrix == tuple(
+        harness.cell(runner_context, case, "gfx1250", thread_policy=policy)
+        for policy in ("default", "single")
+        for case in ("triton.rmsnorm_bf16", "triton.gemm_bf16_aligned")
     )
     with pytest.raises(runner.RunnerError, match="not in the suite"):
         runner.select_matrix(runner_context.suite, cases=("triton.unknown",))
@@ -416,14 +240,14 @@ def test_measurement_excludes_warmups(runner_context) -> None:
 def test_python_adapter_dispatch_is_independent_of_rocjitsu_source(
     runner_context,
 ) -> None:
-    case = "triton.gpt_oss_attention_bf16.threads8"
+    case = "triton.gpt_oss_attention_bf16"
     command = runner.prepare_command(
         runner_context.root / case,
-        _cell(runner_context, case, "gfx950"),
+        harness.cell(runner_context, case, "gfx950"),
         warmups=1,
         samples=3,
         run_wrapper=runner.parse_run_wrapper(runner_context.wrapper),
-        target=runner.TargetMetadata(*runner._load_target_configuration(runner_context.configs["gfx950"])),
+        target=runner.TargetMetadata(runner._load_target_configuration(runner_context.configs["gfx950"])),
     )
     script = runner.WORKLOAD_ROOT / "triton" / "workloads.py"
     assert str(script) in command.argv
@@ -444,18 +268,18 @@ def test_missing_selected_python_adapter_is_actionable(runner_context) -> None:
 def test_commands_forward_measurement_and_parameters(runner_context) -> None:
     output = runner_context.root / "out"
     expected_programs = {
-        "triton.rmsnorm_bf16.threads8": "workloads.py",
-        "triton.gemm_bf16_aligned.threads8": "workloads.py",
+        "triton.rmsnorm_bf16": "workloads.py",
+        "triton.gemm_bf16_aligned": "workloads.py",
     }
     for case, marker in expected_programs.items():
-        cell = _cell(runner_context, case, "gfx950")
+        cell = harness.cell(runner_context, case, "gfx950")
         command = runner.prepare_command(
             output,
             cell,
             warmups=2,
             samples=5,
             run_wrapper=runner.parse_run_wrapper(runner_context.wrapper),
-            target=runner.TargetMetadata(*runner._load_target_configuration(runner_context.configs["gfx950"])),
+            target=runner.TargetMetadata(runner._load_target_configuration(runner_context.configs["gfx950"])),
         )
         assert any(
             item == marker or item.endswith("/" + marker) for item in command.argv
@@ -473,15 +297,12 @@ def test_commands_forward_measurement_and_parameters(runner_context) -> None:
         assert command.environment["PYTHONHASHSEED"] == "0"
         assert command.environment["TRITON_CACHE_DIR"].endswith("triton/gfx950")
         effective_config = command.config_path.read_bytes()
-        assert json.loads(effective_config)["num_threads"] == 8
-        assert (
-            hashlib.sha256(effective_config).hexdigest()
-            == runner._load_target_configuration(runner_context.configs["gfx950"])[1]
-        )
+        assert json.loads(effective_config) == runner._load_target_configuration(runner_context.configs["gfx950"])
+        assert command.argv[command.argv.index("--cpu-thread-budget") + 1] == "0"
 
 
 def test_plugin_config_is_derived_without_modifying_base(runner_context) -> None:
-    cell = _cell(runner_context, "triton.rmsnorm_bf16.threads8", "gfx950")
+    cell = harness.cell(runner_context, "triton.rmsnorm_bf16", "gfx950")
     base = runner_context.configs[cell.target]
     original = base.read_bytes()
     command = runner.prepare_command(
@@ -491,7 +312,7 @@ def test_plugin_config_is_derived_without_modifying_base(runner_context) -> None
         samples=3,
         plugin_profile="race",
         run_wrapper=runner.parse_run_wrapper(runner_context.wrapper),
-        target=runner.TargetMetadata(*runner._load_target_configuration(runner_context.configs["gfx950"])),
+        target=runner.TargetMetadata(runner._load_target_configuration(runner_context.configs["gfx950"])),
     )
     generated = json.loads(command.config_path.read_text(encoding="utf-8"))
     assert generated["plugins"] == {"race": {}}
@@ -504,8 +325,8 @@ def test_plugin_config_is_derived_without_modifying_base(runner_context) -> None
 
 def test_validate_and_aggregate_workload(runner_context) -> None:
     path = runner_context.root / "workload.json"
-    cell = _cell(runner_context, "triton.rmsnorm_bf16.threads8", "gfx950")
-    payload = _payload(cell, [30, 10, 20])
+    cell = harness.cell(runner_context, "triton.rmsnorm_bf16", "gfx950")
+    payload = harness.payload(cell, [30, 10, 20])
     payload["parameters"] = {
         "threads_per_block": 64,
         "nested_values": [{"input_dtype": "fp16"}],
@@ -522,19 +343,21 @@ def test_raw_problem_preserves_nested_parameter_keys(runner_context):
         "nested_list": [{"threads_per_block": 256}],
     })
     runner_context.suite = replace(runner_context.suite, cases=(case,))
-    output, result = _run(runner_context, _matrix(runner_context), "nested", samples=1)
+    output, result = harness.run_harness(
+        runner_context, harness.matrix(runner_context), "nested", samples=1
+    )
     assert result["benchmark_results"][0]["problem"] == case.params
     assert json.loads((output / "run.json").read_text())["benchmark_results"][0]["problem"] == case.params
 
 
 def test_success_writes_compact_artifacts(runner_context) -> None:
-    matrix = _matrix(runner_context, "triton.rmsnorm_bf16.threads8")
-    output, result = _run(runner_context, matrix, "success", samples=3)
+    matrix = harness.matrix(runner_context, "triton.rmsnorm_bf16")
+    output, result = harness.run_harness(runner_context, matrix, "success", samples=3)
     assert set(result) == {"execution_summary", "benchmark_results", "provenance"}
     summary = result["execution_summary"]
     assert summary == {
-        "warmups": 3, "samples": 3, "timeout_seconds": 300,
-        "benchmark_suite": "nightly", "threading_mode": "default",
+        "warmups": 0, "samples": 3, "timeout_seconds": 300,
+        "benchmark_suite": "nightly",
         "timestamp": summary["timestamp"], "finished_at": summary["finished_at"],
         "wall_time_s": summary["wall_time_s"],
     }
@@ -549,8 +372,6 @@ def test_success_writes_compact_artifacts(runner_context) -> None:
     assert provenance["rocjitsu"] == {
         "rocjitsu_commit_sha": "a" * 40,
         "rocjitsu_commit_timestamp": "2026-09-01T21:42:10Z",
-        "target_config_sha256": {"gfx950": runner._load_target_configuration(
-            runner_context.configs["gfx950"], thread_policy="default")[1]},
         "rocm_sdk_version": "7.2.0",
     }
     assert provenance["corpus"] == {
@@ -563,8 +384,9 @@ def test_success_writes_compact_artifacts(runner_context) -> None:
     }
     test = result["benchmark_results"][0]
     assert test == {
-        "id": "triton.rmsnorm_bf16.threads8", "suite": "Triton",
+        "id": "triton.rmsnorm_bf16", "suite": "Triton",
         "name": "BF16 RMSNorm", "target": "gfx950",
+        "operation": "RMSNorm", "thread_policy": "default",
         "problem": {"dtype": "bf16", "rows": 128, "columns": 4096, "epsilon": 1e-5},
         "timing_results_s": [1e-9, 2e-9, 3e-9],
         "status": "completed", "exit_code": 0, "error": None,
@@ -572,15 +394,33 @@ def test_success_writes_compact_artifacts(runner_context) -> None:
     assert (output / "run.json").is_file()
     assert json.loads((output / "run.json").read_text(encoding="utf-8")) == result
     assert (
-        output / "cases/triton.rmsnorm_bf16.threads8/gfx950/stdout.txt"
+        output / "gfx950/default/cases/triton.rmsnorm_bf16/stdout.txt"
     ).read_text() == "out"
+
+
+def test_progress_identifies_actual_policy_in_dual_policy_run(runner_context) -> None:
+    progress = io.StringIO()
+    case = runner_context.suite.cases[0].id
+    matrix = runner.select_matrix(
+        runner_context.suite, cases=(case,), targets=("gfx950",),
+        thread_policies=("default", "single"),
+    )
+    _, result = harness.run_harness(
+        runner_context, matrix, "dual-policy-progress", progress=progress
+    )
+    messages = progress.getvalue().splitlines()
+    for position, policy in enumerate(("default", "single"), start=1):
+        identity = f"[{position}/2] case={case} target=gfx950 thread_policy={policy}"
+        assert any(f"START {identity} provider=triton " in message for message in messages)
+        assert any(f"DONE  {identity} status=completed " in message for message in messages)
+    assert [item["thread_policy"] for item in result["benchmark_results"]] == ["default", "single"]
 
 
 def test_progress_reports_suite_and_cell_status(runner_context) -> None:
     progress = io.StringIO()
-    _run(
+    harness.run_harness(
         runner_context,
-        _matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "progress",
         samples=1,
         progress=progress,
@@ -588,14 +428,14 @@ def test_progress_reports_suite_and_cell_status(runner_context) -> None:
     messages = progress.getvalue().splitlines()
     assert (
         messages[0]
-        == "[rocjitsu-benchmark] START suite=nightly cells=1 warmups=3 samples=1 threads=default plugin=none"
+        == "[rocjitsu-benchmark] START suite=nightly cells=1 warmups=0 samples=1 plugin=none"
     )
     assert (
         messages[1]
-        == "[rocjitsu-benchmark] START [1/1] case=triton.rmsnorm_bf16.threads8 target=gfx950 provider=triton timeout_seconds=300"
+        == "[rocjitsu-benchmark] START [1/1] case=triton.rmsnorm_bf16 target=gfx950 thread_policy=default provider=triton timeout_seconds=300"
     )
     assert re.search(
-        "^\\[rocjitsu-benchmark\\] DONE  \\[1/1\\] case=triton\\.rmsnorm_bf16\\.threads8 target=gfx950 status=completed elapsed_seconds=\\d+\\.\\d median_s=1e-09$",
+        "^\\[rocjitsu-benchmark\\] DONE  \\[1/1\\] case=triton\\.rmsnorm_bf16 target=gfx950 thread_policy=default status=completed elapsed_seconds=\\d+\\.\\d median_s=1e-09$",
         messages[2],
     )
     assert re.search(
@@ -610,12 +450,12 @@ def test_initial_checkpoint_is_a_running_raw_run(runner_context) -> None:
     def inspect_checkpoint(argv, **kwargs):
         nonlocal observed
         workload = Path(argv[argv.index("--output") + 1])
-        observed = json.loads((workload.parents[3] / "run.json").read_text())
-        return _successful_process(runner_context, argv, **kwargs)
+        observed = json.loads((workload.parents[4] / "run.json").read_text())
+        return harness.successful_process(runner_context, argv, **kwargs)
 
-    _run(
+    harness.run_harness(
         runner_context,
-        _matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "running-checkpoint",
         process=inspect_checkpoint,
         samples=1,
@@ -630,10 +470,10 @@ def test_initial_checkpoint_is_a_running_raw_run(runner_context) -> None:
 def test_first_partial_run_preserved_and_failed_case_can_later_succeed(
     runner_context,
 ) -> None:
-    failed_id = "triton.gpt_oss_attention_bf16.threads8"
-    matrix = _matrix(
+    failed_id = "triton.gpt_oss_attention_bf16"
+    matrix = harness.matrix(
         runner_context,
-        "triton.rmsnorm_bf16.threads8",
+        "triton.rmsnorm_bf16",
         failed_id,
         targets=("gfx950", "gfx1250"),
     )
@@ -641,19 +481,19 @@ def test_first_partial_run_preserved_and_failed_case_can_later_succeed(
     def fail_attention(argv, **kwargs):
         if argv[argv.index("--case") + 1] == failed_id:
             return subprocess.CompletedProcess(argv, 1, "", "launch failed")
-        return _successful_process(runner_context, argv, **kwargs)
+        return harness.successful_process(runner_context, argv, **kwargs)
 
-    _, partial = _run(
+    _, partial = harness.run_harness(
         runner_context, matrix, "partial", process=fail_attention, samples=1
     )
     assert partial["execution_summary"]["finished_at"] is not None
     assert [test["status"] for test in partial["benchmark_results"]] == [
         "completed",
+        "failed",
         "completed",
         "failed",
-        "failed",
     ]
-    _, recovered = _run(runner_context, matrix, "recovered", samples=1)
+    _, recovered = harness.run_harness(runner_context, matrix, "recovered", samples=1)
     assert recovered["execution_summary"]["finished_at"] is not None
     assert all(item["status"] == "completed" for item in recovered["benchmark_results"])
 
@@ -663,9 +503,9 @@ def test_nonzero_exit_preserves_logs(runner_context) -> None:
     def fail(argv, **_kwargs):
         return subprocess.CompletedProcess(argv, 7, "partial out", "failure text")
 
-    output, result = _run(
+    output, result = harness.run_harness(
         runner_context,
-        _matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "nonzero",
         process=fail,
     )
@@ -682,14 +522,14 @@ def test_nonzero_exit_preserves_logs(runner_context) -> None:
         "epsilon": 1e-05,
     }
     assert test["timing_results_s"] == []
-    assert not _artifact(output, test, "workload.json").exists()
+    assert not harness.artifact(output, test, "workload.json").exists()
     assert (
-        output / "cases/triton.rmsnorm_bf16.threads8/gfx950/stderr.txt"
+        output / "gfx950/default/cases/triton.rmsnorm_bf16/stderr.txt"
     ).read_text() == "failure text"
 
 
 def test_rejects_build_from_another_worktree(runner_context) -> None:
-    _write_cache(runner_context, CMAKE_HOME_DIRECTORY="/tmp/other-rocjitsu")
+    harness.write_cache(runner_context, CMAKE_HOME_DIRECTORY="/tmp/other-rocjitsu")
     with pytest.raises(runner.RunnerError, match="belongs to"):
         runner.validate_build(
             runner_context.build, rocjitsu_source_dir=runner_context.source
@@ -699,7 +539,7 @@ def test_rejects_build_from_another_worktree(runner_context) -> None:
 @pytest.mark.parametrize("rocm_path", [None, "", "/another-sdk"])
 def test_build_validation_ignores_test_sdk_path(runner_context, rocm_path) -> None:
     overrides = {} if rocm_path is None else {"ROCM_PATH": rocm_path}
-    _write_cache(runner_context, **overrides)
+    harness.write_cache(runner_context, **overrides)
     runner.validate_build(
         runner_context.build, rocjitsu_source_dir=runner_context.source
     )
@@ -719,12 +559,12 @@ def test_build_validation_requires_no_instrumentation(runner_context) -> None:
         "RJ_ENABLE_TSAN",
         "RJ_ENABLE_UBSAN",
     ):
-        _write_cache(runner_context, **{option: "ON"})
+        harness.write_cache(runner_context, **{option: "ON"})
         with pytest.raises(runner.RunnerError, match="LTO=OFF|disable sanitizers"):
             runner.validate_build(
                 runner_context.build, rocjitsu_source_dir=runner_context.source
             )
-    _write_cache(runner_context)
+    harness.write_cache(runner_context)
 
 
 def test_build_validation_requires_selected_plugin_binary(runner_context) -> None:
@@ -738,44 +578,34 @@ def test_build_validation_requires_selected_plugin_binary(runner_context) -> Non
         )
 
 
-def test_selected_configuration_is_preserved_and_hashed(runner_context) -> None:
+def test_selected_configuration_is_preserved_without_hash(runner_context) -> None:
     configuration = runner_context.root / "target.json"
     configuration.write_text(
-        json.dumps({"exec_mode": "parallel", "num_threads": 8, "max_ticks": 100000}),
+        json.dumps({"exec_mode": "parallel", "max_ticks": 100000}),
         encoding="utf-8",
     )
     with mock.patch.dict(runner_context.configs, {"gfx950": configuration}, clear=True):
-        config, digest = runner._load_target_configuration(runner_context.configs["gfx950"])
+        config = runner._load_target_configuration(runner_context.configs["gfx950"])
         assert config["max_ticks"] == 0
-        _, result = _run(
+        _, result = harness.run_harness(
             runner_context,
-            _matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+            harness.matrix(runner_context, "triton.rmsnorm_bf16"),
             "target-metadata",
             samples=1,
         )
     assert config["exec_mode"] == "parallel"
-    assert config["num_threads"] == 8
-    assert (
-        digest
-        == hashlib.sha256(
-            (json.dumps(config, indent=2, sort_keys=True) + "\n").encode()
-        ).hexdigest()
-    )
-    assert (
-        result["provenance"]["rocjitsu"]["target_config_sha256"]["gfx950"]
-        == digest
-    )
+    assert "target_config_sha256" not in result["provenance"]["rocjitsu"]
 
 
 def test_plugin_report_is_retained(runner_context) -> None:
-    output, result = _run(
+    output, result = harness.run_harness(
         runner_context,
-        _matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "race-profile",
         samples=1,
         plugin_profile="race",
     )
-    report = "cases/triton.rmsnorm_bf16.threads8/gfx950/plugins/race.log"
+    report = "gfx950/default/cases/triton.rmsnorm_bf16/plugins/race.log"
     assert (output / report).read_text(encoding="utf-8") == "race report\n"
 
 
@@ -786,14 +616,16 @@ def test_missing_plugin_report_fails_the_cell(runner_context) -> None:
         target = argv[argv.index("--target") + 1]
         output = Path(argv[argv.index("--output") + 1])
         output.write_text(
-            json.dumps(_payload(_cell(runner_context, case, target), [1])),
+            json.dumps(
+                harness.payload(harness.cell(runner_context, case, target), [1])
+            ),
             encoding="utf-8",
         )
         return subprocess.CompletedProcess(argv, 0, "", "")
 
-    _, result = _run(
+    _, result = harness.run_harness(
         runner_context,
-        _matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "missing-plugin-report",
         process=no_report,
         samples=1,
@@ -808,9 +640,9 @@ def test_target_configuration_rejects_invalid_fields(runner_context) -> None:
     configuration = runner_context.root / "target.json"
     invalid_values = (
         [],
-        {"exec_mode": "", "num_threads": 1},
+        {"exec_mode": ""},
         {"exec_mode": True},
-        {"num_threads": 8},
+        {"max_ticks": 100},
     )
     for value in invalid_values:
         configuration.write_text(json.dumps(value), encoding="utf-8")
@@ -894,9 +726,9 @@ def test_timeout_preserves_captured_output(runner_context) -> None:
             argv, 180, output=b"partial out", stderr=b"partial error"
         )
 
-    output, result = _run(
+    output, result = harness.run_harness(
         runner_context,
-        _matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "timeout",
         process=timeout,
     )
@@ -914,7 +746,7 @@ def test_timeout_preserves_captured_output(runner_context) -> None:
     }
     assert test["timing_results_s"] == []
     assert (
-        output / "cases/triton.rmsnorm_bf16.threads8/gfx950/stdout.txt"
+        output / "gfx950/default/cases/triton.rmsnorm_bf16/stdout.txt"
     ).read_text() == "partial out"
 
 
@@ -923,16 +755,16 @@ def test_zero_exit_without_workload_is_a_failed_test(runner_context) -> None:
     def missing(argv, **_kwargs):
         return subprocess.CompletedProcess(argv, 0, "", "")
 
-    output, result = _run(
+    output, result = harness.run_harness(
         runner_context,
-        _matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "missing-workload",
         process=missing,
     )
     test = result["benchmark_results"][0]
     assert test["status"] == "failed"
     assert test["exit_code"] == 0
-    assert not _artifact(output, test, "workload.json").exists()
+    assert not harness.artifact(output, test, "workload.json").exists()
     assert "cannot read workload result" in test["error"]
 
 
@@ -943,14 +775,16 @@ def test_malformed_samples_fail_validation(runner_context) -> None:
         target = argv[argv.index("--target") + 1]
         output = Path(argv[argv.index("--output") + 1])
         output.write_text(
-            json.dumps(_payload(_cell(runner_context, case, target), [1, 0, 3])),
+            json.dumps(
+                harness.payload(harness.cell(runner_context, case, target), [1, 0, 3])
+            ),
             encoding="utf-8",
         )
         return subprocess.CompletedProcess(argv, 0, "", "")
 
-    _, result = _run(
+    _, result = harness.run_harness(
         runner_context,
-        _matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "malformed",
         process=malformed,
         samples=3,
@@ -968,14 +802,14 @@ def test_nonfinite_parameters_fail_without_aborting_suite(runner_context) -> Non
         case = argv[argv.index("--case") + 1]
         target = argv[argv.index("--target") + 1]
         output = Path(argv[argv.index("--output") + 1])
-        payload = _payload(_cell(runner_context, case, target), [1])
+        payload = harness.payload(harness.cell(runner_context, case, target), [1])
         payload["parameters"] = {"invalid": float("nan")}
         output.write_text(json.dumps(payload), encoding="utf-8")
         return subprocess.CompletedProcess(argv, 0, "", "")
 
-    output, result = _run(
+    output, result = harness.run_harness(
         runner_context,
-        _matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "nonfinite",
         process=nonfinite,
         samples=1,
@@ -1060,11 +894,11 @@ def test_interrupt_survives_failure_to_drain_output(runner_context) -> None:
 def test_interruption_retains_completed_and_unrun_matrix_cells(
     runner_context, artifacts_written
 ) -> None:
-    matrix = _matrix(
+    matrix = harness.matrix(
         runner_context,
-        "triton.rmsnorm_bf16.threads8",
-        "triton.gemm_bf16_aligned.threads8",
-        "triton.gpt_oss_attention_bf16.threads8",
+        "triton.rmsnorm_bf16",
+        "triton.gemm_bf16_aligned",
+        "triton.gpt_oss_attention_bf16",
     )
     calls = 0
 
@@ -1073,12 +907,12 @@ def test_interruption_retains_completed_and_unrun_matrix_cells(
         calls += 1
         if calls == 2:
             if artifacts_written:
-                _successful_process(runner_context, argv, **kwargs)
+                harness.successful_process(runner_context, argv, **kwargs)
             raise runner._CommandInterrupted("SIGTERM", "partial out", "partial error")
-        return _successful_process(runner_context, argv, **kwargs)
+        return harness.successful_process(runner_context, argv, **kwargs)
 
     with pytest.raises(KeyboardInterrupt):
-        _run(
+        harness.run_harness(
             runner_context,
             matrix,
             "interrupted-partial",
@@ -1092,23 +926,30 @@ def test_interruption_retains_completed_and_unrun_matrix_cells(
     assert [test["status"] for test in raw["benchmark_results"]] == ["completed", "failed", "failed"]
     assert raw["execution_summary"]["finished_at"] is not None
     assert raw["benchmark_results"][0]["timing_results_s"]
-    assert _artifact(output, raw["benchmark_results"][0], "stdout.txt").read_text() == "out"
+    assert (
+        harness.artifact(output, raw["benchmark_results"][0], "stdout.txt").read_text()
+        == "out"
+    )
     active = raw["benchmark_results"][1]
     assert active["timing_results_s"] == []
     assert active["error"] == "workload interrupted: SIGTERM"
     assert active["status"] != "timeout"
-    assert _artifact(output, active, "stdout.txt").read_text() == "partial out"
-    assert _artifact(output, active, "stderr.txt").read_text() == "partial error"
-    assert _artifact(output, active, "config.json").is_file()
+    assert harness.artifact(output, active, "stdout.txt").read_text() == "partial out"
+    assert harness.artifact(output, active, "stderr.txt").read_text() == "partial error"
+    assert harness.artifact(output, active, "config.json").is_file()
     if artifacts_written:
-        assert _artifact(output, active, "workload.json").is_file()
-        report = _artifact(output, active, "plugins/logging.log")
+        assert harness.artifact(output, active, "workload.json").is_file()
+        report = harness.artifact(output, active, "plugins/logging.log")
         assert report.read_text() == "logging report\n"
     else:
-        assert not _artifact(output, active, "workload.json").exists()
-        assert not _artifact(output, active, "plugins/logging.log").exists()
-    assert not _artifact(output, raw["benchmark_results"][2], "stdout.txt").exists()
-    assert not _artifact(output, raw["benchmark_results"][2], "config.json").exists()
+        assert not harness.artifact(output, active, "workload.json").exists()
+        assert not harness.artifact(output, active, "plugins/logging.log").exists()
+    assert not harness.artifact(
+        output, raw["benchmark_results"][2], "stdout.txt"
+    ).exists()
+    assert not harness.artifact(
+        output, raw["benchmark_results"][2], "config.json"
+    ).exists()
 
 
 def test_interruption_finalizes_the_run_artifact(runner_context) -> None:
@@ -1118,9 +959,9 @@ def test_interruption_finalizes_the_run_artifact(runner_context) -> None:
 
     output = runner_context.root / "interrupted"
     with pytest.raises(KeyboardInterrupt):
-        _run(
+        harness.run_harness(
             runner_context,
-            _matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+            harness.matrix(runner_context, "triton.rmsnorm_bf16"),
             "interrupted",
             process=interrupt,
             samples=1,
@@ -1177,7 +1018,7 @@ def test_signal_preserves_flushed_workload_output(runner_context, signum) -> Non
             "--manifest",
             str(runner.BENCHMARK_ROOT / "suites" / "smoke.toml"),
             "--case",
-            "triton.rmsnorm_bf16.default",
+            "triton.rmsnorm_bf16",
             "--run-wrapper",
             shlex.join(
                 [sys.executable, str(child), str(ready), "--config", "{config}", "--"]
@@ -1222,16 +1063,19 @@ def test_signal_preserves_flushed_workload_output(runner_context, signum) -> Non
     assert active["status"] == "failed"
     assert active["timing_results_s"] == []
     assert "interrupted" in active["error"]
-    assert _artifact(output, active, "stdout.txt").read_text() == "flushed stdout\n"
-    assert _artifact(output, active, "stderr.txt").read_text() == "flushed stderr\n"
-    assert _artifact(output, active, "config.json").is_file()
-    assert not _artifact(output, active, "workload.json").exists()
+    assert (
+        harness.artifact(output, active, "stdout.txt").read_text() == "flushed stdout\n"
+    )
+    assert (
+        harness.artifact(output, active, "stderr.txt").read_text() == "flushed stderr\n"
+    )
+    assert harness.artifact(output, active, "config.json").is_file()
+    assert not harness.artifact(output, active, "workload.json").exists()
 
 
 @pytest.mark.parametrize("thread_policy", ["default", "single"])
 def test_existing_output_is_never_overwritten(runner_context, thread_policy) -> None:
-    runner_context.suite = replace(runner_context.suite, num_threads=None,
-        thread_policy=thread_policy)
+    runner_context.suite = harness.with_policy(runner_context.suite, thread_policy)
     output = runner_context.root / "existing"
     output.mkdir()
     marker = output / "keep"
@@ -1240,7 +1084,7 @@ def test_existing_output_is_never_overwritten(runner_context, thread_policy) -> 
         with pytest.raises(runner.RunnerError, match="already exists"):
             runner.run_suite(
                 runner_context.suite,
-                _matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+                harness.matrix(runner_context, "triton.rmsnorm_bf16"),
                 build_dir=runner_context.build,
                 output=output,
                 rocjitsu_source_dir=runner_context.source,
@@ -1259,14 +1103,14 @@ def test_failures_do_not_stop_later_cells(runner_context) -> None:
         calls += 1
         if calls == 1:
             return subprocess.CompletedProcess(argv, 9, "first", "failed")
-        return _successful_process(runner_context, argv, **kwargs)
+        return harness.successful_process(runner_context, argv, **kwargs)
 
-    matrix = _matrix(
+    matrix = harness.matrix(
         runner_context,
-        "triton.rmsnorm_bf16.threads8",
-        "triton.gemm_bf16_aligned.threads8",
+        "triton.rmsnorm_bf16",
+        "triton.gemm_bf16_aligned",
     )
-    output, result = _run(
+    output, result = harness.run_harness(
         runner_context, matrix, "partial", process=one_failure, samples=3
     )
     assert [item["status"] for item in result["benchmark_results"]] == ["failed", "completed"]
@@ -1289,13 +1133,13 @@ def test_list_needs_no_build_or_dependency_metadata(runner_context) -> None:
             [
                 "--list",
                 "--case",
-                "gpt_oss.window_batch4_seq3072.default",
+                "gpt_oss.window_batch4_seq3072",
                 "--target",
                 "gfx950",
             ]
         )
     assert status == 0
-    assert stdout.getvalue() == "gpt_oss.window_batch4_seq3072.default\tgfx950\n"
+    assert stdout.getvalue() == "gpt_oss.window_batch4_seq3072\tgfx950\tdefault\n"
 
 
 @pytest.mark.parametrize(
@@ -1382,9 +1226,9 @@ def test_missing_selected_config_fails_before_execution(runner_context):
 
 def test_unselected_config_is_not_opened(runner_context):
     runner_context.configs["gfx1250"] = runner_context.root / "does-not-exist.json"
-    _, result = _run(
+    _, result = harness.run_harness(
         runner_context,
-        _matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "subset",
         samples=1,
     )
@@ -1392,33 +1236,81 @@ def test_unselected_config_is_not_opened(runner_context):
     assert all(item["status"] == "completed" for item in result["benchmark_results"])
 
 
-def test_config_snapshot_matches_hash_even_if_source_changes(runner_context):
+def test_config_snapshot_preserved_even_if_source_changes(runner_context):
     base = runner_context.configs["gfx950"]
-    expected_config, expected_sha = runner._load_target_configuration(base, thread_policy="default")
+    expected_config = runner._load_target_configuration(base)
 
     def change_source(argv, **kwargs):
-        base.write_text(json.dumps({"exec_mode": "changed", "num_threads": 99}))
-        return _successful_process(runner_context, argv, **kwargs)
+        base.write_text(json.dumps({"exec_mode": "changed", "max_ticks": 99}))
+        return harness.successful_process(runner_context, argv, **kwargs)
 
-    output, result = _run(
+    output, result = harness.run_harness(
         runner_context,
-        _matrix(
+        harness.matrix(
             runner_context,
-            "triton.rmsnorm_bf16.threads8",
-            "triton.gemm_bf16_aligned.threads8",
+            "triton.rmsnorm_bf16",
+            "triton.gemm_bf16_aligned",
         ),
         "snapshot",
         process=change_source,
         samples=1,
     )
-    assert (
-        result["provenance"]["rocjitsu"]["target_config_sha256"]["gfx950"]
-        == expected_sha
-    )
+    assert "target_config_sha256" not in result["provenance"]["rocjitsu"]
     for test in result["benchmark_results"]:
-        config = _artifact(output, test, "config.json")
+        config = harness.artifact(output, test, "config.json")
         assert json.loads(config.read_text()) == expected_config
-        assert hashlib.sha256(config.read_bytes()).hexdigest() == expected_sha
+
+
+
+@pytest.mark.parametrize("thread_policy", ["default", "single"])
+@pytest.mark.parametrize("launcher", ["direct", "env", "taskset"])
+def test_launcher_budget_reaches_probe_and_workload(runner_context, thread_policy, launcher):
+    script = runner_context.root / "rocjitsu stub.py"
+    log = runner_context.root / "stub-arguments.jsonl"
+    script.write_text(
+        "import json, sys\n"
+        f"with open({str(log)!r}, 'a') as stream:\n"
+        "    stream.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "print('Configured | 1 | 1 | 0 | 1' if '--thread-budget-table' in sys.argv else json.dumps(sys.argv[1:]))\n"
+    )
+    prefix = []
+    if launcher == "env":
+        executable = shutil.which("env")
+        if executable is None:
+            pytest.skip("env is unavailable")
+        prefix = [executable, "--"]
+    elif launcher == "taskset":
+        executable = shutil.which("taskset")
+        if executable is None or not hasattr(os, "sched_getaffinity"):
+            pytest.skip("taskset/allowed affinity is unavailable")
+        prefix = [executable, "--cpu-list", "--", str(min(os.sched_getaffinity(0)))]
+    wrapper = runner.parse_run_wrapper(shlex.join(
+        [*prefix, sys.executable, str(script), "--config", "{config}", "--"]
+    ))
+    configuration = runner._load_target_configuration(runner_context.configs["gfx950"])
+    target = runner._native_target_metadata(
+        configuration, "gfx950", runner_context.root / "probe", wrapper, thread_policy
+    )
+    cell = harness.cell(
+        runner_context, "triton.rmsnorm_bf16", "gfx950", thread_policy=thread_policy
+    )
+    command = runner.prepare_command(
+        runner_context.root / "timed", cell, run_wrapper=wrapper,
+        target=target, warmups=1, samples=3,
+    )
+    completed = runner._run_command(
+        command.argv, cwd=command.cwd, env=command.environment, timeout=10
+    )
+    assert completed.returncode == 0, completed.stderr
+    probe, workload = [json.loads(line) for line in log.read_text().splitlines()]
+    budget = "1" if thread_policy == "single" else "0"
+    for argv in (probe, workload):
+        assert argv[:1] == ["--config"]
+        assert argv[2:4] == ["--cpu-thread-budget", budget]
+    assert probe[4:] == ["--thread-budget-table"]
+    assert workload[4:6] == ["--", sys.executable]
+    assert workload[6] == str(runner.WORKLOAD_ROOT / "triton" / "workloads.py")
+    assert workload[workload.index("--samples") + 1] == "3"
 
 
 def test_wrapper_preserves_quoted_paths_and_literal_shell_arguments(runner_context):
@@ -1429,12 +1321,12 @@ def test_wrapper_preserves_quoted_paths_and_literal_shell_arguments(runner_conte
     wrapper = shlex.join(
         [sys.executable, str(script), literal, "--config", "{config}", "--"]
     )
-    cell = _cell(runner_context, "triton.rmsnorm_bf16.threads8", "gfx950")
+    cell = harness.cell(runner_context, "triton.rmsnorm_bf16", "gfx950")
     command = runner.prepare_command(
         runner_context.root / "output with spaces",
         cell,
         run_wrapper=runner.parse_run_wrapper(wrapper),
-        target=runner.TargetMetadata(*runner._load_target_configuration(runner_context.configs["gfx950"])),
+        target=runner.TargetMetadata(runner._load_target_configuration(runner_context.configs["gfx950"])),
         warmups=1,
         samples=3,
     )
@@ -1443,14 +1335,16 @@ def test_wrapper_preserves_quoted_paths_and_literal_shell_arguments(runner_conte
     )
     assert completed.returncode == 0
     argv = json.loads(completed.stdout)
-    assert argv[:5] == [
+    assert argv[:7] == [
         literal,
         "--config",
         str(command.config_path),
+        "--cpu-thread-budget",
+        "0",
         "--",
         sys.executable,
     ]
-    assert argv[5] == str(runner.WORKLOAD_ROOT / "triton" / "workloads.py")
+    assert argv[7] == str(runner.WORKLOAD_ROOT / "triton" / "workloads.py")
     assert not sentinel.exists()
 
 
@@ -1458,9 +1352,9 @@ def test_missing_wrapper_executable_fails_cell(runner_context):
     runner_context.wrapper = (
         f'"{runner_context.root / "missing"}" --config {{config}} --'
     )
-    _, result = _run(
+    _, result = harness.run_harness(
         runner_context,
-        _matrix(runner_context, "triton.rmsnorm_bf16.threads8"),
+        harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "missing-launcher",
         process=runner._run_command,
         samples=1,
@@ -1472,36 +1366,20 @@ def test_missing_wrapper_executable_fails_cell(runner_context):
 
 
 @pytest.mark.parametrize("thread_policy", ["default", "single"])
-@pytest.mark.parametrize("scalar_overrides", [False, True])
 def test_thread_policy_and_recorded_native_allocation(
-    runner_context, thread_policy, scalar_overrides
+    runner_context, thread_policy
 ):
-    import dataclasses
     runner_context.native_probe = True
 
-    runner_context.suite = dataclasses.replace(
-        runner_context.suite, num_threads=None,
-        thread_policy=thread_policy
-    )
+    runner_context.suite = harness.with_policy(runner_context.suite, thread_policy)
     policy = {
         "exec_mode": "functional",
         "cpu_thread_budget": 0,
-        "thread_allocations": [
-            {"num_threads": 8, "cpu_dispatch_threads": 25, "async_helper_threads": 16}
-        ],
     }
-    if scalar_overrides:
-        policy.update(num_threads=8, cpu_dispatch_threads=25, async_helper_threads=16)
     runner_context.configs["gfx950"].write_text(json.dumps(policy))
     expected_config = {**policy, "max_ticks": 0}
     allocation = (8, 25, 16, 48)
     if thread_policy == "single":
-        expected_config.update(
-            cpu_thread_budget=1,
-            num_threads=1,
-            cpu_dispatch_threads=1,
-            async_helper_threads=0,
-        )
         allocation = (1, 1, 0, 1)
     commands = []
 
@@ -1517,25 +1395,31 @@ def test_thread_policy_and_recorded_native_allocation(
                 "Configured | " + " | ".join(map(str, allocation)) + "\n",
                 "",
             )
-        return _successful_process(runner_context, argv, **kwargs)
+        return harness.successful_process(runner_context, argv, **kwargs)
 
-    matrix = _matrix(runner_context, runner_context.suite.cases[0].id)
-    output, result = _run(runner_context, matrix, thread_policy, process=execute)
-    assert result["execution_summary"]["threading_mode"] == thread_policy
+    matrix = harness.matrix(runner_context, runner_context.suite.cases[0].id)
+    output, result = harness.run_harness(
+        runner_context, matrix, thread_policy, process=execute
+    )
+    assert result["benchmark_results"][0]["thread_policy"] == thread_policy
     assert (
         commands[0][0]
         == commands[1][0]
         == str(runner_context.build / "custom launcher")
     )
     assert not (output / "cpu-affinity.json").exists()
-    saved = json.loads((output / "thread-policy/gfx950/allocation.json").read_text())
+    saved = json.loads((output / "gfx950" / thread_policy / "allocation.json").read_text())
     assert (
         tuple(saved[k] for k in ("engine", "dispatch", "helpers", "total"))
         == allocation
     )
-    assert (output / "thread-policy/gfx950/policy.txt").is_file()
+    assert (output / "gfx950" / thread_policy / "policy.txt").is_file()
+    for argv in commands:
+        assert argv[argv.index("--cpu-thread-budget") + 1] == ("1" if thread_policy == "single" else "0")
     snapshot = json.loads(
-        _artifact(output, result["benchmark_results"][0], "config.json").read_text()
+        harness.artifact(
+            output, result["benchmark_results"][0], "config.json"
+        ).read_text()
     )
     assert snapshot == expected_config
     assert json.loads(runner_context.configs["gfx950"].read_text()) == policy
@@ -1547,16 +1431,13 @@ def test_thread_policy_and_recorded_native_allocation(
 def test_single_thread_policy_rejects_parallel_native_allocation(
     runner_context, allocation
 ):
-    import dataclasses
     runner_context.native_probe = True
 
-    runner_context.suite = dataclasses.replace(
-        runner_context.suite, num_threads=None, thread_policy="single"
-    )
+    runner_context.suite = harness.with_policy(runner_context.suite, "single")
     with pytest.raises(runner.RunnerError, match="single-thread policy requires"):
-        _run(
+        harness.run_harness(
             runner_context,
-            _matrix(runner_context, runner_context.suite.cases[0].id),
+            harness.matrix(runner_context, runner_context.suite.cases[0].id),
             "bad-single",
             process=lambda argv, **kw: subprocess.CompletedProcess(
                 argv, 0, f"Configured | {allocation}\n", ""
@@ -1564,24 +1445,83 @@ def test_single_thread_policy_rejects_parallel_native_allocation(
         )
 
 
+@pytest.mark.parametrize(
+    "manifest_name", ["performance-v1", "smoke", "plugin-overhead"]
+)
+def test_bundled_case_ids_are_workload_ids(manifest_name):
+    suite = runner.load_manifest(
+        runner.BENCHMARK_ROOT / "suites" / f"{manifest_name}.toml"
+    )
+    ids = [case.id for case in suite.cases]
+    assert ids
+    assert len(ids) == len(set(ids))
+    assert all(not case_id.endswith((".default", ".single")) for case_id in ids)
+
+
+@pytest.mark.parametrize(
+    "manifest_name,thread_policy", [("performance-v1", "default"), ("performance-v1", "single")]
+)
+def test_workload_ids_preserve_sizes_selection_and_raw_output(
+    runner_context, capsys, manifest_name, thread_policy
+):
+    manifest = runner.BENCHMARK_ROOT / "suites" / f"{manifest_name}.toml"
+    runner_context.suite = harness.with_policy(
+        runner.load_manifest(manifest), thread_policy
+    )
+    ids = ["deepseek.mlp_w1_m64", "deepseek.mlp_w1_m256"]
+    matrix = harness.matrix(runner_context, *ids, targets=("gfx950", "gfx1250"))
+    assert [cell.case for cell in matrix] == ids
+    assert [cell.target for cell in matrix] == ["gfx950", "gfx1250"]
+    assert [cell.definition.params["rows"] for cell in matrix] == [64, 256]
+    # Display names are intentionally identical, but these are different workloads.
+    assert matrix[0].definition.name == matrix[1].definition.name
+    assert runner.main([
+        "--manifest", str(manifest), "--list",
+        "--thread-policy", thread_policy,
+        "--case", ids[0], "--case", ids[1],
+    ]) == 0
+    assert capsys.readouterr().out == "".join(
+        f"{cell.case}\t{cell.target}\t{thread_policy}\n" for cell in matrix
+    )
+
+    output, result = harness.run_harness(runner_context, matrix, manifest_name)
+    saved = json.loads((output / "run.json").read_text())
+    assert saved == result
+    assert {item["thread_policy"] for item in saved["benchmark_results"]} == {thread_policy}
+    assert [item["id"] for item in saved["benchmark_results"]] == ids
+    for cell, item in zip(matrix, saved["benchmark_results"], strict=True):
+        assert item["status"] == "completed"
+        assert item["problem"] == cell.definition.params
+        assert item["timing_results_s"] == [1e-9]
+        case_dir = output / cell.target / cell.thread_policy / "cases" / cell.case
+        payload = json.loads((case_dir / "workload.json").read_text())
+        assert payload["case"] == cell.case
+        assert payload["target"] == cell.target
+        assert (case_dir / "config.json").is_file()
+        assert (case_dir / "stdout.txt").read_text() == "out"
+
+
+@pytest.mark.parametrize("case_id", ["custom.workload.default", "custom.workload.single"])
+def test_runner_preserves_explicit_custom_ids(runner_context, case_id):
+    case = replace(runner_context.suite.cases[0], id=case_id)
+    runner_context.suite = replace(runner_context.suite, cases=(case,))
+    output, result = harness.run_harness(
+        runner_context, harness.matrix(runner_context, case_id), "custom"
+    )
+    assert result["benchmark_results"][0]["id"] == case_id
+    assert result["benchmark_results"][0]["status"] == "completed"
+    assert (output / "gfx950/default/cases" / case_id / "workload.json").is_file()
+
+
 def test_single_thread_suite_is_fixed_subset_with_library_coverage():
-    nightly = runner.load_manifest()
-    single = runner.load_manifest(runner.BENCHMARK_ROOT / "suites/nightly-single.toml")
-    assert single.thread_policy == "single"
-    assert single.warmups == nightly.warmups == 0
-    assert single.samples == nightly.samples == 1
-    default_cases = {case.id: case for case in nightly.cases}
-    for case in single.cases:
-        assert case.id.endswith(".single")
-        original = default_cases[case.id.removesuffix(".single") + ".default"]
-        assert (case.workload, case.params, case.targets) == (
-            original.workload,
-            original.params,
-            original.targets,
-        )
+    suite = runner.load_manifest()
+    single = [case for case in suite.cases if "single" in case.thread_policies]
+    assert len(single) == 7
+    for case in single:
+        assert not case.id.endswith((".default", ".single"))
         assert case.params.get("configuration") != "large_tile"
-    for target in nightly.targets:
-        matrix = runner.select_matrix(single, targets=[target])
+    for target in suite.targets:
+        matrix = runner.select_matrix(suite, targets=[target], thread_policies=["single"])
         assert len(matrix) == 5
         assert {cell.definition.suite for cell in matrix} == {
             "GPT-OSS",
@@ -1606,17 +1546,13 @@ def test_single_thread_suite_is_fixed_subset_with_library_coverage():
 def test_named_threads_reject_unavailable_native_policy(
     runner_context, code, text, thread_policy
 ):
-    import dataclasses
     runner_context.native_probe = True
 
-    runner_context.suite = dataclasses.replace(
-        runner_context.suite, num_threads=None,
-        thread_policy=thread_policy
-    )
+    runner_context.suite = harness.with_policy(runner_context.suite, thread_policy)
     with pytest.raises(runner.RunnerError, match="native|worker policy"):
-        _run(
+        harness.run_harness(
             runner_context,
-            _matrix(runner_context, runner_context.suite.cases[0].id),
+            harness.matrix(runner_context, runner_context.suite.cases[0].id),
             "bad-default",
             process=lambda argv, **kw: subprocess.CompletedProcess(
                 argv, code, text, ""
@@ -1627,15 +1563,15 @@ def test_named_threads_reject_unavailable_native_policy(
 
 def test_default_manifest_and_case_target_selection(tmp_path):
     text = runner.DEFAULT_MANIFEST.read_text()
-    text = text.replace("[[cases]]", '[[cases]]\ntargets = ["gfx950"]', 1)
+    text = text.replace('targets = ["gfx950", "gfx1250"]', 'targets = ["gfx950"]', 1)
     manifest = tmp_path / "suite.toml"
     manifest.write_text(text)
     suite = runner.load_manifest(manifest)
-    assert suite.thread_policy == "default"
+    assert suite.cases[0].thread_policies == ("default",)
     assert runner.select_matrix(suite, cases=[suite.cases[0].id])[0].target == "gfx950"
     with pytest.raises(runner.RunnerError, match="no supported targets"):
         runner.select_matrix(suite, cases=[suite.cases[0].id], targets=["gfx1250"])
-    manifest.write_text(text.replace('targets = ["gfx950"]', 'targets = ["gfx9999"]'))
+    manifest.write_text(text.replace('targets = ["gfx950"]', 'targets = ["../gfx9999"]'))
     with pytest.raises(runner.RunnerError, match="case targets"):
         runner.load_manifest(manifest)
 
@@ -1648,18 +1584,20 @@ def test_tensile_candidate_command_and_provider(runner_context, tmp_path):
         "Candidate",
         "GEMM",
         {"dtype": "bf16"},
+        targets=("gfx950",),
+        thread_policies=("default",),
     )
-    cell = runner.Cell(case, "gfx950")
+    cell = runner.Cell(case, "gfx950", "default")
     command = runner.prepare_command(
         tmp_path / "out",
         cell,
         run_wrapper=runner.parse_run_wrapper(runner_context.wrapper),
-        target=runner.TargetMetadata(*runner._load_target_configuration(runner_context.configs["gfx950"])),
+        target=runner.TargetMetadata(runner._load_target_configuration(runner_context.configs["gfx950"])),
         warmups=1,
         samples=3,
     )
     assert str(runner.WORKLOAD_ROOT / "tensile_candidates/workload.py") in command.argv
-    value = _payload(cell, [1, 2, 3])
+    value = harness.payload(cell, [1, 2, 3])
     command.workload_path.write_text(json.dumps(value))
     with pytest.raises(runner.RunnerError, match="provider"):
         runner.validate_workload(command.workload_path, cell, 3)
@@ -1671,23 +1609,15 @@ def test_tensile_candidate_command_and_provider(runner_context, tmp_path):
     )
 
 
-@pytest.mark.parametrize("count", [1, 8])
-def test_numeric_suite_rejected_before_output_creation(runner_context, count):
-    runner_context.suite = replace(runner_context.suite, num_threads=count, thread_policy=None)
-    with pytest.raises(runner.RunnerError, match="numeric num_threads is unsupported"):
-        _run(runner_context, _matrix(runner_context), "numeric")
-    assert not (runner_context.root / "numeric").exists()
-
-
 def test_plugin_overhead_manifest_uses_default_policy():
     suite = runner.load_manifest(runner.BENCHMARK_ROOT / "suites/plugin-overhead.toml")
-    assert suite.thread_policy == "default"
-    assert (suite.warmups, suite.samples, suite.timeout_seconds) == (3, 21, 300)
+    assert all(case.thread_policies == ("default",) for case in suite.cases)
+    assert suite.timeout_seconds == 300
     assert {case.id for case in suite.cases} == {
-        "triton.copy_fp32_32m.default",
-        "triton.softmax_fp16_boundary.default",
-        "triton.gemm_bf16_aligned.default",
-        "triton.gpt_oss_attention_bf16.default",
+        "triton.copy_fp32_32m",
+        "triton.softmax_fp16_boundary",
+        "triton.gemm_bf16_aligned",
+        "triton.gpt_oss_attention_bf16",
     }
 
 
@@ -1705,8 +1635,7 @@ def test_plugin_overhead_manifest_uses_default_policy():
 def test_invalid_second_config_does_not_create_output(
     runner_context, thread_policy, invalid_config
 ):
-    runner_context.suite = replace(runner_context.suite, num_threads=None,
-        thread_policy=thread_policy)
+    runner_context.suite = harness.with_policy(runner_context.suite, thread_policy)
     config = runner_context.configs["gfx1250"]
     if invalid_config is None:
         config.unlink()
@@ -1715,7 +1644,11 @@ def test_invalid_second_config_does_not_create_output(
     output = runner_context.root / "invalid-config"
     with mock.patch.object(runner, "_native_target_metadata") as probe:
         with pytest.raises(runner.RunnerError):
-            _run(runner_context, runner.select_matrix(runner_context.suite), output.name)
+            harness.run_harness(
+                runner_context,
+                harness.matrix(runner_context, targets=runner_context.suite.targets),
+                output.name,
+            )
     probe.assert_not_called()
     assert not output.exists()
 
@@ -1725,17 +1658,16 @@ def test_invalid_second_config_does_not_create_output(
 def test_native_setup_failure_on_second_target_allows_retry(
     runner_context, thread_policy, failure
 ):
-    runner_context.suite = replace(runner_context.suite, num_threads=None,
-        thread_policy=thread_policy)
+    runner_context.suite = harness.with_policy(runner_context.suite, thread_policy)
     output = runner_context.root / "retry-policy"
     runner_context.native_probe = True
-    matrix = runner.select_matrix(runner_context.suite)
+    matrix = harness.matrix(runner_context, targets=runner_context.suite.targets)
     targets = []
 
     def execute(argv, **kwargs):
         if argv[-1] != "--thread-budget-table":
-            return _successful_process(runner_context, argv, **kwargs)
-        target = Path(argv[argv.index("--config") + 1]).parent.name
+            return harness.successful_process(runner_context, argv, **kwargs)
+        target = Path(argv[argv.index("--config") + 1]).parents[1].name
         targets.append(target)
         if target == "gfx1250" and failure:
             if failure == "interrupt":
@@ -1754,7 +1686,7 @@ def test_native_setup_failure_on_second_target_allows_retry(
 
     expected_error = KeyboardInterrupt if failure == "interrupt" else runner.RunnerError
     with pytest.raises(expected_error) as caught:
-        _run(runner_context, matrix, output.name, process=execute)
+        harness.run_harness(runner_context, matrix, output.name, process=execute)
     assert targets == ["gfx950", "gfx1250"]
     assert not output.exists()
     if failure != "interrupt":
@@ -1763,7 +1695,9 @@ def test_native_setup_failure_on_second_target_allows_retry(
         assert "probe error" in str(caught.value)
         assert "; see " not in str(caught.value)
     failure = None
-    _, result = _run(runner_context, matrix, output.name, process=execute)
+    _, result = harness.run_harness(
+        runner_context, matrix, output.name, process=execute
+    )
     assert result["execution_summary"]["finished_at"] is not None
     assert all(item["status"] == "completed" for item in result["benchmark_results"])
     assert (output / "run.json").exists()
@@ -1771,8 +1705,7 @@ def test_native_setup_failure_on_second_target_allows_retry(
 
 @pytest.mark.parametrize("thread_policy", ["default", "single"])
 def test_first_checkpoint_failure_removes_setup_output(runner_context, thread_policy):
-    runner_context.suite = replace(runner_context.suite, num_threads=None,
-        thread_policy=thread_policy)
+    runner_context.suite = harness.with_policy(runner_context.suite, thread_policy)
     output = runner_context.root / "checkpoint-failure"
     runner_context.native_probe = True
 
@@ -1785,9 +1718,9 @@ def test_first_checkpoint_failure_removes_setup_output(runner_context, thread_po
 
     with mock.patch.object(runner, "_write_run", side_effect=failed_checkpoint):
         with pytest.raises(OSError, match="checkpoint failed"):
-            _run(
+            harness.run_harness(
                 runner_context,
-                runner.select_matrix(runner_context.suite),
+                harness.matrix(runner_context, targets=runner_context.suite.targets),
                 output.name,
                 process=execute,
             )
@@ -1798,14 +1731,13 @@ def test_first_checkpoint_failure_removes_setup_output(runner_context, thread_po
 def test_native_probe_uses_all_prevalidated_target_snapshots(
     runner_context, thread_policy
 ):
-    runner_context.suite = replace(runner_context.suite, num_threads=None,
-        thread_policy=thread_policy)
+    runner_context.suite = harness.with_policy(runner_context.suite, thread_policy)
     runner_context.native_probe = True
     snapshots = []
 
     def execute(argv, **kwargs):
         if argv[-1] != "--thread-budget-table":
-            return _successful_process(runner_context, argv, **kwargs)
+            return harness.successful_process(runner_context, argv, **kwargs)
         config = Path(argv[argv.index("--config") + 1])
         snapshots.append(json.loads(config.read_text()))
         # Both source files can change after validation without affecting this run.
@@ -1813,9 +1745,9 @@ def test_native_probe_uses_all_prevalidated_target_snapshots(
             path.write_text("invalidated after validation")
         return subprocess.CompletedProcess(argv, 0, "Configured | 1 | 1 | 0 | 1\n", "")
 
-    _, result = _run(
+    _, result = harness.run_harness(
         runner_context,
-        runner.select_matrix(runner_context.suite),
+        harness.matrix(runner_context, targets=runner_context.suite.targets),
         "snapshot-policy",
         process=execute,
     )
@@ -1837,43 +1769,31 @@ def test_output_created_by_other_process_is_preserved(runner_context):
 
     with mock.patch.object(Path, "mkdir", mkdir):
         with pytest.raises(FileExistsError):
-            _run(runner_context, runner.select_matrix(runner_context.suite), output.name)
+            harness.run_harness(
+                runner_context, runner.select_matrix(runner_context.suite), output.name
+            )
     assert (output / "keep").read_text() == "other process"
 
 
-@pytest.mark.parametrize("selection", [
-    '', 'thread_policy = "default"\nnum_threads = 1',
-    'thread_policy = "single"\nnum_threads = 1',
-])
-def test_manifest_requires_one_thread_selection(runner_context, selection):
+@pytest.mark.parametrize("field", ["targets", "thread_policy", "num_threads"])
+def test_manifest_rejects_file_level_selection(runner_context, field):
     path = runner_context.root / "ambiguous.toml"
-    path.write_text(runner.DEFAULT_MANIFEST.read_text().replace('thread_policy = "default"', selection))
-    with pytest.raises(runner.RunnerError, match="exactly one"):
+    path.write_text(f'{field} = 1\n' + runner.DEFAULT_MANIFEST.read_text())
+    with pytest.raises(runner.RunnerError, match="manifest fields differ"):
         runner.load_manifest(path)
 
 
-@pytest.mark.parametrize("value", ['"default"', '"single"', '"8"', '1.5', '[]', '{}'])
-def test_num_threads_accepts_only_integer_counts(runner_context, value):
+@pytest.mark.parametrize("value", ['[]', '["default", "default"]', '"default"', '[1]', '[""]'])
+def test_manifest_rejects_invalid_policy_arrays(runner_context, value):
     path = runner_context.root / "numeric.toml"
-    path.write_text(runner.DEFAULT_MANIFEST.read_text().replace('thread_policy = "default"', f'num_threads = {value}'))
-    with pytest.raises(runner.RunnerError, match="positive integer"):
+    path.write_text(runner.DEFAULT_MANIFEST.read_text().replace('thread_policies = ["default"]', f'thread_policies = {value}', 1))
+    with pytest.raises(runner.RunnerError, match="thread_policies"):
         runner.load_manifest(path)
 
 
 @pytest.mark.parametrize("value", ['"unknown"', '1', 'true', '[]', '{}'])
 def test_manifest_rejects_invalid_named_policy(runner_context, value):
     path = runner_context.root / "policy.toml"
-    path.write_text(runner.DEFAULT_MANIFEST.read_text().replace('thread_policy = "default"', f'thread_policy = {value}'))
-    with pytest.raises(runner.RunnerError, match="thread_policy must"):
+    path.write_text(runner.DEFAULT_MANIFEST.read_text().replace('thread_policies = ["default"]', f'thread_policies = [{value}]', 1))
+    with pytest.raises(runner.RunnerError, match="thread_polic"):
         runner.load_manifest(path)
-
-
-def test_numeric_one_is_not_the_single_worker_policy(runner_context):
-    path = runner_context.root / "numeric.toml"
-    path.write_text(runner.DEFAULT_MANIFEST.read_text().replace('thread_policy = "default"', 'num_threads = 1'))
-    suite = runner.load_manifest(path)
-    assert suite.num_threads == 1 and suite.thread_policy is None
-    runner_context.suite = replace(runner_context.suite, num_threads=1, thread_policy=None)
-    with pytest.raises(runner.RunnerError, match="numeric num_threads is unsupported"):
-        _run(runner_context, _matrix(runner_context), "numeric-one")
-    assert not (runner_context.root / "numeric-one").exists()
