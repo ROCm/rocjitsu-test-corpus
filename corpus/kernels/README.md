@@ -82,8 +82,14 @@ To build only selected backends, add enable flags under `cacheVariables`:
 ```
 
 `ROCM_PATH` must point at a ROCm SDK root with
-`lib/cmake/hip/hip-config.cmake`. If `ROCM_PATH` is unset, CMake attempts to
-discover it with `$ROCM_VENV/bin/rocm-sdk path --root` or `rocm-sdk path --root`.
+`lib/cmake/hip/hip-config.cmake`. CMake first uses an explicit `-DROCM_PATH`,
+then the `ROCM_PATH` environment variable. If neither is set, it runs
+`rocm-sdk path --root` using the executable on `PATH`; activating a TheRock/ROCm
+Python virtual environment makes that environment's SDK discoverable.
+
+The rocBLAS runners prefer an installed GoogleTest package and otherwise fetch
+the pinned release. For an offline standalone CMake build, supply a local
+GoogleTest checkout with `-DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=<path>`.
 
 Then configure and build with the local preset:
 
