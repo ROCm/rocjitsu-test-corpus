@@ -1,5 +1,8 @@
 #include "common.cuh"
 #include "mmid.cuh"
+#include <climits>
+#include <cstddef>
+#include <cstdint>
 
 // To reduce shared memory use, store "it" and "iex_used" with 22/10 bits each.
 struct mm_ids_helper_store {

@@ -6,8 +6,11 @@
 // GPU tests for the CDNA3 / gfx94x SMFMAC wrappers. Native mode is checked
 // against the real hardware result for a host sparse-matmul reference. FPSan
 // mode is checked against an independent scalar payload-ring reference.
+#include "fpsan/amdgcn_matrix.hpp"
+#include "fpsan/amdgcn_mfma.hpp"
 #include "fpsan/amdgcn_smfmac.hpp"
 #include "fpsan/fpsan.hpp"
+#include "test_utils.hpp"
 
 #include "fpsan_semantics.hpp"
 
@@ -19,9 +22,11 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <random>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 using fpsan::Conversions;

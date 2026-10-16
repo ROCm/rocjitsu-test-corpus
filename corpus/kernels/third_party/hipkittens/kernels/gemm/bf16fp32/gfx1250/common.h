@@ -11,6 +11,8 @@
 #pragma once
 
 #include "kittens.cuh"
+#include <hip/hip_runtime.h>
+#include <stddef.h>
 
 namespace gfx1250_gemm {
 

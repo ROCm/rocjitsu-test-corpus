@@ -11,7 +11,13 @@
 #include "quants.h"
 #include "ggml-quants.h"
 #include <algorithm>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <type_traits>
+#include <utility>
 
 #if defined(__gnu_linux__)
 #include <sys/syscall.h>

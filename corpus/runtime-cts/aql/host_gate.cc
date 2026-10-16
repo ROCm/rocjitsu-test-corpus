@@ -19,10 +19,14 @@
 // https://github.com/KhronosGroup/OpenCL-CTS/blob/9feccbb8fcb8eefeebf86a48036173a8155f9d21/test_conformance/events/test_userevents_multithreaded.cpp
 // https://github.com/torvalds/linux/blob/551c722f40809618230001baccf219193e22fc5a/drivers/gpu/drm/scheduler/tests/tests_scheduler.c
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <thread>
 
+#include "support/aql.h"
 #include "support/aql_payload.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 
 int main(int argc, char** argv) {

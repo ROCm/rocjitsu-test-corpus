@@ -1,4 +1,5 @@
 #include "softcap.cuh"
+#include <cstring>
 
 static __global__ void softcap_f32(const float * x, float * dst, const float scale, const float softcap, const int k) {
     ggml_cuda_pdl_lc();

@@ -9,6 +9,9 @@
 
 #if defined(__linux__)
 #include <sys/syscall.h>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
 #include <unistd.h>
 #endif
 

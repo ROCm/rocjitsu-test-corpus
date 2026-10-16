@@ -1,7 +1,12 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
+#include "fpsan_semantics.hpp"
 #include "swmmac_gfx12_parts.hpp"
+#include <cstdint>
+#include <gtest/gtest.h>
+#include <hip/hip_runtime.h>
+#include <vector>
 
 TEST(SwmmacGfx12, F32_F16_LayoutMatchesHardware) {
   if (!have_device())

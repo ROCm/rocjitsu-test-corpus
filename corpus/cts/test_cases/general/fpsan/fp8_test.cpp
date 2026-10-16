@@ -23,6 +23,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <ios>
 
 using fpsan::amd_fp8_e4m3;
 using fpsan::amd_fp8_e5m2;

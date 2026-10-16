@@ -15,6 +15,7 @@
 #include <gtest/gtest.h>
 #include <hip/hip_runtime.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>

@@ -1,4 +1,8 @@
 #include "ggml-cuda.h"
+
+#ifdef GGML_USE_HIP
+#include <hip/hip_runtime.h>
+#endif
 #include "ggml-impl.h"
 #include "ggml-backend-impl.h"
 
@@ -72,13 +76,17 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cassert>
+#include <cctype>
 #include <charconv>
 #include <cinttypes>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cfloat>
+#include <cstring>
 #include <initializer_list>
+#include <inttypes.h>
 #include <limits>
 #include <map>
 #include <memory>
@@ -87,6 +95,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 static_assert(sizeof(half) == sizeof(ggml_fp16_t), "wrong fp16 size");

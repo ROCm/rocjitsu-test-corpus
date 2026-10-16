@@ -3,11 +3,17 @@
 // https://github.com/torvalds/linux/blob/master/include/uapi/linux/kfd_ioctl.h
 // Public queue programming reference:
 // https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/libhsakmt/src/queues.c
+#include "support/kfd.h"
+#include "support/platform.h"
 #include "support/sdma.h"
+#include "test.h"
 
 #include <linux/kfd_ioctl.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <thread>
+#include <vector>
 
 namespace cts {
 SdmaQueue::SdmaQueue(Device& device)

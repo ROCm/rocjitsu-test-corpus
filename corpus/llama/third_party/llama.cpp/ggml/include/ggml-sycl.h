@@ -8,6 +8,7 @@
 
 #include "ggml.h"
 #include "ggml-backend.h"
+#include <stddef.h>
 
 #define GGML_SYCL_NAME "SYCL"
 #define GGML_SYCL_MAX_DEVICES 48

@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <cstdint>
+#include <type_traits>
 #include <hip/hip_ext.h>
 #include <hip/hip_fp16.h>
 #include <hip/hip_runtime.h>

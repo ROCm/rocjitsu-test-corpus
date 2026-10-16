@@ -10,6 +10,8 @@
 #include "traits.h"
 
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <cassert>
 #include <cstdlib> // for qsort

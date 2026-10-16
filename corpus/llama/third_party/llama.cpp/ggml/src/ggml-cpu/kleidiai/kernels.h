@@ -5,6 +5,8 @@
 #pragma once
 
 #include "ggml.h"
+#include <stddef.h>
+#include <stdint.h>
 
 enum cpu_feature {
     CPU_FEATURE_NONE    = 0,

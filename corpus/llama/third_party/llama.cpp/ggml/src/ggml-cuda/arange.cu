@@ -1,4 +1,6 @@
 #include "arange.cuh"
+#include <cstdint>
+#include <cstring>
 
 static __global__ void arange_f32(float * dst, const int ne0, const float start, const float step) {
     // blockIDx.x: idx of ne0 / BLOCK_SIZE

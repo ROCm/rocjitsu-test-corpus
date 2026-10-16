@@ -1,4 +1,6 @@
 #include "unary-ops.h"
+#include <cstdint>
+#include <cstdio>
 
 static inline float op_abs(float x) {
     return fabsf(x);

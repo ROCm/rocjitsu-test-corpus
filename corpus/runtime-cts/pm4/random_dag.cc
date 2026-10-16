@@ -27,11 +27,15 @@
 // https://github.com/ROCm/hip-tests/blob/99d824ccba3dade7ddd5b267cc420db3f42ba9b7/catch/perftests/graph/parallelGraph.cc
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstdio>
 #include <memory>
 #include <thread>
+#include <vector>
 
 #include "pm4.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 int main(int argc, char** argv) {
   Check(!AqlMode(argc, argv),

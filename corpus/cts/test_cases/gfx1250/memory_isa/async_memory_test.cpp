@@ -1,7 +1,10 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
+#include "hip_test_utils.hpp"
 #include "memory_test_harness.hpp"
+#include <gtest/gtest.h>
+#include <hip/hip_runtime.h>
 
 #include <algorithm>
 #include <cstdint>

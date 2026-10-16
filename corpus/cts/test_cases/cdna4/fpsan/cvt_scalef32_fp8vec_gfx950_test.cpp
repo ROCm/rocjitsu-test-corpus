@@ -36,6 +36,8 @@
 
 #include <cmath>
 #include <cstdint>
+#include <ios>
+#include <random>
 #include <vector>
 
 using fpsan::Conversions;

@@ -8,6 +8,7 @@
 //       tests/algebraic_device_test.cpp -o /tmp/algd.o
 // ----------------------------------------------------------------------------
 #include "fpsan/amdgcn_matrix.hpp"
+#include "fpsan/fpsan.hpp"
 
 #include <hip/hip_runtime.h>
 

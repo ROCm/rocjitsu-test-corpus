@@ -1,6 +1,8 @@
 #pragma once
 
 #include "vecdotq.cuh"
+#include <cstdint>
+#include <cstring>
 
 #include "mmq.cuh"
 

@@ -5,6 +5,8 @@
 #   ifndef NOMINMAX
 #       define NOMINMAX
 #   endif
+#include <memory>
+#include <type_traits>
 #   include <windows.h>
 #   include <winevt.h>
 #else

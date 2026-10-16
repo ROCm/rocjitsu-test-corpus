@@ -7,6 +7,8 @@
 
 #include "../../common/common.cuh"
 #include "sv.cuh"
+#include <cstdint>
+#include <type_traits>
 
 #include "st_layout.cuh"
 

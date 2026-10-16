@@ -1,5 +1,8 @@
 #include "argsort.cuh"
 #include "top-k.cuh"
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 
 #ifdef GGML_CUDA_USE_CUB
 #    include <cub/cub.cuh>

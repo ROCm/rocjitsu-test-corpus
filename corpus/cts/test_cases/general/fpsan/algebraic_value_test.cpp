@@ -6,6 +6,7 @@
 // ----------------------------------------------------------------------------
 #include "fpsan/cast.hpp"
 #include "fpsan/detail/fp8.hpp"
+#include "fpsan/fpsan.hpp"
 #include "fpsan/math.hpp"
 #include "fpsan/value.hpp"
 

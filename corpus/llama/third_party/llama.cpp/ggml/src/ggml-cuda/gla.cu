@@ -1,5 +1,7 @@
 #include "common.cuh"
 #include "gla.cuh"
+#include <cstdint>
+#include <cstring>
 
 template<int HEAD_SIZE>
 static __global__ void gated_linear_attn_f32(const int B, const int T, const int C, const int H, const float scale,

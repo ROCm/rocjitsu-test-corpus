@@ -12,6 +12,7 @@
 
 #ifdef GGML_USE_CPU_HBM
 #include <hbwmalloc.h>
+#include <stddef.h>
 #endif
 
 #if defined(_MSC_VER) || defined(__MINGW32__)

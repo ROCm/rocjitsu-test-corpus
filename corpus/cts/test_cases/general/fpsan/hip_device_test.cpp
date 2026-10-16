@@ -20,7 +20,9 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <random>
 #include <vector>
 
 static constexpr fpsan::Conversions kCC = fpsan::Conversions::Explicit;

@@ -1,8 +1,20 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
+#include "fpsan/amdgcn_matrix.hpp"
+#include "fpsan/amdgcn_mfma.hpp"
+#include "fpsan/fpsan.hpp"
+#include "hip_test_utils.hpp"
 #include "mfma_gfx950_parts.hpp"
 #include "subbyte_oracle.hpp"
+#include "test_random.hpp"
+#include "test_utils.hpp"
+#include <cmath>
+#include <cstdint>
+#include <gtest/gtest.h>
+#include <hip/hip_runtime.h>
+#include <random>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // Scaled f8f6f4 MFMA (16x16x128 / 32x32x64). The Float path forwards to the

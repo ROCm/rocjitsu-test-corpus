@@ -1,5 +1,7 @@
 #include "set.cuh"
 #include "cpy.cuh"
+#include <cstddef>
+#include <cstdint>
 
 void ggml_cuda_op_set(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const ggml_tensor * src0 = dst->src[0];

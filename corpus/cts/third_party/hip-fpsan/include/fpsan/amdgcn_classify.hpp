@@ -17,6 +17,7 @@
 #define FPSAN_AMDGCN_CLASSIFY_HPP
 
 #include "fpsan/value.hpp"
+#include <cstdint>
 
 #if !defined(__HIP__) && !defined(__CUDACC__)
 #error "fpsan/amdgcn_classify.hpp is GPU-only; compile as HIP (or CUDA)."

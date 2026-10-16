@@ -15,6 +15,7 @@
  * @param[in] src The source tile to which the unary operation is applied.
  */
 template<typename op, ducks::st::all T> // T2, w, h can be inferred from dst as long as op is specialized
+#include <type_traits>
 __device__ static inline void unary_map(T &dst, const T &src) {
     #pragma unroll
     for(int i = laneid(); i < dst.num_elements; i += GROUP_THREADS) {

@@ -6,6 +6,9 @@
 #include "simd-mappings.h"
 #include "ggml.h"
 #include "ggml-cpu.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
 
 #if defined(GGML_USE_ACCELERATE)
 #include <Accelerate/Accelerate.h>

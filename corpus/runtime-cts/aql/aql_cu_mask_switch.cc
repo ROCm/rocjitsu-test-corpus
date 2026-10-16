@@ -23,11 +23,15 @@
 // gfx1250 mask ABI (extendedCuMaskingXcc):
 // https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/libhsakmt/tests/kfdtest/src/KFDQMTest.cpp
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <set>
+#include <vector>
 
 #include "placement_kernel.inc"
 #include "support/aql.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 int main(int argc, char** argv) {
   Start(argc, argv, "aql_cu_mask_switch");

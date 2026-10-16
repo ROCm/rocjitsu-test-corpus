@@ -12,12 +12,16 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>

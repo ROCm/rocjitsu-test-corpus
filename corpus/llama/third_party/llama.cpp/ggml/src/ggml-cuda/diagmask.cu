@@ -1,4 +1,6 @@
 #include "diagmask.cuh"
+#include <cfloat>
+#include <cstdint>
 
 static __global__ void diag_mask_inf_f32(const float * x, float * dst, const int ncols, const int rows_per_channel, const int n_past) {
     const int col = blockDim.y*blockIdx.y + threadIdx.y;

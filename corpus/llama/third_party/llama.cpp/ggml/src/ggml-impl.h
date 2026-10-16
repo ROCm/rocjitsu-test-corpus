@@ -7,6 +7,7 @@
 
 #include <assert.h>
 #include <math.h>
+#include <stddef.h>
 #include <stdlib.h> // load `stdlib.h` before other headers to work around MinGW bug: https://sourceforge.net/p/mingw-w64/bugs/192/
 #include <stdbool.h>
 #include <stdint.h>

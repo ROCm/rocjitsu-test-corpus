@@ -1,6 +1,8 @@
 #include "ggml.h"
 #include "mmf.cuh"
 #include "mmid.cuh"
+#include <cstddef>
+#include <cstdint>
 
 static __forceinline__ int mmf_get_rows_per_block(const int cc) {
     if (GGML_CUDA_CC_IS_CDNA(cc)) {

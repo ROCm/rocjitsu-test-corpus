@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 #include "../../general/int_isa/matrix_test_parts.hpp"
+#include "hip_test_utils.hpp"
+#include <gtest/gtest.h>
 
 namespace {
 template <bool ASign, bool BSign, bool Saturate> struct SwmmacI32Iu8K128 {

@@ -11,6 +11,8 @@
 
 #ifdef __cplusplus
 
+#include <stddef.h>
+#include <stdint.h>
 #include <utility>
 
 // convenience functions/macros for use in template calls

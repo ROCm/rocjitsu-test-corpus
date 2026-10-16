@@ -2,7 +2,11 @@
 #include "ggml.h"
 #include "topk-moe.cuh"
 
+#include <cfloat>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <initializer_list>
 
 // Kernel config struct - passed by value to CUDA kernel

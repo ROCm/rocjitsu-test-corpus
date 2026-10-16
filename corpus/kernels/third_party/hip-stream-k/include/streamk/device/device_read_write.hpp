@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cassert>
+#include <cstdint>
 #include <type_traits>
 
 #include <hip/hip_ext.h>

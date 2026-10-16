@@ -5,6 +5,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <thrust/random.h>
 #include <thrust/distance.h>
 #include <thrust/transform.h>

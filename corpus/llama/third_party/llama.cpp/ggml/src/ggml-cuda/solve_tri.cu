@@ -1,6 +1,8 @@
 #include "common.cuh"
 #include "ggml.h"
 #include "solve_tri.cuh"
+#include <cstddef>
+#include <cstdint>
 
 #define MAX_N_FAST 64
 #define MAX_K_FAST 32

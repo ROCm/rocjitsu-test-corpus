@@ -8,7 +8,11 @@
 
 #ifdef GGML_USE_WMMA_FATTN
 #if !defined(GGML_USE_HIP)
+#include <cfloat>
+#include <cstdint>
+#include <cstring>
 #include <mma.h>
+#include <type_traits>
 #if defined(GGML_USE_MUSA)
 namespace wmma = mtmusa::wmma;
 #else // GGML_USE_MUSA

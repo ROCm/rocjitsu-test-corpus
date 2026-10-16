@@ -31,6 +31,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <ios>
 #include <vector>
 
 namespace {

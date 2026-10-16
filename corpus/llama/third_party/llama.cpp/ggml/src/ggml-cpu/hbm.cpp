@@ -9,6 +9,7 @@
 
 // buffer type HBM
 
+#include <cstddef>
 #include <hbwmalloc.h>
 
 static const char * ggml_backend_cpu_hbm_buffer_type_get_name(ggml_backend_buffer_type_t buft) {

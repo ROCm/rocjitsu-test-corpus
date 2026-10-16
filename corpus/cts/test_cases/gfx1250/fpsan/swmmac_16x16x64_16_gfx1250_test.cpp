@@ -18,6 +18,7 @@
 //      host scalar FPSan sparse matmul, payload for payload.
 //
 // Requires gfx1250 hardware; built only under the gfx1250 test tier.
+#include "fpsan/amdgcn_matrix.hpp"
 #include "fpsan/amdgcn_swmmac_gfx1250.hpp"
 #include "fpsan/fpsan.hpp"
 
@@ -30,6 +31,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <random>
 #include <vector>
 
 using fpsan::Conversions;

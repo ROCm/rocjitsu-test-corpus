@@ -17,6 +17,7 @@
 // whose builtins lower: the dot9-12 families exist on RDNA4 and CDNA3 but not
 // on gfx1250, so they are excluded from the gfx1250 build.
 #include "fpsan/amdgcn_math.hpp"
+#include "fpsan/amdgcn_matrix.hpp"
 #include "fpsan/fpsan.hpp"
 
 #include "fpsan_semantics.hpp"

@@ -5,6 +5,9 @@
 #include "fattn-vec.cuh"
 #include "fattn-wmma-f16.cuh"
 #include "fattn.cuh"
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 template <int DKQ, int DV, int ncols2>
 static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {

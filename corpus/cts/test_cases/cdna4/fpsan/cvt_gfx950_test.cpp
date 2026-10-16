@@ -29,6 +29,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <ios>
+#include <random>
 #include <vector>
 
 using fpsan::Conversions;

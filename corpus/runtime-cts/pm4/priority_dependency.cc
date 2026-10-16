@@ -14,11 +14,14 @@
 // Inspiration: independent direct-KFD adaptation of public workload patterns.
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/libhsakmt/tests/kfdtest/src/KFDQMTest.cpp
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <thread>
 
 #include "pm4.h"
 #include "support/aql_payload.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 static int RunPm4(int argc, char** argv) {
   Start(argc, argv, "priority_dependency", true);

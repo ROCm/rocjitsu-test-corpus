@@ -19,10 +19,14 @@
 //
 // Inspiration: independent native-KFD adaptation of these public test patterns.
 // https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/runtime/src/iree/hal/cts/queue/queue_atomic_test.cc
+#include <cstdint>
 #include <memory>
 #include <thread>
+#include <vector>
 
 #include "pm4.h"
+#include "support/kfd.h"
+#include "test.h"
 
 using namespace cts;
 

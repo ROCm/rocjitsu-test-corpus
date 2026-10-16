@@ -14,9 +14,12 @@
 // Progress waits have a separate 10-second deadline.
 // Inspiration: independent direct-KFD adaptation of public workload patterns.
 // https://github.com/tinygrad/tinygrad/blob/c509335eaa34f60718a121a8ca1c1953777731b7/test/external/external_test_hcq.py
+#include <cstdint>
 #include <cstring>
 
 #include "support/aql.h"
+#include "support/kfd.h"
+#include "test.h"
 namespace scalar {
 #include "work_kernel.inc"
 }

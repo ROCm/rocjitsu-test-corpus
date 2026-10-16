@@ -12,15 +12,25 @@
 // https://github.com/ROCm/rocm-systems/blob/96f1528fa5c5a0e12d706dbf4507c441c456f6eb/projects/rocr-runtime/runtime/hsa-runtime/inc/amd_hsa_queue.h
 // https://github.com/ROCm/rocm-systems/blob/96f1528fa5c5a0e12d706dbf4507c441c456f6eb/projects/rocr-runtime/runtime/hsa-runtime/inc/amd_hsa_signal.h
 // https://github.com/ROCm/rocm-systems/blob/96f1528fa5c5a0e12d706dbf4507c441c456f6eb/projects/rocr-runtime/libhsakmt/include/hsakmt/hsakmttypes.h
+#include "support/aql.h"
 #include "support/kfd.h"
+#include "support/platform.h"
+#include "test.h"
 
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <dirent.h>
 #include <fcntl.h>
 #include <linux/kfd_ioctl.h>
+#include <map>
+#include <string>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/utsname.h>
 #include <unistd.h>
+#include <utility>
+#include <vector>
 
 #include <algorithm>
 #include <cerrno>

@@ -1,4 +1,5 @@
 #include "conv2d-dw.cuh"
+#include <cstdint>
 
 struct conv_params {
     int in_w, in_h;

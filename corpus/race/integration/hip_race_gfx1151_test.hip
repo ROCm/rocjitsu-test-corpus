@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 #include <hip/hip_runtime.h>
 
+#include "race_log_expectation.hpp"
 #include "race_test_support.hpp"
 
 #include <cstdint>

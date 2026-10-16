@@ -3,6 +3,7 @@
 
 #include "base_types.cuh"
 #include "util.cuh"
+#include <cstdint>
 
 namespace kittens {
 

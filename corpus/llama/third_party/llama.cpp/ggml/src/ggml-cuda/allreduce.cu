@@ -6,6 +6,8 @@
 #include "ggml-impl.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <limits>

@@ -1,7 +1,10 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
+#include "fpsan/amdgcn_matrix.hpp"
 #include "wmma_gfx12_parts.hpp"
+#include <gtest/gtest.h>
+#include <type_traits>
 
 struct WmmaF32F16 {
   using AVec = std::conditional_t<kWaveSize == 64, v4h_native, v8h_native>;

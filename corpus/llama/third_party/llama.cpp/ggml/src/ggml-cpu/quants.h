@@ -2,6 +2,8 @@
 
 #define GGML_COMMON_DECL_C
 #include "ggml-common.h"
+#include <stddef.h>
+#include <stdint.h>
 
 #include "ggml.h"
 
