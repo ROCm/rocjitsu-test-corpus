@@ -1,0 +1,152 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
+#
+# Race-detection corpus: kernel inventory.
+#
+# Each case names one independently buildable HIP kernel and the targets its
+# device assembly is pinned for. scripts/regenerate_asm.py compiles every case
+# for each of its targets into asm/<target>/<kernel>.s, and
+# scripts/check_cases.py checks this inventory against kernels/ and asm/
+# without a compiler.
+#
+# [corpus] targets lists the gfx targets the corpus is built for. Adding a target
+# is a deliberate edit here: both scripts read this list, so it is what a
+# missing asm/<target>/ directory is checked against.
+#
+# Fields:
+#   id           stable selector for the case
+#   kernel       basename under kernels/, without .hip
+#   targets      the corpus targets this kernel assembles for; empty or absent means
+#                every one of them
+#   headers      optional: headers outside ROCm's defaults the kernel includes.
+#                regenerate_asm.py skips the case, keeping its committed
+#                assembly, when any is not on the include path.
+
+[corpus]
+schema = 1
+name = "race"
+targets = ["gfx950", "gfx1250"]
+
+# --- Global vector loads -----------------------------------------------------
+
+[[case]]
+id = "add-checked"
+kernel = "add_checked"
+targets = []
+
+[[case]]
+id = "add-buffer"
+kernel = "add_buffer"
+targets = []
+
+[[case]]
+id = "double-unsafe"
+kernel = "double_unsafe"
+targets = []
+
+[[case]]
+id = "collatz"
+kernel = "collatz"
+targets = []
+
+[[case]]
+id = "atomic-inc"
+kernel = "atomic_inc"
+targets = []
+
+[[case]]
+id = "pointer-chase"
+kernel = "pointer_chase"
+targets = []
+
+[[case]]
+id = "war-pattern"
+kernel = "war_pattern"
+targets = []
+
+[[case]]
+id = "waw-pattern"
+kernel = "waw_pattern"
+targets = []
+
+# --- Scratch -----------------------------------------------------------------
+
+[[case]]
+id = "scratch-access"
+kernel = "scratch_access"
+targets = []
+
+# --- LDS ---------------------------------------------------------------------
+
+[[case]]
+id = "lds-reduce"
+kernel = "lds_reduce"
+targets = []
+
+[[case]]
+id = "lds-war-pattern"
+kernel = "lds_war_pattern"
+targets = []
+
+[[case]]
+id = "trans-lds"
+kernel = "trans_lds"
+targets = []
+
+# --- Tensor DMA into LDS -----------------------------------------------------
+
+[[case]]
+id = "tensor-lds"
+kernel = "tensor_lds"
+targets = ["gfx1250"]
+
+[[case]]
+id = "tensor-lds-offset"
+kernel = "tensor_lds_offset"
+targets = ["gfx1250"]
+
+[[case]]
+id = "fa-barrier-epoch"
+kernel = "fa_barrier_epoch"
+targets = ["gfx1250"]
+
+# --- Transcendentals ---------------------------------------------------------
+
+[[case]]
+id = "trans-sin-cos"
+kernel = "trans_sin_cos"
+targets = []
+
+[[case]]
+id = "trans-rcp-sqrt"
+kernel = "trans_rcp_sqrt"
+targets = []
+
+[[case]]
+id = "trans-chain"
+kernel = "trans_chain"
+targets = []
+
+# --- WMMA --------------------------------------------------------------------
+
+[[case]]
+id = "wmma-exp"
+kernel = "wmma_exp"
+targets = ["gfx1250"]
+
+[[case]]
+id = "wmma-rocwmma"
+kernel = "wmma_rocwmma"
+targets = ["gfx1250"]
+# Needs the rocWMMA headers. regenerate_asm.py looks for them under ROCm's
+# include directory, any -I passed with --cxxflags "-I/path/to/include", and
+# the absolute entries of CPATH and CPLUS_INCLUDE_PATH, and skips the case --
+# leaving its committed assembly as it is -- when they are not found.
+headers = ["rocwmma/rocwmma.hpp"]
+
+# --- Cross-workgroup global memory -------------------------------------------
+
+[[case]]
+id = "global-byte-eviction"
+kernel = "global_byte_eviction"
+targets = []
