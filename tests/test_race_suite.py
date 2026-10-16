@@ -301,7 +301,10 @@ def test_mismatched_simulator_target_fails_before_launch(
     _write_base_config(base, base_target)
     monkeypatch.setenv("ROCJITSU_RACE_CONFIG", str(base))
     context = RunContext(
-        race.REPO_ROOT, tmp_path / "artifacts", False, "rocjitsu --config {config} --"
+        repo_root=race.REPO_ROOT,
+        artifact_directory=tmp_path / "artifacts",
+        skip_all_runs=False,
+        run_wrapper="rocjitsu --config {config} --",
     )
     monkeypatch.setattr(
         race,
@@ -430,8 +433,12 @@ def test_run_cleans_up_sleeping_process_tree(
         + ("sys.exit(0)\n" if wrapper_exits else "time.sleep(60)\n")
     )
     context = RunContext(
-        race.REPO_ROOT, tmp_path / "artifacts", False,
-        f"{shlex.quote(sys.executable)} {shlex.quote(str(wrapper))} {{config}}",
+        repo_root=race.REPO_ROOT,
+        artifact_directory=tmp_path / "artifacts",
+        skip_all_runs=False,
+        run_wrapper=(
+            f"{shlex.quote(sys.executable)} {shlex.quote(str(wrapper))} {{config}}"
+        ),
     )
     case_dir = context.artifact_directory / "race/gfx950/cases/vgpr_waitcnt"
     expected = (
@@ -482,7 +489,9 @@ def test_build_completion_is_shared_only_within_invocation(
         make_target_spec("gfx950"),
         race.load_target_configs(race.default_config_files()),
     )[0]
-    context = RunContext(race.REPO_ROOT, tmp_path, True)
+    context = RunContext(
+        repo_root=race.REPO_ROOT, artifact_directory=tmp_path, skip_all_runs=True
+    )
     calls = []
 
     def command(argv, **kwargs):
@@ -532,7 +541,13 @@ def test_failed_matcher_does_not_stamp_build(tmp_path: Path, monkeypatch) -> Non
 
     monkeypatch.setattr(race, "_run_command", fail_matcher)
     with pytest.raises(RuntimeError, match="matcher failed"):
-        race.build(case, RunContext(race.REPO_ROOT, tmp_path, True), BuildState())
+        race.build(
+            case,
+            RunContext(
+                repo_root=race.REPO_ROOT, artifact_directory=tmp_path, skip_all_runs=True
+            ),
+            BuildState(),
+        )
     assert not list(tmp_path.rglob("*.complete"))
 
 
@@ -603,3 +618,49 @@ def _write_base_config(path: Path, target: str, **fields) -> None:
         ),
         encoding="utf-8",
     )
+
+
+@pytest.mark.timeout(15)
+@pytest.mark.parametrize(
+    "override,expected",
+    [
+        ("1", "run timed out after 1s"),
+        ("5", "Could not read race GoogleTest report"),
+    ],
+)
+def test_run_honors_case_timeout_override(
+    tmp_path: Path, monkeypatch, override: str, expected: str
+) -> None:
+    case = race.discover(
+        make_target_spec("gfx950"), race.load_target_configs(race.default_config_files())
+    )[0]
+    base = tmp_path / "base.json"
+    _write_base_config(base, "gfx950")
+    monkeypatch.setenv("ROCJITSU_RACE_CONFIG", str(base))
+    # The default deadline would not stop the wrapper at the override's value.
+    monkeypatch.setattr(race, "CASE_TIMEOUT_SECONDS", 30)
+    monkeypatch.setenv(race.CASE_TIMEOUT_ENV, override)
+    wrapper = tmp_path / "slow.py"
+    wrapper.write_text("import time\ntime.sleep(3)\n")
+    context = RunContext(
+        repo_root=race.REPO_ROOT,
+        artifact_directory=tmp_path / "artifacts",
+        skip_all_runs=False,
+        run_wrapper=(
+            f"{shlex.quote(sys.executable)} {shlex.quote(str(wrapper))} {{config}}"
+        ),
+    )
+    with pytest.raises(RuntimeError, match=expected):
+        race.run(case, BuildResult(None, tmp_path / "unused-test"), context)
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "abc", "nan", "inf"])
+def test_case_timeout_override_rejects_invalid_values(monkeypatch, value: str) -> None:
+    monkeypatch.setenv(race.CASE_TIMEOUT_ENV, value)
+    with pytest.raises(RuntimeError, match=race.CASE_TIMEOUT_ENV):
+        race._case_timeout()
+
+
+def test_case_timeout_defaults_to_thirty_seconds(monkeypatch) -> None:
+    monkeypatch.delenv(race.CASE_TIMEOUT_ENV, raising=False)
+    assert race._case_timeout() == 30

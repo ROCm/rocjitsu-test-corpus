@@ -9,6 +9,7 @@ mutation kernels in corpus/race/kernels are outside this suite.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shlex
@@ -34,6 +35,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 RACE_SOURCE_DIR = REPO_ROOT / "corpus" / "race" / "integration"
 CONFIGS_ROOT = RACE_SOURCE_DIR / "configs"
 CASE_TIMEOUT_SECONDS = 30
+CASE_TIMEOUT_ENV = "ROCJITSU_RACE_CASE_TIMEOUT"
 TARGET_LAYOUT = {
     "gfx950": {
         "binary": "hip_race_tests_gfx950",
@@ -235,7 +237,7 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
         log_path=case_dir / "run.log",
         phase="run",
         env=environment,
-        timeout=CASE_TIMEOUT_SECONDS,
+        timeout=_case_timeout(),
     )
     _validate_gtest_report(gtest_report, case.metadata["test_filter"])
     report = sink_dir / "race.log"
@@ -300,6 +302,20 @@ def _build_root(context: RunContext) -> Path:
     if configured := os.getenv("ROCJITSU_RACE_BUILD_ROOT"):
         return Path(configured).expanduser().resolve()
     return context.artifact_directory / "race-build"
+
+
+def _case_timeout() -> float:
+    """Return the per-case run deadline, allowing ``CASE_TIMEOUT_ENV`` to override it."""
+    configured = os.getenv(CASE_TIMEOUT_ENV)
+    if not configured:
+        return CASE_TIMEOUT_SECONDS
+    try:
+        timeout = float(configured)
+    except ValueError:
+        timeout = 0.0
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise RuntimeError(f"{CASE_TIMEOUT_ENV} must be a positive number of seconds")
+    return timeout
 
 
 def _base_config_path() -> Path:

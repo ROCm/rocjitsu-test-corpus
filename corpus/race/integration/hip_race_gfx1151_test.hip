@@ -10,6 +10,7 @@
 #include "race_test_support.hpp"
 
 #include <cstdint>
+#include <cstdio>
 #include <vector>
 
 int main(int argc, char **argv) {
