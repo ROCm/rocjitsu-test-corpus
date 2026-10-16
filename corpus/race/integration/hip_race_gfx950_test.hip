@@ -8,9 +8,10 @@
 // the test parses the structured race log to verify that races were
 // (or were not) detected.
 //
-// The pytest race adapter runs each TEST_F in its own process (via --gtest_filter) so that
-// each test gets a fresh output directory (RJ_SINK_DIR). The race plugin
-// writes to RJ_SINK_DIR/race.log via the plugin sink system.
+// The pytest race adapter runs each TEST_F in its own process (via --gtest_filter)
+// and private working directory. The plugin writes to the config's sinks.dir;
+// the matcher requires RJ_SINK_DIR to be the absolute cwd/plugins path and reads
+// ./plugins/race.log. The adapter sets both paths; see README.md for direct runs.
 //
 // Naming convention:
 //   _race suffix = expects race, no suffix = expects no race.
@@ -812,7 +813,6 @@ static constexpr RaceExpectation kGlobalToLdsBufferRaceExpectation{
 
 __attribute__((amdgpu_flat_work_group_size(128, 128)))
 __global__ void buffer_load_lds_race_kernel(const int *src, int *out) {
-  __shared__ int lds[128];
   int tid = threadIdx.x;
   int lane = tid % 64;
   int wave = tid / 64;
@@ -869,9 +869,12 @@ TEST_F(Gfx950RaceTest, global_to_lds_buffer) {
       fprintf(stderr, "MISMATCH [%d]: got %d, expected %d\n",
               i, h_out[i], h_src[i]);
   EXPECT_EQ(errors, 0) << errors << "/" << N << " mismatches";
+  ExpectNoRace();
 }
 
 TEST_F(Gfx950RaceTest, global_to_lds_buffer_race) {
+  // The assembly addresses 128 dwords (512 bytes) from LDS offset zero.
+  // It has no C++ LDS accesses, so the launch must reserve the backing storage.
   buffer_load_lds_race_kernel<<<3, 128, 128 * sizeof(int)>>>(alloc<int>(384), alloc<int>(384));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
@@ -1410,7 +1413,6 @@ TEST_F(Gfx950RaceTest, lds_transpose_race) {
 
 __attribute__((amdgpu_flat_work_group_size(128, 128)))
 __global__ void dual_offset_lds_safe_kernel(int *out) {
-  __shared__ int lds[256];
   int tid = threadIdx.x;
   asm volatile(
       "ds_write2_b32 %0, %1, %2 offset0:0 offset1:1\n"
@@ -1441,7 +1443,6 @@ static constexpr RaceExpectation kDualOffsetLdsRaceExpectation{
 
 __attribute__((amdgpu_flat_work_group_size(128, 128)))
 __global__ void dual_offset_lds_race_kernel(int *out) {
-  __shared__ int lds[256];
   int tid = threadIdx.x;
   asm volatile(
       "ds_write2_b32 %0, %1, %2 offset0:0 offset1:1\n"
@@ -1461,14 +1462,17 @@ __global__ void dual_offset_lds_race_kernel(int *out) {
 }
 
 TEST_F(Gfx950RaceTest, dual_offset_lds) {
-  dual_offset_lds_safe_kernel<<<1, 128>>>(alloc<int>(128));
+  // Two dwords per thread span LDS bytes 0-1023. Inline assembly does not
+  // allocate static LDS; reserve backing storage explicitly at launch.
+  dual_offset_lds_safe_kernel<<<1, 128, 256 * sizeof(int)>>>(alloc<int>(128));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
 }
 
 TEST_F(Gfx950RaceTest, dual_offset_lds_race) {
-  dual_offset_lds_race_kernel<<<1, 128>>>(alloc<int>(128));
+  // The racy variant accesses the same 1024 bytes and needs the same backing.
+  dual_offset_lds_race_kernel<<<1, 128, 256 * sizeof(int)>>>(alloc<int>(128));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kDualOffsetLdsRaceExpectation);
