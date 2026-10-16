@@ -63,7 +63,6 @@ def test_cell_constructor_requires_explicit_policy() -> None:
 def test_case_constructor_preserves_explicit_support(
     policies: tuple[str, ...],
 ) -> None:
-    options = {"thread_policies": policies}
     case = runner.Case(
         id="copy.small",
         workload="copy",
@@ -72,10 +71,9 @@ def test_case_constructor_preserves_explicit_support(
         operation="Copy",
         params={},
         targets=("gfx950",),
-        **options,
+        thread_policies=policies,
     )
-    expected = policies
-    assert case.thread_policies == expected
+    assert case.thread_policies == policies
     suite = runner.Suite(
         name="custom",
         targets=case.targets,
@@ -85,7 +83,7 @@ def test_case_constructor_preserves_explicit_support(
         timeout_seconds=60,
     )
     matrix = runner.select_matrix(suite)
-    assert tuple(cell.thread_policy for cell in matrix) == expected
+    assert tuple(cell.thread_policy for cell in matrix) == policies
     assert all(cell.definition is case and cell.target == "gfx950" for cell in matrix)
 
 
@@ -613,6 +611,21 @@ def test_empty_and_duplicate_matrix_rejected(runner_context: SimpleNamespace) ->
                 target_configs=ctx.configs,
             )
     assert not (ctx.root / "invalid").exists()
+
+
+def test_parser_manifest_state_is_fresh_for_each_parse() -> None:
+    parser = runner.build_parser()
+    default = parser.parse_args([])
+    assert default.manifest == runner.DEFAULT_MANIFEST
+    assert default._manifest_supplied is False
+
+    explicit = parser.parse_args(["--manifest", "custom.toml"])
+    assert explicit.manifest == Path("custom.toml")
+    assert explicit._manifest_supplied is True
+
+    repeated = parser.parse_args([])
+    assert repeated.manifest == runner.DEFAULT_MANIFEST
+    assert repeated._manifest_supplied is False
 
 
 @pytest.mark.parametrize("second_manifest", ["smoke.toml", "plugin-overhead.toml"])

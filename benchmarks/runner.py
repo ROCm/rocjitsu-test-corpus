@@ -1076,7 +1076,7 @@ class _SingleManifest(argparse.Action):
         values: Any,
         option_string: str | None = None,
     ) -> None:
-        if getattr(namespace, "_manifest_supplied", False):
+        if namespace._manifest_supplied:
             parser.error("--manifest may only be supplied once")
         setattr(namespace, self.dest, values)
         namespace._manifest_supplied = True
@@ -1084,6 +1084,7 @@ class _SingleManifest(argparse.Action):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.set_defaults(_manifest_supplied=False)
     parser.add_argument(
         "--manifest", type=Path, action=_SingleManifest, default=DEFAULT_MANIFEST
     )
