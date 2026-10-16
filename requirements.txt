@@ -27,5 +27,5 @@ numpy
 --pre
 --find-links https://iree.dev/pip-release-links.html
 
-iree-base-runtime==3.12.0rc20260601
-iree-base-compiler==3.12.0rc20260601
+iree-base-runtime==3.13.0rc20261007
+iree-base-compiler==3.13.0rc20261007

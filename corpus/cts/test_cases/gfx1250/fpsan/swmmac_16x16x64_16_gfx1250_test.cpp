@@ -108,8 +108,20 @@ __global__ void k_builtin(const typename Harness<Traits>::AElem *A,
   load_frags<Traits, Semantics::Native>(A, B, C, lane, a, b, c);
   int idx = IDX[lane];
   auto d = Traits::template call<Semantics::Native, kCC>(a, b, c, idx);
-  for (int e = 0; e < 8; ++e)
-    D[(e + 8 * (lane >> 4)) * N + (lane & 15)] = d.get(e).to_float();
+  for (int e = 0; e < 8; ++e) {
+    if constexpr (Traits::packed_bf16_result) {
+      // BF16F32 consumes eight F32 accumulators but returns eight BF16 values
+      // packed in four VGPRs (CDNA5 ISA, opcode 105 notes). The builtin and
+      // FPSan native wrapper describe the larger input tuple as their result.
+      const uint32_t word =
+          __builtin_bit_cast(uint32_t, d.get(e / 2).to_float());
+      const uint16_t bits = static_cast<uint16_t>(word >> (16 * (e & 1)));
+      D[(e + 8 * (lane >> 4)) * N + (lane & 15)] =
+          static_cast<float>(__builtin_bit_cast(__bf16, bits));
+    } else {
+      D[(e + 8 * (lane >> 4)) * N + (lane & 15)] = d.get(e).to_float();
+    }
+  }
 }
 
 template <class Traits>
@@ -126,8 +138,12 @@ __global__ void k_float_dataflow(const typename Harness<Traits>::AElem *A,
   auto d = fpsan::detail::swmmac_software_16x16x64_16<
       typename Harness<Traits>::AVec, typename Harness<Traits>::BVec,
       typename Harness<Traits>::CVec, Semantics::Native, kCC>(a, b, c, idx);
-  for (int e = 0; e < 8; ++e)
-    D[(e + 8 * (lane >> 4)) * N + (lane & 15)] = d.get(e).to_float();
+  for (int e = 0; e < 8; ++e) {
+    auto value = d.get(e).to_float();
+    if constexpr (Traits::packed_bf16_result)
+      value = static_cast<float>(static_cast<__bf16>(value));
+    D[(e + 8 * (lane >> 4)) * N + (lane & 15)] = value;
+  }
 }
 
 template <class Traits, Semantics S>
@@ -271,8 +287,9 @@ template <class Traits, Semantics S> void run_fpsan_matches_scalar_reference() {
   (void)hipFree(dD);
 }
 
-#define SWMMAC16_TRAITS(NAME, AVEC, BVEC, CVEC, WRAP)                                              \
+#define SWMMAC16_TRAITS(NAME, AVEC, BVEC, CVEC, WRAP, PACKED_BF16)                                              \
   struct NAME {                                                                                    \
+    static constexpr bool packed_bf16_result = PACKED_BF16;                                         \
     using AVec = AVEC;                                                                             \
     using BVec = BVEC;                                                                             \
     using CVec = CVEC;                                                                             \
@@ -290,13 +307,13 @@ template <class Traits, Semantics S> void run_fpsan_matches_scalar_reference() {
 
 #if !defined(__HIP_DEVICE_COMPILE__) || __has_builtin(__builtin_amdgcn_swmmac_f32_16x16x64_f16)
 SWMMAC16_TRAITS(SwmmacF32F16_64, v16h_native, v32h_native, v8f_native,
-                amdgcn_swmmac_f32_16x16x64_f16)
+                amdgcn_swmmac_f32_16x16x64_f16, false)
 SWMMAC16_TRAITS(SwmmacF16F16_64, v16h_native, v32h_native, v8h_native,
-                amdgcn_swmmac_f16_16x16x64_f16)
+                amdgcn_swmmac_f16_16x16x64_f16, false)
 SWMMAC16_TRAITS(SwmmacF32Bf16_64, v16bf_native, v32bf_native, v8f_native,
-                amdgcn_swmmac_f32_16x16x64_bf16)
+                amdgcn_swmmac_f32_16x16x64_bf16, false)
 SWMMAC16_TRAITS(SwmmacBf16Bf16_64, v16bf_native, v32bf_native, v8bf_native,
-                amdgcn_swmmac_bf16_16x16x64_bf16)
+                amdgcn_swmmac_bf16_16x16x64_bf16, false)
 SWMMAC16_TRAITS(SwmmacBf16f32_64, v16bf_native, v32bf_native, v8f_native,
-                amdgcn_swmmac_bf16f32_16x16x64_bf16)
+                amdgcn_swmmac_bf16f32_16x16x64_bf16, true)
 #endif

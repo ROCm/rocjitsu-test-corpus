@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from support.define_contracts import (
     BuildResult,
     BuildState,
@@ -120,7 +122,7 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     if legacy_kernels.matches_case_selector(
         case.metadata["kernel_case"], target_config.get("skip_run_tests", [])
     ):
-        return
+        pytest.skip("Runtime disabled by target configuration (build succeeded).")
     materialized_inputs = legacy_kernels.materialize_inputs(effective_case, run_dir)
     legacy_kernels.run_executable(
         effective_case,

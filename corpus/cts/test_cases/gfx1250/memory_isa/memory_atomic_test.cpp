@@ -124,7 +124,7 @@ __global__ void lds_contended_atomic_kernel(ContendedAtomicResult *result) {
   asm volatile("ds_add_rtn_u32 %0, %1, %2\n\t"
                "s_wait_dscnt 0"
                : "=v"(old)
-               : "v"(std::uint32_t{0}), "v"(one)
+               : "v"(static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(&value))), "v"(one)
                : "memory");
   result->old_values[threadIdx.x] = old;
   __syncthreads();
@@ -159,8 +159,11 @@ __global__ void lds_atomic_kernel(LdsAtomicResult *result) {
                "s_wait_dscnt 0"
                : "=&v"(integer_old), "=&v"(add_nan_old), "=&v"(min_zero_old),
                  "=&v"(max_zero_old)
-               : "v"(std::uint32_t{0}), "v"(std::uint32_t{4}), "v"(std::uint32_t{8}),
-                 "v"(std::uint32_t{12}), "v"(one), "v"(signaling_nan), "v"(positive_zero),
+               : "v"(static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(&lds[0]))),
+                 "v"(static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(&lds[1]))),
+                 "v"(static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(&lds[2]))),
+                 "v"(static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(&lds[3]))),
+                 "v"(one), "v"(signaling_nan), "v"(positive_zero),
                  "v"(negative_zero)
                : "memory");
   result->integer_old = integer_old;

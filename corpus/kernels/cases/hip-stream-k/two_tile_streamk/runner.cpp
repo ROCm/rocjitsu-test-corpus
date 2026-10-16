@@ -76,6 +76,9 @@ int main(int argc, char* argv[]) {
     if (cli.verbose) {
       compare_stats(d.data().get(), x.data().get(), size_d);
     }
+    if (errors != 0) {
+      return 1;
+    }
   }
 
   // Benchmark and output statistics in CSV.

@@ -191,7 +191,8 @@ pytest tests/test_corpus.py \
   --run-wrapper "rocjitsu --config ${CONFIG} --"
 ```
 
-Run with a list of tests to skip:
+Run with a list of tests to skip. The example starts empty; add selectors such
+as `fpsan_wave_gfx12_w64_test` under `cts` for a local investigation:
 
 ```bash
 rocjitsu --config /path/to/gfx1201.json -- \
