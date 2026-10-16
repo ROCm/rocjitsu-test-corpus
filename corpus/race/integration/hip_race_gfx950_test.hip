@@ -263,9 +263,7 @@ TEST_F(Gfx950RaceTest, vmcnt_no_wait_race) {
 }
 
 __global__ void lgkmcnt_no_wait_race_kernel(int *dst) {
-  __shared__ int lds[64];
   int tid = threadIdx.x;
-  lds[tid] = tid + 1;
   __syncthreads();
 
   int val;
@@ -287,7 +285,9 @@ static constexpr RaceExpectation kLgkmcntNoWaitRaceExpectation{
 
 TEST_F(Gfx950RaceTest, lgkmcnt_no_wait_race) {
   auto *dst = alloc<int>(64);
-  lgkmcnt_no_wait_race_kernel<<<1, 64>>>(dst);
+  // The assembly reads 64 dwords from LDS offset zero. It has no C++ LDS
+  // accesses, so the launch must reserve the backing storage.
+  lgkmcnt_no_wait_race_kernel<<<1, 64, 64 * sizeof(int)>>>(dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kLgkmcntNoWaitRaceExpectation);

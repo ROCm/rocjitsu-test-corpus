@@ -105,9 +105,7 @@ TEST_F(Gfx1151RaceTest, standalone_vmcnt_waits_for_vmem) {
 }
 
 __global__ void standalone_vmcnt_does_not_wait_for_lds_kernel(int *dst) {
-  __shared__ int lds[32];
   int tid = threadIdx.x;
-  lds[tid] = tid + 1;
   __syncthreads();
 
   int val;
@@ -127,16 +125,16 @@ static constexpr RaceExpectation kStandaloneVmcntDoesNotWaitForLdsExpectation{
 };
 
 TEST_F(Gfx1151RaceTest, standalone_vmcnt_does_not_wait_for_lds) {
-  standalone_vmcnt_does_not_wait_for_lds_kernel<<<1, 32>>>(alloc<int>(32));
+  // The assembly reads 32 dwords from LDS offset zero. It has no C++ LDS
+  // accesses, so the launch must reserve the backing storage.
+  standalone_vmcnt_does_not_wait_for_lds_kernel<<<1, 32, 32 * sizeof(int)>>>(alloc<int>(32));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kStandaloneVmcntDoesNotWaitForLdsExpectation);
 }
 
 __global__ void standalone_lgkmcnt_waits_for_lds_kernel(int *dst) {
-  __shared__ int lds[32];
   int tid = threadIdx.x;
-  lds[tid] = tid + 1;
   __syncthreads();
 
   int val;
@@ -149,7 +147,9 @@ __global__ void standalone_lgkmcnt_waits_for_lds_kernel(int *dst) {
 }
 
 TEST_F(Gfx1151RaceTest, standalone_lgkmcnt_waits_for_lds) {
-  standalone_lgkmcnt_waits_for_lds_kernel<<<1, 32>>>(alloc<int>(32));
+  // The assembly reads 32 dwords from LDS offset zero. It has no C++ LDS
+  // accesses, so the launch must reserve the backing storage.
+  standalone_lgkmcnt_waits_for_lds_kernel<<<1, 32, 32 * sizeof(int)>>>(alloc<int>(32));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
