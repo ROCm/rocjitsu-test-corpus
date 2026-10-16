@@ -152,7 +152,11 @@ def test_runtime_rejects_stale_log_and_times_out(tmp_path, monkeypatch):
         )
         if case.metadata["name"] == NAME
     )
-    context = RunContext(tmp_path, tmp_path / "artifacts", False)
+    context = RunContext(
+        repo_root=tmp_path,
+        artifact_directory=tmp_path / "artifacts",
+        skip_all_runs=False,
+    )
     binary = tmp_path / "deqp-vk"
     binary.write_text("#!/bin/sh\nexit 0\n")
     binary.chmod(0o755)

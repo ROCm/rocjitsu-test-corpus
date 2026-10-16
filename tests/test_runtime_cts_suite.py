@@ -128,7 +128,11 @@ def fake_case(tmp_path, script, **overrides):
         row,
         {},
     )
-    context = RunContext(tmp_path, tmp_path / "artifacts", False)
+    context = RunContext(
+        repo_root=tmp_path,
+        artifact_directory=tmp_path / "artifacts",
+        skip_all_runs=False,
+    )
     build = BuildResult(tmp_path, binary, {})
     return case, build, context
 
