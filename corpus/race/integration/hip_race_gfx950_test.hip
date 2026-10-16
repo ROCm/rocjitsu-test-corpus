@@ -301,12 +301,11 @@ TEST_F(Gfx950RaceTest, flat_global_copy_vmcnt) {
   auto *src = allocWithData<int>(64), *dst = alloc<int>(64);
   flat_global_copy_kernel<0><<<1, 64>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
-  ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+  sync();
   ExpectNoRace();
 
   std::vector<int> result(64);
-  ASSERT_EQ(hipMemcpy(result.data(), dst, result.size() * sizeof(int), hipMemcpyDeviceToHost),
-            hipSuccess);
+  RACE_HIP_CHECK(hipMemcpy(result.data(), dst, result.size() * sizeof(int), hipMemcpyDeviceToHost));
   for (int lane = 0; lane < 64; ++lane)
     EXPECT_EQ(result[lane], lane) << "lane " << lane;
 }
@@ -315,7 +314,7 @@ TEST_F(Gfx950RaceTest, flat_global_copy_missing_vmcnt_race) {
   auto *src = allocWithData<int>(64), *dst = alloc<int>(64);
   flat_global_copy_kernel<kFlatVmcntNoWait><<<1, 64>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
-  ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+  sync();
   ExpectRace({.findings = FindingCount::OneOrMore,
               .kernel = "flat_global_copy_kernel",
               .type = "VGPR",
@@ -542,42 +541,42 @@ __global__ void flat_after_full_vmcnt_kernel(const int *src, int *dst) {
 TEST_F(Gfx950RaceTest, flat_global_does_not_advance_lgkmcnt_race) {
   flat_after_full_lgkmcnt_kernel<false, false><<<1, 64>>>(allocWithData<int>(64), alloc<int>(64));
   RACE_HIP_CHECK(hipGetLastError());
-  ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+  sync();
   ExpectRace(kLgkmcntBelowCapacityRaceExpectation);
 }
 
 TEST_F(Gfx950RaceTest, flat_global_full_lgkmcnt_waited) {
   flat_after_full_lgkmcnt_kernel<false, true><<<1, 64>>>(allocWithData<int>(64), alloc<int>(64));
   RACE_HIP_CHECK(hipGetLastError());
-  ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+  sync();
   ExpectNoRace();
 }
 
 TEST_F(Gfx950RaceTest, flat_lds_advances_lgkmcnt_at_capacity) {
   flat_after_full_lgkmcnt_kernel<true, false><<<1, 64>>>(allocWithData<int>(64), alloc<int>(64));
   RACE_HIP_CHECK(hipGetLastError());
-  ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+  sync();
   ExpectNoRace();
 }
 
 TEST_F(Gfx950RaceTest, flat_lds_does_not_advance_vmcnt_race) {
   flat_after_full_vmcnt_kernel<true, false><<<1, 64>>>(allocWithData<int>(64), alloc<int>(64));
   RACE_HIP_CHECK(hipGetLastError());
-  ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+  sync();
   ExpectRace(kVmcntBelowCapacityRaceExpectation);
 }
 
 TEST_F(Gfx950RaceTest, flat_lds_full_vmcnt_waited) {
   flat_after_full_vmcnt_kernel<true, true><<<1, 64>>>(allocWithData<int>(64), alloc<int>(64));
   RACE_HIP_CHECK(hipGetLastError());
-  ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+  sync();
   ExpectNoRace();
 }
 
 TEST_F(Gfx950RaceTest, flat_global_advances_vmcnt_at_capacity) {
   flat_after_full_vmcnt_kernel<false, false><<<1, 64>>>(allocWithData<int>(64), alloc<int>(64));
   RACE_HIP_CHECK(hipGetLastError());
-  ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+  sync();
   ExpectNoRace();
 }
 
