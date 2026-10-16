@@ -1,3 +1,8 @@
+# HIP toolchain detection for corpus tests:
+#   1. Respect an explicit -DROCM_PATH or inherited $ROCM_PATH.
+#   2. Otherwise ask `rocm-sdk path --root` on PATH, including the SDK exposed
+#      by an activated TheRock/ROCm Python virtual environment.
+#   3. Require the discovered root to contain hip-config.cmake before enabling HIP.
 set(ROCM_PATH "" CACHE PATH "ROCm SDK root")
 
 macro(kernel_corpus_enable_hip)
