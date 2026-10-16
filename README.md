@@ -128,8 +128,10 @@ The race log must also contain a test-kernel dispatch; a runtime copy dispatch
 alone cannot establish that the integration kernel executed.
 Each case retains the original 30-second execution timeout by default. Set
 `ROCJITSU_RACE_CASE_TIMEOUT=<seconds>` to choose a different deadline, for
-example when a retrying run wrapper has a longer overall limit. The adapter stops
-the launched process tree on expiry and reports the case's `run.log`, including
+example when a retrying run wrapper has a longer overall limit. The value must
+be a positive, finite number of seconds and is validated before building
+execution cases. The adapter stops the launched process tree on expiry and
+reports the case's `run.log`, including
 captured output. This includes nested sessions created by CI supervisors.
 Wrappers must remain alive while supervising those sessions, so their children
 stay discoverable through Linux procfs. Configure and build are not subject to

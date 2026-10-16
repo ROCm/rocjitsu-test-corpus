@@ -18,6 +18,11 @@ from support.define_contracts import BuildResult, BuildState, RunContext
 from test_suites import race
 
 
+@pytest.fixture(autouse=True)
+def _isolate_case_timeout(monkeypatch) -> None:
+    monkeypatch.delenv(race.CASE_TIMEOUT_ENV, raising=False)
+
+
 def test_configs_preserve_every_moved_gtest() -> None:
     configs = race.load_target_configs(race.default_config_files())
     expected_counts = {"gfx950": 63, "gfx1151": 21}
@@ -383,7 +388,9 @@ def test_relative_interpreter_script_runs_from_private_directory(
     assert f"stdout:\n{case_dir}\n" in (case_dir / "run.log").read_text()
 
 
-def test_wrapper_only_resolves_existing_file_operands(tmp_path: Path, monkeypatch) -> None:
+def test_wrapper_only_resolves_existing_file_operands(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setattr(race, "REPO_ROOT", tmp_path)
     (tmp_path / "input.json").touch()
     (tmp_path / "directory").mkdir()
@@ -393,9 +400,15 @@ def test_wrapper_only_resolves_existing_file_operands(tmp_path: Path, monkeypatc
         tmp_path / "private-config.json",
     )
     assert command == [
-        "env", "INPUT=./input.json", "launcher", "--input",
-        str(tmp_path / "input.json"), "--output=./result.json",
-        "./result.json", "./directory", str(tmp_path / "private-config.json"),
+        "env",
+        "INPUT=./input.json",
+        "launcher",
+        "--input",
+        str(tmp_path / "input.json"),
+        "--output=./result.json",
+        "./result.json",
+        "./directory",
+        str(tmp_path / "private-config.json"),
     ]
 
 
@@ -407,12 +420,13 @@ def test_run_cleans_up_sleeping_process_tree(
     tmp_path: Path, monkeypatch, wrapper_exits: bool, new_session: bool
 ) -> None:
     case = race.discover(
-        make_target_spec("gfx950"), race.load_target_configs(race.default_config_files())
+        make_target_spec("gfx950"),
+        race.load_target_configs(race.default_config_files()),
     )[0]
     base = tmp_path / "base.json"
     _write_base_config(base, "gfx950")
     monkeypatch.setenv("ROCJITSU_RACE_CONFIG", str(base))
-    monkeypatch.setattr(race, "CASE_TIMEOUT_SECONDS", 1)
+    monkeypatch.setenv(race.CASE_TIMEOUT_ENV, "1")
     wrapper = tmp_path / "sleep.py"
     wrapper.write_text(
         "import os, signal, sys, time\n"
@@ -443,7 +457,8 @@ def test_run_cleans_up_sleeping_process_tree(
     case_dir = context.artifact_directory / "race/gfx950/cases/vgpr_waitcnt"
     expected = (
         "Could not read race GoogleTest report"
-        if wrapper_exits else "run timed out after 1s"
+        if wrapper_exits
+        else "run timed out after 1s"
     )
     started = time.monotonic()
     try:
@@ -544,7 +559,9 @@ def test_failed_matcher_does_not_stamp_build(tmp_path: Path, monkeypatch) -> Non
         race.build(
             case,
             RunContext(
-                repo_root=race.REPO_ROOT, artifact_directory=tmp_path, skip_all_runs=True
+                repo_root=race.REPO_ROOT,
+                artifact_directory=tmp_path,
+                skip_all_runs=True,
             ),
             BuildState(),
         )
@@ -622,26 +639,45 @@ def _write_base_config(path: Path, target: str, **fields) -> None:
 
 @pytest.mark.timeout(15)
 @pytest.mark.parametrize(
-    "override,expected",
+    "default_timeout,override,expected",
     [
-        ("1", "run timed out after 1s"),
-        ("5", "Could not read race GoogleTest report"),
+        (5, "1", "run timed out after 1s"),
+        (1, "5", None),
     ],
 )
 def test_run_honors_case_timeout_override(
-    tmp_path: Path, monkeypatch, override: str, expected: str
+    tmp_path: Path,
+    monkeypatch,
+    default_timeout: int,
+    override: str,
+    expected: str | None,
 ) -> None:
     case = race.discover(
-        make_target_spec("gfx950"), race.load_target_configs(race.default_config_files())
+        make_target_spec("gfx950"),
+        race.load_target_configs(race.default_config_files()),
     )[0]
     base = tmp_path / "base.json"
     _write_base_config(base, "gfx950")
     monkeypatch.setenv("ROCJITSU_RACE_CONFIG", str(base))
-    # The default deadline would not stop the wrapper at the override's value.
-    monkeypatch.setattr(race, "CASE_TIMEOUT_SECONDS", 30)
+    # A three-second wrapper must pass when the override extends a shorter
+    # default, and time out when the override reduces a longer default.
+    monkeypatch.setattr(race, "CASE_TIMEOUT_SECONDS", default_timeout)
     monkeypatch.setenv(race.CASE_TIMEOUT_ENV, override)
     wrapper = tmp_path / "slow.py"
-    wrapper.write_text("import time\ntime.sleep(3)\n")
+    report_xml = (
+        '<testsuites tests="1" failures="0" errors="0" disabled="0">'
+        '<testsuite><testcase classname="Gfx950RaceTest" name="vgpr_waitcnt" '
+        'status="run" result="completed"/></testsuite></testsuites>'
+    )
+    race_log = '[rocjitsu] Kernel dispatch: "test_kernel" symbol="test_kernel"\n'
+    wrapper.write_text(
+        "import sys, time\n"
+        "from pathlib import Path\n"
+        "time.sleep(3)\n"
+        "report = next(arg for arg in sys.argv if arg.startswith('--gtest_output=xml:'))\n"
+        f"Path(report.removeprefix('--gtest_output=xml:')).write_text({report_xml!r})\n"
+        f"Path('plugins/race.log').write_text({race_log!r})\n"
+    )
     context = RunContext(
         repo_root=race.REPO_ROOT,
         artifact_directory=tmp_path / "artifacts",
@@ -650,8 +686,48 @@ def test_run_honors_case_timeout_override(
             f"{shlex.quote(sys.executable)} {shlex.quote(str(wrapper))} {{config}}"
         ),
     )
-    with pytest.raises(RuntimeError, match=expected):
-        race.run(case, BuildResult(None, tmp_path / "unused-test"), context)
+    build_result = BuildResult(None, tmp_path / "unused-test")
+    if expected:
+        with pytest.raises(RuntimeError, match=expected):
+            race.run(case, build_result, context)
+    else:
+        race.run(case, build_result, context)
+
+
+def test_entrypoint_rejects_invalid_timeout_before_build(
+    tmp_path: Path, monkeypatch
+) -> None:
+    base = tmp_path / "base.json"
+    _write_base_config(base, "gfx950")
+    monkeypatch.setenv("ROCJITSU_RACE_CONFIG", str(base))
+    monkeypatch.setenv(race.CASE_TIMEOUT_ENV, "0")
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "-m",
+            "pytest",
+            "tests/test_corpus.py",
+            "--suite",
+            "race",
+            "--target",
+            "gfx950",
+            "--run-wrapper",
+            "rocjitsu --config {config} --",
+            "-p",
+            "no:cacheprovider",
+            "--basetemp",
+            str(tmp_path / "temp"),
+            "-q",
+        ],
+        cwd=race.REPO_ROOT,
+        env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert race.CASE_TIMEOUT_ENV in result.stdout + result.stderr
+    assert "Race test configure failed" not in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "abc", "nan", "inf"])

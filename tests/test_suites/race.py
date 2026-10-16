@@ -202,6 +202,7 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     if build_result.executable_path is None:
         raise RuntimeError("Race test executable is unavailable")
 
+    timeout = _case_timeout()
     case_dir = (
         context.artifact_directory
         / "race"
@@ -237,7 +238,7 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
         log_path=case_dir / "run.log",
         phase="run",
         env=environment,
-        timeout=_case_timeout(),
+        timeout=timeout,
     )
     _validate_gtest_report(gtest_report, case.metadata["test_filter"])
     report = sink_dir / "race.log"
@@ -250,6 +251,7 @@ def validate_execution(run_wrapper: str | None, target: str) -> None:
     """Check launcher/config requirements before building execution cases."""
     _run_wrapper_command(run_wrapper, Path("/private/config.json"))
     _load_base_config(_base_config_path(), target=target)
+    _case_timeout()
 
 
 def _validate_kernel_dispatch(path: Path) -> None:
