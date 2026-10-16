@@ -8,16 +8,18 @@ mutation kernels in corpus/race/kernels are outside this suite.
 
 from __future__ import annotations
 
-import contextlib
-import fcntl
 import json
 import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
+import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+from filelock import FileLock
 
 from support.define_contracts import (
     BuildResult,
@@ -31,6 +33,7 @@ from support.prepare_inputs import load_suite_target_configs, supports_target
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RACE_SOURCE_DIR = REPO_ROOT / "corpus" / "race" / "integration"
 CONFIGS_ROOT = RACE_SOURCE_DIR / "configs"
+CASE_TIMEOUT_SECONDS = 30
 TARGET_LAYOUT = {
     "gfx950": {
         "binary": "hip_race_tests_gfx950",
@@ -121,7 +124,7 @@ def build(
     run_uid = os.getenv("PYTEST_XDIST_TESTRUNUID", f"pid-{os.getpid()}")
     completion_stamp = build_root / f"{run_uid}.complete"
 
-    with _build_lock(build_root / ".build.lock"):
+    with FileLock(build_root / ".build.lock"):
         if not completion_stamp.exists():
             _build_programs(case, context, build_dir, logs_dir)
             if not executable.is_file():
@@ -232,6 +235,7 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
         log_path=case_dir / "run.log",
         phase="run",
         env=environment,
+        timeout=CASE_TIMEOUT_SECONDS,
     )
     _validate_gtest_report(gtest_report, case.metadata["test_filter"])
     report = sink_dir / "race.log"
@@ -370,25 +374,16 @@ def _run_wrapper_command(run_wrapper: str | None, config_path: Path) -> list[str
     wrapper = [
         str(config_path) if argument == "{config}" else argument for argument in wrapper
     ]
-    # The private cwd keeps daemon sockets short. Resolve relative launcher
-    # paths while still using the repository as the caller's reference cwd.
+    # The private cwd keeps daemon sockets short. Resolve launcher paths and
+    # existing file operands (including interpreter scripts) against the repo.
+    # Options and environment assignments are not parsed as paths.
     for index, argument in enumerate(wrapper):
-        if os.sep in argument and not Path(argument).is_absolute():
-            path = REPO_ROOT / argument
-            if index == 0 or (path.is_file() and os.access(path, os.X_OK)):
-                wrapper[index] = str(path.resolve())
+        if Path(argument).is_absolute() or argument.startswith("-") or "=" in argument:
+            continue
+        path = REPO_ROOT / argument
+        if (index == 0 and os.sep in argument) or (index > 0 and path.is_file()):
+            wrapper[index] = str(path.resolve())
     return wrapper
-
-
-@contextlib.contextmanager
-def _build_lock(path: Path):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
 def _run_command(
@@ -398,6 +393,7 @@ def _run_command(
     log_path: Path,
     phase: str,
     env: dict[str, str] | None = None,
+    timeout: float | None = None,
 ) -> None:
     executable = command[0]
     if os.sep not in executable:
@@ -405,16 +401,39 @@ def _run_command(
         if resolved is None:
             raise RuntimeError(f"Missing required tool {executable!r}")
         command = [resolved, *command[1:]]
-    process = subprocess.run(
-        command,
-        cwd=str(cwd),
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        errors="replace",
-        check=False,
-    )
+    timed_out = False
+    # File-backed output avoids waiting on pipes inherited by grandchildren.
+    # The run phase owns a process tree so expiry also stops the simulator
+    # and HIP children, including ones that ignore SIGTERM.
+    with (
+        tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as stdout,
+        tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as stderr,
+    ):
+        process = subprocess.Popen(
+            command,
+            cwd=str(cwd),
+            env=env,
+            stdout=stdout,
+            stderr=stderr,
+            start_new_session=timeout is not None,
+        )
+        try:
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        finally:
+            if timeout is not None:
+                # Clean up surviving children even if the wrapper has exited.
+                _kill_process_tree(process.pid)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+        stdout.seek(0)
+        stderr.seek(0)
+        output = stdout.read()
+        errors = stderr.read()
+    status = f"timed out after {timeout:g}s" if timed_out else "failed"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.write_text(
         "\n".join(
@@ -422,28 +441,60 @@ def _run_command(
                 "$ " + " ".join(shlex.quote(part) for part in command),
                 f"cwd: {cwd}",
                 f"returncode: {process.returncode}",
+                *([status] if timed_out else []),
                 "",
                 "stdout:",
-                process.stdout,
+                output,
                 "",
                 "stderr:",
-                process.stderr,
+                errors,
             ]
         ),
         encoding="utf-8",
     )
-    if process.returncode != 0:
+    if timed_out or process.returncode != 0:
         raise RuntimeError(
             "\n".join(
                 [
-                    f"Race test {phase} failed.",
+                    f"Race test {phase} {status}.",
                     f"log: {log_path}",
                     "command: " + " ".join(shlex.quote(part) for part in command),
                     f"returncode: {process.returncode}",
                     "stdout:",
-                    process.stdout or "<empty>",
+                    output or "<empty>",
                     "stderr:",
-                    process.stderr or "<empty>",
+                    errors or "<empty>",
                 ]
             )
         )
+
+
+def _kill_process_tree(pid: int) -> None:
+    # Some CI wrappers create a nested session. Capture its process group
+    # before killing the launcher, which would reparent those descendants.
+    # Inspect every thread: a simulator worker can also have child processes.
+    groups = {pid: None}
+    pending = [pid]
+    seen = set()
+    while pending:
+        child = pending.pop()
+        if child in seen:
+            continue
+        seen.add(child)
+        try:
+            group = os.getpgid(child)
+        except ProcessLookupError:
+            continue
+        groups[group] = None
+        for children in Path(f"/proc/{child}/task").glob("*/children"):
+            try:
+                pending.extend(int(value) for value in children.read_text().split())
+            except FileNotFoundError:
+                continue
+    # Kill descendant groups first, while their supervising parents still
+    # exist. The original group also covers children whose wrapper exited.
+    for group in reversed(groups):
+        try:
+            os.killpg(group, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
