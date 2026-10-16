@@ -602,6 +602,25 @@ def test_entrypoint_validates_execution_before_build(
     # For build-only runs select an unsupported target: collection is empty,
     # so this exercises option validation without invoking a toolchain.
     target = "gfx950" if error or "--collect-only" in extra else "gfx9999"
+    _run_entrypoint(
+        tmp_path,
+        suites=suites,
+        target=target,
+        wrapper=wrapper,
+        extra=extra,
+        error=error,
+    )
+
+
+def _run_entrypoint(
+    tmp_path: Path,
+    *,
+    suites: str,
+    target: str,
+    wrapper: str | None,
+    extra: list[str],
+    error: str | None,
+) -> None:
     command = [
         sys.executable,
         "-B",
@@ -631,7 +650,7 @@ def test_entrypoint_validates_execution_before_build(
     if error:
         assert result.returncode == 2
         assert error in result.stdout + result.stderr
-        assert "Race test configure failed" not in result.stdout
+        assert "Race test configure failed" not in result.stdout + result.stderr
     else:
         assert result.returncode == 0, result.stdout + result.stderr
 
@@ -710,33 +729,14 @@ def test_entrypoint_rejects_invalid_timeout_before_build(
     _write_base_config(base, "gfx950")
     monkeypatch.setenv("ROCJITSU_RACE_CONFIG", str(base))
     monkeypatch.setenv(race.CASE_TIMEOUT_ENV, "0")
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-B",
-            "-m",
-            "pytest",
-            "tests/test_corpus.py",
-            "--suite",
-            "race",
-            "--target",
-            "gfx950",
-            "--run-wrapper",
-            "rocjitsu --config {config} --",
-            "-p",
-            "no:cacheprovider",
-            "--basetemp",
-            str(tmp_path / "temp"),
-            "-q",
-        ],
-        cwd=race.REPO_ROOT,
-        env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"),
-        capture_output=True,
-        text=True,
+    _run_entrypoint(
+        tmp_path,
+        suites="race",
+        target="gfx950",
+        wrapper="rocjitsu --config {config} --",
+        extra=[],
+        error=race.CASE_TIMEOUT_ENV,
     )
-    assert result.returncode == 2
-    assert race.CASE_TIMEOUT_ENV in result.stdout + result.stderr
-    assert "Race test configure failed" not in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "abc", "nan", "inf"])
