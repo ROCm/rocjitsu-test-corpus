@@ -1,6 +1,9 @@
 #include "cpy.cuh"
 #include "dequantize.cuh"
 #include "cpy-utils.cuh"
+#include <climits>
+#include <cstddef>
+#include <cstdint>
 #if defined(GGML_USE_MUSA) && defined(GGML_MUSA_MUDNN_COPY)
 #include "ggml-musa/mudnn.cuh"
 #endif // GGML_USE_MUSA && GGML_MUSA_MUDNN_COPY

@@ -1,5 +1,7 @@
 #pragma once
 #include "common.cuh"
+#include <cstdint>
+#include <type_traits>
 
 #define CUDA_DEQUANTIZE_BLOCK_SIZE 256
 

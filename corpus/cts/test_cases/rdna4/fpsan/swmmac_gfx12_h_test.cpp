@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 #include "hip_test_utils.hpp"
+#include "fpsan_semantics.hpp"
 #include "swmmac_gfx12_parts.hpp"
+#include <cstdint>
+#include <gtest/gtest.h>
+#include <hip/hip_runtime.h>
+#include <vector>
 
 TEST(SwmmacGfx12, F32_F16_LayoutMatchesHardware) {
   DeviceAllocations device_allocations;

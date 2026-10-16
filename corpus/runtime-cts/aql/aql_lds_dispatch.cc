@@ -21,11 +21,16 @@
 // Inspiration: local-memory reductions/barriers and concurrent queue dispatch.
 // https://github.com/KhronosGroup/OpenCL-CTS/blob/9feccbb8fcb8eefeebf86a48036173a8155f9d21/test_conformance/basic/test_local.cpp
 // https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/runtime/src/iree/hal/cts/queue/queue_dispatch_concurrency_test.cc
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <memory>
+#include <vector>
 
 #include "lds_kernel.inc"
 #include "support/aql.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 // An LDS pointer kernarg is a 32-bit offset in the dispatch's group segment.
 // https://llvm.org/docs/AMDGPUUsage.html#address-spaces

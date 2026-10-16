@@ -1,5 +1,6 @@
 #include "col2im-1d.cuh"
 #include "convert.cuh"
+#include <cstdint>
 
 // col2im_1d: scatter-add GEMM columns to 1D signal (gather approach)
 // columns: [K*OC, T_in]  ->  output: [T_out, OC]

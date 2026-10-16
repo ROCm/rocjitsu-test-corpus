@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cfloat>
 #include <cstdint>
 
 #include "argmax.cuh"

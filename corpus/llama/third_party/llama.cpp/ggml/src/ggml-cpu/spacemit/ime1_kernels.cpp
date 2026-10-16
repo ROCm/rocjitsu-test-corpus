@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <stdexcept>
 
 #if !defined(__riscv_v) || !defined(__riscv_v_intrinsic)

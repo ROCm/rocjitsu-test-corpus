@@ -3,7 +3,11 @@
 #include "unary.cuh"
 #include "vecdotq.cuh"
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
+#include <utility>
 
 typedef float (*vec_dot_q_cuda_t)(const void * __restrict__ vbq, const block_q8_1 * __restrict__ bq8_1, const int & kbx, const int & iqs);
 

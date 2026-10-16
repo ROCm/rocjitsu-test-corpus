@@ -2,6 +2,8 @@
 #define MmtKernel_256t_MSxNS_amdgcn_mfma_f32_16x16x4f32_shared_Kx4_doublebuffer_take2 \
   MmtKernel_256t_MSxNS_amdgcn_mfma_f32_16x16x4f32_shared_Kx4_doublebuffer_take2_hazard_original
 #include "../../../third_party/hip-matmul/matmul.hip"
+#include <cstdio>
+#include <hip/hip_runtime.h>
 #undef MmtKernel_256t_MSxNS_amdgcn_mfma_f32_16x16x4f32_shared_Kx4_doublebuffer_take2
 #undef main
 

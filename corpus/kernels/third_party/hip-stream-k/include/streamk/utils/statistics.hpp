@@ -7,7 +7,9 @@
 #include <hip/hip_runtime.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <iomanip>
 

@@ -3,8 +3,15 @@
 #include "ggml-impl.h"
 #include "spine_mem_pool.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <fcntl.h>
+#include <limits>
+#include <stdexcept>
 #include <unistd.h>
+#include <vector>
 
 #include <algorithm>
 #include <array>

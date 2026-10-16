@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 #include <hip/hip_runtime.h>
 
+#include <cstddef>
 #include <stdexcept>
 #include <string>
 

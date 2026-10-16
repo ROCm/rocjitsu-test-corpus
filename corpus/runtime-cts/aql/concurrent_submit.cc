@@ -19,11 +19,15 @@
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/rocrtst/suites/stress/queue_write_index_concurrent_tests.cc
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/hip-tests/catch/stress/stream/streamEnqueue.cc
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 #include "support/aql_payload.h"
+#include "support/kfd.h"
+#include "test.h"
 
 using namespace cts;
 

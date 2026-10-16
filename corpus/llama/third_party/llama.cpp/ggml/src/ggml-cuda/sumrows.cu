@@ -1,5 +1,6 @@
 #include "reduce_rows.cuh"
 #include "sumrows.cuh"
+#include <cstdint>
 
 void sum_rows_f32_cuda(const float * x, float * dst, const int ncols, const int nrows, cudaStream_t stream) {
     const int  id  = ggml_cuda_get_device();

@@ -18,11 +18,16 @@
 // Inspiration: independent native-KFD adaptation of these public test patterns.
 // https://gitlab.freedesktop.org/drm/igt-gpu-tools/-/blob/26513be3e0f711ed835ec50d5cdcb723ef224105/tests/amdgpu/amd_basic.c
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <thread>
+#include <vector>
 
 #include "pm4.h"
 #include "support/aql_payload.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 
 static int RunPm4(int argc, char** argv) {

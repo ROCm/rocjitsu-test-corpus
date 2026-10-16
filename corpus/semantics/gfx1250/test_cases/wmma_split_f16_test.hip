@@ -1,4 +1,8 @@
 #include "test_support.hpp"
+#include <algorithm>
+#include <cstddef>
+#include <hip/hip_runtime.h>
+#include <vector>
 
 using i32x4 = int __attribute__((ext_vector_type(4)));
 using i32x16 = int __attribute__((ext_vector_type(16)));

@@ -27,6 +27,7 @@
 // Inspiration: disable/re-enable a live kernel and validate its surviving
 // state.
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/libhsakmt/tests/kfdtest/src/KFDCWSRTest.cpp
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <thread>
@@ -34,6 +35,8 @@
 #include "gate_kernel.inc"
 #include "pm4.h"
 #include "support/aql.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 int main(int argc, char** argv) {
   Start(argc, argv, "aql_running_queue_pause");

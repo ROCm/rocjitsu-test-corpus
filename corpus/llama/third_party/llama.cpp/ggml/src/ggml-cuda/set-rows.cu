@@ -1,5 +1,7 @@
 #include "set-rows.cuh"
 #include "cpy-utils.cuh"
+#include <cstddef>
+#include <cstdint>
 
 typedef void (*set_rows_kernel_t)(const char * src, char * dst);
 

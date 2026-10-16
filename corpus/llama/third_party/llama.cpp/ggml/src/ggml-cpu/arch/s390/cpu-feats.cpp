@@ -1,4 +1,5 @@
 #include "ggml-backend-impl.h"
+#include <cstdint>
 
 #if defined(__s390x__)
 #include <sys/auxv.h>

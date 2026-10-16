@@ -10,11 +10,13 @@
 
 #pragma once
 
+#include <cstdint>
 #include <hip_bf16.h>
 #include <hip_fp16.h>
 #include <hip_fp8.h>
 #include <string>
 #include <bit>
+#include <type_traits>
 
 
 namespace kittens {

@@ -1,4 +1,5 @@
 #include "conv-transpose-1d.cuh"
+#include <cstdint>
 
 static  __global__ void conv_transpose_1d_kernel(
         const int s0, const int p0, const int d0, const int output_size,

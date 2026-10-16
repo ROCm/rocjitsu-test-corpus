@@ -2,6 +2,9 @@
 
 #include "ggml-common.h"
 #include "convert.cuh"
+#include <cfloat>
+#include <cstdint>
+#include <cstring>
 
 static __device__ __forceinline__ int best_index_int8(int n, const int8_t * val, float x) {
     if (x <= val[0]) return 0;

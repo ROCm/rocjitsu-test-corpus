@@ -25,6 +25,7 @@ hipcc mfma_reassociating.hip -Wall -Wextra -O3 -o ~/mfma_reassociating &&
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 void hip_check_impl(hipError_t hip_error_code, const char *condstr,

@@ -3,6 +3,10 @@
 #include "mma.cuh"
 #include "common.cuh"
 #include "convert.cuh"
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <type_traits>
 
 using namespace ggml_cuda_mma;
 

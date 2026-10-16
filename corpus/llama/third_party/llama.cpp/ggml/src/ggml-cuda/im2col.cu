@@ -1,4 +1,6 @@
 #include "im2col.cuh"
+#include <cstddef>
+#include <cstdint>
 
 #define MAX_GRIDDIM_Y 65535
 #define MAX_GRIDDIM_Z 65535

@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 #include "hip_test_utils.hpp"
+#include "fpsan_semantics.hpp"
 #include "swmmac_gfx12_parts.hpp"
+#include <cstdint>
+#include <gtest/gtest.h>
+#include <hip/hip_runtime.h>
+#include <vector>
 
 __global__ void k_swmmac_f16h_float(const float *A, const float *B, const float *C, const int *p0,
                                     const int *p1, const std::uint16_t *idx, _Float16 *D) {

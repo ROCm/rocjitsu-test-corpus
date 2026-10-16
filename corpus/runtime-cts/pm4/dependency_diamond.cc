@@ -22,11 +22,15 @@
 // https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/runtime/src/iree/hal/cts/queue/semaphore_submission_test.cc
 // https://github.com/KhronosGroup/VK-GL-CTS/blob/3905c821f43ded89284713187ffb3c7a1072afdb/external/vulkancts/modules/vulkan/synchronization/vktSynchronizationOperationMultiQueueTests.cpp
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <thread>
+#include <vector>
 
 #include "pm4.h"
 #include "support/aql_payload.h"
+#include "support/kfd.h"
+#include "test.h"
 
 using namespace cts;
 

@@ -4,7 +4,9 @@
 // https://pubs.opengroup.org/onlinepubs/9799919799/functions/clock_gettime.html
 #include "common/test.h"
 
+#include <cstdint>
 #include <signal.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <cerrno>

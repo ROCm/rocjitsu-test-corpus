@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 #include "wmma_gfx11_parts.hpp"
+#include <gtest/gtest.h>
+#include <type_traits>
 
 struct WmmaGfx11F32F16 {
   using AVec = v16h_wmma_native;

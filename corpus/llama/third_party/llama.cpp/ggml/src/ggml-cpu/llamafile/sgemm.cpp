@@ -55,6 +55,10 @@
 #include "simd-mappings.h"
 
 #include <array>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <type_traits>
 
 #ifdef _MSC_VER

@@ -12,6 +12,9 @@
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 
+#include <cmath>
+#include <cstddef>
+#include <iostream>
 #include <stdlib.h>
 
 using namespace streamk;

@@ -1,4 +1,5 @@
 #include "upscale.cuh"
+#include <cstdint>
 
 static __global__ void upscale_f32(const float * x, float * dst,
         const int nb00, const int nb01, const int nb02, const int nb03,

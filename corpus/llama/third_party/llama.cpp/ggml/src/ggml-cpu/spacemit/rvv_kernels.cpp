@@ -6,9 +6,13 @@
 #include "string.h"
 
 #include <algorithm>
+#include <array>
+#include <cassert>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <type_traits>
 
 #if !defined(__riscv_v) || !defined(__riscv_v_intrinsic)
 #    error "riscv v extension or v_intrinsic not enabled"

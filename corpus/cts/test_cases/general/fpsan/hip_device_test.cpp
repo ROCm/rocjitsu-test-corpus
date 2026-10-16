@@ -21,9 +21,11 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <random>
 #include <vector>
 
 static constexpr fpsan::Conversions kCC = fpsan::Conversions::Explicit;

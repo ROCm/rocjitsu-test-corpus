@@ -5,6 +5,8 @@
 #ifndef NOMINMAX
 #   define NOMINMAX
 #endif
+#include <cstddef>
+#include <cstdint>
 #include <windows.h>
 #endif
 

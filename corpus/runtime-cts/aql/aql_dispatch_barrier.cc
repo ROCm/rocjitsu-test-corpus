@@ -15,12 +15,15 @@
 //
 // Inspiration: paired barrier-bit and concurrent-dispatch controls in ROCr.
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/rocrtst/suites/functional/aql_barrier_bit.cc
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <thread>
 
 #include "gate_kernel.inc"
 #include "support/aql.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 int main(int argc, char** argv) {
   Start(argc, argv, "aql_dispatch_barrier");

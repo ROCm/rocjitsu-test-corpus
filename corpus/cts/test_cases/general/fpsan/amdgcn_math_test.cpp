@@ -18,6 +18,7 @@
 // on gfx1250, so they are excluded from the gfx1250 build.
 #include "fpsan/amdgcn_math.hpp"
 #include "fpsan/fpsan.hpp"
+#include "test_utils.hpp"
 
 #include "fpsan_semantics.hpp"
 

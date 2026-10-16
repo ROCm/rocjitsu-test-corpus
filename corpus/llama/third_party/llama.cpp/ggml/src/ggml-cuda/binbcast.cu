@@ -1,5 +1,9 @@
 #include "binbcast.cuh"
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <limits>
 #include <utility>
 
 template<typename T, size_t>

@@ -3,6 +3,9 @@
 #include "unary.cuh"
 #include "mmvf.cuh"
 #include "convert.cuh"
+#include <cstddef>
+#include <cstdint>
+#include <type_traits>
 
 template <typename T, typename type_acc, int ncols_dst, int block_size, bool has_fusion = false, bool is_multi_token_id = false>
 static __global__ void mul_mat_vec_f(

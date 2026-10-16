@@ -1,5 +1,6 @@
 #include "common.cuh"
 #include "fwht.cuh"
+#include <cstdint>
 
 template <int N>
 __launch_bounds__(4*ggml_cuda_get_physical_warp_size(), 1)

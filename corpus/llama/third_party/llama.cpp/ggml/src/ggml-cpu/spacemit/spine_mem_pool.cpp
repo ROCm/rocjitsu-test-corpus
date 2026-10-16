@@ -4,10 +4,13 @@
 #include "ime_env.h"
 #include "spine_tcm.h"
 
+#include <cstddef>
 #include <fcntl.h>
+#include <new>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <utility>
 
 #include <algorithm>
 #include <cerrno>

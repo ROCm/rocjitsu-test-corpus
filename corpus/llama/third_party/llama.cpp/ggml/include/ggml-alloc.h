@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ggml.h"
+#include <stddef.h>
 
 #ifdef  __cplusplus
 extern "C" {

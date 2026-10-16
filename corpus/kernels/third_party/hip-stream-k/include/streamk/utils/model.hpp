@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <iostream>
+#include <tuple>
 #include <vector>
 #include <utility> // for std::pair
 #include <algorithm> // for std::min_element

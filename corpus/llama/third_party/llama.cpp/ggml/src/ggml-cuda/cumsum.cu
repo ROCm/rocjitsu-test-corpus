@@ -3,6 +3,8 @@
 #include "convert.cuh"
 #include "ggml-cuda/common.cuh"
 #include "ggml.h"
+#include <cstddef>
+#include <cstdint>
 
 #ifdef GGML_CUDA_USE_CUB
 #   include <cub/cub.cuh>

@@ -24,6 +24,8 @@
 
 #include "ggml-backend.h"
 #include "ggml.h"
+#include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {

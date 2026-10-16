@@ -4,6 +4,9 @@
 #ifndef CTS_TESTS_SUPPORT_SDMA_H_
 #define CTS_TESTS_SUPPORT_SDMA_H_
 #include "support/kfd.h"
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
 namespace cts {
 class Sdma {

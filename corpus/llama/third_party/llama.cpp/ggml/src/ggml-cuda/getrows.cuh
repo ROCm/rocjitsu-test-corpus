@@ -1,4 +1,6 @@
 #include "common.cuh"
+#include <cstddef>
+#include <cstdint>
 
 #define CUDA_GET_ROWS_BLOCK_SIZE 256
 #define CUDA_GET_ROWS_BACK_BLOCK_SIZE 256

@@ -16,11 +16,14 @@
 // https://github.com/torvalds/linux/blob/551c722f40809618230001baccf219193e22fc5a/drivers/gpu/drm/scheduler/tests/tests_scheduler.c
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/clr/opencl/tests/ocltst/module/runtime/OCLMemDependency.cpp
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <thread>
 
 #include "pm4.h"
 #include "support/aql_payload.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 
 static int RunPm4(int argc, char** argv) {

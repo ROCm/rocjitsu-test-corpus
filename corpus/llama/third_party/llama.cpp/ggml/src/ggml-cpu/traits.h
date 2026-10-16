@@ -4,6 +4,7 @@
 #include "ggml.h"
 
 #ifdef __cplusplus
+#include <stddef.h>
 #    include <vector>
 extern "C" {
 #endif

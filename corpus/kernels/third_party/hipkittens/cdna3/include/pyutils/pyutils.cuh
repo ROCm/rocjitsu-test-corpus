@@ -1,7 +1,14 @@
 #pragma once
 
 #include "util.cuh"
+#include <hip/hip_runtime.h>
 #include <pybind11/pybind11.h>
+#include <array>
+#include <concepts>
+#include <cstddef>
+#include <cstdint>
+#include <stdexcept>
+#include <string>
 
 namespace kittens {
 namespace py {

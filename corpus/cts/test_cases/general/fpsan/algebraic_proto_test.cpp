@@ -7,6 +7,7 @@
 //   c++ -std=c++17 -I include tests/algebraic_proto_test.cpp -o /tmp/algt && /tmp/algt
 // ----------------------------------------------------------------------------
 #include "fpsan/detail/algebraic.hpp"
+#include "fpsan/fpsan.hpp"
 
 #include <cstdint>
 #include <cstdio>

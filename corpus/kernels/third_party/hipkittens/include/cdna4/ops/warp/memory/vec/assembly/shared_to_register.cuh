@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <type_traits>
 
 #include "../../../../../common/common.cuh"

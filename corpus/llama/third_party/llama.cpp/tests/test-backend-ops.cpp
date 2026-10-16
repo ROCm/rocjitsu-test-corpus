@@ -26,7 +26,9 @@
 #include <array>
 #include <cfloat>
 #include <cinttypes>
+#include <cmath>
 #include <cstdarg>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -34,15 +36,19 @@
 #include <ctime>
 #include <future>
 #include <fstream>
+#include <inttypes.h>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <random>
 #include <regex>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 #include <unordered_map>
 
