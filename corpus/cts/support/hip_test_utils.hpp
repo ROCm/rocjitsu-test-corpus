@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include <cstddef>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -73,18 +74,33 @@ inline bool device_is_gfx950() {
   return std::string(prop.gcnArchName).compare(0, 6, "gfx950") == 0;
 }
 
+namespace fpsan_test {
+// Throw on failure so these non-void helpers cannot return invalid data to
+// a dependent kernel launch or comparison.
+inline void require_hip_transfer(hipError_t status, const char *operation) {
+  if (status != hipSuccess)
+    throw std::runtime_error(std::string(operation) + " failed: " + hipGetErrorString(status));
+}
+} // namespace fpsan_test
+
 // Allocate device memory and copy a host vector into it. Caller hipFree()s.
 template <class T> T *to_dev(const std::vector<T> &h) {
   T *d = nullptr;
-  (void)hipMalloc(&d, h.size() * sizeof(T));
-  (void)hipMemcpy(d, h.data(), h.size() * sizeof(T), hipMemcpyHostToDevice);
+  fpsan_test::require_hip_transfer(hipMalloc(&d, h.size() * sizeof(T)), "hipMalloc");
+  hipError_t status = hipMemcpy(d, h.data(), h.size() * sizeof(T), hipMemcpyHostToDevice);
+  if (status != hipSuccess) {
+    // Preserve the copy error even if releasing the failed transfer also fails.
+    (void)hipFree(d);
+    fpsan_test::require_hip_transfer(status, "hipMemcpy (host to device)");
+  }
   return d;
 }
 
 // Copy n elements back from device memory into a host vector.
 template <class T> std::vector<T> from_dev(const T *d, std::size_t n) {
   std::vector<T> h(n);
-  (void)hipMemcpy(h.data(), d, n * sizeof(T), hipMemcpyDeviceToHost);
+  fpsan_test::require_hip_transfer(
+      hipMemcpy(h.data(), d, n * sizeof(T), hipMemcpyDeviceToHost), "hipMemcpy (device to host)");
   return h;
 }
 
