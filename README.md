@@ -167,12 +167,12 @@ Both lists use bare case names such as `vgpr_waitcnt`. The HIP program is shared
 by all cases for an architecture, so discovery exclusions do not remove test
 bodies from that program's compilation.
 
-CI orchestration remains in rocm-systems. Its race-test migration has already
-landed, and both the `corpus_ref` dispatch default and `ROCJITSU_DBT_CORPUS_REF`
-in `.github/workflows/rocjitsu-corpus-tests.yml` select the earlier migration
-revision. After this corpus change merges, update both pins to the merged
-revision and validate that corpus/emulator pair in CI. Changes to the corpus
-branch do not change the revision selected by those pins.
+CI orchestration remains in rocm-systems. Its
+`.github/workflows/rocjitsu-corpus-tests.yml` runs this suite in the Release
+lane and selects the corpus revision through both the `corpus_ref` dispatch
+default and `ROCJITSU_DBT_CORPUS_REF`. Changes here reach that CI only after
+both pins move to a merged corpus revision that contains them; update the two
+pins together and validate the corpus/emulator pair in CI.
 
 ### gfx1250 memory CTS
 
