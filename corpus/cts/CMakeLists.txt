@@ -243,6 +243,8 @@ fpsan_add_compile_fail_test(fpsan_neg_non_float_type
     "${CTS_TEST_CASES_DIR}/compile_fail/fpsan/neg_non_float_type.cpp")
 
 # Tests shared across supported GPU families.
+cts_add_hip_test(hip_test_utils_test
+    "${CTS_TEST_CASES_DIR}/general/hip_test_utils_test.cpp")
 fpsan_add_cxx_test(fpsan_build_canary
     "${CTS_TEST_CASES_DIR}/general/fpsan/build_canary.cpp" NO_GTEST)
 fpsan_add_cxx_test(fpsan_cast_test
