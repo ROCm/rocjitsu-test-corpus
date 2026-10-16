@@ -3,6 +3,12 @@
 
 #include "race_test_support.hpp"
 
+#include <gtest/gtest.h>
+#include <hip/hip_runtime.h>
+
+#include <stdexcept>
+#include <string>
+
 namespace {
 hipError_t allocation_status = hipSuccess;
 hipError_t copy_status = hipSuccess;

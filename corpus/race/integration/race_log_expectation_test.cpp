@@ -251,7 +251,9 @@ TEST(RaceLogExpectationTest, ReadsCurrentCaseLog) {
 }
 
 TEST(RaceLogExpectationTest, MissingFileFails) {
-  const std::filesystem::path missing;
+  TemporaryCaseDirectory case_directory;
+  const std::filesystem::path missing =
+      std::filesystem::current_path() / "missing" / "race.log";
   const RaceLogParseResult parsed = parseRaceLogFile(missing);
 
   EXPECT_FALSE(parsed.ok());
