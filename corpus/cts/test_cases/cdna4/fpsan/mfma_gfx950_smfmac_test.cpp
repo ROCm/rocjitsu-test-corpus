@@ -1,7 +1,21 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
+#include "fpsan/amdgcn_matrix.hpp"
+#include "fpsan/amdgcn_mfma.hpp"
+#include "fpsan/fpsan.hpp"
+#include "fpsan_semantics.hpp"
+#include "hip_test_utils.hpp"
 #include "mfma_gfx950_parts.hpp"
+#include "test_random.hpp"
+#include "test_utils.hpp"
+#include <cstdint>
+#include <gtest/gtest.h>
+#include <hip/hip_runtime.h>
+#include <random>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // Sparse MFMA (SMFMAC), f16/bf16. The Float path forwards to the builtin

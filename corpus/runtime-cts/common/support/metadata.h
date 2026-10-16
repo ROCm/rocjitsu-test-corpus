@@ -6,6 +6,7 @@
 // https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa_ext_amd.h
 #ifndef CTS_GFX1250_METADATA_H_
 #define CTS_GFX1250_METADATA_H_
+#include <cstdint>
 #include <cstring>
 
 #include "support/aql.h"

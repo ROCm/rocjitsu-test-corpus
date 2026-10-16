@@ -17,8 +17,14 @@
 #include "traits.h"
 #include "vec.h"
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <fcntl.h>
+#include <pthread.h>
 #include <sys/mman.h>
+#include <type_traits>
 #include <unistd.h>
 
 #include <algorithm>

@@ -8,6 +8,8 @@
 #include "../../../../common/common.cuh"
 #include "../../../../types/types.cuh"
 #include "../util/util.cuh"
+#include <bit>
+#include <cstdint>
 
 namespace kittens {
 

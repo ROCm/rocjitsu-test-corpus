@@ -28,8 +28,10 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <random>
 #include <type_traits>
 #include <vector>
 

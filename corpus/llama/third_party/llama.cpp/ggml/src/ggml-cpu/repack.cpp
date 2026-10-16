@@ -12,6 +12,8 @@
 #include "arch-fallback.h"
 
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <cassert>
 #include <cstdio>  // for GGML_ASSERT

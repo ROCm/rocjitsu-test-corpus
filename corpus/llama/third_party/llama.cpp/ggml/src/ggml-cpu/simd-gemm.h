@@ -3,6 +3,8 @@
 // Computes C[M x N] += A[M x K] * B[K x N]
 
 #include "simd-mappings.h"
+#include <stddef.h>
+#include <stdint.h>
 
 // TODO: add support for sizeless vector types
 #if defined(GGML_SIMD) && !defined(__ARM_FEATURE_SVE) && !defined(__riscv_v_intrinsic)

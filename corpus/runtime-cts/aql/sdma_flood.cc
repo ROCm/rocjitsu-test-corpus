@@ -20,10 +20,16 @@
 // https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/libamdf/cts/gpu/sdma_queue_test.cc
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/libhsakmt/tests/kfdtest/src/KFDQMTest.cpp
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <memory>
+#include <vector>
 
+#include "support/kfd.h"
 #include "support/sdma.h"
+#include "test.h"
 using namespace cts;
 
 int main(int argc, char** argv) {

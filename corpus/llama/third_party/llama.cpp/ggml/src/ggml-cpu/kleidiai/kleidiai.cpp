@@ -3,6 +3,7 @@
 //
 #include <arm_neon.h>
 #include <assert.h>
+#include <cstdlib>
 #include <stdio.h>
 #include <atomic>
 #include <cfloat>

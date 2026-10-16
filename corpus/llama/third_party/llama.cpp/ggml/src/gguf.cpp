@@ -3,16 +3,20 @@
 #include "ggml-impl.h"
 #include "gguf.h"
 
+#include <algorithm>
+#include <cerrno>
 #include <cinttypes>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <inttypes.h>
 #include <map>
 #include <new>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #define GGUF_MAX_STRING_LENGTH  (1024*1024*1024)

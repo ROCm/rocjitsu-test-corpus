@@ -30,3 +30,7 @@ iterations, and timing iterations overridable by the MXFP8/FP8 case wrappers,
 to make the CDNA3 BF16 dimensions overridable without preprocessor pollution,
 and to let the BF16 sources compile without their upstream pybind/PyTorch
 modules when used by standalone kernel corpus runners.
+
+The corpus adds direct standard-library and HIP includes for the declarations used by
+these sources and headers, including platform-specific code. These local
+include edits leave the extracted implementations unchanged.

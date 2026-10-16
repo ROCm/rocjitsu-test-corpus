@@ -1,5 +1,7 @@
 #include "mean.cuh"
 #include "reduce_rows.cuh"
+#include <cstddef>
+#include <cstdint>
 
 #ifdef GGML_CUDA_USE_CUB
 #include <cub/cub.cuh>

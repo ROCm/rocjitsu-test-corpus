@@ -1,4 +1,7 @@
 #include "add-id.cuh"
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 
 static __global__ void add_id_kernel(
         const float * src0, const float * src1, const int32_t * src2, float * dst,

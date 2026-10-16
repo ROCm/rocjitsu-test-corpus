@@ -37,6 +37,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <random>
 #include <vector>
 
 using fpsan::Conversions;

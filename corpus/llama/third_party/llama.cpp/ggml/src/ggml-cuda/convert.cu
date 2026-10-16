@@ -1,6 +1,7 @@
 #include "convert.cuh"
 #include "dequantize.cuh"
 
+#include <algorithm>
 #include <cstdint>
 
 #define CUDA_Q8_0_NE_ALIGN 2048

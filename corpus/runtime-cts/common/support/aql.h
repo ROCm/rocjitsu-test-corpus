@@ -4,6 +4,8 @@
 #ifndef CTS_TESTS_SUPPORT_AQL_H_
 #define CTS_TESTS_SUPPORT_AQL_H_
 #include "support/kfd.h"
+#include <cstddef>
+#include <cstdint>
 
 namespace cts {
 struct Dispatch {

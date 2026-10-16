@@ -1,5 +1,6 @@
 #include "common.cuh"
 #include "ggml.h"
+#include <cstdint>
 
 // fused-kernel recurrent-state output; strides in elements (per-seq stride is always D, set in-kernel)
 struct ggml_cuda_gated_delta_net_fused_cache {

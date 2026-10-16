@@ -19,7 +19,9 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <random>
 #include <sstream>
+#include <string>
 #include <vector>
 
 using fpsan::Value;

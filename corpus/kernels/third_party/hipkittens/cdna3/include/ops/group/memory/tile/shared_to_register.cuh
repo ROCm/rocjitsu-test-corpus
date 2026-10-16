@@ -12,6 +12,8 @@
  * @param src[in]  The source shared tile.
  */
 template<ducks::rt::all RT, ducks::st::all ST>
+#include <bit>
+#include <type_traits>
 __device__ inline static void load(RT &dst, const ST &src) {
     constexpr int height = ST::height;
     constexpr int warp_height = RT::height;

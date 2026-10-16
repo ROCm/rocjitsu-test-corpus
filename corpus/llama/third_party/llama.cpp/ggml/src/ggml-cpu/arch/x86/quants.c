@@ -9,6 +9,8 @@
 #include "../../ggml-cpu-impl.h"
 
 #include <math.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 #include <assert.h>
 #include <stdlib.h> // for qsort

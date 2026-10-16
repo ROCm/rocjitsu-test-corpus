@@ -5,7 +5,10 @@
 
  #pragma once
 
+#include <cstddef>
+#include <cstdint>
  #include <type_traits>
+#include <utility>
  
  #include "../../../../../common/common.cuh"
  #include "../../../../../types/types.cuh"

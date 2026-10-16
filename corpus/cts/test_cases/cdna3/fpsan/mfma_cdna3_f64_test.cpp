@@ -1,7 +1,18 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
+#include "fpsan/amdgcn_mfma.hpp"
+#include "fpsan_semantics.hpp"
+#include "hip_test_utils.hpp"
 #include "mfma_cdna3_parts.hpp"
+#include "test_random.hpp"
+#include "test_utils.hpp"
+#include <cstddef>
+#include <cstdint>
+#include <gtest/gtest.h>
+#include <hip/hip_runtime.h>
+#include <random>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // F64 16x16x4 and 4x4x4 MFMA shapes.

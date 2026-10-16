@@ -1,6 +1,11 @@
 #include "common.cuh"
 #include "fattn-common.cuh"
 #include "fattn-wmma-f16.cuh"
+#include <cfloat>
+#include <climits>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 // nbatch_fa == number of KQ rows to process per iteration
 // nbatch_K == number of K columns to load in parallel for KQ calculation

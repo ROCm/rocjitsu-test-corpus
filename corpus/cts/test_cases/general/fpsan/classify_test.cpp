@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <random>
 #include <vector>
 
 using fpsan::Conversions;

@@ -1,4 +1,5 @@
 #include "traits.h"
+#include <cstddef>
 
 #include "ggml-backend-impl.h"
 #include "ggml-backend.h"

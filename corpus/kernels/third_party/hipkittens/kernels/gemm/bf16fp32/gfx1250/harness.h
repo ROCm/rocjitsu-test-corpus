@@ -17,12 +17,14 @@
 
 #include <hip/hip_runtime.h>
 #include <hip/hip_bf16.h>
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <random>
+#include <stddef.h>
 #include <vector>
 
 static inline void hip_check(hipError_t e, const char* what, int line) {

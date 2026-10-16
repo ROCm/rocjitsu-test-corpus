@@ -1,4 +1,6 @@
 #include "ggml-backend-impl.h"
+#include <cstddef>
+#include <cstdint>
 
 #if defined(__aarch64__)
 

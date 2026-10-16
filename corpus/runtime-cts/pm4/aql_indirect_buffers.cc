@@ -15,10 +15,14 @@
 // Progress waits have a separate 10-second deadline.
 // Inspiration and public packet layout: ROCr AqlQueue::ExecutePM4.
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_aql_queue.cpp
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 
 #include "pm4.h"
 #include "support/aql.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 struct VendorIb {
   uint16_t header, format;

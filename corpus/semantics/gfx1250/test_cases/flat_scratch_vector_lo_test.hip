@@ -1,6 +1,8 @@
 #include "test_support.hpp"
+#include <hip/hip_runtime.h>
 
 #include <cstdint>
+#include <vector>
 
 extern "C" __global__ void check_flat_scratch_vector_lo(uint32_t *out) {
   const unsigned lane = threadIdx.x;

@@ -28,6 +28,7 @@
 
 #include "../../../common/common.cuh"
 #include "../sync/barrier.cuh"
+#include <cstdint>
 
 namespace kittens {
 namespace cluster {

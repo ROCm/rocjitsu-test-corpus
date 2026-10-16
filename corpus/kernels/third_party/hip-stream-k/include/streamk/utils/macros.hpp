@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <cstdio>
+#include <cstdlib>
 #include <hip/hip_runtime.h>
 
 namespace streamk {

@@ -7,6 +7,10 @@
 #include "amx/amx.h"
 
 #include <cctype>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 

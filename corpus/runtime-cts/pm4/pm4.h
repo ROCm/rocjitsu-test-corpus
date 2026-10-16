@@ -5,8 +5,11 @@
 #ifndef CTS_TESTS_SUPPORT_PM4_H_
 #define CTS_TESTS_SUPPORT_PM4_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <initializer_list>
 #include <iterator>
+#include <vector>
 
 #include "packets.h"
 #include "support/kfd.h"

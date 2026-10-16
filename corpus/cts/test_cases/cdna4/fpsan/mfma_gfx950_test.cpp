@@ -1,7 +1,18 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
+#include "fpsan/amdgcn_matrix.hpp"
+#include "fpsan/amdgcn_mfma.hpp"
+#include "fpsan_semantics.hpp"
+#include "hip_test_utils.hpp"
 #include "mfma_gfx950_parts.hpp"
+#include "test_random.hpp"
+#include "test_utils.hpp"
+#include <cstdint>
+#include <gtest/gtest.h>
+#include <hip/hip_runtime.h>
+#include <random>
+#include <vector>
 
 #define MFMA_TESTS(Name)                                                                           \
   TEST(Name, LayoutMatchesHardware) { run_layout_matches_hardware<Name>(); }                       \

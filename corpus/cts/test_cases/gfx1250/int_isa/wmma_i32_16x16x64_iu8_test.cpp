@@ -2,6 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 #include "../../general/int_isa/matrix_test_parts.hpp"
+#include "hip_test_utils.hpp"
+#include <cstddef>
+#include <cstdint>
+#include <gtest/gtest.h>
+#include <hip/hip_runtime.h>
+#include <vector>
 
 namespace {
 template <bool ASign, bool BSign, bool Saturate> struct WmmaI32Iu8K64 {

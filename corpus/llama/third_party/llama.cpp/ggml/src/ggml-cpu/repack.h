@@ -2,6 +2,8 @@
 
 #define GGML_COMMON_DECL_CPP
 #include "ggml-common.h"
+#include <stddef.h>
+#include <stdint.h>
 
 #include "traits.h"
 #include "ggml.h"

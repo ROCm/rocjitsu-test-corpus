@@ -1,5 +1,7 @@
 #include "fill.cuh"
 #include "convert.cuh"
+#include <cstdint>
+#include <cstring>
 
 #define CUDA_FILL_BLOCK_SIZE 256
 

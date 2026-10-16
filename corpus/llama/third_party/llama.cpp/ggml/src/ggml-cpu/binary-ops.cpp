@@ -1,4 +1,6 @@
 #include "binary-ops.h"
+#include <cstdint>
+#include <type_traits>
 
 #if defined(GGML_USE_ACCELERATE)
 #include <Accelerate/Accelerate.h>

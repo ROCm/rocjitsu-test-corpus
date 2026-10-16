@@ -1,6 +1,10 @@
 #include "getrows.cuh"
 #include "dequantize.cuh"
 #include "convert.cuh"
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <type_traits>
 
 template<int qk, int qr, dequantize_kernel_t dequantize_kernel, typename dst_t>
 static __global__ void k_get_rows(

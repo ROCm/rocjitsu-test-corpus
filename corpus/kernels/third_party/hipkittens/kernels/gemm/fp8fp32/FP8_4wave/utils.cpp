@@ -3,6 +3,7 @@ Load utils for fine-grained interleaving in FP8_4wave.
 These are wrappers around the individual assembly instructions.
 */
 
+#include <cstdint>
 #include <type_traits>
 #include "kittens.cuh"
 

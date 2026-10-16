@@ -10,7 +10,12 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <stdlib.h>
 #include <string>
+#include <string_view>
+#include <system_error>
+#include <utility>
+#include <vector>
 
 namespace rocjitsu::test {
 namespace {

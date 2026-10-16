@@ -8,6 +8,7 @@
 
 #include "race_log_expectation.hpp"
 
+#include <cstdint>
 #include <cstdio>
 #include <stdexcept>
 #include <string>

@@ -10,10 +10,13 @@
 #include "traits.h"
 
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <cassert>
 #include <cstdlib> // for qsort
 #include <cstdio>  // for GGML_ASSERT
+#include <type_traits>
 
 #define GGML_CPU_CLANG_WORKAROUND
 #include "../../repack.h"

@@ -1,5 +1,6 @@
 #include "snake.cuh"
 #include "convert.cuh"
+#include <cstdint>
 
 // Fused Snake activation: y = x + sin^2(a * x) * inv_b
 // x: [T, C] (T contiguous), a: [1, C], inv_b: [1, C]

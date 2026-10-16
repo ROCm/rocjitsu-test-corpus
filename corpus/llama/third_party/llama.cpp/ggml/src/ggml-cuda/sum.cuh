@@ -1,4 +1,5 @@
 #include "common.cuh"
+#include <cstdint>
 
 void sum_f32_cuda(ggml_cuda_pool & pool, const float * x, float * dst, const int64_t ne, cudaStream_t stream);
 

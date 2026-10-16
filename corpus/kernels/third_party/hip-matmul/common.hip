@@ -9,11 +9,14 @@
 
 #include <hip/hip_runtime.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
 #include <random>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 inline void hip_check_impl(hipError_t hip_error_code, const char *condstr,

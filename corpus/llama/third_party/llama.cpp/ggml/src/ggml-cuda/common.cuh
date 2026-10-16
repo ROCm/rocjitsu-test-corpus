@@ -4,10 +4,14 @@
 #include "ggml-impl.h"
 #include "ggml-cuda.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
+#include <limits>
 #include <memory>
 #include <mutex>
+#include <type_traits>
 
 #if defined(GGML_USE_HIP)
 #define GGML_COMMON_DECL_HIP

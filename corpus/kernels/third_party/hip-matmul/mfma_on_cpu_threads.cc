@@ -14,8 +14,10 @@
 
 #include <barrier>
 #include <cassert>
+#include <cstdio>
 #include <functional>
 #include <thread>
+#include <vector>
 
 using floatx4_t = __attribute__((__vector_size__(4 * sizeof(float)))) float;
 

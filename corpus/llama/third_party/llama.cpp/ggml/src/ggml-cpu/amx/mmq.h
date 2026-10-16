@@ -1,5 +1,6 @@
 #pragma once
 #include "common.h"
+#include <stddef.h>
 
 size_t ggml_backend_amx_desired_wsize(const struct ggml_tensor * dst);
 

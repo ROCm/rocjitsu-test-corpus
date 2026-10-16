@@ -4,8 +4,10 @@
 
 #pragma once
 
+#include <iterator>
 #include <string.h>
 #include <iostream>
+#include <string>
 
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>

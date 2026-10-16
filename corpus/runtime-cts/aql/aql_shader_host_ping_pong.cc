@@ -13,10 +13,13 @@
 // Progress waits have a separate 10-second deadline.
 // Inspiration: independent direct-KFD adaptation of public workload patterns.
 // https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/libhrx/cts/tests/queue_ops/queue_ops_test.cpp
+#include <cstdint>
 #include <cstring>
 
 #include "host_exchange_kernel.inc"
 #include "support/aql.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 int main(int argc, char** argv) {
   Start(argc, argv, "aql_shader_host_ping_pong");

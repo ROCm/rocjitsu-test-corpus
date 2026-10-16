@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <ios>
 #include <limits>
 
 using fpsan::Conversions;

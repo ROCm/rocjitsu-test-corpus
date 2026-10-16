@@ -2,6 +2,8 @@
 #include "convert.cuh"
 #include "tri.cuh"
 #include "ggml.h"
+#include <cstddef>
+#include <cstdint>
 
 template<typename T, bool prefix_keep, int add_to_split>
 static __global__ void tri_kernel(

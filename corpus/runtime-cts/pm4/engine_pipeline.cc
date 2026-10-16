@@ -18,12 +18,15 @@
 // https://github.com/KhronosGroup/OpenCL-CTS/blob/9feccbb8fcb8eefeebf86a48036173a8155f9d21/test_conformance/extensions/cl_khr_command_buffer/command_buffer_pipelined_enqueue.cpp
 // https://github.com/KhronosGroup/VK-GL-CTS/blob/3905c821f43ded89284713187ffb3c7a1072afdb/external/vulkancts/modules/vulkan/synchronization/vktSynchronizationOperationMultiQueueTests.cpp
 // https://github.com/tinygrad/tinygrad/blob/c509335eaa34f60718a121a8ca1c1953777731b7/test/external/external_test_hcq.py
+#include <cstdint>
 #include <cstring>
 
 #include "pipeline_kernel.inc"
 #include "pm4.h"
 #include "support/aql.h"
+#include "support/kfd.h"
 #include "support/sdma.h"
+#include "test.h"
 using namespace cts;
 
 static int RunPm4(int argc, char** argv) {

@@ -1,4 +1,7 @@
 #include "pool2d.cuh"
+#include <cassert>
+#include <cfloat>
+#include <cstdint>
 
 template <typename Ti, typename To>
 static  __global__ void pool2d_nchw_kernel(
