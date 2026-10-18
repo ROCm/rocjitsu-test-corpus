@@ -10,7 +10,7 @@ source:
 
 ```text
 cases/
-  <project>/<case>/      runner, metadata, and optional overrides/helpers
+  <project>/[<architecture>/]<case>/  runner, metadata, and optional overrides/helpers
 
 third_party/
   <project>/             vendored or extracted upstream sources
@@ -18,6 +18,8 @@ third_party/
 
 Collected kernel cases:
 
+- [guitar-hero](cases/guitar-hero/README.md): assembly instruction, divergence
+  and checkpoint smokes for independent compute workgroups.
 - `hip-stream-k/`:
   - `simple_streamk`
   - `two_tile_streamk`
@@ -35,6 +37,9 @@ Collected kernel cases:
 
 | Case | Target Arch | Check |
 | --- | --- | --- |
+| `guitar-hero/guitar_hero_rdna4/guitar_hero_wave32` | `gfx1201`, wave32 | Launch and workgroup-consistency smoke |
+| `guitar-hero/guitar_hero_rdna4/guitar_hero_wave64` | `gfx1201`, wave64 | Launch and workgroup-consistency smoke |
+| `guitar-hero/guitar_hero_rdna3` | `gfx1100`, wave32 | Launch and workgroup-consistency smoke |
 | `hip-stream-k/simple_streamk` | CDNA3 | Pass |
 | `hip-stream-k/two_tile_streamk` | CDNA3 | Pass |
 | `hip-matmul/matmul` | CDNA3 | Bug |
@@ -108,8 +113,9 @@ source tree in `third_party/hipkittens`. See
 
 ## Corpus Layout
 
-Runnable reproducer cases live under `cases/`. A case owns its runner, metadata,
-and any local source overrides or helper CMake files:
+Runnable reproducer cases live under `cases/`, with optional architecture
+subdirectories. Discovery searches recursively for `case.json`. A case owns its
+runner, metadata, and any local source overrides or helper CMake files:
 
 ```text
 cases/
@@ -158,6 +164,7 @@ corpus: HIP runtime, rocPRIM/rocThrust, rocBLAS, and hipBLAS.
 `OFF` when configuring a smaller build and enable individual backends with the
 options below.
 
+`KERNEL_CORPUS_ENABLE_GUITAR_HERO=ON` needs `hip` and the SDK assembler and `ld.lld`.
 `KERNEL_CORPUS_ENABLE_HIP_STREAMK=ON` needs `hip`, `rocThrust`/`rocPRIM`, and
 `rocBLAS` for validation.
 `KERNEL_CORPUS_ENABLE_HIP_MATMUL=ON` needs `hip`.
