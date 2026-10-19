@@ -18,6 +18,7 @@ completed. Identical incorrect results across all groups are not detected.
 | --- | --- | ---: | ---: |
 | [guitar_hero](guitar_hero_rdna4/guitar_hero_wave32/) | gfx1201 | 32 | 641 |
 | [guitar_hero_wave64](guitar_hero_rdna4/guitar_hero_wave64/) | gfx1201 | 64 | 641 |
+| [guitar_hero_rdna2](guitar_hero_rdna2/) | gfx1030 | 32 | 490 |
 | [guitar_hero_rdna3](guitar_hero_rdna3/) | gfx1100 | 32 | 633 |
 | [guitar_hero_cdna4](guitar_hero_cdna4/) | gfx950 | 64 | 1198 |
 | [guitar_hero_cdna5](guitar_hero_cdna5/) | gfx1250 | 32 | 756 |
