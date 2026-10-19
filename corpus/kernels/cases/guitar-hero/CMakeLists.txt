@@ -1,5 +1,6 @@
 if(NOT "gfx1201" IN_LIST CMAKE_HIP_ARCHITECTURES AND
    NOT "gfx1100" IN_LIST CMAKE_HIP_ARCHITECTURES AND
+   NOT "gfx1010" IN_LIST CMAKE_HIP_ARCHITECTURES AND
    NOT "gfx1030" IN_LIST CMAKE_HIP_ARCHITECTURES AND
    NOT "gfx950" IN_LIST CMAKE_HIP_ARCHITECTURES AND
    NOT "gfx1250" IN_LIST CMAKE_HIP_ARCHITECTURES)
@@ -72,6 +73,23 @@ if("gfx1030" IN_LIST CMAKE_HIP_ARCHITECTURES)
         DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/guitar_hero_rdna2.hsaco")
 endif()
 
+if("gfx1010" IN_LIST CMAKE_HIP_ARCHITECTURES)
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/guitar_hero_rdna1.hsaco"
+        BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/guitar_hero_rdna1.o"
+        COMMAND "${CMAKE_HIP_COMPILER}" -target amdgcn-amd-amdhsa -mcpu=gfx1010
+            -mno-wavefrontsize64 -x assembler -c "${CMAKE_CURRENT_SOURCE_DIR}/guitar_hero_rdna1/guitar_hero_rdna1.s"
+            -o "${CMAKE_CURRENT_BINARY_DIR}/guitar_hero_rdna1.o"
+        COMMAND "${GUITAR_HERO_LLD}" -shared
+            "${CMAKE_CURRENT_BINARY_DIR}/guitar_hero_rdna1.o"
+            -o "${CMAKE_CURRENT_BINARY_DIR}/guitar_hero_rdna1.hsaco"
+        DEPENDS guitar_hero_rdna1/guitar_hero_rdna1.s
+        VERBATIM
+    )
+    add_custom_target(guitar_hero_rdna1_code_object
+        DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/guitar_hero_rdna1.hsaco")
+endif()
+
 if("gfx950" IN_LIST CMAKE_HIP_ARCHITECTURES)
     add_custom_command(
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/guitar_hero_cdna4.hsaco"
@@ -104,6 +122,7 @@ add_guitar_hero(guitar_hero guitar_hero_rdna4/guitar_hero_wave32 gfx1201 guitar_
 add_guitar_hero(guitar_hero_wave64 guitar_hero_rdna4/guitar_hero_wave64 gfx1201 guitar_hero_rdna4_code_object)
 add_guitar_hero(guitar_hero_rdna3 guitar_hero_rdna3 gfx1100 guitar_hero_rdna3_code_object)
 add_guitar_hero(guitar_hero_rdna2 guitar_hero_rdna2 gfx1030 guitar_hero_rdna2_code_object)
+add_guitar_hero(guitar_hero_rdna1 guitar_hero_rdna1 gfx1010 guitar_hero_rdna1_code_object)
 
 add_guitar_hero(guitar_hero_cdna4 guitar_hero_cdna4 gfx950 guitar_hero_cdna4_code_object)
 
