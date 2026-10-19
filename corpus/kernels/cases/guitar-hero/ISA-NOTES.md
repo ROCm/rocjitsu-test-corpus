@@ -26,6 +26,33 @@ Development-time manual captures on R9700 covered 1, 7 and 256 groups, including
 manual qualification, not committed automated tests. Checkpoints 639–640
 exercise packed-dot DPP permutations. The shipped smoke has no hardware oracle.
 
+## RDNA2
+
+The gfx1030 variant is an independent wave32 source port of the gfx1100 case,
+audited against the RDNA2 manual and instruction inventory and assembled with
+`-mcpu=gfx1030 -mno-wavefrontsize64`. It keeps the gfx10 ABI: s0:s1 holds the
+kernarg pointer and the workgroup ID from s2 is preserved in s48. Each 64-item
+group contains two waves and owns 4 KiB of LDS/workspace. The 40-byte kernarg,
+64-byte private segment per lane, rolling hashes, bounded EXEC regions, dumps
+and checkpoint stopping are unchanged.
+
+RDNA3-only WMMA, VOPD, BF16-dot and global-addtid sections are removed. The port
+retains F16 and integer packed dots, DPP8/DPP16, DS addtid, scalar/vector ALU,
+memory, atomics and divergent control flow. The RDNA3 `v_dot2acc_f32_f16`
+probes use the gfx10 `v_dot2c_f32_f16` spelling; LDS floating compare/store uses
+`ds_cmpst_*`, and floating flat/buffer compare-and-swap uses
+`*_atomic_fcmpswap`. Compare and replacement operands follow the gfx10 layouts.
+
+Store completion uses `s_waitcnt_vscnt`; VMEM, LDS and scalar observations use
+the applicable VM/LGKM waits. The split VM, LGKM, EXP and dependency waits and
+`buffer_gl0_inv`, `buffer_gl1_inv` and `s_gl1_inv` cache operations are retained
+and followed by a checked load.
+
+The final inventory has 490 checkpoints. Qualification covers successful
+gfx1030 assembly, code-object/runner build and host structural checks; no
+gfx1030 runtime capture or expected-output oracle is committed. Wave64 is
+supported by the architecture but remains deferred and unqualified.
+
 ## RDNA3
 
 The gfx1100 wave32 port was exercised on W7900 during development. Its audit
