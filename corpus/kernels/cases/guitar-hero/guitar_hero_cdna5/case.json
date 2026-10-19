@@ -1,0 +1,43 @@
+{
+  "name": "guitar_hero_cdna5",
+  "project": "guitar-hero",
+  "runner": "runner.cpp",
+  "kind": "cmake_executable",
+  "supported_targets": [
+    "gfx1250"
+  ],
+  "build": {
+    "system": "cmake",
+    "target": "guitar_hero_cdna5"
+  },
+  "executable": "cases/guitar-hero/guitar_hero_cdna5",
+  "tests": {
+    "one_group": {
+      "test_args": [
+        "--groups",
+        1
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    },
+    "independent_groups": {
+      "test_args": [
+        "--groups",
+        7
+      ],
+      "validation": {
+        "kind": "exit_code",
+        "pass_exit_code": 0
+      }
+    }
+  },
+  "tags": [
+    "assembly",
+    "divergence",
+    "arithmetic",
+    "wmma",
+    "smoke"
+  ]
+}

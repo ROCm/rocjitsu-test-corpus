@@ -103,3 +103,42 @@ atomic forms, seven `global_load_lds_*` forms and these sparse integer operation
 - `v_smfmac_i32_32x32x32_i8`
 
 Physical timing and target-specific floating-point behavior remain unqualified.
+
+## CDNA5
+
+The gfx1250 variant is wave32 only, with two waves per 64-work-item group and
+64 bytes of private scratch per lane. Use ordinary non-cluster dispatch, as the
+HIP harness does: ttmp9 carries a cluster ID under cluster dispatch. Buffer
+descriptors use CDNA5 byte-count packing and linear addressing.
+
+The matrix sweep covers native dense/sparse WMMA and all 25 FP8/BF8/FP6/BF6/FP4
+format pairs, varied A/B/C and ordered sparse indices, plus scale16/scale32 with
+distinct per-byte/lane scales and scalar/vector/inline sources. Scalar scale
+pairs use A=2 and B=4 so bypassing both changes the result. True16 DPP8 probes use
+initialized v8/v9 high halves and observe preserved destination halves.
+
+Scheduling is explicit: native entry issues an unclaused VMEM prefetch and sets
+REPLAY_MODE; TRANS and V_PERM_PK16 have V_NOP successors; all 123 matrix sites
+have eight VALU slots before dependent access. End padding uses S_CODE_END.
+Vector-store/scalar-load observations use SE scope, completion waits and cache
+invalidation. These ISA/LLVM-based guards are structurally checked, without
+claiming complete physical pipeline qualification.
+
+**No CDNA5 hardware was available.** Development-time normal/scalar simulator
+captures agreed for all checkpoints and seeds. Selected CPU models and mutation
+checks were manual qualification, not committed automated tests. There are no
+saved expected values; simulator-mode agreement is not independent ISA proof.
+
+Nonzero `index_key` cases are assembler/decoder probes: the public field table
+reserves those bits, and the qualified simulator hardcodes key zero. Meaningful
+sparse selection checks vary ordered index pairs instead. Nine key-zero sparse
+8-bit cases disagree with the public A/B/index routing model; the simulator cites
+different hardware-reference routing. This disagreement remains a diagnostic
+limitation. Inline-zero scale probes are also provisional: the ISA's unit E8
+scale interpretation is not independently qualified by these outputs.
+Independent scale checks use vector and scalar sources.
+
+Floating packed-dot and formatted-buffer forms removed from gfx1250 are omitted.
+LLVM rejects dual floating-dot instructions despite SDK assembler acceptance.
+Two assembler-supported `v_cvt_pk_f16_f32` DPP forms remain excluded because the
+qualification decoder rejects them; the ordinary form is included.
