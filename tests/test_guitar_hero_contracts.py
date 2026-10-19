@@ -39,6 +39,9 @@ def test_checkpoint_layout(manifest):
     if name == "guitar_hero_cdna4":
         assert ".wavefront_size: 64" in assembly
         assert ".private_segment_fixed_size: 0" in assembly
+    elif name == "guitar_hero_rdna2":
+        assert ".wavefront_size: 32" in assembly
+        assert ".private_segment_fixed_size: 64" in assembly
 
 
 def test_cdna5_scheduling_contract():
