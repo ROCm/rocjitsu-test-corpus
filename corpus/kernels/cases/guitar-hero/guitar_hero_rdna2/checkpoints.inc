@@ -458,7 +458,6 @@
 "rdna2_legacy_accumulators_e32_plain",
 "rdna2_legacy_accumulators_e32_dpp16",
 "rdna2_legacy_accumulators_e32_dpp8",
-"rdna2_legacy_accumulators_e64_plain",
 "rdna2_constant_cmpx_f16_e32",
 "rdna2_constant_cmpx_f32_e32",
 "rdna2_constant_cmpx_f64_e32",

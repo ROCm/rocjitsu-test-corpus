@@ -48,7 +48,7 @@ the applicable VM/LGKM waits. The split VM, LGKM, EXP and dependency waits and
 `buffer_gl0_inv`, `buffer_gl1_inv` and `s_gl1_inv` cache operations are retained
 and followed by a checked load.
 
-The final inventory has 490 checkpoints. Qualification covers successful
+The final inventory has 489 checkpoints. Qualification covers successful
 gfx1030 assembly, code-object/runner build and host structural checks; no
 gfx1030 runtime capture or expected-output oracle is committed. Wave64 is
 supported by the architecture but remains deferred and unqualified.
