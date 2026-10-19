@@ -26,6 +26,38 @@ Development-time manual captures on R9700 covered 1, 7 and 256 groups, including
 manual qualification, not committed automated tests. The final two checkpoints
 exercise packed-dot DPP permutations. The shipped smoke has no hardware oracle.
 
+## RDNA1
+
+The gfx1010 variant is an independent wave32 port of the gfx1030 case, audited
+against the RDNA1 instruction inventory and manual and assembled with
+`-mcpu=gfx1010 -mno-wavefrontsize64`. It keeps the gfx10 ABI: s0:s1 holds the
+kernarg pointer and the workgroup ID from s2 is preserved in s48. Each 64-item
+group contains two waves and owns 4 KiB of LDS/workspace. The 40-byte kernarg,
+64-byte private segment per lane, rolling hashes, bounded EXEC regions, dumps
+and checkpoint stopping are unchanged. gfx1010 scratch operations use a zero
+VGPR offset where gfx1030 accepted the `off, off` spelling.
+
+RDNA2-only F16 and integer packed dots, `V_DOT2C_F32_F16`,
+`V_FMA_LEGACY_F32`, `BUFFER_ATOMIC_CSUB` and `GLOBAL_ATOMIC_CSUB` are removed.
+Multiply-add coverage instead uses `V_MAD_F32`, `V_MAD_LEGACY_F32`,
+`V_MAC_F32`, `V_MAC_LEGACY_F32`, `V_MADAK_F32` and `V_MADMK_F32`.
+`V_MAC_LEGACY_F32` has no DPP encoding, so the DPP16 and DPP8 probes use
+`V_MAC_F32`.
+
+Shared gfx10 DS addtid, DPP, compare/store, floating compare-swap, memory,
+atomic, scalar/vector ALU, divergence, wait and cache behavior are retained,
+including `S_WAIT_IDLE`. RDNA1-only scalar scratch loads are omitted because
+there is no paired scalar scratch store to initialize their input. ATC probes
+are omitted because they can fault and provide no deterministic result, and
+`S_GET_WAVEID_IN_WORKGROUP` is omitted because scheduler creation order is not
+deterministic. Privileged or otherwise unobservable forms are not used.
+
+The final inventory has 488 checkpoints. Qualification covers successful direct
+gfx1010 assembly, code-object/runner build, structural and discovery checks, and
+compile-only corpus execution. No gfx1010 hardware or simulator runtime capture
+and no expected-output oracle are committed. Wave64 is supported by the
+architecture but remains deferred and unqualified.
+
 ## RDNA2
 
 The gfx1030 variant is an independent wave32 source port of the gfx1100 case,

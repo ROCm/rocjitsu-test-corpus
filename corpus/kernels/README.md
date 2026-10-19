@@ -39,6 +39,7 @@ Collected kernel cases:
 | --- | --- | --- |
 | `guitar-hero/guitar_hero_rdna4/guitar_hero_wave32` | `gfx1201`, wave32 | Launch and workgroup-consistency smoke |
 | `guitar-hero/guitar_hero_rdna4/guitar_hero_wave64` | `gfx1201`, wave64 | Launch and workgroup-consistency smoke |
+| `guitar-hero/guitar_hero_rdna1` | `gfx1010`, wave32 | Launch and workgroup-consistency smoke |
 | `guitar-hero/guitar_hero_rdna2` | `gfx1030`, wave32 | Launch and workgroup-consistency smoke |
 | `guitar-hero/guitar_hero_rdna3` | `gfx1100`, wave32 | Launch and workgroup-consistency smoke |
 | `guitar-hero/guitar_hero_cdna4` | `gfx950`, wave64 | Launch and workgroup-consistency smoke |
