@@ -114,11 +114,14 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     if context.skip_all_runs:
         return
 
-    effective_case = build_result.metadata["effective_case"]
-    target_config = build_result.metadata["target_config"]
-    run_dir = build_result.metadata["run_dir"]
+    effective_case = case.metadata["effective_case"]
+    target_config = case.metadata["target_config"]
+    kernel_case = case.metadata["kernel_case"]
+    artifact_root = _artifact_root_with_shard(case, context)
+    run_dir = legacy_kernels._run_dir(artifact_root, target_config, kernel_case)
+    run_dir.mkdir(parents=True, exist_ok=True)
     if legacy_kernels.matches_case_selector(
-        case.metadata["kernel_case"], target_config.get("skip_run_tests", [])
+        kernel_case, target_config.get("skip_run_tests", [])
     ):
         return
     materialized_inputs = legacy_kernels.materialize_inputs(effective_case, run_dir)

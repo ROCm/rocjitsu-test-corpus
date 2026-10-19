@@ -141,7 +141,7 @@ s_load_dword s11, s[0:1], 24
 s_waitcnt lgkmcnt(0)
 ; With two user SGPRs, gfx10 delivers workgroup id X in s2.
 ; Preserve it before the instruction sweep reuses the input registers.
-s_mul_i32 s12, s48, 250880
+s_mul_i32 s12, s48, 250368
 s_add_u32 s4, s4, s12
 s_addc_u32 s5, s5, 0
 v_mul_lo_u32 v1, 0x2c9277b5, v0
@@ -15712,17 +15712,6 @@ s_waitcnt lgkmcnt(0)
 s_mov_b32 exec_lo, -1
 ds_read_addtid_b32 v17
 s_waitcnt lgkmcnt(0)
-s_lshl_b32 s21, s20, 4
-s_add_u32 s16, s14, s21
-s_addc_u32 s17, s15, 0
-s_waitcnt_vscnt null, 0
-s_mov_b32 exec_lo, 0xa5a55a5a
-s_waitcnt_vscnt null, 0
-s_waitcnt vmcnt(0)
-s_mov_b32 exec_lo, -1
-s_waitcnt vmcnt(0)
-v_lshlrev_b32 v8, 2, v0
-s_waitcnt lgkmcnt(0)
 s_mov_b32 m0, 0
 checkpoint 451
 
@@ -15739,6 +15728,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v20, 0xa5a5a5a5
 s_mov_b32 exec_lo, -1
+v_dot2c_f32_f16 v20, v8, v9 row_shr:1 row_mask:0x3 bank_mask:0xd bound_ctrl:1 fi:0
 s_mov_b32 exec_lo, -1
 sweep_inputs int
 v_mov_b32 v22, 0xa5a5a5a5
@@ -15759,6 +15749,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v30, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_dot2c_f32_f16 v30, v8, v9 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 checkpoint 452
 
@@ -15953,21 +15944,7 @@ v_dot2c_f32_f16 v16, v8, v9 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 checkpoint 458
 
-; Checkpoint 459: rdna2_legacy_accumulators_e64_plain
-clear_results
-v_cvt_pkrtz_f16_f32 v8, v4, v5
-v_cvt_pkrtz_f16_f32 v9, v5, v6
-v_mov_b32 v16, v6
-v_mov_b32 v17, v4
-s_mov_b32 exec_lo, 0xa5a55a5a
-s_mov_b32 exec_lo, -1
-checkpoint 459
-
-
-
-
-
-; Checkpoint 460: rdna2_constant_cmpx_f16_e32
+; Checkpoint 459: rdna2_constant_cmpx_f16_e32
 clear_results
 v_mov_b32 v8, v4
 v_mov_b32 v9, 0
@@ -15993,9 +15970,9 @@ v_cmp_tru_f16_e32 vcc_lo, v8, v10
 s_mov_b32 s16, vcc_lo
 s_mov_b32 exec_lo, -1
 v_mov_b32 v19, s16
-checkpoint 460
+checkpoint 459
 
-; Checkpoint 461: rdna2_constant_cmpx_f32_e32
+; Checkpoint 460: rdna2_constant_cmpx_f32_e32
 clear_results
 v_mov_b32 v8, v4
 v_mov_b32 v9, 0
@@ -16021,9 +15998,9 @@ v_cmp_tru_f32_e32 vcc_lo, v8, v10
 s_mov_b32 s16, vcc_lo
 s_mov_b32 exec_lo, -1
 v_mov_b32 v19, s16
-checkpoint 461
+checkpoint 460
 
-; Checkpoint 462: rdna2_constant_cmpx_f64_e32
+; Checkpoint 461: rdna2_constant_cmpx_f64_e32
 clear_results
 v_mov_b32 v8, v4
 v_mov_b32 v9, 0
@@ -16049,9 +16026,9 @@ v_cmp_tru_f64_e32 vcc_lo, v[8:9], v[10:11]
 s_mov_b32 s16, vcc_lo
 s_mov_b32 exec_lo, -1
 v_mov_b32 v19, s16
-checkpoint 462
+checkpoint 461
 
-; Checkpoint 463: rdna2_constant_cmpx_i32_e32
+; Checkpoint 462: rdna2_constant_cmpx_i32_e32
 clear_results
 v_mov_b32 v8, v4
 v_mov_b32 v9, 0
@@ -16077,9 +16054,9 @@ v_cmp_t_i32_e32 vcc_lo, v8, v10
 s_mov_b32 s16, vcc_lo
 s_mov_b32 exec_lo, -1
 v_mov_b32 v19, s16
-checkpoint 463
+checkpoint 462
 
-; Checkpoint 464: rdna2_constant_cmpx_u32_e32
+; Checkpoint 463: rdna2_constant_cmpx_u32_e32
 clear_results
 v_mov_b32 v8, v4
 v_mov_b32 v9, 0
@@ -16105,9 +16082,9 @@ v_cmp_t_u32_e32 vcc_lo, v8, v10
 s_mov_b32 s16, vcc_lo
 s_mov_b32 exec_lo, -1
 v_mov_b32 v19, s16
-checkpoint 464
+checkpoint 463
 
-; Checkpoint 465: rdna2_constant_cmpx_i64_e32
+; Checkpoint 464: rdna2_constant_cmpx_i64_e32
 clear_results
 v_mov_b32 v8, v4
 v_mov_b32 v9, 0
@@ -16133,9 +16110,9 @@ v_cmp_t_i64_e32 vcc_lo, v[8:9], v[10:11]
 s_mov_b32 s16, vcc_lo
 s_mov_b32 exec_lo, -1
 v_mov_b32 v19, s16
-checkpoint 465
+checkpoint 464
 
-; Checkpoint 466: rdna2_constant_cmpx_u64_e32
+; Checkpoint 465: rdna2_constant_cmpx_u64_e32
 clear_results
 v_mov_b32 v8, v4
 v_mov_b32 v9, 0
@@ -16161,9 +16138,9 @@ v_cmp_t_u64_e32 vcc_lo, v[8:9], v[10:11]
 s_mov_b32 s16, vcc_lo
 s_mov_b32 exec_lo, -1
 v_mov_b32 v19, s16
-checkpoint 466
+checkpoint 465
 
-; Checkpoint 467: rdna2_constant_cmpx_f16_e64
+; Checkpoint 466: rdna2_constant_cmpx_f16_e64
 clear_results
 v_mov_b32 v8, v4
 v_mov_b32 v9, 0
@@ -16189,9 +16166,9 @@ v_cmp_tru_f16_e64 vcc_lo, v8, v10
 s_mov_b32 s16, vcc_lo
 s_mov_b32 exec_lo, -1
 v_mov_b32 v19, s16
-checkpoint 467
+checkpoint 466
 
-; Checkpoint 468: rdna2_constant_cmpx_f32_e64
+; Checkpoint 467: rdna2_constant_cmpx_f32_e64
 clear_results
 v_mov_b32 v8, v4
 v_mov_b32 v9, 0
@@ -16217,9 +16194,9 @@ v_cmp_tru_f32_e64 vcc_lo, v8, v10
 s_mov_b32 s16, vcc_lo
 s_mov_b32 exec_lo, -1
 v_mov_b32 v19, s16
-checkpoint 468
+checkpoint 467
 
-; Checkpoint 469: rdna2_constant_cmpx_f64_e64
+; Checkpoint 468: rdna2_constant_cmpx_f64_e64
 clear_results
 v_mov_b32 v8, v4
 v_mov_b32 v9, 0
@@ -16245,9 +16222,9 @@ v_cmp_tru_f64_e64 vcc_lo, v[8:9], v[10:11]
 s_mov_b32 s16, vcc_lo
 s_mov_b32 exec_lo, -1
 v_mov_b32 v19, s16
-checkpoint 469
+checkpoint 468
 
-; Checkpoint 470: rdna2_constant_cmpx_i32_e64
+; Checkpoint 469: rdna2_constant_cmpx_i32_e64
 clear_results
 v_mov_b32 v8, v4
 v_mov_b32 v9, 0
@@ -16273,9 +16250,9 @@ v_cmp_t_i32_e64 vcc_lo, v8, v10
 s_mov_b32 s16, vcc_lo
 s_mov_b32 exec_lo, -1
 v_mov_b32 v19, s16
-checkpoint 470
+checkpoint 469
 
-; Checkpoint 471: rdna2_constant_cmpx_u32_e64
+; Checkpoint 470: rdna2_constant_cmpx_u32_e64
 clear_results
 v_mov_b32 v8, v4
 v_mov_b32 v9, 0
@@ -16301,9 +16278,9 @@ v_cmp_t_u32_e64 vcc_lo, v8, v10
 s_mov_b32 s16, vcc_lo
 s_mov_b32 exec_lo, -1
 v_mov_b32 v19, s16
-checkpoint 471
+checkpoint 470
 
-; Checkpoint 472: rdna2_constant_cmpx_i64_e64
+; Checkpoint 471: rdna2_constant_cmpx_i64_e64
 clear_results
 v_mov_b32 v8, v4
 v_mov_b32 v9, 0
@@ -16329,9 +16306,9 @@ v_cmp_t_i64_e64 vcc_lo, v[8:9], v[10:11]
 s_mov_b32 s16, vcc_lo
 s_mov_b32 exec_lo, -1
 v_mov_b32 v19, s16
-checkpoint 472
+checkpoint 471
 
-; Checkpoint 473: rdna2_constant_cmpx_u64_e64
+; Checkpoint 472: rdna2_constant_cmpx_u64_e64
 clear_results
 v_mov_b32 v8, v4
 v_mov_b32 v9, 0
@@ -16357,9 +16334,9 @@ v_cmp_t_u64_e64 vcc_lo, v[8:9], v[10:11]
 s_mov_b32 s16, vcc_lo
 s_mov_b32 exec_lo, -1
 v_mov_b32 v19, s16
-checkpoint 473
+checkpoint 472
 
-; Checkpoint 474: rdna2_ds_cmpstore_f32
+; Checkpoint 473: rdna2_ds_cmpstore_f32
 clear_results
 v_lshlrev_b32 v52, 4, v0
 v_mov_b32 v8, 0x3f800000
@@ -16380,9 +16357,9 @@ s_waitcnt lgkmcnt(0)
 s_mov_b32 exec_lo, -1
 ds_read_b32 v20, v52
 s_waitcnt lgkmcnt(0)
-checkpoint 474
+checkpoint 473
 
-; Checkpoint 475: rdna2_ds_cmpstore_rtn_f32
+; Checkpoint 474: rdna2_ds_cmpstore_rtn_f32
 clear_results
 v_lshlrev_b32 v52, 4, v0
 v_mov_b32 v8, 0x3f800000
@@ -16403,9 +16380,9 @@ s_waitcnt lgkmcnt(0)
 s_mov_b32 exec_lo, -1
 ds_read_b32 v20, v52
 s_waitcnt lgkmcnt(0)
-checkpoint 475
+checkpoint 474
 
-; Checkpoint 476: rdna2_ds_cmpstore_f64
+; Checkpoint 475: rdna2_ds_cmpstore_f64
 clear_results
 v_lshlrev_b32 v52, 4, v0
 v_mov_b32 v8, 0x3f800000
@@ -16426,9 +16403,9 @@ s_waitcnt lgkmcnt(0)
 s_mov_b32 exec_lo, -1
 ds_read_b64 v[20:21], v52
 s_waitcnt lgkmcnt(0)
-checkpoint 476
+checkpoint 475
 
-; Checkpoint 477: rdna2_ds_cmpstore_rtn_f64
+; Checkpoint 476: rdna2_ds_cmpstore_rtn_f64
 clear_results
 v_lshlrev_b32 v52, 4, v0
 v_mov_b32 v8, 0x3f800000
@@ -16449,9 +16426,9 @@ s_waitcnt lgkmcnt(0)
 s_mov_b32 exec_lo, -1
 ds_read_b64 v[20:21], v52
 s_waitcnt lgkmcnt(0)
-checkpoint 477
+checkpoint 476
 
-; Checkpoint 478: rdna2_lds_wrap
+; Checkpoint 477: rdna2_lds_wrap
 clear_results
 v_lshlrev_b32 v52, 4, v0
 v_and_b32 v8, 7, v0
@@ -16465,9 +16442,9 @@ s_waitcnt lgkmcnt(0)
 s_mov_b32 exec_lo, -1
 ds_read_b32 v17, v52
 s_waitcnt lgkmcnt(0)
-checkpoint 478
+checkpoint 477
 
-; Checkpoint 479: rdna2_flat_atomic_cmpswap_f32_no_return
+; Checkpoint 478: rdna2_flat_atomic_cmpswap_f32_no_return
 clear_results
 s_load_dwordx2 s[14:15], s[0:1], 32
 s_waitcnt lgkmcnt(0)
@@ -16493,9 +16470,9 @@ s_mov_b32 exec_lo, -1
 global_load_dword v20, v53, s[14:15]
 s_waitcnt vmcnt(0)
 s_waitcnt_vscnt null, 0
-checkpoint 479
+checkpoint 478
 
-; Checkpoint 480: rdna2_flat_atomic_cmpswap_f32_return
+; Checkpoint 479: rdna2_flat_atomic_cmpswap_f32_return
 clear_results
 s_load_dwordx2 s[14:15], s[0:1], 32
 s_waitcnt lgkmcnt(0)
@@ -16519,9 +16496,9 @@ s_waitcnt vmcnt(0)
 s_mov_b32 exec_lo, -1
 global_load_dword v20, v53, s[14:15]
 s_waitcnt vmcnt(0)
-checkpoint 480
+checkpoint 479
 
-; Checkpoint 481: rdna2_buffer_atomic_cmpswap_f32_no_return
+; Checkpoint 480: rdna2_buffer_atomic_cmpswap_f32_no_return
 clear_results
 s_load_dwordx2 s[14:15], s[0:1], 32
 s_waitcnt lgkmcnt(0)
@@ -16553,9 +16530,9 @@ s_mov_b32 exec_lo, -1
 global_load_dword v20, v53, s[14:15]
 s_waitcnt vmcnt(0)
 s_waitcnt_vscnt null, 0
-checkpoint 481
+checkpoint 480
 
-; Checkpoint 482: rdna2_buffer_atomic_cmpswap_f32_return
+; Checkpoint 481: rdna2_buffer_atomic_cmpswap_f32_return
 clear_results
 s_load_dwordx2 s[14:15], s[0:1], 32
 s_waitcnt lgkmcnt(0)
@@ -16585,9 +16562,9 @@ s_waitcnt vmcnt(0)
 s_mov_b32 exec_lo, -1
 global_load_dword v20, v53, s[14:15]
 s_waitcnt vmcnt(0)
-checkpoint 482
+checkpoint 481
 
-; Checkpoint 483: rdna2_wait_and_cache
+; Checkpoint 482: rdna2_wait_and_cache
 clear_results
 s_waitcnt_vmcnt null, 0
 s_waitcnt_lgkmcnt null, 0
@@ -16599,7 +16576,7 @@ s_gl1_inv
 s_waitcnt vmcnt(0) lgkmcnt(0)
 global_load_dword v16, v53, s[14:15]
 s_waitcnt vmcnt(0)
-checkpoint 483
+checkpoint 482
 
 
 
@@ -16617,7 +16594,7 @@ checkpoint 483
 
 
 
-; Checkpoint 484: scalar_local_calls
+; Checkpoint 483: scalar_local_calls
 clear_results
 ; PC values remain internal; only deterministic control-flow results are hashed.
 s_getpc_b64 s[16:17]
@@ -16652,9 +16629,9 @@ s_round_mode 0
 s_denorm_mode 15
 s_getreg_b32 s17, hwreg(HW_REG_MODE, 0, 8)
 v_mov_b32 v21, s17
-checkpoint 484
+checkpoint 483
 
-; Checkpoint 485: scalar_literal_slots
+; Checkpoint 484: scalar_literal_slots
 clear_results
 s_mov_b32 s16, 0x12345678
 s_not_b32 s17, 0x13579bdf
@@ -16680,9 +16657,9 @@ v_mov_b32 v24, s17
 s_and_b64 s[16:17], s[16:17], 0xfedcba98
 v_mov_b32 v25, s16
 v_mov_b32 v26, s17
-checkpoint 485
+checkpoint 484
 
-; Checkpoint 486: vector_literal_slots
+; Checkpoint 485: vector_literal_slots
 clear_results
 masked_begin 486
 v_not_b32_e32 v16, 0x12345678
@@ -16705,9 +16682,9 @@ v_fma_f32 v29, v4, 0x3eaaaaab, v5
 v_fma_f32 v30, v4, v5, 0x3eaaaaab
 v_fma_f32 v31, 0x3eaaaaab, v4, 0x3eaaaaab
 masked_end 486
-checkpoint 486
+checkpoint 485
 
-; Checkpoint 487: inline_constant_selectors
+; Checkpoint 486: inline_constant_selectors
 clear_results
 masked_begin 487
 ; Identical values in different slots exercise the inline selector encodings.
@@ -16728,9 +16705,9 @@ v_add_f32_e64 v29, -0.5, v4
 v_add_f32_e64 v30, v4, -4.0
 v_fma_f32 v31, v4, v5, 0.15915494
 masked_end 487
-checkpoint 487
+checkpoint 486
 
-; Checkpoint 488: ds_permute_masks
+; Checkpoint 487: ds_permute_masks
 clear_results
 ; Unique destinations avoid a lane-collision ordering dependency.
 v_xor_b32 v8, 31, v3
@@ -16744,9 +16721,9 @@ v_lshlrev_b32 v8, 2, v8
 ds_permute_b32 v18, v8, v2
 s_waitcnt lgkmcnt(0)
 s_mov_b32 exec_lo, -1
-checkpoint 488
+checkpoint 487
 
-; Checkpoint 489: scalar_mask_branches
+; Checkpoint 488: scalar_mask_branches
 clear_results
 ; Each condition is taken once and falls through once. No lane data is lost.
 s_mov_b32 s16, 0
@@ -16770,7 +16747,7 @@ s_add_u32 s16, s16, 100
 v_mov_b32 v16, s16
 s_nop 0
 v_nop
-checkpoint 489
+checkpoint 488
 
 .Lfinish:
 s_waitcnt_vscnt null, 0
