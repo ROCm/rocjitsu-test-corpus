@@ -62,3 +62,49 @@ aliases or renames; VOPD min/max use gfx1100 spellings. GDS/GWS, ordered counts,
 GS/debug operations, older prefetch-distance control and pixel termination remain
 excluded. SDK-rejected forms, including extended READFIRSTLANE, are omitted.
 RDNA4 wave64 coverage does not establish RDNA3 wave64 coverage.
+
+## CDNA4
+
+The gfx950 variant is wave64 only. It uses the gfx9 entry ABI, preserving the
+workgroup ID from s2 in s68. The descriptor allocates 128 VGPRs, 48 AGPRs at
+offset 128 and 80 SGPRs; s72:s79 hold hashed-loop state. Checkpoints consume
+v16:v31 and v60:v61 hold rolling hashes. IEEE and DX10 clamping are explicit.
+No private scratch is allocated.
+
+MFMA replaces WMMA, covering VGPR/AGPR sources, dense and sparse floating forms,
+scaled FP8/FP6/FP4 and accumulator transfers. Large fragments get a second
+checkpoint. Lane, packed-element, index-set and scale-byte variation make controls
+observable. Matrix operations use full EXEC. Software waits cover scalar masks,
+DPP dependencies, division flags, transcendental forwarding, MODE, M0 and matrix
+inputs, following the ISA tables and LLVM gfx950 hazard recognizer.
+
+Memory uses gfx950 format/cache encodings; returning vector atomics use `sc0`.
+LDS compare-and-store operand order differs from global/flat/buffer compare/swap.
+Transpose probes use full EXEC, lane-varying data, permuted addresses and offsets
+0/16, with distinct chunks at 0/16/32/48. B64 addresses satisfy eight-byte
+alignment. B96 uses a conservative 16-byte layout without claiming its unresolved
+numeric hardware alignment rule.
+
+**No CDNA4 hardware was available.** Development-time simulator comparisons
+found normal/forced-scalar agreement through checkpoint 1196 and a BF16 overflow
+disagreement at checkpoint 1197. Ordinary BF16 products use finite inputs.
+Sixteen disputed sparse-index cases occupy 1181–1196 so they do not contaminate
+preceding checkpoints. Four also depend on resolving inconsistent index-set
+widths in the manual. These observations are diagnostic; the shipped smoke
+contains no expected values and does not validate architectural index selection.
+
+Deliberate omissions retain their place in the complete coverage denominator:
+the qualification simulator reports unimplemented handlers for all 52 scalar
+atomic forms, seven `global_load_lds_*` forms and these sparse integer operations:
+
+- `v_smfmac_i32_16x16x128_i8`
+- `v_smfmac_i32_32x32x64_i8`
+- `v_smfmac_i32_16x16x64_i8`
+- `v_smfmac_i32_32x32x32_i8`
+
+Additional boundary probes cover pre-boundary ROW_BCAST15/31 lanes with both
+BOUND_CTRL values and source aliases. Raw buffer probes use an INVALID data
+format with valid backing storage, observing a suppressed load, store and
+returning atomic before rereading through a bound descriptor.
+
+Physical timing and target-specific floating-point behavior remain unqualified.
