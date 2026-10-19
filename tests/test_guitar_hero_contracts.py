@@ -31,10 +31,14 @@ def test_checkpoint_layout(manifest):
 
     # Group zero cannot expose a wrong stride; check it even on hosts without HIP.
     strides = re.findall(
-        r"^s_mul_i32 s12, (?:ttmp9|s48), (\d+)$", assembly, re.MULTILINE
+        r"^s_mul_i32 s12, (?:ttmp9|s48|s68), (\d+)$", assembly, re.MULTILINE
     )
     assert len(strides) == 1
     assert int(strides[0]) == len(checkpoints) * 64 * 2 * 4
+
+    if name == "guitar_hero_cdna4":
+        assert ".wavefront_size: 64" in assembly
+        assert ".private_segment_fixed_size: 0" in assembly
 
 
 def test_registered_cases():
