@@ -1,16 +1,16 @@
 {
-  "name": "guitar_hero_rdna3",
+  "name": "guitar_hero_rdna2",
   "project": "guitar-hero",
   "runner": "runner.cpp",
   "kind": "cmake_executable",
   "supported_targets": [
-    "gfx1100"
+    "gfx1030"
   ],
   "build": {
     "system": "cmake",
-    "target": "guitar_hero_rdna3"
+    "target": "guitar_hero_rdna2"
   },
-  "executable": "cases/guitar-hero/guitar_hero_rdna3",
+  "executable": "cases/guitar-hero/guitar_hero_rdna2",
   "tests": {
     "one_group": {
       "test_args": [
@@ -37,7 +37,6 @@
     "assembly",
     "divergence",
     "arithmetic",
-    "wmma",
     "smoke"
   ]
 }
