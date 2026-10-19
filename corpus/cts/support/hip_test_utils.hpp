@@ -3,8 +3,8 @@
 //
 // tests/hip_test_utils.hpp
 // ----------------------------------------------------------------------------
-// HIP-side test helpers shared by the GPU test files: the HIP_CHECK assertion
-// macro, a device-availability probe, and host<->device vector copies. Kept in
+// HIP-side test helpers shared by the GPU test files: HIP error-checking
+// macros, a device-availability probe, and host<->device vector copies. Kept in
 // the global namespace so the existing unqualified call sites need no change.
 // Include only from tests compiled as HIP.
 // ----------------------------------------------------------------------------
@@ -27,6 +27,15 @@
   do {                                                                                             \
     hipError_t e_ = (e);                                                                           \
     ASSERT_EQ(e_, hipSuccess) << hipGetErrorString(e_);                                            \
+  } while (0)
+
+// Throw on failure, including in helpers that return a value.
+#define HIP_CHECK_EXC(expr)                                                                        \
+  do {                                                                                             \
+    hipError_t hip_status_ = (expr);                                                               \
+    if (hip_status_ != hipSuccess)                                                                 \
+      throw std::runtime_error(std::string(#expr) + " failed at " + __FILE__ + ":" +               \
+                               std::to_string(__LINE__) + ": " + hipGetErrorString(hip_status_));  \
   } while (0)
 
 // True when at least one HIP device is present (tests GTEST_SKIP otherwise).
@@ -74,24 +83,16 @@ inline bool device_is_gfx950() {
   return std::string(prop.gcnArchName).compare(0, 6, "gfx950") == 0;
 }
 
-namespace fpsan_test {
-// Throw on failure so these non-void helpers cannot return invalid data to
-// a dependent kernel launch or comparison.
-inline void require_hip_transfer(hipError_t status, const char *operation) {
-  if (status != hipSuccess)
-    throw std::runtime_error(std::string(operation) + " failed: " + hipGetErrorString(status));
-}
-} // namespace fpsan_test
-
 // Allocate device memory and copy a host vector into it. Caller hipFree()s.
 template <class T> T *to_dev(const std::vector<T> &h) {
   T *d = nullptr;
-  fpsan_test::require_hip_transfer(hipMalloc(&d, h.size() * sizeof(T)), "hipMalloc");
-  hipError_t status = hipMemcpy(d, h.data(), h.size() * sizeof(T), hipMemcpyHostToDevice);
-  if (status != hipSuccess) {
+  HIP_CHECK_EXC(hipMalloc(&d, h.size() * sizeof(T)));
+  try {
+    HIP_CHECK_EXC(hipMemcpy(d, h.data(), h.size() * sizeof(T), hipMemcpyHostToDevice));
+  } catch (...) {
     // Preserve the copy error even if releasing the failed transfer also fails.
     (void)hipFree(d);
-    fpsan_test::require_hip_transfer(status, "hipMemcpy (host to device)");
+    throw;
   }
   return d;
 }
@@ -99,8 +100,7 @@ template <class T> T *to_dev(const std::vector<T> &h) {
 // Copy n elements back from device memory into a host vector.
 template <class T> std::vector<T> from_dev(const T *d, std::size_t n) {
   std::vector<T> h(n);
-  fpsan_test::require_hip_transfer(
-      hipMemcpy(h.data(), d, n * sizeof(T), hipMemcpyDeviceToHost), "hipMemcpy (device to host)");
+  HIP_CHECK_EXC(hipMemcpy(h.data(), d, n * sizeof(T), hipMemcpyDeviceToHost));
   return h;
 }
 
