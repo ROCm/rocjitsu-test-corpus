@@ -43,14 +43,14 @@ def guitar_hero_cases(target):
     ]
 
 
-@pytest.mark.parametrize("target", ["gfx1100", "gfx1201"])
+@pytest.mark.parametrize("target", ["gfx1100", "gfx1201", "gfx950", "gfx1250"])
 @pytest.mark.parametrize("reverse", [False, True])
 def test_cached_build_preserves_runtime_arguments_and_logs(
     kernel_session, target, reverse
 ):
     context, manager, commands = kernel_session
     cases = guitar_hero_cases(target)
-    assert len(cases) == (2 if target == "gfx1100" else 4)
+    assert len(cases) == (4 if target == "gfx1201" else 2)
     if reverse:
         cases.reverse()
     builds = defaultdict(list)

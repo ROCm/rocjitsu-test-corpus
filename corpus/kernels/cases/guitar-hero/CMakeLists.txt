@@ -1,6 +1,7 @@
 if(NOT "gfx1201" IN_LIST CMAKE_HIP_ARCHITECTURES AND
    NOT "gfx1100" IN_LIST CMAKE_HIP_ARCHITECTURES AND
-   NOT "gfx950" IN_LIST CMAKE_HIP_ARCHITECTURES)
+   NOT "gfx950" IN_LIST CMAKE_HIP_ARCHITECTURES AND
+   NOT "gfx1250" IN_LIST CMAKE_HIP_ARCHITECTURES)
     return()
 endif()
 
@@ -86,3 +87,22 @@ add_guitar_hero(guitar_hero_wave64 guitar_hero_rdna4/guitar_hero_wave64 gfx1201 
 add_guitar_hero(guitar_hero_rdna3 guitar_hero_rdna3 gfx1100 guitar_hero_rdna3_code_object)
 
 add_guitar_hero(guitar_hero_cdna4 guitar_hero_cdna4 gfx950 guitar_hero_cdna4_code_object)
+
+if("gfx1250" IN_LIST CMAKE_HIP_ARCHITECTURES)
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/guitar_hero_cdna5.hsaco"
+        BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/guitar_hero_cdna5.o"
+        COMMAND "${CMAKE_HIP_COMPILER}" -target amdgcn-amd-amdhsa -mcpu=gfx1250
+            -mno-wavefrontsize64 -x assembler
+            -c "${CMAKE_CURRENT_SOURCE_DIR}/guitar_hero_cdna5/guitar_hero_cdna5.s"
+            -o "${CMAKE_CURRENT_BINARY_DIR}/guitar_hero_cdna5.o"
+        COMMAND "${GUITAR_HERO_LLD}" -shared
+            "${CMAKE_CURRENT_BINARY_DIR}/guitar_hero_cdna5.o"
+            -o "${CMAKE_CURRENT_BINARY_DIR}/guitar_hero_cdna5.hsaco"
+        DEPENDS guitar_hero_cdna5/guitar_hero_cdna5.s
+        VERBATIM
+    )
+    add_custom_target(guitar_hero_cdna5_code_object
+        DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/guitar_hero_cdna5.hsaco")
+endif()
+add_guitar_hero(guitar_hero_cdna5 guitar_hero_cdna5 gfx1250 guitar_hero_cdna5_code_object)
