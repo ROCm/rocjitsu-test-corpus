@@ -6,11 +6,11 @@ import importlib.util
 import json
 import os
 import sys
-import textwrap
 import tomllib
 import typing
 from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -25,7 +25,7 @@ SCRIPT = REPO_ROOT / "corpus" / "race" / "scripts" / "regenerate_asm.py"
 sys.path.insert(0, str(SCRIPT.parent))
 
 
-def load_script():
+def load_script() -> ModuleType:
     spec = importlib.util.spec_from_file_location("regenerate_asm", SCRIPT)
     assert spec is not None
     assert spec.loader is not None
@@ -72,6 +72,37 @@ UNRECORDED_VARIABLES = (
 WATCHED_ENVIRONMENT = (*UNRECORDED_VARIABLES, "ROCM_PATH", "RACE_UNRELATED")
 
 
+# The fake compiler's code, after the lines write_fake_compiler puts in front of
+# it: its interpreter, BEHAVIOUR, and WATCHED (the variables it records).
+FAKE_COMPILER_BODY = r"""
+import json
+import os
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+if args == ["--version"]:
+    print(os.environ.get("FAKE_COMPILER_VERSION", "fake clang version 1.0"))
+    sys.exit(0)
+script = Path(__file__).absolute()
+with script.with_name(script.name + ".argv").open("a") as log:
+    log.write(json.dumps(args) + "\n")
+with script.with_name(script.name + ".env").open("a") as log:
+    log.write(json.dumps({name: os.environ.get(name) for name in WATCHED}) + "\n")
+source = Path(next((arg for arg in args if arg.endswith(".hip")), ""))
+failing = os.environ.get("FAKE_COMPILER_FAIL")
+if BEHAVIOUR == "fail" or (failing and source.name == failing + ".hip"):
+    sys.stderr.write("error: unknown argument\n")
+    sys.exit(1)
+text = "kernel:\n\ts_endpgm\n.globl __hip_cuid_0123abcd\n"
+if BEHAVIOUR == "output":
+    Path(args[args.index("-o") + 1]).write_text(text)
+else:
+    arch = next(arg for arg in args if arg.startswith("--offload-arch=")).split("=", 1)[1]
+    Path(f"{source.stem}-hip-amdgcn-amd-amdhsa-{arch}.s").write_text(text)
+"""
+
+
 def write_fake_compiler(compiler: Path, behaviour: str) -> Path:
     """
     Stand in for hipcc with a script, so these tests need no ROCm install.
@@ -88,38 +119,18 @@ def write_fake_compiler(compiler: Path, behaviour: str) -> Path:
       auto-named  ignore -o and write the auto-named file into the working
                   directory, as hipcc sometimes does under --cuda-device-only
     """
-    compiler.write_text(textwrap.dedent(f"""\
-            #!{sys.executable}
-            import json, os, sys
-            args = sys.argv[1:]
-            if args == ["--version"]:
-                print(os.environ.get("FAKE_COMPILER_VERSION", "fake clang version 1.0"))
-                sys.exit(0)
-            with open(os.path.abspath(__file__) + ".argv", "a") as log:
-                log.write(json.dumps(args) + "\\n")
-            with open(os.path.abspath(__file__) + ".env", "a") as log:
-                seen = {{name: os.environ.get(name) for name in {WATCHED_ENVIRONMENT!r}}}
-                log.write(json.dumps(seen) + "\\n")
-            source = next((a for a in args if a.endswith(".hip")), "")
-            failing = os.environ.get("FAKE_COMPILER_FAIL")
-            if {behaviour!r} == "fail" or (failing and os.path.basename(source) == failing + ".hip"):
-                sys.stderr.write("error: unknown argument\\n")
-                sys.exit(1)
-            text = "kernel:\\n\\ts_endpgm\\n.globl __hip_cuid_0123abcd\\n"
-            if {behaviour!r} == "output":
-                open(args[args.index("-o") + 1], "w").write(text)
-            else:
-                source = next(a for a in args if a.endswith(".hip"))
-                target = next(a for a in args if a.startswith("--offload-arch="))
-                stem = os.path.splitext(os.path.basename(source))[0]
-                arch = target.split("=", 1)[1]
-                open(f"{{stem}}-hip-amdgcn-amd-amdhsa-{{arch}}.s", "w").write(text)
-            """))
+    compiler.write_text(
+        f"#!{sys.executable}\n"
+        f"BEHAVIOUR = {behaviour!r}\n"
+        f"WATCHED = {WATCHED_ENVIRONMENT!r}\n" + FAKE_COMPILER_BODY
+    )
     compiler.chmod(0o755)
     return compiler
 
 
-def install_fake_compiler(monkeypatch, tmp_path: Path, behaviour: str) -> None:
+def install_fake_compiler(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, behaviour: str
+) -> None:
     """Make compiler discovery return a fake compiler; see write_fake_compiler."""
     compiler = write_fake_compiler(tmp_path / "fake-hipcc", behaviour)
     monkeypatch.setattr(regen, "find_hip_compiler", lambda: compiler)
@@ -143,7 +154,7 @@ def kernel(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def caller_dir(tmp_path: Path, monkeypatch) -> Path:
+def caller_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """The directory the script is run from, holding an unrelated stale file."""
     directory = tmp_path / "caller"
     directory.mkdir()
@@ -153,11 +164,17 @@ def caller_dir(tmp_path: Path, monkeypatch) -> Path:
 
 
 def test_failed_compile_keeps_pinned_file(
-    monkeypatch, tmp_path, pinned, kernel, caller_dir
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    pinned: Path,
+    kernel: Path,
+    caller_dir: Path,
+) -> None:
     install_fake_compiler(monkeypatch, tmp_path, "fail")
     with pytest.raises(regen.CompileError):
-        regen.compile_device_asm(kernel, "gfx950", pinned, [])
+        regen.compile_device_asm(
+            kernel=kernel, target="gfx950", out=pinned, extra_flags=[]
+        )
     assert pinned.read_text() == PINNED
     assert [p.name for p in pinned.parent.iterdir()] == [
         "kernel.s"
@@ -168,10 +185,14 @@ def test_failed_compile_keeps_pinned_file(
 
 
 def test_successful_compile_replaces_and_normalizes(
-    monkeypatch, tmp_path, pinned, kernel, caller_dir
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    pinned: Path,
+    kernel: Path,
+    caller_dir: Path,
+) -> None:
     install_fake_compiler(monkeypatch, tmp_path, "output")
-    regen.compile_device_asm(kernel, "gfx950", pinned, [])
+    regen.compile_device_asm(kernel=kernel, target="gfx950", out=pinned, extra_flags=[])
     text = pinned.read_text()
     assert "s_endpgm" in text
     assert "__hip_cuid_corpus" in text and "__hip_cuid_0123abcd" not in text
@@ -179,10 +200,14 @@ def test_successful_compile_replaces_and_normalizes(
 
 
 def test_auto_named_output_stays_in_scratch(
-    monkeypatch, tmp_path, pinned, kernel, caller_dir
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    pinned: Path,
+    kernel: Path,
+    caller_dir: Path,
+) -> None:
     install_fake_compiler(monkeypatch, tmp_path, "auto-named")
-    regen.compile_device_asm(kernel, "gfx950", pinned, [])
+    regen.compile_device_asm(kernel=kernel, target="gfx950", out=pinned, extra_flags=[])
     assert "s_endpgm" in pinned.read_text()
     # The caller's same-named file is neither consumed nor deleted.
     assert sorted(p.name for p in caller_dir.iterdir()) == [
@@ -194,8 +219,8 @@ def test_auto_named_output_stays_in_scratch(
 
 
 def test_missing_header_skips_case_and_keeps_pinned_file(
-    monkeypatch, tmp_path, pinned, kernel
-):
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, pinned: Path, kernel: Path
+) -> None:
     install_fake_compiler(monkeypatch, tmp_path, "fail")  # must not even be invoked
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
     result = regen.regenerate(
@@ -210,8 +235,8 @@ def test_missing_header_skips_case_and_keeps_pinned_file(
 
 
 def test_declared_header_found_through_include_flag(
-    monkeypatch, tmp_path, pinned, kernel
-):
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, pinned: Path, kernel: Path
+) -> None:
     install_fake_compiler(monkeypatch, tmp_path, "output")
     include = tmp_path / "rocwmma-install" / "include"
     (include / "rocwmma").mkdir(parents=True)
@@ -227,7 +252,7 @@ def test_declared_header_found_through_include_flag(
     assert "s_endpgm" in pinned.read_text()
 
 
-def test_relative_include_flags_are_made_absolute(tmp_path):
+def test_relative_include_flags_are_made_absolute(tmp_path: Path) -> None:
     base = tmp_path / "caller"
     flags = ["-I../inc", "-isystem", "sys", "-I/abs", "-O2", "-include", "pre.h"]
     assert regen.absolute_flags(flags, base) == [
@@ -251,7 +276,7 @@ def assembly(
 
 
 @pytest.fixture
-def drift_dirs(monkeypatch, tmp_path: Path):
+def drift_dirs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path, Path]:
     """(committed, fresh) target directories, with ASM_DIR pointed at committed."""
     committed_root, fresh_root = tmp_path / "committed", tmp_path / "fresh"
     (committed_root / "gfx950").mkdir(parents=True)
@@ -266,17 +291,21 @@ def check(fresh_root: Path, expected: set[tuple[str, str]] | None = None) -> int
         expected = {
             ("gfx950", path.name) for path in (fresh_root / "gfx950").glob("*.s")
         }
-    return regen._report_drift(["gfx950"], fresh_root, expected)
+    return regen._report_drift(
+        targets=["gfx950"], out_root=fresh_root, expected=expected
+    )
 
 
-def test_check_passes_identical_assembly(drift_dirs):
+def test_check_passes_identical_assembly(drift_dirs: tuple[Path, Path]) -> None:
     committed, fresh_root = drift_dirs
     (committed / "k.s").write_text(assembly())
     (fresh_root / "gfx950" / "k.s").write_text(assembly())
     assert check(fresh_root) == 0
 
 
-def test_check_reports_ident_only_change_as_provenance_not_drift(drift_dirs, capsys):
+def test_check_reports_ident_only_change_as_provenance_not_drift(
+    drift_dirs: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
     committed, fresh_root = drift_dirs
     (committed / "k.s").write_text(assembly(ident="AMD clang version 23 (abc)"))
     (fresh_root / "gfx950" / "k.s").write_text(
@@ -292,7 +321,9 @@ def test_check_reports_ident_only_change_as_provenance_not_drift(drift_dirs, cap
     assert "drift" not in out.err
 
 
-def test_check_fails_on_instruction_change(drift_dirs, capsys):
+def test_check_fails_on_instruction_change(
+    drift_dirs: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
     committed, fresh_root = drift_dirs
     (committed / "k.s").write_text(assembly(wait="s_waitcnt vmcnt(0)"))
     (fresh_root / "gfx950" / "k.s").write_text(assembly(wait="s_waitcnt vmcnt(1)"))
@@ -301,8 +332,8 @@ def test_check_fails_on_instruction_change(drift_dirs, capsys):
 
 
 def test_check_counts_instruction_change_as_drift_even_with_new_ident(
-    drift_dirs, capsys
-):
+    drift_dirs: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
     committed, fresh_root = drift_dirs
     (committed / "k.s").write_text(assembly(ident="A", wait="s_waitcnt vmcnt(0)"))
     (fresh_root / "gfx950" / "k.s").write_text(
@@ -314,7 +345,9 @@ def test_check_counts_instruction_change_as_drift_even_with_new_ident(
     assert "gfx950/k.s" not in out.out  # not also listed as provenance-only
 
 
-def test_check_fails_on_uncommitted_file(drift_dirs, capsys):
+def test_check_fails_on_uncommitted_file(
+    drift_dirs: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
     _, fresh_root = drift_dirs
     (fresh_root / "gfx950" / "new.s").write_text(assembly())
     assert check(fresh_root) == 1
@@ -329,7 +362,7 @@ def test_check_fails_on_uncommitted_file(drift_dirs, capsys):
 
 
 @pytest.fixture
-def manifest(tmp_path: Path, monkeypatch):
+def manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Manifest:
     """Point the script at a scratch cases.toml written from (targets, cases)."""
     path = tmp_path / "cases.toml"
     monkeypatch.setattr(regen, "CASES_PATH", path)
@@ -347,8 +380,8 @@ PORTABLE_CASE = '[[case]]\nid = "portable"\nkernel = "kernel"\ntargets = []\n'
 
 
 def test_default_targets_come_from_the_manifest_not_asm(
-    manifest, monkeypatch, tmp_path
-):
+    manifest: Manifest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
     # An assembly directory for another target does not add it.
     asm = tmp_path / "asm"
@@ -358,33 +391,35 @@ def test_default_targets_come_from_the_manifest_not_asm(
     assert regen.targets_for(regen.load_inventory(), []) == ["gfx950", "gfx1250"]
 
 
-def test_requested_target_must_be_a_corpus_target(manifest):
+def test_requested_target_must_be_a_corpus_target(manifest: Manifest) -> None:
     manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
     corpus = regen.load_inventory()
     assert regen.targets_for(corpus, ["gfx1250"]) == ["gfx1250"]
-    with pytest.raises(SystemExit, match="gfx1201.*not in \\[corpus\\] targets"):
+    with pytest.raises(regen.UsageError, match="gfx1201.*not in \\[corpus\\] targets"):
         regen.targets_for(corpus, ["gfx1201"])
 
 
-def test_case_target_outside_the_corpus_targets_is_rejected(manifest):
+def test_case_target_outside_the_corpus_targets_is_rejected(manifest: Manifest) -> None:
     manifest(
         ["gfx950", "gfx1250"],
         PORTABLE_CASE + '[[case]]\nid = "new"\nkernel = "new"\ntargets = ["gfx1201"]\n',
     )
-    with pytest.raises(SystemExit, match="gfx1201.*not in \\[corpus\\] targets"):
+    with pytest.raises(regen.SetupError, match="gfx1201.*not in \\[corpus\\] targets"):
         regen.load_inventory()
 
 
 @pytest.mark.parametrize("targets", [None, []])
-def test_manifest_without_targets_is_rejected(manifest, targets):
+def test_manifest_without_targets_is_rejected(
+    manifest: Manifest, targets: list[str] | None
+) -> None:
     manifest(targets, PORTABLE_CASE)
-    with pytest.raises(SystemExit, match="\\[corpus\\] targets"):
+    with pytest.raises(regen.SetupError, match="\\[corpus\\] targets"):
         regen.load_inventory()
 
 
 def test_portable_case_builds_for_every_corpus_target(
-    manifest, monkeypatch, tmp_path, kernel
-):
+    manifest: Manifest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, kernel: Path
+) -> None:
     install_fake_compiler(monkeypatch, tmp_path, "output")
     manifest(
         ["gfx950", "gfx1250"],
@@ -458,7 +493,9 @@ def test_environment_include_path_is_not_searched(
 # not have.
 
 
-def test_check_help_describes_the_textual_comparison(monkeypatch, capsys):
+def test_check_help_describes_the_textual_comparison(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     with pytest.raises(SystemExit):
         regen.main(["--help"])
     help_text = " ".join(capsys.readouterr().out.split())
@@ -467,7 +504,9 @@ def test_check_help_describes_the_textual_comparison(monkeypatch, capsys):
     assert "means this toolchain generates different code" not in help_text
 
 
-def test_drift_report_does_not_mention_ordinals(drift_dirs, capsys):
+def test_drift_report_does_not_mention_ordinals(
+    drift_dirs: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
     committed, fresh_root = drift_dirs
     (committed / "k.s").write_text("s_waitcnt 0\n")
     (fresh_root / "gfx950" / "k.s").write_text("s_nop 0\n")
@@ -478,8 +517,12 @@ def test_drift_report_does_not_mention_ordinals(drift_dirs, capsys):
 
 
 def test_write_summary_does_not_mention_ordinals(
-    manifest, monkeypatch, tmp_path, kernel, capsys
-):
+    manifest: Manifest,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    kernel: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     install_fake_compiler(monkeypatch, tmp_path, "output")
     manifest(["gfx950"], PORTABLE_CASE)
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
@@ -506,7 +549,9 @@ ROCWMMA_CASE = (
 
 
 @pytest.fixture
-def corpus_main(manifest, monkeypatch, tmp_path, kernel):
+def corpus_main(
+    manifest: Manifest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, kernel: Path
+) -> CorpusMain:
     """
     Run main() against a scratch corpus whose committed assembly is under
     ``corpus/race/asm``, with the fake compiler writing ``assembly()``-free
@@ -529,13 +574,15 @@ def corpus_main(manifest, monkeypatch, tmp_path, kernel):
     return run, committed
 
 
-def commit_fresh_output(run, committed: Path) -> None:
+def commit_fresh_output(run: Callable[..., int], committed: Path) -> None:
     """Populate the committed tree by running update mode, as a person would."""
     assert run() == 0
     assert any(committed.rglob("*.s"))
 
 
-def test_check_with_only_a_skipped_case_is_incomplete(manifest, corpus_main, capsys):
+def test_check_with_only_a_skipped_case_is_incomplete(
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
     run, _ = corpus_main
     manifest(["gfx950"], ROCWMMA_CASE)
     code = run("--check")
@@ -545,7 +592,9 @@ def test_check_with_only_a_skipped_case_is_incomplete(manifest, corpus_main, cap
     assert "incomplete" in out.err and "wmma" in out.err
 
 
-def test_check_with_some_cases_skipped_is_incomplete(manifest, corpus_main, capsys):
+def test_check_with_some_cases_skipped_is_incomplete(
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
@@ -555,7 +604,9 @@ def test_check_with_some_cases_skipped_is_incomplete(manifest, corpus_main, caps
     assert "matches" not in capsys.readouterr().out
 
 
-def test_check_with_nothing_selected_is_incomplete(manifest, corpus_main, capsys):
+def test_check_with_nothing_selected_is_incomplete(
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
     run, _ = corpus_main
     manifest(
         ["gfx950", "gfx1250"],
@@ -567,7 +618,9 @@ def test_check_with_nothing_selected_is_incomplete(manifest, corpus_main, capsys
     assert "incomplete" in out.err
 
 
-def test_check_passes_a_complete_matching_inventory(manifest, corpus_main, capsys):
+def test_check_passes_a_complete_matching_inventory(
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
@@ -576,7 +629,9 @@ def test_check_passes_a_complete_matching_inventory(manifest, corpus_main, capsy
     assert "matches" in capsys.readouterr().out
 
 
-def test_check_reports_an_obsolete_committed_file(manifest, corpus_main, capsys):
+def test_check_reports_an_obsolete_committed_file(
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
@@ -588,8 +643,8 @@ def test_check_reports_an_obsolete_committed_file(manifest, corpus_main, capsys)
 
 
 def test_check_reports_a_missing_committed_target_directory(
-    manifest, corpus_main, capsys
-):
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
@@ -601,7 +656,9 @@ def test_check_reports_a_missing_committed_target_directory(
     assert "gfx1250/kernel.s: not committed" in capsys.readouterr().err
 
 
-def test_check_reports_an_expected_output_absent_from_both_trees(drift_dirs, capsys):
+def test_check_reports_an_expected_output_absent_from_both_trees(
+    drift_dirs: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
     # A selected case whose output was neither generated nor committed.
     _, fresh_root = drift_dirs
     assert check(fresh_root, expected={("gfx950", "k.s")}) == 1
@@ -609,8 +666,8 @@ def test_check_reports_an_expected_output_absent_from_both_trees(drift_dirs, cap
 
 
 def test_update_mode_reports_a_skipped_case_and_leaves_its_target(
-    manifest, corpus_main, capsys
-):
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
     # The skip is still reported, but the target's other listing is not written
     # either: its recipe could not describe both.
     run, committed = corpus_main
@@ -622,22 +679,29 @@ def test_update_mode_reports_a_skipped_case_and_leaves_its_target(
     assert not (committed / "gfx950" / "recipe.toml").exists()
 
 
-def test_check_help_documents_the_exit_codes(monkeypatch, capsys):
+def test_check_help_documents_the_exit_codes(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     with pytest.raises(SystemExit):
         regen.main(["--help"])
     help_text = " ".join(capsys.readouterr().out.split())
     assert (
-        "Exits 0 on a match, 1 on drift, 2 when a case fails to compile, and 3"
-        in help_text
-    )
+        "Exits 0 on success, 1 when --check finds drift, 2 when a case fails to compile "
+        "or an argument is invalid, 3 when a case was skipped"
+    ) in help_text
+    assert "4 when the inventory or the toolchain cannot be used" in help_text
 
 
 # --- A compile failure keeps the compiler's diagnostic -----------------------
 
 
 def test_main_preserves_the_compiler_diagnostic(
-    manifest, corpus_main, monkeypatch, tmp_path, capsys
-):
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     pinned_file = committed / "gfx950" / "kernel.s"
@@ -675,8 +739,11 @@ def compiler_invocations(tmp_path: Path, name: str = "fake-hipcc") -> list[list[
 
 
 def test_quoted_include_path_with_spaces_reaches_the_compiler_whole(
-    manifest, corpus_main, monkeypatch, tmp_path
-):
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     run, _ = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     caller = tmp_path / "caller"
@@ -693,8 +760,11 @@ def test_quoted_include_path_with_spaces_reaches_the_compiler_whole(
 
 
 def test_malformed_quoting_is_rejected_before_compiling(
-    manifest, corpus_main, tmp_path, capsys
-):
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     run, _ = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     # The --flag=value form, as typed on a command line: argparse would read a
@@ -716,7 +786,7 @@ def test_malformed_quoting_is_rejected_before_compiling(
 
 
 @pytest.fixture
-def no_sdk_discovery(monkeypatch):
+def no_sdk_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
     """Leave ROCM_PATH as the only way to find an SDK."""
     monkeypatch.delenv("ROCM_PATH", raising=False)
     monkeypatch.setattr(regen.shutil, "which", lambda name: None)
@@ -731,13 +801,17 @@ def fake_sdk(root: Path, layout: str = "bin/hipcc", behaviour: str = "output") -
 
 
 def test_relative_rocm_path_compiles_from_the_scratch_directory(
-    monkeypatch, tmp_path, pinned, kernel, no_sdk_discovery
-):
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    pinned: Path,
+    kernel: Path,
+    no_sdk_discovery: None,
+) -> None:
     caller = tmp_path / "caller"
     fake_sdk(caller / "rocm")
     monkeypatch.chdir(caller)
     monkeypatch.setenv("ROCM_PATH", "rocm")
-    regen.compile_device_asm(kernel, "gfx950", pinned, [])
+    regen.compile_device_asm(kernel=kernel, target="gfx950", out=pinned, extra_flags=[])
     assert "s_endpgm" in pinned.read_text()
     (argv,) = [
         line
@@ -747,15 +821,18 @@ def test_relative_rocm_path_compiles_from_the_scratch_directory(
     assert str(caller / "rocm" / "include") in argv
 
 
-def test_rocm_path_is_absolute(monkeypatch, tmp_path, no_sdk_discovery):
+def test_rocm_path_is_absolute(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, no_sdk_discovery: None
+) -> None:
+    (tmp_path / "rocm").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("ROCM_PATH", "rocm")
     assert regen.rocm_path() == tmp_path / "rocm"
 
 
 def test_compiler_found_through_a_relative_path_entry_is_absolute(
-    monkeypatch, tmp_path, no_sdk_discovery
-):
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, no_sdk_discovery: None
+) -> None:
     (tmp_path / "rocm").mkdir()  # an SDK root with neither candidate in it
     compiler = fake_sdk(tmp_path / "tools", layout="bin/hipcc")
     monkeypatch.chdir(tmp_path)
@@ -769,22 +846,21 @@ def test_compiler_found_through_a_relative_path_entry_is_absolute(
 
 
 def test_clang_is_used_when_the_sdk_has_no_hipcc(
-    monkeypatch, tmp_path, no_sdk_discovery
-):
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, no_sdk_discovery: None
+) -> None:
     compiler = fake_sdk(tmp_path / "rocm", layout="llvm/bin/clang++")
     monkeypatch.setenv("ROCM_PATH", str(tmp_path / "rocm"))
     assert regen.find_hip_compiler() == compiler
 
 
 def test_missing_compiler_error_names_both_candidates(
-    monkeypatch, tmp_path, no_sdk_discovery
-):
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, no_sdk_discovery: None
+) -> None:
     (tmp_path / "rocm").mkdir()
     monkeypatch.setenv("ROCM_PATH", str(tmp_path / "rocm"))
-    with pytest.raises(SystemExit) as exit_info:
+    with pytest.raises(regen.SetupError) as error:
         regen.find_hip_compiler()
-    message = str(exit_info.value.code)
-    assert "bin/hipcc" in message and "llvm/bin/clang++" in message
+    assert "bin/hipcc" in str(error.value) and "llvm/bin/clang++" in str(error.value)
 
 
 # --- Skipping explicitly allowed ----------------------------------------------
@@ -795,8 +871,8 @@ def test_missing_compiler_error_names_both_candidates(
 
 
 def test_check_allowing_skips_names_the_cases_not_compared(
-    manifest, corpus_main, capsys
-):
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
@@ -810,7 +886,9 @@ def test_check_allowing_skips_names_the_cases_not_compared(
     assert "committed assembly matches this toolchain for the compared cases" in verdict
 
 
-def test_check_allowing_skips_still_fails_on_drift(manifest, corpus_main, capsys):
+def test_check_allowing_skips_still_fails_on_drift(
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
@@ -820,8 +898,8 @@ def test_check_allowing_skips_still_fails_on_drift(manifest, corpus_main, capsys
 
 
 def test_check_allowing_skips_with_nothing_compared_is_still_incomplete(
-    manifest, corpus_main, capsys
-):
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
     run, _ = corpus_main
     manifest(["gfx950"], ROCWMMA_CASE)
     assert run("--check", "--allow-skipped") == 3
@@ -830,7 +908,9 @@ def test_check_allowing_skips_with_nothing_compared_is_still_incomplete(
     assert "incomplete" in out.err
 
 
-def test_allow_skipped_only_applies_with_check(manifest, corpus_main, capsys):
+def test_allow_skipped_only_applies_with_check(
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
     run, _ = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     with pytest.raises(SystemExit) as exit_info:
@@ -843,7 +923,7 @@ def test_allow_skipped_only_applies_with_check(manifest, corpus_main, capsys):
 
 
 @pytest.fixture
-def temp_root(tmp_path, monkeypatch) -> Path:
+def temp_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Where tempfile creates directories during the test, to see what is left."""
     root = tmp_path / "system-tmp"
     root.mkdir()
@@ -853,8 +933,13 @@ def temp_root(tmp_path, monkeypatch) -> Path:
 
 @pytest.mark.parametrize("outcome", ["match", "drift", "compile-failure", "incomplete"])
 def test_check_leaves_no_temporary_directory(
-    manifest, corpus_main, monkeypatch, tmp_path, temp_root, outcome
-):
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    temp_root: Path,
+    outcome: str,
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
@@ -875,7 +960,9 @@ def test_check_leaves_no_temporary_directory(
 # --- --help is a short description, with the workflow in the README -----------
 
 
-def test_help_is_short_and_points_to_the_readme(monkeypatch, capsys):
+def test_help_is_short_and_points_to_the_readme(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     with pytest.raises(SystemExit):
         regen.main(["--help"])
     help_text = capsys.readouterr().out
@@ -890,8 +977,8 @@ def test_help_is_short_and_points_to_the_readme(monkeypatch, capsys):
 
 
 def test_case_without_targets_regenerates_for_every_corpus_target(
-    manifest, monkeypatch, tmp_path, kernel
-):
+    manifest: Manifest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, kernel: Path
+) -> None:
     install_fake_compiler(monkeypatch, tmp_path, "output")
     manifest(["gfx950", "gfx1250"], '[[case]]\nid = "portable"\nkernel = "kernel"\n')
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
@@ -910,30 +997,32 @@ def test_case_without_targets_regenerates_for_every_corpus_target(
     ]
 
 
-def test_requires_is_rejected_rather_than_ignored(manifest):
+def test_requires_is_rejected_rather_than_ignored(manifest: Manifest) -> None:
     # Ignoring it would turn a target-specific case into a portable one.
     manifest(
         ["gfx950", "gfx1250"],
         '[[case]]\nid = "only"\nkernel = "only"\nrequires = ["gfx1250"]\n',
     )
-    with pytest.raises(SystemExit, match="'requires' is now 'targets'"):
+    with pytest.raises(regen.SetupError, match="'requires' is now 'targets'"):
         regen.load_inventory()
 
 
 # --- One validated inventory ---------------------------------------------------
 
 
-def test_misspelled_case_field_is_rejected(manifest):
+def test_misspelled_case_field_is_rejected(manifest: Manifest) -> None:
     # Regeneration used to accept a field the checker rejects.
     manifest(
         ["gfx950"],
         '[[case]]\nid = "wmma"\nkernel = "wmma"\nheader = ["rocwmma/rocwmma.hpp"]\n',
     )
-    with pytest.raises(SystemExit, match="unknown field 'header'"):
+    with pytest.raises(regen.SetupError, match="unknown field 'header'"):
         regen.load_inventory()
 
 
-def test_main_reads_the_manifest_once(manifest, corpus_main, monkeypatch):
+def test_main_reads_the_manifest_once(
+    manifest: Manifest, corpus_main: CorpusMain, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # Regenerating and the --check verdict must judge the same inventory, so
     # cases.toml is read once and passed down rather than re-read per step.
     run, committed = corpus_main
@@ -956,8 +1045,9 @@ def test_main_reads_the_manifest_once(manifest, corpus_main, monkeypatch):
 
 @pytest.mark.parametrize("flag", regen._INCLUDE_DIR_FLAGS)
 def test_every_include_directory_flag_is_searched_and_made_absolute(
-    monkeypatch, tmp_path, flag
-):
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, flag: str
+) -> None:
+    (tmp_path / "rocm").mkdir()
     monkeypatch.setenv("ROCM_PATH", str(tmp_path / "rocm"))
     for name in ("CPATH", "CPLUS_INCLUDE_PATH"):
         monkeypatch.delenv(name, raising=False)
@@ -967,7 +1057,10 @@ def test_every_include_directory_flag_is_searched_and_made_absolute(
         assert str(base / "inc") in "".join(regen.absolute_flags(flags, base))
 
 
-def test_forced_include_file_is_made_absolute_but_not_searched(monkeypatch, tmp_path):
+def test_forced_include_file_is_made_absolute_but_not_searched(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    (tmp_path / "rocm").mkdir()
     monkeypatch.setenv("ROCM_PATH", str(tmp_path / "rocm"))
     for name in ("CPATH", "CPLUS_INCLUDE_PATH"):
         monkeypatch.delenv(name, raising=False)
@@ -986,8 +1079,12 @@ def test_forced_include_file_is_made_absolute_but_not_searched(monkeypatch, tmp_
 
 @pytest.mark.parametrize("sdk_compiler", ["bin/hipcc", "llvm/bin/clang++"])
 def test_baseline_recipe_is_passed_to_either_compiler(
-    manifest, corpus_main, monkeypatch, tmp_path, sdk_compiler
-):
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    sdk_compiler: str,
+) -> None:
     run, _ = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     # An SDK with only this compiler, found by the script's own discovery.
@@ -1006,7 +1103,9 @@ def test_baseline_recipe_is_passed_to_either_compiler(
     )
 
 
-def test_cxxflags_come_after_the_baseline_recipe(manifest, corpus_main, tmp_path):
+def test_cxxflags_come_after_the_baseline_recipe(
+    manifest: Manifest, corpus_main: CorpusMain, tmp_path: Path
+) -> None:
     run, _ = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     assert run("--cxxflags=-O1") == 0
@@ -1123,7 +1222,9 @@ def set_rocm_release(tmp_path: Path, release: str) -> None:
     (info / "version").write_text(f"{release}\n")
 
 
-def test_regeneration_records_the_recipe(manifest, corpus_main, tmp_path):
+def test_regeneration_records_the_recipe(
+    manifest: Manifest, corpus_main: CorpusMain, tmp_path: Path
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     set_rocm_release(tmp_path, "7.3.0")
@@ -1138,7 +1239,9 @@ def test_regeneration_records_the_recipe(manifest, corpus_main, tmp_path):
     }
 
 
-def test_regenerating_one_target_records_only_its_recipe(manifest, corpus_main):
+def test_regenerating_one_target_records_only_its_recipe(
+    manifest: Manifest, corpus_main: CorpusMain
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
     assert run("--target", "gfx1250") == 0
@@ -1146,7 +1249,9 @@ def test_regenerating_one_target_records_only_its_recipe(manifest, corpus_main):
     assert not (committed / "gfx950" / "recipe.toml").exists()
 
 
-def test_check_does_not_rewrite_the_committed_recipe(manifest, corpus_main):
+def test_check_does_not_rewrite_the_committed_recipe(
+    manifest: Manifest, corpus_main: CorpusMain
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
@@ -1155,7 +1260,9 @@ def test_check_does_not_rewrite_the_committed_recipe(manifest, corpus_main):
     assert (committed / "gfx950" / "recipe.toml").read_text() == before
 
 
-def test_check_reports_an_unchanged_recipe(manifest, corpus_main, capsys):
+def test_check_reports_an_unchanged_recipe(
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
@@ -1164,7 +1271,9 @@ def test_check_reports_an_unchanged_recipe(manifest, corpus_main, capsys):
     assert "gfx950: recipe unchanged" in capsys.readouterr().out
 
 
-def test_check_reports_changed_flags_as_a_recipe_change(manifest, corpus_main, capsys):
+def test_check_reports_changed_flags_as_a_recipe_change(
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
@@ -1176,8 +1285,12 @@ def test_check_reports_changed_flags_as_a_recipe_change(manifest, corpus_main, c
 
 
 def test_check_reports_a_new_compiler_as_a_toolchain_change(
-    manifest, corpus_main, monkeypatch, tmp_path, capsys
-):
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     set_rocm_release(tmp_path, "7.3.0")
@@ -1192,7 +1305,9 @@ def test_check_reports_a_new_compiler_as_a_toolchain_change(
     assert "recipe changed" not in out
 
 
-def test_check_without_a_committed_recipe_says_so(manifest, corpus_main, capsys):
+def test_check_without_a_committed_recipe_says_so(
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
@@ -1207,8 +1322,12 @@ def test_check_without_a_committed_recipe_says_so(manifest, corpus_main, capsys)
 
 @pytest.mark.parametrize("text, problem", BAD_RECIPES.values(), ids=BAD_RECIPES.keys())
 def test_check_reports_an_invalid_committed_recipe(
-    manifest, corpus_main, capsys, text, problem
-):
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    capsys: pytest.CaptureFixture[str],
+    text: str,
+    problem: str,
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
@@ -1245,7 +1364,9 @@ def assert_untouched(committed: Path, target: str, kernels: list[str]) -> None:
     assert regen.recipe.load(committed / target / "recipe.toml") == GOOD
 
 
-def test_partial_skip_leaves_the_target_as_it_was(manifest, corpus_main, capsys):
+def test_partial_skip_leaves_the_target_as_it_was(
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE + ROCWMMA_CASE)
     seed_target(committed, "gfx950", ["kernel", "wmma"])
@@ -1255,8 +1376,11 @@ def test_partial_skip_leaves_the_target_as_it_was(manifest, corpus_main, capsys)
 
 
 def test_partial_failure_leaves_the_target_as_it_was(
-    manifest, corpus_main, monkeypatch, capsys
-):
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE + '[[case]]\nid = "only"\nkernel = "only"\n')
     seed_target(committed, "gfx950", ["kernel", "only"])
@@ -1266,7 +1390,9 @@ def test_partial_failure_leaves_the_target_as_it_was(
     assert "gfx950: not updated" in capsys.readouterr().err
 
 
-def test_all_skipped_run_leaves_the_recipe_as_it_was(manifest, corpus_main):
+def test_all_skipped_run_leaves_the_recipe_as_it_was(
+    manifest: Manifest, corpus_main: CorpusMain
+) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], ROCWMMA_CASE)
     seed_target(committed, "gfx950", ["wmma"])
@@ -1275,8 +1401,8 @@ def test_all_skipped_run_leaves_the_recipe_as_it_was(manifest, corpus_main):
 
 
 def test_complete_target_is_written_while_a_blocked_one_is_kept(
-    manifest, corpus_main, capsys
-):
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
     run, committed = corpus_main
     manifest(
         ["gfx950", "gfx1250"],
@@ -1484,7 +1610,9 @@ def test_build_is_found_through_rocm_sdk_discovery(
 
 def test_unknown_build_is_incomparable_not_changed() -> None:
     notes = regen.describe_change(
-        "gfx950", GOOD, dataclasses.replace(GOOD, rocm_build="unknown")
+        target="gfx950",
+        committed=GOOD,
+        current=dataclasses.replace(GOOD, rocm_build="unknown"),
     )
     assert notes == [
         "gfx950: SDK build cannot be compared: '10.1.0a20260822' -> 'unknown'"
@@ -1493,7 +1621,9 @@ def test_unknown_build_is_incomparable_not_changed() -> None:
 
 def test_changed_build_is_a_toolchain_change() -> None:
     notes = regen.describe_change(
-        "gfx950", GOOD, dataclasses.replace(GOOD, rocm_build="10.1.0a2")
+        target="gfx950",
+        committed=GOOD,
+        current=dataclasses.replace(GOOD, rocm_build="10.1.0a2"),
     )
     assert notes == [
         "gfx950: toolchain changed: rocm_build '10.1.0a20260822' -> '10.1.0a2'"
@@ -1502,7 +1632,7 @@ def test_changed_build_is_a_toolchain_change() -> None:
 
 def test_changed_release_is_a_toolchain_change_even_without_builds() -> None:
     current = dataclasses.replace(GOOD, rocm_release="10.2.0", rocm_build="unknown")
-    notes = regen.describe_change("gfx950", GOOD, current)
+    notes = regen.describe_change(target="gfx950", committed=GOOD, current=current)
     assert "gfx950: toolchain changed: rocm_release '10.1.0' -> '10.2.0'" in notes
     assert (
         "gfx950: SDK build cannot be compared: '10.1.0a20260822' -> 'unknown'" in notes
@@ -1518,3 +1648,86 @@ def test_records_are_frozen_dataclasses_of_immutable_fields(record: str) -> None
     assert record_type.__dataclass_params__.frozen
     hints = typing.get_type_hints(record_type)
     assert not any(typing.get_origin(hint) is list for hint in hints.values())
+
+
+# --- Errors are raised by helpers, and turned into exit codes by main -------------
+#
+# Helpers raise: SetupError when the inventory or the toolchain cannot be used,
+# UsageError for an invalid argument. main reports the first as exit 4 and the
+# second through argparse. A failing rocm-sdk or compiler is reported, not
+# replaced by a fallback.
+
+
+def test_invalid_inventory_exits_with_setup_failed(
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run, _ = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE + "ordinal = 3\n")
+    assert run() == regen.ExitCode.SETUP_FAILED == 4
+    assert (
+        "error: cases.toml [portable]: unknown field 'ordinal'"
+        in capsys.readouterr().err
+    )
+
+
+def test_target_outside_the_corpus_is_a_usage_error(
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run, _ = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    with pytest.raises(SystemExit) as exit_info:
+        run("--target", "gfx1201")
+    assert exit_info.value.code == 2
+    assert "gfx1201 is not in [corpus] targets" in capsys.readouterr().err
+
+
+def test_check_can_be_switched_off_explicitly(
+    manifest: Manifest, corpus_main: CorpusMain
+) -> None:
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    assert run("--no-check") == regen.ExitCode.SUCCESS
+    assert (committed / "gfx950" / "kernel.s").is_file()
+
+
+def test_failing_rocm_sdk_is_reported_rather_than_skipped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    bin_dir = tmp_path / "rocm-sdk-bin"
+    bin_dir.mkdir()
+    tool = bin_dir / "rocm-sdk"
+    tool.write_text(
+        f"#!{sys.executable}\nimport sys\nprint('no SDK installed')\nsys.exit(1)\n"
+    )
+    tool.chmod(0o755)
+    monkeypatch.delenv("ROCM_PATH", raising=False)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    with pytest.raises(
+        regen.SetupError, match="rocm-sdk path --root failed .*no SDK installed"
+    ):
+        REAL_ROCM_PATH()
+
+
+def test_failing_compiler_version_is_reported_rather_than_unknown(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    tool = tmp_path / "broken-hipcc"
+    tool.write_text(
+        f"#!{sys.executable}\nimport sys\nprint('cannot start')\nsys.exit(1)\n"
+    )
+    tool.chmod(0o755)
+    monkeypatch.setattr(regen, "rocm_path", lambda: tmp_path / "rocm")
+    with pytest.raises(regen.SetupError, match="--version failed .*cannot start"):
+        regen.compiler_version(tool)
+
+
+def test_rocm_path_that_is_not_a_directory_is_reported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Falling back to another compiler would only fail every compile against an
+    # SDK that is not there.
+    monkeypatch.setenv("ROCM_PATH", str(tmp_path / "missing"))
+    with pytest.raises(
+        regen.SetupError, match="ROCM_PATH .*missing.* is not a directory"
+    ):
+        REAL_ROCM_PATH()

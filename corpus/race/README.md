@@ -149,8 +149,13 @@ changes when the toolchain does.
 |---:|---|
 | 0 | The committed assembly matches this toolchain. |
 | 1 | Drift. |
-| 2 | A kernel failed to compile. |
+| 2 | A kernel failed to compile, or an argument is invalid. |
 | 3 | Incomplete: a case was skipped, or nothing was selected to compare. |
+| 4 | The inventory or the toolchain cannot be used, so nothing was compiled. |
+
+A regeneration without `--check` uses the same codes: 0 when every target was
+published, 2 when a case failed to compile, 3 when a skipped case kept a target
+from being published, and 4 as above.
 
 A case skipped for a missing optional header makes the check incomplete. With
 `--allow-skipped`, the check passes on the cases it could compare, and still

@@ -100,7 +100,14 @@ def load(path: Path) -> Inventory:
 
     problems: list[str] = []
     targets = _corpus_targets(path, corpus.get("targets"), problems)
-    cases = tuple(_cases(path, manifest.get("case", []), targets, problems))
+    cases = tuple(
+        _cases(
+            path=path,
+            entries=manifest.get("case", []),
+            corpus_targets=targets,
+            problems=problems,
+        )
+    )
     if problems:
         raise InventoryError(problems)
     return Inventory(targets=targets, cases=cases)
@@ -131,18 +138,14 @@ def _cases(
     seen_kernels: set[str] = set()
     for entry in entries:
         where = f"{path.name} [{entry.get('id', '?')}]"
-        for field in sorted(set(entry) - CASE_FIELDS):
-            if field == "requires":
-                problems.append(f"{where}: 'requires' is now 'targets'")
-            else:
-                problems.append(f"{where}: unknown field {field!r}")
-
+        problems.extend(_field_problems(where, entry))
         case_id, kernel = entry.get("id"), entry.get("kernel")
-        for name, value in (("id", case_id), ("kernel", kernel)):
-            if not isinstance(value, str) or not value:
-                problems.append(f"{where}: {name} must be a non-empty string")
-        targets = _string_list(where, "targets", entry.get("targets", []), problems)
-        headers = _string_list(where, "headers", entry.get("headers", []), problems)
+        targets, headers = (
+            _string_list(
+                where=where, name=name, value=entry.get(name, []), problems=problems
+            )
+            for name in ("targets", "headers")
+        )
         for target in targets:
             if target not in corpus_targets:
                 problems.append(
@@ -156,6 +159,21 @@ def _cases(
         seen_ids.add(case_id)
         seen_kernels.add(kernel)
         yield Case(id=case_id, kernel=kernel, targets=targets, headers=headers)
+
+
+def _field_problems(where: str, entry: dict[str, object]) -> list[str]:
+    """Unknown fields in a case *entry*, and an id or kernel that is not a non-empty string."""
+    problems = []
+    for field in sorted(set(entry) - CASE_FIELDS):
+        if field == "requires":
+            problems.append(f"{where}: 'requires' is now 'targets'")
+        else:
+            problems.append(f"{where}: unknown field {field!r}")
+    for name in ("id", "kernel"):
+        value = entry.get(name)
+        if not isinstance(value, str) or not value:
+            problems.append(f"{where}: {name} must be a non-empty string")
+    return problems
 
 
 def _string_list(

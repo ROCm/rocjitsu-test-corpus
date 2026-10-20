@@ -67,6 +67,7 @@ deliberately mismatched cuid and running it successfully.
 import argparse
 import dataclasses
 import difflib
+import enum
 import importlib.metadata
 import os
 import re
@@ -146,19 +147,37 @@ class CompileError(RuntimeError):
     """A kernel could not be compiled for the requested target."""
 
 
+class SetupError(RuntimeError):
+    """The inventory or the toolchain cannot be used, so nothing was compiled."""
+
+
+class UsageError(ValueError):
+    """A command-line argument is invalid; reported through ``parser.error``."""
+
+
+class ExitCode(enum.IntEnum):
+    """How a run ended; see ``--help`` and corpus/race/README.md."""
+
+    SUCCESS = 0
+    DRIFT = 1
+    COMPILE_FAILED = 2
+    INCOMPLETE = 3
+    SETUP_FAILED = 4
+
+
 def parse_cxxflags(text: str) -> list[str]:
     """
     Split ``--cxxflags`` into arguments the way a shell would, without running one.
 
     A quoted path with spaces, such as ``-I"my headers"``, stays one argument.
-    Malformed quoting is refused here, before any kernel is compiled.
+    Raises UsageError on malformed quoting, before any kernel is compiled.
     """
     try:
         return shlex.split(text)
     except ValueError as error:
-        raise SystemExit(
+        raise UsageError(
             f"--cxxflags: cannot parse {text!r}: {error} (check the quoting)"
-        ) from None
+        ) from error
 
 
 def absolute_flags(flags: list[str], base: Path) -> list[str]:
@@ -232,16 +251,33 @@ def rocm_path() -> Path:
     symlinked ROCM_PATH, selects the same root and reports the same build.
     """
     if explicit := os.environ.get("ROCM_PATH"):
-        return Path(explicit).expanduser().resolve()
+        root = Path(explicit).expanduser().resolve()
+        if not root.is_dir():
+            raise SetupError(f"ROCM_PATH {explicit} is not a directory")
+        return root
     if shutil.which("rocm-sdk"):
-        proc = subprocess.run(
-            ["rocm-sdk", "path", "--root"], capture_output=True, text=True, check=False
-        )
-        if proc.returncode == 0 and proc.stdout.strip():
-            return Path(proc.stdout.strip()).resolve()
+        return _rocm_sdk_root()
     if Path("/opt/rocm").is_dir():
         return Path("/opt/rocm").resolve()
-    raise SystemExit("set ROCM_PATH, or make rocm-sdk available on PATH")
+    raise SetupError("no ROCm SDK: set ROCM_PATH, or make rocm-sdk available on PATH")
+
+
+def _rocm_sdk_root() -> Path:
+    """The SDK root ``rocm-sdk path --root`` reports. Raises SetupError if it fails."""
+    try:
+        output = subprocess.check_output(
+            ["rocm-sdk", "path", "--root"], stderr=subprocess.STDOUT, text=True
+        )
+    except subprocess.CalledProcessError as error:
+        raise SetupError(
+            f"rocm-sdk path --root failed ({error.returncode}): {error.output.strip()}; "
+            f"set ROCM_PATH to choose an SDK"
+        ) from error
+    if not output.strip():
+        raise SetupError(
+            "rocm-sdk path --root printed no path; set ROCM_PATH to choose an SDK"
+        )
+    return Path(output.strip()).resolve()
 
 
 def find_hip_compiler() -> Path:
@@ -256,7 +292,7 @@ def find_hip_compiler() -> Path:
             return candidate
     if found := shutil.which("hipcc"):
         return Path(found).absolute()
-    raise SystemExit(
+    raise SetupError(
         f"no HIP compiler: neither {root}/bin/hipcc nor {root}/llvm/bin/clang++ exists, "
         f"and hipcc is not on PATH; set ROCM_PATH to a ROCm install"
     )
@@ -285,19 +321,25 @@ def ignored_environment() -> list[str]:
 
 
 def compiler_version(tool: Path) -> str:
-    """The ``clang version`` line *tool* reports, or its first line."""
-    proc = subprocess.run(
-        [str(tool), "--version"],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=compiler_environment(rocm_path()),
-    )
-    lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
-    return next(
-        (line for line in lines if "clang version" in line),
-        lines[0] if lines else "unknown",
-    )
+    """
+    The ``clang version`` line *tool* reports, or its first line. Raises
+    SetupError if *tool* cannot report a version.
+    """
+    try:
+        output = subprocess.check_output(
+            [str(tool), "--version"],
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=compiler_environment(rocm_path()),
+        )
+    except subprocess.CalledProcessError as error:
+        raise SetupError(
+            f"{tool} --version failed ({error.returncode}): {error.output.strip()}"
+        ) from error
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    if not lines:
+        raise SetupError(f"{tool} --version printed nothing")
+    return next((line for line in lines if "clang version" in line), lines[0])
 
 
 def sdk_release(root: Path) -> str:
@@ -357,7 +399,7 @@ def compare_recipes(target: str, current: recipe.Recipe) -> list[str]:
         return [
             f"{target}: no {recipe.FILE_NAME} committed, so the recipe cannot be compared"
         ]
-    return describe_change(target, committed, current)
+    return describe_change(target=target, committed=committed, current=current)
 
 
 def describe_change(
@@ -414,18 +456,21 @@ def compile_device_asm(
     with tempfile.TemporaryDirectory(prefix="race-asm-compile-") as scratch_dir:
         scratch = Path(scratch_dir)
         compiled = scratch / f"{kernel.stem}.s"
-        proc = subprocess.run(
-            _compile_command(
-                kernel=kernel, target=target, out=compiled, extra_flags=extra_flags
-            ),
-            cwd=scratch,
-            capture_output=True,
-            text=True,
-            check=False,
-            env=compiler_environment(root),
-        )
-        if proc.returncode != 0:
-            raise CompileError(f"{kernel.name} ({target}):\n{proc.stderr.strip()}")
+        try:
+            subprocess.run(
+                _compile_command(
+                    kernel=kernel, target=target, out=compiled, extra_flags=extra_flags
+                ),
+                cwd=scratch,
+                capture_output=True,
+                text=True,
+                check=True,
+                env=compiler_environment(root),
+            )
+        except subprocess.CalledProcessError as error:
+            raise CompileError(
+                f"{kernel.name} ({target}):\n{error.stderr.strip()}"
+            ) from error
         if not compiled.is_file():
             compiled = scratch / f"{kernel.stem}-hip-amdgcn-amd-amdhsa-{target}.s"
             if not compiled.is_file():
@@ -476,19 +521,25 @@ def _replace(out: Path, text: str) -> None:
 
 
 def load_inventory() -> inventory.Inventory:
-    """cases.toml, validated by the inventory module that check_cases.py also uses."""
+    """
+    cases.toml, validated by the inventory module that check_cases.py also uses.
+    Raises SetupError naming every problem.
+    """
     try:
         return inventory.load(CASES_PATH)
     except inventory.InventoryError as error:
-        raise SystemExit("\n".join(error.problems)) from None
+        raise SetupError("\n".join(error.problems)) from error
 
 
 def targets_for(corpus: inventory.Inventory, requested: list[str]) -> list[str]:
-    """The targets to regenerate: the ones requested, or every corpus target."""
+    """
+    The targets to regenerate: the ones requested, or every corpus target.
+    Raises UsageError for a requested target that is not a corpus target.
+    """
     targets = corpus.targets
     for target in requested:
         if target not in targets:
-            raise SystemExit(
+            raise UsageError(
                 f"--target {target}: {target} is not in [corpus] targets in cases.toml; "
                 f"add it there first"
             )
@@ -553,87 +604,6 @@ def regenerate(
     )
 
 
-def main(argv: list[str]) -> int:
-    args = _parse_args(argv)
-    # Read once: regenerating and the --check verdict see the same inventory.
-    corpus = load_inventory()
-    cxxflags = parse_cxxflags(args.cxxflags)
-    if ignored := ignored_environment():
-        print(
-            f"note: ignoring {', '.join(ignored)} for the compile; pass flags and "
-            f"include directories with --cxxflags, so they are recorded in {recipe.FILE_NAME}",
-            file=sys.stderr,
-        )
-    build = Build(
-        corpus=corpus,
-        targets=tuple(targets_for(corpus, args.target)),
-        extra_flags=tuple(absolute_flags(cxxflags, Path.cwd())),
-        recipe=current_recipe(cxxflags),
-    )
-    # Both modes compile into a scratch directory, removed however the run ends:
-    # --check compares it with the committed assembly, and an update publishes a
-    # target from it only once all of that target's cases have compiled.
-    with tempfile.TemporaryDirectory(prefix="race-asm-") as scratch:
-        return _regenerate_and_report(args, build, Path(scratch))
-
-
-def _parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Regenerate the committed device assembly under corpus/race/asm/ from "
-            "the kernels in cases.toml, or check it for drift with --check."
-        ),
-        epilog="The workflow, layout and checks are described in corpus/race/README.md.",
-    )
-    parser.add_argument(
-        "--target",
-        action="append",
-        default=[],
-        help=(
-            "gfx target to regenerate; repeat for several. Default: every target in "
-            "[corpus] targets in cases.toml."
-        ),
-    )
-    parser.add_argument(
-        "--cxxflags",
-        default="",
-        help=(
-            "Extra compiler flags, split like shell words, so a path with spaces "
-            "can be quoted, e.g. --cxxflags='-I\"/path/to/my headers\"'"
-        ),
-    )
-    parser.add_argument(
-        "--check",
-        action="store_true",
-        help=(
-            "Do not write. Regenerate into a temporary directory and compare it "
-            "with the committed assembly as text, after replacing hipcc's "
-            "per-invocation __hip_cuid hash. A file that differs only in its "
-            ".ident line came from another compiler that emitted the same text, "
-            "and is reported without failing. Any other difference, in an "
-            "instruction, a directive or metadata, is drift and fails the check, "
-            "as does an expected file that is missing or a committed file no "
-            "selected case builds. Exits 0 on a match, 1 on drift, 2 when a case "
-            "fails to compile, and 3 when the check is incomplete because a case "
-            "was skipped (see --allow-skipped) or nothing was compared."
-        ),
-    )
-    parser.add_argument(
-        "--allow-skipped",
-        action="store_true",
-        help=(
-            "With --check, pass when every case that could be compared matches, "
-            "even if some were skipped because an optional header is unavailable. "
-            "The skipped cases are still listed as not compared. Without this, a "
-            "skipped case makes the check incomplete (exit 3)."
-        ),
-    )
-    args = parser.parse_args(argv)
-    if args.allow_skipped and not args.check:
-        parser.error("--allow-skipped only applies with --check")
-    return args
-
-
 @dataclasses.dataclass(frozen=True)
 class Build:
     """What one run regenerates, and how."""
@@ -644,9 +614,107 @@ class Build:
     recipe: recipe.Recipe
 
 
+def main(argv: list[str]) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    if args.allow_skipped and not args.check:
+        parser.error("--allow-skipped only applies with --check")
+    try:
+        build = _plan_build(args)
+        # Both modes compile into a scratch directory, removed however the run
+        # ends: --check compares it with the committed assembly, and an update
+        # publishes a target from it only once all of its cases have compiled.
+        with tempfile.TemporaryDirectory(prefix="race-asm-") as scratch:
+            return _regenerate_and_report(args, build, Path(scratch))
+    except UsageError as error:
+        parser.error(str(error))
+    except SetupError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return ExitCode.SETUP_FAILED
+
+
+def _plan_build(args: argparse.Namespace) -> Build:
+    """
+    What this run builds, and how. Reads the inventory once, so regenerating and
+    the --check verdict see the same one. Raises UsageError or SetupError.
+    """
+    corpus = load_inventory()
+    cxxflags = parse_cxxflags(args.cxxflags)
+    targets = targets_for(corpus, args.target)
+    if ignored := ignored_environment():
+        print(
+            f"note: ignoring {', '.join(ignored)} for the compile; pass flags and "
+            f"include directories with --cxxflags, so they are recorded in {recipe.FILE_NAME}",
+            file=sys.stderr,
+        )
+    return Build(
+        corpus=corpus,
+        targets=tuple(targets),
+        extra_flags=tuple(absolute_flags(cxxflags, Path.cwd())),
+        recipe=current_recipe(cxxflags),
+    )
+
+
+_DESCRIPTION = (
+    "Regenerate the committed device assembly under corpus/race/asm/ from the kernels "
+    "in cases.toml, or check it for drift with --check."
+)
+_TARGET_HELP = (
+    "gfx target to regenerate; repeat for several. Default: every target in "
+    "[corpus] targets in cases.toml."
+)
+_CXXFLAGS_HELP = (
+    "Extra compiler flags, split like shell words, so a path with spaces can be "
+    "quoted, e.g. --cxxflags='-I\"/path/to/my headers\"'. Default: none."
+)
+_CHECK_HELP = (
+    "Do not write. Regenerate into a temporary directory and compare it with the "
+    "committed assembly as text, after replacing hipcc's per-invocation __hip_cuid "
+    "hash. A file that differs only in its .ident line came from another compiler "
+    "that emitted the same text, and is reported without failing. Any other "
+    "difference, in an instruction, a directive or metadata, is drift and fails the "
+    "check, as does an expected file that is missing or a committed file no selected "
+    "case builds."
+)
+_ALLOW_SKIPPED_HELP = (
+    "With --check, pass when every case that could be compared matches, even if some "
+    "were skipped because an optional header is unavailable. The skipped cases are "
+    "still listed as not compared. Without this, a skipped case makes the check "
+    "incomplete (exit 3)."
+)
+_EXIT_CODES_EPILOG = (
+    "Exits 0 on success, 1 when --check finds drift, 2 when a case fails to compile "
+    "or an argument is invalid, 3 when a case was skipped (with --check, see "
+    "--allow-skipped) or nothing was compared, and 4 when the inventory or the "
+    "toolchain cannot be used. The workflow, layout and checks are described in "
+    "corpus/race/README.md."
+)
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=_DESCRIPTION, epilog=_EXIT_CODES_EPILOG
+    )
+    parser.add_argument("--target", action="append", default=[], help=_TARGET_HELP)
+    parser.add_argument("--cxxflags", default="", help=_CXXFLAGS_HELP)
+    parser.add_argument(
+        "--check",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=_CHECK_HELP,
+    )
+    parser.add_argument(
+        "--allow-skipped",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=_ALLOW_SKIPPED_HELP,
+    )
+    return parser
+
+
 def _regenerate_and_report(
     args: argparse.Namespace, build: Build, out_root: Path
-) -> int:
+) -> ExitCode:
     """Regenerate into *out_root* and report: a write summary, or the --check verdict."""
     print(f"regenerating {', '.join(build.targets)} -> {out_root}")
     # One target at a time, so an update can tell which targets are complete.
@@ -666,7 +734,7 @@ def _regenerate_and_report(
         return _install(build, scratch=out_root, results=results)
     if failures:
         print("\nfailed kernels' committed assembly is untouched", file=sys.stderr)
-        return 2
+        return ExitCode.COMPILE_FAILED
     return _check_verdict(args, build, out_root=out_root, skipped=skipped)
 
 
@@ -682,7 +750,7 @@ def _print_problems(failures: Sequence[str], skipped: Sequence[str]) -> None:
 
 def _check_verdict(
     args: argparse.Namespace, build: Build, out_root: Path, skipped: Sequence[str]
-) -> int:
+) -> ExitCode:
     """
     The --check verdict. It covers only what was compared: a check that skipped
     a case is incomplete unless skipping was allowed, and one that compared
@@ -700,7 +768,7 @@ def _check_verdict(
         or (skipped and not args.allow_skipped)
     ):
         _print_incomplete(targets=build.targets, skipped=skipped)
-        return 3
+        return ExitCode.INCOMPLETE
     return _report_drift(
         targets=build.targets,
         out_root=out_root,
@@ -729,7 +797,9 @@ def _print_incomplete(targets: Sequence[str], skipped: Sequence[str]) -> None:
 # --- Publishing ----------------------------------------------------------------
 
 
-def _install(build: Build, scratch: Path, results: dict[str, RegenerateResult]) -> int:
+def _install(
+    build: Build, scratch: Path, results: dict[str, RegenerateResult]
+) -> ExitCode:
     """
     Publish each complete target from *scratch* into ASM_DIR; see _publish_target.
 
@@ -751,8 +821,8 @@ def _install(build: Build, scratch: Path, results: dict[str, RegenerateResult]) 
             )
     _print_install_summary(published=published, blocked=blocked)
     if any(result.failures for result in results.values()):
-        return 2
-    return 3 if blocked else 0
+        return ExitCode.COMPILE_FAILED
+    return ExitCode.INCOMPLETE if blocked else ExitCode.SUCCESS
 
 
 def _publish_target(target: str, built: Path, build_recipe: recipe.Recipe) -> int:
@@ -815,12 +885,27 @@ def _print_install_summary(published: int, blocked: Sequence[str]) -> None:
         )
 
 
+@dataclasses.dataclass(frozen=True)
+class FileComparison:
+    """
+    How one fresh listing compares with the committed one.
+
+    Attributes:
+        drift: Why the file is drift, or None.
+        ident_change: The committed and the fresh ``.ident``, when they are the
+            only difference, or None.
+    """
+
+    drift: str | None = None
+    ident_change: tuple[str, str] | None = None
+
+
 def _report_drift(
     targets: Sequence[str],
     out_root: Path,
     expected: set[tuple[str, str]],
     not_compared: set[tuple[str, str]] = frozenset(),
-) -> int:
+) -> ExitCode:
     """
     Compare freshly generated assembly against what is committed.
 
@@ -838,56 +923,85 @@ def _report_drift(
     drifted: list[str] = []
     provenance: dict[tuple[str, str], list[str]] = {}
     for target in targets:
-        fresh_dir, committed_dir = out_root / target, ASM_DIR / target
-        fresh_names = (
-            {path.name for path in fresh_dir.glob("*.s")}
-            if fresh_dir.is_dir()
-            else set()
-        )
-        committed_names = (
-            {path.name for path in committed_dir.glob("*.s")}
-            if committed_dir.is_dir()
-            else set()
-        )
-        expected_names = {
-            file for expected_target, file in expected if expected_target == target
-        }
-        for file in sorted(expected_names | fresh_names | committed_names):
-            name = f"{target}/{file}"
-            fresh, committed = fresh_dir / file, committed_dir / file
-            if file not in expected_names:
-                if file in committed_names:
-                    drifted.append(f"{name}: committed, but no selected case builds it")
-                else:
-                    drifted.append(f"{name}: generated, but no selected case builds it")
-                continue
-            if (target, file) in not_compared:
-                continue
-            if file not in fresh_names:
-                state = "not committed" if file not in committed_names else "committed"
-                drifted.append(f"{name}: not generated and {state}")
-                continue
-            if file not in committed_names:
-                drifted.append(f"{name}: not committed")
-                continue
-            fresh_body, fresh_ident = split_provenance(fresh.read_text())
-            committed_body, committed_ident = split_provenance(committed.read_text())
-            if fresh_body != committed_body:
-                changed = sum(
-                    1
-                    for line in difflib.unified_diff(
-                        committed_body, fresh_body, lineterm="", n=0
-                    )
-                    if line[:1] in "+-" and not line.startswith(("+++", "---"))
+        for file in _files_to_compare(target, out_root=out_root, expected=expected):
+            comparison = _compare_file(
+                target=target,
+                file=file,
+                out_root=out_root,
+                expected=expected,
+                not_compared=not_compared,
+            )
+            if comparison.drift is not None:
+                drifted.append(comparison.drift)
+            elif comparison.ident_change is not None:
+                provenance.setdefault(comparison.ident_change, []).append(
+                    f"{target}/{file}"
                 )
-                drifted.append(f"{name}: {changed} line(s) added or removed")
-            elif fresh_ident != committed_ident:
-                key = (
-                    " ".join(committed_ident) or "(none)",
-                    " ".join(fresh_ident) or "(none)",
-                )
-                provenance.setdefault(key, []).append(name)
+    _print_provenance(provenance)
+    _print_not_compared(not_compared)
+    if not drifted:
+        suffix = ", apart from .ident" if provenance else ""
+        scope = " for the compared cases" if not_compared else ""
+        print(f"\ncommitted assembly matches this toolchain{scope}{suffix}")
+        return ExitCode.SUCCESS
+    _print_drift(drifted)
+    return ExitCode.DRIFT
 
+
+def _files_to_compare(
+    target: str, out_root: Path, expected: set[tuple[str, str]]
+) -> list[str]:
+    """Every listing *target* should have, was generated with, or has committed."""
+    names = {file for expected_target, file in expected if expected_target == target}
+    for directory in (out_root / target, ASM_DIR / target):
+        if directory.is_dir():
+            names |= {path.name for path in directory.glob("*.s")}
+    return sorted(names)
+
+
+def _compare_file(
+    target: str,
+    file: str,
+    out_root: Path,
+    expected: set[tuple[str, str]],
+    not_compared: set[tuple[str, str]],
+) -> FileComparison:
+    name = f"{target}/{file}"
+    fresh, committed = out_root / target / file, ASM_DIR / target / file
+    if (target, file) not in expected:
+        where = "committed" if committed.is_file() else "generated"
+        return FileComparison(drift=f"{name}: {where}, but no selected case builds it")
+    if (target, file) in not_compared:
+        return FileComparison()
+    if not fresh.is_file():
+        state = "committed" if committed.is_file() else "not committed"
+        return FileComparison(drift=f"{name}: not generated and {state}")
+    if not committed.is_file():
+        return FileComparison(drift=f"{name}: not committed")
+    return _compare_listings(name, fresh=fresh, committed=committed)
+
+
+def _compare_listings(name: str, fresh: Path, committed: Path) -> FileComparison:
+    """Compare two listings of one case, with their ``.ident`` lines apart."""
+    fresh_body, fresh_ident = split_provenance(fresh.read_text())
+    committed_body, committed_ident = split_provenance(committed.read_text())
+    if fresh_body != committed_body:
+        changed = sum(
+            1
+            for line in difflib.unified_diff(
+                committed_body, fresh_body, lineterm="", n=0
+            )
+            if line[:1] in "+-" and not line.startswith(("+++", "---"))
+        )
+        return FileComparison(drift=f"{name}: {changed} line(s) added or removed")
+    if fresh_ident != committed_ident:
+        was = " ".join(committed_ident) or "(none)"
+        now = " ".join(fresh_ident) or "(none)"
+        return FileComparison(ident_change=(was, now))
+    return FileComparison()
+
+
+def _print_provenance(provenance: dict[tuple[str, str], list[str]]) -> None:
     for (was, now), names in provenance.items():
         print(f"\n{len(names)} file(s) differ only in the compiler that produced them:")
         print(f"  committed:      {was}")
@@ -897,18 +1011,16 @@ def _report_drift(
         print("Every other line is identical, so this is not drift; regenerating would")
         print("only update their .ident lines.")
 
-    if not_compared:
-        print(
-            f"\n{len(not_compared)} case(s) skipped and not compared (--allow-skipped):"
-        )
-        for target, file in sorted(not_compared):
-            print(f"  not compared: {Path(file).stem} ({target})")
 
-    if not drifted:
-        suffix = ", apart from .ident" if provenance else ""
-        scope = " for the compared cases" if not_compared else ""
-        print(f"\ncommitted assembly matches this toolchain{scope}{suffix}")
-        return 0
+def _print_not_compared(not_compared: set[tuple[str, str]]) -> None:
+    if not not_compared:
+        return
+    print(f"\n{len(not_compared)} case(s) skipped and not compared (--allow-skipped):")
+    for target, file in sorted(not_compared):
+        print(f"  not compared: {Path(file).stem} ({target})")
+
+
+def _print_drift(drifted: Sequence[str]) -> None:
     print(f"\n{len(drifted)} file(s) differ from what is committed:", file=sys.stderr)
     for entry in drifted:
         print(f"  {entry}", file=sys.stderr)
@@ -922,7 +1034,6 @@ def _report_drift(
         "kernels change too.",
         file=sys.stderr,
     )
-    return 1
 
 
 if __name__ == "__main__":

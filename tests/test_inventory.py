@@ -4,6 +4,7 @@ import dataclasses
 import importlib.util
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -14,7 +15,7 @@ sys.path.insert(0, str(SCRIPTS))
 import inventory  # noqa: E402
 
 
-def load_script(name: str):
+def load_script(name: str) -> ModuleType:
     spec = importlib.util.spec_from_file_location(name, SCRIPTS / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
@@ -38,7 +39,7 @@ ONLY = '[[case]]\nid = "only"\nkernel = "only"\ntargets = ["gfx1250"]\nheaders =
 # --- Reading a valid inventory -------------------------------------------------
 
 
-def test_load_gives_named_case_records(tmp_path):
+def test_load_gives_named_case_records(tmp_path: Path) -> None:
     loaded = inventory.load(write_manifest(tmp_path / "cases.toml", PORTABLE + ONLY))
     assert loaded.targets == ("gfx950", "gfx1250")
     portable, only = loaded.cases
@@ -49,7 +50,7 @@ def test_load_gives_named_case_records(tmp_path):
 
 
 @pytest.mark.parametrize("record", [inventory.Case, inventory.Inventory])
-def test_records_are_frozen_dataclasses(record):
+def test_records_are_frozen_dataclasses(record: str) -> None:
     # Both inventory records are represented the same way: immutable fields,
     # and no tuple behaviour such as indexing or unpacking to depend on.
     assert dataclasses.is_dataclass(record)
@@ -57,13 +58,13 @@ def test_records_are_frozen_dataclasses(record):
     assert not issubclass(record, tuple)
 
 
-def test_case_fields_cannot_be_reassigned():
+def test_case_fields_cannot_be_reassigned() -> None:
     case = inventory.Case(id="a", kernel="a", targets=(), headers=())
     with pytest.raises(dataclasses.FrozenInstanceError):
         case.kernel = "b"
 
 
-def test_absent_targets_means_every_corpus_target(tmp_path):
+def test_absent_targets_means_every_corpus_target(tmp_path: Path) -> None:
     loaded = inventory.load(
         write_manifest(tmp_path / "cases.toml", '[[case]]\nid = "a"\nkernel = "a"\n')
     )
@@ -72,7 +73,7 @@ def test_absent_targets_means_every_corpus_target(tmp_path):
     assert loaded.targets_of(case) == ("gfx950", "gfx1250")
 
 
-def test_targets_of_and_outputs_apply_one_rule(tmp_path):
+def test_targets_of_and_outputs_apply_one_rule(tmp_path: Path) -> None:
     loaded = inventory.load(write_manifest(tmp_path / "cases.toml", PORTABLE + ONLY))
     portable, only = loaded.cases
     assert loaded.targets_of(portable) == ("gfx950", "gfx1250")
@@ -85,7 +86,7 @@ def test_targets_of_and_outputs_apply_one_rule(tmp_path):
     assert loaded.outputs(["gfx950"]) == {("gfx950", "portable.s")}
 
 
-def test_committed_inventory_loads():
+def test_committed_inventory_loads() -> None:
     loaded = inventory.load(REPO_ROOT / "corpus" / "race" / "cases.toml")
     assert loaded.targets == ("gfx950", "gfx1250")
     assert len(loaded.cases) == 21
@@ -128,21 +129,23 @@ BAD_MANIFESTS = {
 @pytest.mark.parametrize(
     "body, problem", BAD_MANIFESTS.values(), ids=BAD_MANIFESTS.keys()
 )
-def test_invalid_manifest_is_rejected(tmp_path, body, problem):
+def test_invalid_manifest_is_rejected(tmp_path: Path, body: str, problem: str) -> None:
     with pytest.raises(inventory.InventoryError) as error:
         inventory.load(write_manifest(tmp_path / "cases.toml", body))
     assert problem in error.value.problems
 
 
 @pytest.mark.parametrize("targets", ["[]", '["gfx950", "gfx950"]', '[""]'])
-def test_invalid_corpus_targets_are_rejected(tmp_path, targets):
+def test_invalid_corpus_targets_are_rejected(
+    tmp_path: Path, targets: list[str] | None
+) -> None:
     with pytest.raises(inventory.InventoryError, match=r"\[corpus\] targets"):
         inventory.load(
             write_manifest(tmp_path / "cases.toml", PORTABLE, targets=targets)
         )
 
 
-def test_every_problem_is_reported_at_once(tmp_path):
+def test_every_problem_is_reported_at_once(tmp_path: Path) -> None:
     body = (
         '[[case]]\nid = "a"\nkernel = "a"\nheader = []\n'
         '[[case]]\nid = "b"\nkernel = "b"\ntargets = ["gfx1201"]\n'
@@ -152,7 +155,7 @@ def test_every_problem_is_reported_at_once(tmp_path):
     assert len(error.value.problems) == 2
 
 
-def test_unsupported_schema_is_rejected(tmp_path):
+def test_unsupported_schema_is_rejected(tmp_path: Path) -> None:
     path = tmp_path / "cases.toml"
     path.write_text('[corpus]\nschema = 2\ntargets = ["gfx950"]\n')
     with pytest.raises(inventory.InventoryError, match="unsupported corpus schema"):
@@ -166,8 +169,12 @@ def test_unsupported_schema_is_rejected(tmp_path):
     "body, problem", BAD_MANIFESTS.values(), ids=BAD_MANIFESTS.keys()
 )
 def test_both_scripts_report_the_same_problem(
-    tmp_path, monkeypatch, capsys, body, problem
-):
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    body: str,
+    problem: str,
+) -> None:
     path = write_manifest(tmp_path / "cases.toml", body)
     check_cases = load_script("check_cases")
     regenerate_asm = load_script("regenerate_asm")
@@ -176,6 +183,6 @@ def test_both_scripts_report_the_same_problem(
 
     assert check_cases.main([]) == 1
     assert problem in capsys.readouterr().err
-    with pytest.raises(SystemExit) as exit_info:
+    with pytest.raises(regenerate_asm.SetupError) as error:
         regenerate_asm.load_inventory()
-    assert problem in str(exit_info.value.code)
+    assert problem in str(error.value)

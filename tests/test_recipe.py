@@ -95,7 +95,7 @@ def test_toolchain_fields_are_every_field_but_the_flags() -> None:
     assert recipe.FIELDS == (*recipe.TOOLCHAIN_FIELDS, "flags")
 
 
-def test_recipe_is_a_frozen_dataclass():
+def test_recipe_is_a_frozen_dataclass() -> None:
     # Represented like the inventory's records: immutable fields, and no tuple
     # behaviour such as indexing or unpacking to depend on.
     assert dataclasses.is_dataclass(recipe.Recipe)
@@ -105,7 +105,7 @@ def test_recipe_is_a_frozen_dataclass():
         GOOD.compiler = "clang++"
 
 
-def test_committed_recipes_load():
+def test_committed_recipes_load() -> None:
     for target in ("gfx950", "gfx1250"):
         assert (
             recipe.load(SCRIPTS.parent / "asm" / target / recipe.FILE_NAME) is not None
