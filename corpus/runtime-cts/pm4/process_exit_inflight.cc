@@ -16,16 +16,17 @@
 // https://gitlab.freedesktop.org/drm/igt-gpu-tools/-/blob/26513be3e0f711ed835ec50d5cdcb723ef224105/tests/amdgpu/amd_close_race.c
 #include <cstdint>
 #include <cstdio>
+#include <spawn.h>
+#include <stdlib.h>
+#include <vector>
+
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
-#include <spawn.h>
-#include <stdlib.h>
 #include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <vector>
 
 #include <cerrno>
 #include <cstring>

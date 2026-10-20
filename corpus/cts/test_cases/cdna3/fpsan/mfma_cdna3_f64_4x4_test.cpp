@@ -6,10 +6,13 @@
 #include "mfma_cdna3_parts.hpp"
 #include "test_random.hpp"
 #include "test_utils.hpp"
+
+#include <hip/hip_runtime.h>
+
+#include <gtest/gtest.h>
+
 #include <cstddef>
 #include <cstdint>
-#include <gtest/gtest.h>
-#include <hip/hip_runtime.h>
 #include <random>
 #include <vector>
 

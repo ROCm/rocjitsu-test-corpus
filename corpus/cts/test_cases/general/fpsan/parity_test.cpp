@@ -25,8 +25,9 @@
 #include <vector>
 
 #if defined(__HIP__)
-#include <hip/hip_runtime.h>
 #include "hip_test_utils.hpp"
+
+#include <hip/hip_runtime.h>
 #endif
 
 using fpsan::Conversions;

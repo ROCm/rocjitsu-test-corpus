@@ -4,6 +4,7 @@
 #include "hip_test_utils.hpp"
 #include "int_isa_test_utils.hpp"
 #include "wave_test_harness.hpp"
+
 #include <gtest/gtest.h>
 
 #include <cstdint>

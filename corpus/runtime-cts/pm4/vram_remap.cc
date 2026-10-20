@@ -21,6 +21,7 @@
 #include "support/kfd.h"
 #include "support/sdma.h"
 #include "test.h"
+
 #include <cstdint>
 using namespace cts;
 int main(int argc, char** argv) {

@@ -4,11 +4,12 @@
 /// @file hip_race_gfx1151_test.hip
 /// @brief Small gfx1151 HIP race detector smoke tests.
 
-#include <gtest/gtest.h>
-#include <hip/hip_runtime.h>
-
 #include "race_log_expectation.hpp"
 #include "race_test_support.hpp"
+
+#include <hip/hip_runtime.h>
+
+#include <gtest/gtest.h>
 
 #include <cstdint>
 #include <cstdio>

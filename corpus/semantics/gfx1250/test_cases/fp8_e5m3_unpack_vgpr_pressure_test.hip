@@ -1,5 +1,6 @@
 #include "resource_pressure.hpp"
 #include "test_support.hpp"
+
 #include <hip/hip_runtime.h>
 
 #include <cstddef>

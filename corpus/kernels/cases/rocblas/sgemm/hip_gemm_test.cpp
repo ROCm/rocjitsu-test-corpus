@@ -23,6 +23,7 @@
 #include <vector>
 
 #include <hip/hip_runtime.h>
+
 #include <rocblas/rocblas.h>
 
 #include <gtest/gtest.h>

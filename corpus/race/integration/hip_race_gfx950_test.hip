@@ -17,11 +17,12 @@
 //   _race suffix = expects race, no suffix = expects no race.
 //   Paired tests share a base name (e.g. vgpr_waitcnt / vgpr_waitcnt_race).
 //
-#include <gtest/gtest.h>
-#include <hip/hip_runtime.h>
-
 #include "race_log_expectation.hpp"
 #include "race_test_support.hpp"
+
+#include <hip/hip_runtime.h>
+
+#include <gtest/gtest.h>
 
 #include <cstdint>
 #include <cstdio>

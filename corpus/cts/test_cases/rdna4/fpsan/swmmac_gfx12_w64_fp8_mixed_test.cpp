@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "swmmac_gfx12_w64_parts.hpp"
+
 #include <gtest/gtest.h>
 
 TEST(SwmmacGfx12W64, F32_BF8_FP8_LayoutAndFpsan) { run_fp8_case<SwBf8Fp8>(0x7000); }

@@ -4,6 +4,7 @@
 
 #define main kernel_corpus_hipkittens_upstream_main
 #include "../../../third_party/hipkittens/kernels/gemm/fp8fp32/FP8_4wave/4_wave.cu"
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

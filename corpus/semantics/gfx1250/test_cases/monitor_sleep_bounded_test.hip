@@ -1,5 +1,7 @@
 #include "test_support.hpp"
+
 #include <hip/hip_runtime.h>
+
 #include <vector>
 
 extern "C" __global__ void run_bounded_monitor_sleep(unsigned *out,

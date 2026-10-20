@@ -1,4 +1,5 @@
 #include "test_support.hpp"
+
 #include <hip/hip_runtime.h>
 
 #include <cmath>

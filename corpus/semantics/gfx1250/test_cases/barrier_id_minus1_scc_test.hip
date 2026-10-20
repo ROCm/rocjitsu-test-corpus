@@ -1,6 +1,8 @@
 #include "test_support.hpp"
-#include <algorithm>
+
 #include <hip/hip_runtime.h>
+
+#include <algorithm>
 #include <vector>
 
 // The s_get_barrier_state instruction itself does not modify SCC.

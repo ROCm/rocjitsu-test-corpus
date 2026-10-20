@@ -5,8 +5,6 @@
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/libhsakmt/tests/kfdtest/src/KFDHWSTest.cpp
 #ifndef CTS_PROCESS_GROUP_H_
 #define CTS_PROCESS_GROUP_H_
-#include <cstddef>
-#include <cstdint>
 #include <poll.h>
 #include <signal.h>
 #include <sys/prctl.h>
@@ -16,6 +14,8 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <string>

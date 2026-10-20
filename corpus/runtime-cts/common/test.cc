@@ -5,8 +5,9 @@
 #include "common/test.h"
 
 #include <cstdint>
-#include <signal.h>
 #include <time.h>
+
+#include <signal.h>
 #include <unistd.h>
 
 #include <cerrno>

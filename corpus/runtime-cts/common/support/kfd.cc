@@ -17,28 +17,28 @@
 #include "support/platform.h"
 #include "test.h"
 
-#include <atomic>
-#include <cstddef>
-#include <cstdint>
 #include <dirent.h>
 #include <fcntl.h>
 #include <linux/kfd_ioctl.h>
-#include <map>
-#include <string>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/utsname.h>
 #include <unistd.h>
-#include <utility>
-#include <vector>
 
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <map>
+#include <string>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "support/metadata.h"
 

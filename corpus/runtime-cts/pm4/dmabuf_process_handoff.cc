@@ -21,17 +21,18 @@
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/runtimes/rocddi/frontends/libamdf/examples/sdma-dmabuf-copy.c
 #include <cstddef>
 #include <cstdint>
+#include <spawn.h>
+#include <stdlib.h>
+#include <vector>
+
 #include <fcntl.h>
 #include <linux/kfd_ioctl.h>
 #include <signal.h>
-#include <spawn.h>
-#include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <vector>
 
 #include <cerrno>
 #include <cstdio>

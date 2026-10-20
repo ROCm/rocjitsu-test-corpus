@@ -1,5 +1,6 @@
 #define KERNEL_CORPUS_HIPKITTENS_STANDALONE
 #include "../../../third_party/hipkittens/include/kittens.cuh"
+
 #include <hip/hip_runtime.h>
 #ifndef KERNEL_CORPUS_HIPKITTENS_STANDALONE
 #include "../../../third_party/hipkittens/include/pyutils/pyutils.cuh"

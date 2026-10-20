@@ -1,5 +1,7 @@
 #include "test_support.hpp"
+
 #include <hip/hip_runtime.h>
+
 #include <vector>
 
 // This kernel is compiled but never launched because an unbounded sleep may

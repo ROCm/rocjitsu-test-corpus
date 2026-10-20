@@ -3,6 +3,7 @@
 #define KERNEL_CORPUS_HIPKITTENS_N 256
 #define KERNEL_CORPUS_HIPKITTENS_K 256
 #include "../../../third_party/hipkittens/cdna3/include/kittens.cuh"
+
 #include <hip/hip_runtime.h>
 #ifndef KERNEL_CORPUS_HIPKITTENS_STANDALONE
 #include "../../../third_party/hipkittens/cdna3/include/pyutils/pyutils.cuh"

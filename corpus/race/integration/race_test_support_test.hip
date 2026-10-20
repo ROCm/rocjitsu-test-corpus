@@ -3,8 +3,9 @@
 
 #include "race_test_support.hpp"
 
-#include <gtest/gtest.h>
 #include <hip/hip_runtime.h>
+
+#include <gtest/gtest.h>
 
 #include <cstddef>
 #include <stdexcept>

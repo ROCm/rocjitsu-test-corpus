@@ -9,10 +9,13 @@
 #include "subbyte_oracle.hpp"
 #include "test_random.hpp"
 #include "test_utils.hpp"
+
+#include <hip/hip_runtime.h>
+
+#include <gtest/gtest.h>
+
 #include <cmath>
 #include <cstdint>
-#include <gtest/gtest.h>
-#include <hip/hip_runtime.h>
 #include <random>
 #include <vector>
 

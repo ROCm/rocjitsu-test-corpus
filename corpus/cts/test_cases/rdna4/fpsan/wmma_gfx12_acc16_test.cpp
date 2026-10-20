@@ -3,7 +3,9 @@
 
 #include "fpsan/amdgcn_matrix.hpp"
 #include "wmma_gfx12_parts.hpp"
+
 #include <gtest/gtest.h>
+
 #include <type_traits>
 
 struct WmmaF32F16 {

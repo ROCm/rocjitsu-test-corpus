@@ -3,6 +3,7 @@
 
 #include "../../general/int_isa/matrix_test_parts.hpp"
 #include "hip_test_utils.hpp"
+
 #include <gtest/gtest.h>
 
 namespace

@@ -1,7 +1,9 @@
 #include "test_support.hpp"
+
+#include <hip/hip_runtime.h>
+
 #include <algorithm>
 #include <cstddef>
-#include <hip/hip_runtime.h>
 #include <vector>
 
 using f32x8 = float __attribute__((ext_vector_type(8)));

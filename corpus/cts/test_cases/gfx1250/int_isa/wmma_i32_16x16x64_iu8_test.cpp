@@ -3,10 +3,13 @@
 
 #include "../../general/int_isa/matrix_test_parts.hpp"
 #include "hip_test_utils.hpp"
+
+#include <hip/hip_runtime.h>
+
+#include <gtest/gtest.h>
+
 #include <cstddef>
 #include <cstdint>
-#include <gtest/gtest.h>
-#include <hip/hip_runtime.h>
 #include <vector>
 
 namespace {
