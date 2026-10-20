@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from test_recipe import BAD_RECIPES
+from test_recipe import BAD_RECIPES, GOOD_TEXT
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "corpus" / "race" / "scripts" / "check_cases.py"
@@ -32,14 +32,6 @@ check_cases = load_script()
 
 PORTABLE = '[[case]]\nid = "portable"\nkernel = "portable"\ntargets = []\n'
 GFX1250_ONLY = '[[case]]\nid = "only"\nkernel = "only"\ntargets = ["gfx1250"]\n'
-
-
-RECIPE = (
-    'compiler = "hipcc"\n'
-    'compiler_version = "AMD clang version 23.0.0git"\n'
-    'rocm_version = "10.1.0"\n'
-    'flags = ["-O3", "-x", "hip"]\n'
-)
 
 
 def listing(target: str) -> str:
@@ -72,7 +64,7 @@ def corpus(tmp_path: Path, monkeypatch):
         for path in asm:
             target, kernel = path.split("/")
             (tmp_path / "asm" / target).mkdir(exist_ok=True)
-            (tmp_path / "asm" / target / "recipe.toml").write_text(RECIPE)
+            (tmp_path / "asm" / target / "recipe.toml").write_text(GOOD_TEXT)
             (tmp_path / "asm" / target / f"{kernel}.s").write_text(listing(target))
 
     return build

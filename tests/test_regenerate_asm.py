@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from test_recipe import BAD_RECIPES
+from test_recipe import BAD_RECIPES, GOOD, GOOD_TEXT
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "corpus" / "race" / "scripts" / "regenerate_asm.py"
@@ -1102,23 +1102,21 @@ def test_check_reports_an_invalid_committed_recipe(
 # assembly only when every case for that target compiled, and writes the recipe
 # with it; a failed or skipped case leaves the whole target as it was.
 
-OLD_RECIPE = regen.recipe.Recipe(
-    compiler="old-hipcc", compiler_version="old clang", rocm_version="1.0", flags=("-O3", "-x", "hip")
-)
-
-
 def seed_target(committed: Path, target: str, kernels: list[str]) -> None:
-    """A committed target directory: an old listing per kernel, and the old recipe."""
+    """
+    A committed target directory: an old listing per kernel, and GOOD's recipe,
+    which the fake compiler never reproduces.
+    """
     (committed / target).mkdir(parents=True, exist_ok=True)
     for kernel in kernels:
         (committed / target / f"{kernel}.s").write_text(f"old {kernel}\n")
-    (committed / target / "recipe.toml").write_text(regen.recipe.dumps(OLD_RECIPE))
+    (committed / target / "recipe.toml").write_text(GOOD_TEXT)
 
 
 def assert_untouched(committed: Path, target: str, kernels: list[str]) -> None:
     for kernel in kernels:
         assert (committed / target / f"{kernel}.s").read_text() == f"old {kernel}\n"
-    assert regen.recipe.load(committed / target / "recipe.toml") == OLD_RECIPE
+    assert regen.recipe.load(committed / target / "recipe.toml") == GOOD
 
 
 def test_partial_skip_leaves_the_target_as_it_was(manifest, corpus_main, capsys):

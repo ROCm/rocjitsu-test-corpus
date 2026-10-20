@@ -20,17 +20,26 @@ GOOD = recipe.Recipe(
 )
 GOOD_TEXT = recipe.dumps(GOOD)
 
-# Each malformed recipe, and the problem load() reports for it. The two scripts'
-# tests run the same cases through their own entry points.
+
+def without_field(field: str) -> str:
+    """GOOD_TEXT with *field*'s line removed."""
+    return "".join(
+        line for line in GOOD_TEXT.splitlines(keepends=True) if not line.startswith(f"{field} = ")
+    )
+
+
+# Each malformed recipe, and the problem load() reports for it, built from GOOD
+# so that a schema change updates every fixture here. The two scripts' tests run
+# the same cases through their own entry points.
 BAD_RECIPES = {
     "malformed TOML": ("compiler = \n", "not valid TOML"),
-    "missing field": (GOOD_TEXT.replace('rocm_version = "10.1.0"\n', ""), "rocm_version is missing"),
+    "missing field": (without_field("rocm_version"), "rocm_version is missing"),
     "empty field": (
-        GOOD_TEXT.replace('compiler = "hipcc"', 'compiler = ""'),
+        recipe.dumps(dataclasses.replace(GOOD, compiler="")),
         "compiler must be a non-empty string",
     ),
     "flags not a list": (
-        GOOD_TEXT.replace('flags = ["-O3", "-x", "hip"]', 'flags = "-O3"'),
+        without_field("flags") + 'flags = "-O3"\n',
         "flags must be a list of strings",
     ),
     "unknown field": (GOOD_TEXT + 'sdk = "x"\n', "unknown field 'sdk'"),
