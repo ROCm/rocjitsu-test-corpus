@@ -122,7 +122,10 @@ def _corpus_targets(path: Path, value: object, problems: list[str]) -> tuple[str
 
 
 def _cases(
-    path: Path, entries: list[dict[str, object]], corpus_targets: tuple[str, ...], problems: list[str]
+    path: Path,
+    entries: list[dict[str, object]],
+    corpus_targets: tuple[str, ...],
+    problems: list[str],
 ) -> Iterable[Case]:
     seen_ids: set[str] = set()
     seen_kernels: set[str] = set()
@@ -142,7 +145,9 @@ def _cases(
         headers = _string_list(where, "headers", entry.get("headers", []), problems)
         for target in targets:
             if target not in corpus_targets:
-                problems.append(f"{where}: lists target {target}, which is not in [corpus] targets")
+                problems.append(
+                    f"{where}: lists target {target}, which is not in [corpus] targets"
+                )
 
         if case_id in seen_ids:
             problems.append(f"{where}: duplicate id")
@@ -153,7 +158,9 @@ def _cases(
         yield Case(id=case_id, kernel=kernel, targets=targets, headers=headers)
 
 
-def _string_list(where: str, name: str, value: object, problems: list[str]) -> tuple[str, ...]:
+def _string_list(
+    where: str, name: str, value: object, problems: list[str]
+) -> tuple[str, ...]:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         problems.append(f"{where}: {name} must be a list of strings")
         return ()

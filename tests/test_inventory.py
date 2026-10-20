@@ -22,8 +22,12 @@ def load_script(name: str):
     return module
 
 
-def write_manifest(path: Path, body: str, targets: str = '["gfx950", "gfx1250"]') -> Path:
-    path.write_text(f'[corpus]\nschema = 1\nname = "race"\ntargets = {targets}\n\n{body}')
+def write_manifest(
+    path: Path, body: str, targets: str = '["gfx950", "gfx1250"]'
+) -> Path:
+    path.write_text(
+        f'[corpus]\nschema = 1\nname = "race"\ntargets = {targets}\n\n{body}'
+    )
     return path
 
 
@@ -38,7 +42,9 @@ def test_load_gives_named_case_records(tmp_path):
     loaded = inventory.load(write_manifest(tmp_path / "cases.toml", PORTABLE + ONLY))
     assert loaded.targets == ("gfx950", "gfx1250")
     portable, only = loaded.cases
-    assert portable == inventory.Case(id="portable", kernel="portable", targets=(), headers=())
+    assert portable == inventory.Case(
+        id="portable", kernel="portable", targets=(), headers=()
+    )
     assert only.targets == ("gfx1250",) and only.headers == ("x/y.hpp",)
 
 
@@ -119,7 +125,9 @@ BAD_MANIFESTS = {
 }
 
 
-@pytest.mark.parametrize("body, problem", BAD_MANIFESTS.values(), ids=BAD_MANIFESTS.keys())
+@pytest.mark.parametrize(
+    "body, problem", BAD_MANIFESTS.values(), ids=BAD_MANIFESTS.keys()
+)
 def test_invalid_manifest_is_rejected(tmp_path, body, problem):
     with pytest.raises(inventory.InventoryError) as error:
         inventory.load(write_manifest(tmp_path / "cases.toml", body))
@@ -129,7 +137,9 @@ def test_invalid_manifest_is_rejected(tmp_path, body, problem):
 @pytest.mark.parametrize("targets", ["[]", '["gfx950", "gfx950"]', '[""]'])
 def test_invalid_corpus_targets_are_rejected(tmp_path, targets):
     with pytest.raises(inventory.InventoryError, match=r"\[corpus\] targets"):
-        inventory.load(write_manifest(tmp_path / "cases.toml", PORTABLE, targets=targets))
+        inventory.load(
+            write_manifest(tmp_path / "cases.toml", PORTABLE, targets=targets)
+        )
 
 
 def test_every_problem_is_reported_at_once(tmp_path):
@@ -152,8 +162,12 @@ def test_unsupported_schema_is_rejected(tmp_path):
 # --- Both entry points read the same inventory ---------------------------------
 
 
-@pytest.mark.parametrize("body, problem", BAD_MANIFESTS.values(), ids=BAD_MANIFESTS.keys())
-def test_both_scripts_report_the_same_problem(tmp_path, monkeypatch, capsys, body, problem):
+@pytest.mark.parametrize(
+    "body, problem", BAD_MANIFESTS.values(), ids=BAD_MANIFESTS.keys()
+)
+def test_both_scripts_report_the_same_problem(
+    tmp_path, monkeypatch, capsys, body, problem
+):
     path = write_manifest(tmp_path / "cases.toml", body)
     check_cases = load_script("check_cases")
     regenerate_asm = load_script("regenerate_asm")

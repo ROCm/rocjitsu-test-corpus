@@ -75,7 +75,10 @@ def dumps(recipe: Recipe) -> str:
     lines = [
         "# How the .s files beside this one were regenerated. Written by",
         "# regenerate_asm.py and compared by regenerate_asm.py --check.",
-        *(f"{field} = {json.dumps(getattr(recipe, field))}" for field in TOOLCHAIN_FIELDS),
+        *(
+            f"{field} = {json.dumps(getattr(recipe, field))}"
+            for field in TOOLCHAIN_FIELDS
+        ),
         f"flags = {json.dumps(list(recipe.flags))}",
     ]
     return "\n".join(lines) + "\n"
@@ -103,8 +106,12 @@ def load(path: Path) -> Recipe | None:
     flags = fields.get("flags")
     if flags is None:
         problems.append("flags is missing")
-    elif not isinstance(flags, list) or not all(isinstance(flag, str) for flag in flags):
+    elif not isinstance(flags, list) or not all(
+        isinstance(flag, str) for flag in flags
+    ):
         problems.append("flags must be a list of strings")
     if problems:
         raise RecipeError(problems)
-    return Recipe(**{name: fields[name] for name in TOOLCHAIN_FIELDS}, flags=tuple(flags))
+    return Recipe(
+        **{name: fields[name] for name in TOOLCHAIN_FIELDS}, flags=tuple(flags)
+    )

@@ -52,7 +52,9 @@ CASES_PATH = CORPUS_ROOT / "cases.toml"
 # The directive hipcc writes at the top of each listing, naming the target
 # triple and processor, e.g. "amdgcn-amd-amdhsa-unknown-gfx950:xnack-". Group 1
 # is the processor, without target features.
-_AMDGCN_TARGET_RE = re.compile(r'^\s*\.amdgcn_target\s+"[^"]*-([^-":]+)(?::[^"]*)?"', re.MULTILINE)
+_AMDGCN_TARGET_RE = re.compile(
+    r'^\s*\.amdgcn_target\s+"[^"]*-([^-":]+)(?::[^"]*)?"', re.MULTILINE
+)
 
 
 def asm_targets() -> list[str]:
@@ -68,7 +70,9 @@ def target_mismatch(asm: Path, target: str) -> str | None:
         return f"asm/{target}/{asm.name}: no .amdgcn_target directive"
     for processor in declared:
         if processor != target:
-            return f"asm/{target}/{asm.name}: .amdgcn_target is {processor}, not {target}"
+            return (
+                f"asm/{target}/{asm.name}: .amdgcn_target is {processor}, not {target}"
+            )
     return None
 
 
@@ -98,7 +102,9 @@ def check(corpus: inventory.Inventory) -> list[str]:
             errors.append(f"asm/{target}/ is missing")
     for target in present:
         if target not in corpus.targets:
-            errors.append(f"asm/{target}/ is not a corpus target; add it to [corpus] targets")
+            errors.append(
+                f"asm/{target}/ is not a corpus target; add it to [corpus] targets"
+            )
 
     for case in corpus.cases:
         where = f"{CASES_PATH.name} [{case.id}]"
@@ -113,7 +119,9 @@ def check(corpus: inventory.Inventory) -> list[str]:
         errors.extend(recipe_problems(target))
         for asm in sorted((ASM_DIR / target).glob("*.s")):
             if (target, asm.name) not in owned:
-                errors.append(f"asm/{target}/{asm.name}: no case builds {asm.stem} for {target}")
+                errors.append(
+                    f"asm/{target}/{asm.name}: no case builds {asm.stem} for {target}"
+                )
             if (mismatch := target_mismatch(asm, target)) is not None:
                 errors.append(mismatch)
     return errors
@@ -133,7 +141,10 @@ def main(argv: list[str]) -> int:
     for problem in errors:
         print(f"error: {problem}", file=sys.stderr)
     if errors:
-        print(f"\n{len(errors)} mismatch(es) between cases.toml and the corpus", file=sys.stderr)
+        print(
+            f"\n{len(errors)} mismatch(es) between cases.toml and the corpus",
+            file=sys.stderr,
+        )
         return 1
     print(
         f"cases.toml agrees with kernels/ and asm/ "

@@ -25,7 +25,9 @@ GOOD_TEXT = recipe.dumps(GOOD)
 def without_field(field: str) -> str:
     """GOOD_TEXT with *field*'s line removed."""
     return "".join(
-        line for line in GOOD_TEXT.splitlines(keepends=True) if not line.startswith(f"{field} = ")
+        line
+        for line in GOOD_TEXT.splitlines(keepends=True)
+        if not line.startswith(f"{field} = ")
     )
 
 
@@ -105,4 +107,6 @@ def test_recipe_is_a_frozen_dataclass():
 
 def test_committed_recipes_load():
     for target in ("gfx950", "gfx1250"):
-        assert recipe.load(SCRIPTS.parent / "asm" / target / recipe.FILE_NAME) is not None
+        assert (
+            recipe.load(SCRIPTS.parent / "asm" / target / recipe.FILE_NAME) is not None
+        )

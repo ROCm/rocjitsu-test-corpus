@@ -129,7 +129,11 @@ def split_provenance(assembly: str) -> tuple[list[str], list[str]]:
     lines = assembly.splitlines()
     return (
         [line for line in lines if not _IDENT_RE.match(line)],
-        [line.strip().removeprefix(".ident").strip() for line in lines if _IDENT_RE.match(line)],
+        [
+            line.strip().removeprefix(".ident").strip()
+            for line in lines
+            if _IDENT_RE.match(line)
+        ],
     )
 
 
@@ -152,7 +156,9 @@ def parse_cxxflags(text: str) -> list[str]:
     try:
         return shlex.split(text)
     except ValueError as error:
-        raise SystemExit(f"--cxxflags: cannot parse {text!r}: {error} (check the quoting)") from None
+        raise SystemExit(
+            f"--cxxflags: cannot parse {text!r}: {error} (check the quoting)"
+        ) from None
 
 
 def absolute_flags(flags: list[str], base: Path) -> list[str]:
@@ -173,9 +179,11 @@ def absolute_flags(flags: list[str], base: Path) -> list[str]:
             out.append(flag)
             expect_path = True
             continue
-        prefix = next((p for p in _PATH_FLAGS if flag.startswith(p) and len(flag) > len(p)), None)
-        if prefix is not None and not Path(flag[len(prefix):]).is_absolute():
-            out.append(prefix + str(base / flag[len(prefix):]))
+        prefix = next(
+            (p for p in _PATH_FLAGS if flag.startswith(p) and len(flag) > len(p)), None
+        )
+        if prefix is not None and not Path(flag[len(prefix) :]).is_absolute():
+            out.append(prefix + str(base / flag[len(prefix) :]))
         else:
             out.append(flag)
     return out
@@ -196,7 +204,7 @@ def include_dirs(flags: Sequence[str]) -> list[Path]:
             if flag == prefix:
                 dirs.append(Path(next(tokens, "")))
             elif flag.startswith(prefix) and len(flag) > len(prefix):
-                dirs.append(Path(flag[len(prefix):]))
+                dirs.append(Path(flag[len(prefix) :]))
             else:
                 continue
             break
@@ -223,7 +231,7 @@ def rocm_path() -> Path:
     there. Resolved so that every name for one installation, such as a
     symlinked ROCM_PATH, selects the same root and reports the same build.
     """
-    if (explicit := os.environ.get("ROCM_PATH")):
+    if explicit := os.environ.get("ROCM_PATH"):
         return Path(explicit).expanduser().resolve()
     if shutil.which("rocm-sdk"):
         proc = subprocess.run(
@@ -246,7 +254,7 @@ def find_hip_compiler() -> Path:
     for candidate in (root / "bin" / "hipcc", root / "llvm" / "bin" / "clang++"):
         if candidate.is_file():
             return candidate
-    if (found := shutil.which("hipcc")):
+    if found := shutil.which("hipcc"):
         return Path(found).absolute()
     raise SystemExit(
         f"no HIP compiler: neither {root}/bin/hipcc nor {root}/llvm/bin/clang++ exists, "
@@ -286,7 +294,10 @@ def compiler_version(tool: Path) -> str:
         env=compiler_environment(rocm_path()),
     )
     lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
-    return next((line for line in lines if "clang version" in line), lines[0] if lines else "unknown")
+    return next(
+        (line for line in lines if "clang version" in line),
+        lines[0] if lines else "unknown",
+    )
 
 
 def sdk_release(root: Path) -> str:
@@ -343,11 +354,15 @@ def compare_recipes(target: str, current: recipe.Recipe) -> list[str]:
             for problem in error.problems
         ]
     if committed is None:
-        return [f"{target}: no {recipe.FILE_NAME} committed, so the recipe cannot be compared"]
+        return [
+            f"{target}: no {recipe.FILE_NAME} committed, so the recipe cannot be compared"
+        ]
     return describe_change(target, committed, current)
 
 
-def describe_change(target: str, committed: recipe.Recipe, current: recipe.Recipe) -> list[str]:
+def describe_change(
+    target: str, committed: recipe.Recipe, current: recipe.Recipe
+) -> list[str]:
     """
     How *current* differs from *committed*: in the flags, which is a changed
     recipe, or in the toolchain. A build is compared only when both are known;
@@ -400,7 +415,9 @@ def compile_device_asm(
         scratch = Path(scratch_dir)
         compiled = scratch / f"{kernel.stem}.s"
         proc = subprocess.run(
-            _compile_command(kernel=kernel, target=target, out=compiled, extra_flags=extra_flags),
+            _compile_command(
+                kernel=kernel, target=target, out=compiled, extra_flags=extra_flags
+            ),
             cwd=scratch,
             capture_output=True,
             text=True,
@@ -412,7 +429,9 @@ def compile_device_asm(
         if not compiled.is_file():
             compiled = scratch / f"{kernel.stem}-hip-amdgcn-amd-amdhsa-{target}.s"
             if not compiled.is_file():
-                raise CompileError(f"{kernel.name} ({target}): hipcc produced no output file")
+                raise CompileError(
+                    f"{kernel.name} ({target}): hipcc produced no output file"
+                )
         assembly = normalize(compiled.read_text())
 
     _replace(out, assembly)
@@ -513,7 +532,7 @@ def regenerate(
         for case in corpus.cases:
             if not case.builds_for(target):
                 continue
-            if (missing := missing_headers(case, extra_flags)):
+            if missing := missing_headers(case, extra_flags):
                 skipped.append(
                     f"{case.kernel} ({target}): {', '.join(missing)} not found; "
                     f"pass its include directory with --cxxflags"
@@ -529,7 +548,9 @@ def regenerate(
                 written += 1
             except CompileError as error:
                 failures.append(str(error))
-    return RegenerateResult(written=written, failures=tuple(failures), skipped=tuple(skipped))
+    return RegenerateResult(
+        written=written, failures=tuple(failures), skipped=tuple(skipped)
+    )
 
 
 def main(argv: list[str]) -> int:
@@ -537,7 +558,7 @@ def main(argv: list[str]) -> int:
     # Read once: regenerating and the --check verdict see the same inventory.
     corpus = load_inventory()
     cxxflags = parse_cxxflags(args.cxxflags)
-    if (ignored := ignored_environment()):
+    if ignored := ignored_environment():
         print(
             f"note: ignoring {', '.join(ignored)} for the compile; pass flags and "
             f"include directories with --cxxflags, so they are recorded in {recipe.FILE_NAME}",
@@ -623,13 +644,18 @@ class Build:
     recipe: recipe.Recipe
 
 
-def _regenerate_and_report(args: argparse.Namespace, build: Build, out_root: Path) -> int:
+def _regenerate_and_report(
+    args: argparse.Namespace, build: Build, out_root: Path
+) -> int:
     """Regenerate into *out_root* and report: a write summary, or the --check verdict."""
     print(f"regenerating {', '.join(build.targets)} -> {out_root}")
     # One target at a time, so an update can tell which targets are complete.
     results = {
         target: regenerate(
-            corpus=build.corpus, targets=[target], extra_flags=build.extra_flags, out_root=out_root
+            corpus=build.corpus,
+            targets=[target],
+            extra_flags=build.extra_flags,
+            out_root=out_root,
         )
         for target in build.targets
     }
@@ -668,7 +694,11 @@ def _check_verdict(
             print(note)
     expected = build.corpus.outputs(build.targets)
     not_generated = {(t, f) for t, f in expected if not (out_root / t / f).is_file()}
-    if not expected or not_generated == expected or (skipped and not args.allow_skipped):
+    if (
+        not expected
+        or not_generated == expected
+        or (skipped and not args.allow_skipped)
+    ):
         _print_incomplete(targets=build.targets, skipped=skipped)
         return 3
     return _report_drift(
@@ -689,7 +719,10 @@ def _print_incomplete(targets: Sequence[str], skipped: Sequence[str]) -> None:
     if skipped:
         for skip in skipped:
             print(f"  not compared: {skip.split(':', 1)[0]}", file=sys.stderr)
-        print("Make the skipped cases' headers available and check again,", file=sys.stderr)
+        print(
+            "Make the skipped cases' headers available and check again,",
+            file=sys.stderr,
+        )
         print("or pass --allow-skipped to check only the rest.", file=sys.stderr)
 
 
@@ -713,7 +746,9 @@ def _install(build: Build, scratch: Path, results: dict[str, RegenerateResult]) 
                 f"{len(result.skipped)} skipped, and its recipe covers every listing"
             )
         elif result.written:
-            published += _publish_target(target, built=scratch / target, build_recipe=build.recipe)
+            published += _publish_target(
+                target, built=scratch / target, build_recipe=build.recipe
+            )
     _print_install_summary(published=published, blocked=blocked)
     if any(result.failures for result in results.values()):
         return 2
@@ -760,12 +795,18 @@ def _swap_in(staging: Path, live: Path) -> None:
 
 
 def _print_install_summary(published: int, blocked: Sequence[str]) -> None:
-    print(f"\nwrote {published} file(s) under {ASM_DIR.relative_to(CORPUS_ROOT.parent.parent)}")
+    print(
+        f"\nwrote {published} file(s) under {ASM_DIR.relative_to(CORPUS_ROOT.parent.parent)}"
+    )
     for note in blocked:
         print(note, file=sys.stderr)
     if published:
-        print("Review the diff before committing: regenerating is a deliberate change to")
-        print("the pinned assembly. Mutants are derived from it, so where waits or loads")
+        print(
+            "Review the diff before committing: regenerating is a deliberate change to"
+        )
+        print(
+            "the pinned assembly. Mutants are derived from it, so where waits or loads"
+        )
         print("moved, the mutants of those kernels change with them.")
     if blocked:
         print(
@@ -798,11 +839,19 @@ def _report_drift(
     provenance: dict[tuple[str, str], list[str]] = {}
     for target in targets:
         fresh_dir, committed_dir = out_root / target, ASM_DIR / target
-        fresh_names = {path.name for path in fresh_dir.glob("*.s")} if fresh_dir.is_dir() else set()
-        committed_names = (
-            {path.name for path in committed_dir.glob("*.s")} if committed_dir.is_dir() else set()
+        fresh_names = (
+            {path.name for path in fresh_dir.glob("*.s")}
+            if fresh_dir.is_dir()
+            else set()
         )
-        expected_names = {file for expected_target, file in expected if expected_target == target}
+        committed_names = (
+            {path.name for path in committed_dir.glob("*.s")}
+            if committed_dir.is_dir()
+            else set()
+        )
+        expected_names = {
+            file for expected_target, file in expected if expected_target == target
+        }
         for file in sorted(expected_names | fresh_names | committed_names):
             name = f"{target}/{file}"
             fresh, committed = fresh_dir / file, committed_dir / file
@@ -826,12 +875,17 @@ def _report_drift(
             if fresh_body != committed_body:
                 changed = sum(
                     1
-                    for line in difflib.unified_diff(committed_body, fresh_body, lineterm="", n=0)
+                    for line in difflib.unified_diff(
+                        committed_body, fresh_body, lineterm="", n=0
+                    )
                     if line[:1] in "+-" and not line.startswith(("+++", "---"))
                 )
                 drifted.append(f"{name}: {changed} line(s) added or removed")
             elif fresh_ident != committed_ident:
-                key = (" ".join(committed_ident) or "(none)", " ".join(fresh_ident) or "(none)")
+                key = (
+                    " ".join(committed_ident) or "(none)",
+                    " ".join(fresh_ident) or "(none)",
+                )
                 provenance.setdefault(key, []).append(name)
 
     for (was, now), names in provenance.items():
@@ -844,7 +898,9 @@ def _report_drift(
         print("only update their .ident lines.")
 
     if not_compared:
-        print(f"\n{len(not_compared)} case(s) skipped and not compared (--allow-skipped):")
+        print(
+            f"\n{len(not_compared)} case(s) skipped and not compared (--allow-skipped):"
+        )
         for target, file in sorted(not_compared):
             print(f"  not compared: {Path(file).stem} ({target})")
 

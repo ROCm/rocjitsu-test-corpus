@@ -91,7 +91,11 @@ def test_missing_target_directory_is_reported(corpus, capsys):
     # The corpus is built for gfx950 and gfx1250, but only gfx1250's assembly is
     # present. The target set comes from cases.toml, not from asm/, so the
     # missing directory and every gfx950 file in it are reported.
-    corpus(["gfx950", "gfx1250"], PORTABLE + GFX1250_ONLY, ["gfx1250/portable", "gfx1250/only"])
+    corpus(
+        ["gfx950", "gfx1250"],
+        PORTABLE + GFX1250_ONLY,
+        ["gfx1250/portable", "gfx1250/only"],
+    )
     code, out = run(capsys)
     assert code == 1
     assert "asm/gfx950/ is missing" in out
@@ -122,7 +126,10 @@ def test_case_target_does_not_widen_portable_cases(corpus, capsys):
     )
     code, out = run(capsys)
     assert code == 1
-    assert "cases.toml [only]: lists target gfx1201, which is not in [corpus] targets" in out
+    assert (
+        "cases.toml [only]: lists target gfx1201, which is not in [corpus] targets"
+        in out
+    )
     assert "asm/gfx1201/portable.s is missing" not in out
 
 
@@ -178,7 +185,11 @@ def test_committed_inventory_passes(capsys):
 
 
 def test_unknown_field_is_reported(corpus, capsys):
-    corpus(["gfx950"], PORTABLE.replace("targets = []", 'targets = []\nordinal = 3'), ["gfx950/portable"])
+    corpus(
+        ["gfx950"],
+        PORTABLE.replace("targets = []", "targets = []\nordinal = 3"),
+        ["gfx950/portable"],
+    )
     code, out = run(capsys)
     assert code == 1
     assert "cases.toml [portable]: unknown field 'ordinal'" in out
@@ -218,8 +229,9 @@ def test_duplicate_id_and_kernel_are_reported(corpus, capsys):
     code, out = run(capsys)
     assert code == 1
     assert "cases.toml [portable]: duplicate id" in out
-    assert "cases.toml [portable]: kernel portable is already used by another case" in out
-
+    assert (
+        "cases.toml [portable]: kernel portable is already used by another case" in out
+    )
 
 
 # --- The per-case field is targets ---------------------------------------------
@@ -289,7 +301,9 @@ def test_target_features_do_not_change_the_processor(corpus, capsys, tmp_path):
     assert code == 0, out
 
 
-def test_target_name_that_only_starts_with_the_directory_is_reported(corpus, capsys, tmp_path):
+def test_target_name_that_only_starts_with_the_directory_is_reported(
+    corpus, capsys, tmp_path
+):
     # gfx9500 is not gfx950: the processor is compared whole.
     corpus(["gfx950"], PORTABLE, ["gfx950/portable"])
     write_asm(tmp_path, "gfx950", "portable", listing("gfx9500"))
@@ -311,10 +325,6 @@ def test_missing_recipe_is_reported(corpus, capsys, tmp_path):
     code, out = run(capsys)
     assert code == 1
     assert "asm/gfx950/recipe.toml is missing" in out
-
-
-
-
 
 
 # --- The recipe is read by the shared loader ----------------------------------------
