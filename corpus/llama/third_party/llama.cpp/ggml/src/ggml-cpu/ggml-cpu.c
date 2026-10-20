@@ -17,7 +17,6 @@
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <malloc.h> // using malloc.h with MSC/MINGW
-#include <stddef.h>
 #elif !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__OpenBSD__)
 #include <alloca.h>
 #endif
@@ -28,6 +27,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <inttypes.h>
 #include <stdio.h>

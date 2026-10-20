@@ -3,10 +3,10 @@
 #if defined(__x86_64__) || (defined(_MSC_VER) && defined(_M_AMD64))
 
 #ifdef _MSC_VER
-#include <cstdio>
 #include <intrin.h>
 #endif
 
+#include <cstdio>
 #include <cstring>
 #include <vector>
 #include <bitset>

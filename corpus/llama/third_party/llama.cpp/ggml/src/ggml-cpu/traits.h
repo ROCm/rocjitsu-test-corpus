@@ -3,8 +3,8 @@
 #include "ggml-cpu-impl.h"
 #include "ggml.h"
 
-#ifdef __cplusplus
 #include <stddef.h>
+#ifdef __cplusplus
 #    include <vector>
 extern "C" {
 #endif

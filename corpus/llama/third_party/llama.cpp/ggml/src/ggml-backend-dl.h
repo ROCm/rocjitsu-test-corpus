@@ -5,7 +5,6 @@
 #   ifndef NOMINMAX
 #       define NOMINMAX
 #   endif
-#include <memory>
 #include <type_traits>
 #   include <windows.h>
 #   include <winevt.h>
@@ -13,6 +12,7 @@
 #    include <dlfcn.h>
 #    include <unistd.h>
 #endif
+#include <memory>
 #include <filesystem>
 
 namespace fs = std::filesystem;

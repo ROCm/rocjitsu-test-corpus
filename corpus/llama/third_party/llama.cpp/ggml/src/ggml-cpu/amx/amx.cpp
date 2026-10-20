@@ -9,12 +9,12 @@
 
 #if defined(__linux__)
 #include <sys/syscall.h>
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
 #include <unistd.h>
 #endif
 
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>

@@ -2,10 +2,10 @@
 
 #include "ggml-cpu-impl.h"
 
-#ifdef __ARM_FEATURE_SVE
-#include <arm_sve.h>
 #include <stdint.h>
 #include <string.h>
+#ifdef __ARM_FEATURE_SVE
+#include <arm_sve.h>
 #endif // __ARM_FEATURE_SVE
 
 #if defined(__ARM_NEON) && !defined(__CUDACC__) && !defined(__MUSACC__)

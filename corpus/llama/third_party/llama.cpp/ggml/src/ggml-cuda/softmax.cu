@@ -5,14 +5,14 @@
 #ifdef GGML_USE_HIP
 #include <hip/hip_cooperative_groups.h>
 #else
-#include <cassert>
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
+#endif // GGML_USE_HIP
+
+#include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <type_traits>
-#endif // GGML_USE_HIP
-
 #include <cstdint>
 #include <utility>
 
