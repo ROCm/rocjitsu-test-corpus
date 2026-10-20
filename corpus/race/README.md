@@ -41,6 +41,16 @@ update silently change the mutants. Pinning the assembly keeps the set of
 injected defects fixed, and makes moving it onto newer codegen a reviewable
 commit.
 
+Pinning fixes the listing's text, not which assembler can read it. A listing
+carries the SDK's assembler directives as well as its instructions, and a newer
+assembler can reject one. For example, the gfx1250 listings set
+`.amdhsa_wavefront_size32 1`, which the recorded SDK accepts and a newer
+upstream LLVM rejects as unsupported on gfx1250. **Assemble the listings, and
+the mutants derived from them, with the SDK recorded in the target's
+`recipe.toml`** (below). Moving to another assembler is the same step as moving
+to newer codegen: regenerate with its SDK, and commit the listings and recipe
+together.
+
 Each `.s` file keeps its `.ident` line, which names the compiler that produced
 it. hipcc's per-invocation `__hip_cuid_<hash>` symbol is replaced with a fixed
 placeholder, so regenerating with the same toolchain reproduces the committed

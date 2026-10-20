@@ -30,6 +30,10 @@ results -- so two runs months apart are not comparing the same thing. Freezing
 the assembly makes the set of injected defects fixed, and makes regenerating it
 a deliberate, reviewable commit.
 
+Pinning fixes the text, not which assembler can read it: a listing carries the
+SDK's directives too, which a newer assembler can reject. The listings and their
+mutants are meant to be assembled with the SDK recorded in ``recipe.toml``.
+
 The cost is that the corpus stops tracking current codegen. A compiler that
 starts emitting a new wait pattern will not be exercised until someone runs this
 script. That is the intended trade: for scoring detectors, a stable set of known
