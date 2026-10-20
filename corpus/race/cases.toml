@@ -19,8 +19,9 @@
 #   targets      the corpus targets this kernel assembles for; empty or absent means
 #                every one of them
 #   headers      optional: headers outside ROCm's defaults the kernel includes.
-#                regenerate_asm.py skips the case, keeping its committed
-#                assembly, when any is not on the include path.
+#                When any is not on the include path, regenerate_asm.py skips
+#                the case and does not update any target it builds for: each
+#                such target keeps all of its committed listings and its recipe.
 
 [corpus]
 schema = 1
@@ -139,9 +140,9 @@ id = "wmma-rocwmma"
 kernel = "wmma_rocwmma"
 targets = ["gfx1250"]
 # Needs the rocWMMA headers. regenerate_asm.py looks for them under ROCm's
-# include directory, any -I passed with --cxxflags "-I/path/to/include", and
-# the absolute entries of CPATH and CPLUS_INCLUDE_PATH, and skips the case --
-# leaving its committed assembly as it is -- when they are not found.
+# include directory and any -I passed with --cxxflags "-I/path/to/include".
+# When they are not found, it skips the case, and gfx1250 is not updated at
+# all: every gfx1250 listing and the gfx1250 recipe stay as committed.
 headers = ["rocwmma/rocwmma.hpp"]
 
 # --- Cross-workgroup global memory -------------------------------------------

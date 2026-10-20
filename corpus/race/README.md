@@ -64,11 +64,14 @@ produce different code under the same `.ident`. So regenerating also writes
 |---|---|
 | `compiler` | `hipcc`, or `clang++` when the SDK's clang is used directly. |
 | `compiler_version` | The `clang version` line of the compiler's `--version`. |
-| `rocm_version` | The SDK build, from `rocm-sdk version` when `rocm-sdk` describes the selected SDK, such as `10.1.0a20260822`. Otherwise the SDK's `.info/version`, which has only the release, or `unknown`. |
+| `rocm_release` | The SDK's release, from its `.info/version`, such as `10.1.0`, or `unknown`. |
+| `rocm_build` | The SDK's build, such as `10.1.0a20260822`: the version of the Python distributions that installed it, read from the selected installation. `unknown` for an SDK not installed that way, such as `/opt/rocm`. Two builds can share a release and a clang revision, so only the build tells them apart. |
 | `flags` | The explicit flags: `-O3 -x hip`, then `--cxxflags` as given. |
 
-The recipe describes every listing in its target directory, so a target is
-replaced as a whole or not at all: see Failures and Optional headers below.
+The recipe describes every listing in its target directory, and only those: a
+target directory holds its listings and `recipe.toml`, nothing else. `--check`
+compares builds only when both recipes know them, and otherwise says they cannot
+be compared, rather than reporting a toolchain change.
 
 ## Regenerating the assembly
 
@@ -87,21 +90,34 @@ python corpus/race/scripts/regenerate_asm.py --target gfx950    # one target
   words, so a path with spaces can be quoted:
   `--cxxflags='-I"/path/to/my headers"'`.
 - **Whole targets.** Every case is compiled into a temporary directory first.
-  A target's listings and its `recipe.toml` are replaced only when all of that
-  target's cases compiled. A target with a failed or skipped case is left
-  exactly as it was, so a recipe never describes listings built another way.
-  Other, complete targets are still written.
+  A target is published only when all of its cases compiled: its new listings,
+  exactly the ones its cases produce, and its `recipe.toml` are staged in a
+  hidden directory beside it, which then replaces it. A listing of a removed
+  case, or of a target a case no longer builds for, is not carried over. A
+  target with a failed or skipped case, or whose staging fails, for example on
+  a full disk, keeps all of its committed files. Other, complete targets are
+  still published.
+- **Interrupted runs.** The swap is two renames. A run killed between them
+  leaves a hidden `.<target>.staging-*` or `.<target>.retired-*` directory
+  under `asm/`, which the inventory check rejects as not a corpus target.
+  Restore the target from git and regenerate it.
 - **Optional headers.** A case that declares `headers` is skipped when a header
-  is not found, and so its target is not updated (exit 3). The search
-  covers ROCm's include directory, `-I`/`-isystem`/`-iquote` from
-  `--cxxflags`, and the absolute entries of `CPATH` and `CPLUS_INCLUDE_PATH`.
+  is not found, and so its target is not updated (exit 3). The search covers
+  ROCm's include directory and `-I`/`-isystem`/`-iquote` from `--cxxflags`.
 - **Failures.** A kernel that fails to compile leaves its target as it was, and
   the compiler's diagnostic is printed (exit 2).
-- **Environment.** `HIPCC_COMPILE_FLAGS_APPEND`, `HIPCC_LINK_FLAGS_APPEND` and
-  `CCC_OVERRIDE_OPTIONS` add to the compiler's command line from the
-  environment, so they would change the assembly without being recorded. They
-  are removed from the compile's environment, with a note. Pass extra flags with
-  `--cxxflags` instead.
+- **Environment.** Only the selected SDK and the recorded flags reach the
+  compiler. Variables that would change the compile without being recorded are
+  removed from its environment, with a note:
+  - `HIPCC_COMPILE_FLAGS_APPEND`, `HIPCC_LINK_FLAGS_APPEND` and
+    `CCC_OVERRIDE_OPTIONS`, which add to the compiler's command line;
+  - `CPATH`, `CPLUS_INCLUDE_PATH` and `C_INCLUDE_PATH`, which add header
+    directories;
+  - hipcc's other `HIP_*` variables, such as `HIP_PATH`, and `DEVICE_LIB_PATH`,
+    which point it at another SDK's parts.
+
+  `ROCM_PATH` is set to the selected SDK. Pass extra flags and include
+  directories with `--cxxflags`, which `recipe.toml` records.
 
 Review the diff before committing. Where waits or loads moved, the mutants of
 those kernels change with them. Then run the inventory check below.

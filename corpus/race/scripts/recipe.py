@@ -17,6 +17,10 @@ from pathlib import Path
 
 FILE_NAME = "recipe.toml"
 
+# A toolchain field whose value could not be found, such as the build of an SDK
+# that was not installed as a Python distribution.
+UNKNOWN = "unknown"
+
 
 class RecipeError(ValueError):
     """The recipe is invalid. ``problems`` lists every problem found."""
@@ -40,9 +44,12 @@ class Recipe:
         compiler: The compiler's file name: ``hipcc``, or ``clang++`` when the
             SDK's clang is used directly.
         compiler_version: The ``clang version`` line of ``--version``.
-        rocm_version: The SDK build, such as ``10.1.0a20260822``, from
-            ``rocm-sdk version`` when it describes the selected SDK; otherwise
-            the SDK's ``.info/version``, or ``unknown``.
+        rocm_release: The SDK's release, from its ``.info/version``, such as
+            ``10.1.0``, or ``unknown``.
+        rocm_build: The SDK's build, such as ``10.1.0a20260822``, from the
+            Python distributions that installed it, or ``unknown`` when it was
+            not installed that way. Two builds can share a release and a clang
+            revision, so only the build tells them apart.
         flags: The explicit flags: the baseline recipe, then ``--cxxflags`` as
             given. The flags every compile gets, such as the target and the
             SDK's include directory, are implied.
@@ -50,7 +57,8 @@ class Recipe:
 
     compiler: str
     compiler_version: str
-    rocm_version: str
+    rocm_release: str
+    rocm_build: str
     flags: tuple[str, ...]
 
 

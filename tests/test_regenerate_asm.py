@@ -1,12 +1,15 @@
 # Copyright (c) 2026 Advanced Micro Devices, Inc.
 # SPDX-License-Identifier: MIT
 import dataclasses
+import errno
 import importlib.util
 import json
 import os
 import sys
 import textwrap
 import tomllib
+import typing
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -41,16 +44,30 @@ ROCWMMA_RECORD = regen.inventory.Case(
 )
 ROCWMMA_INVENTORY = regen.inventory.Inventory(targets=("gfx950",), cases=(ROCWMMA_RECORD,))
 
+# The fixtures that build and run a scratch corpus: see manifest and corpus_main.
+Manifest = Callable[[list[str] | None, str], None]
+CorpusMain = tuple[Callable[..., int], Path]
+
 PINNED = "; pinned assembly that must survive a failed regeneration\n"
 
 
 # The variables the fake compiler records from its environment.
-WATCHED_ENVIRONMENT = (
+# The variables that must not reach the compile: none of them is recorded in
+# recipe.toml, and each changes what is built.
+UNRECORDED_VARIABLES = (
     "HIPCC_COMPILE_FLAGS_APPEND",
     "HIPCC_LINK_FLAGS_APPEND",
     "CCC_OVERRIDE_OPTIONS",
     "CPATH",
+    "CPLUS_INCLUDE_PATH",
+    "C_INCLUDE_PATH",
+    "HIP_PATH",
+    "HIP_CLANG_PATH",
+    "DEVICE_LIB_PATH",
 )
+
+# The variables the fake compiler records from its environment.
+WATCHED_ENVIRONMENT = (*UNRECORDED_VARIABLES, "ROCM_PATH", "RACE_UNRELATED")
 
 
 def write_fake_compiler(compiler: Path, behaviour: str) -> Path:
@@ -168,11 +185,11 @@ def test_auto_named_output_stays_in_scratch(monkeypatch, tmp_path, pinned, kerne
 def test_missing_header_skips_case_and_keeps_pinned_file(monkeypatch, tmp_path, pinned, kernel):
     install_fake_compiler(monkeypatch, tmp_path, "fail")  # must not even be invoked
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
-    written, failures, skipped = regen.regenerate(
-        ROCWMMA_INVENTORY, ["gfx950"], [], pinned.parent.parent
+    result = regen.regenerate(
+        corpus=ROCWMMA_INVENTORY, targets=["gfx950"], extra_flags=[], out_root=pinned.parent.parent
     )
-    assert (written, failures) == (0, [])
-    assert len(skipped) == 1 and "rocwmma/rocwmma.hpp" in skipped[0]
+    assert (result.written, result.failures) == (0, ())
+    assert len(result.skipped) == 1 and "rocwmma/rocwmma.hpp" in result.skipped[0]
     assert pinned.read_text() == PINNED
 
 
@@ -182,10 +199,13 @@ def test_declared_header_found_through_include_flag(monkeypatch, tmp_path, pinne
     (include / "rocwmma").mkdir(parents=True)
     (include / "rocwmma" / "rocwmma.hpp").write_text("")
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
-    written, failures, skipped = regen.regenerate(
-        ROCWMMA_INVENTORY, ["gfx950"], [f"-I{include}"], pinned.parent.parent
+    result = regen.regenerate(
+        corpus=ROCWMMA_INVENTORY,
+        targets=["gfx950"],
+        extra_flags=[f"-I{include}"],
+        out_root=pinned.parent.parent,
     )
-    assert (written, failures, skipped) == (1, [], [])
+    assert result == regen.RegenerateResult(written=1, failures=(), skipped=())
     assert "s_endpgm" in pinned.read_text()
 
 
@@ -339,10 +359,10 @@ def test_portable_case_builds_for_every_corpus_target(manifest, monkeypatch, tmp
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
     out_root = tmp_path / "out"
     corpus = regen.load_inventory()
-    written, failures, skipped = regen.regenerate(
-        corpus, regen.targets_for(corpus, []), [], out_root
+    result = regen.regenerate(
+        corpus=corpus, targets=regen.targets_for(corpus, []), extra_flags=[], out_root=out_root
     )
-    assert (written, failures, skipped) == (3, [], [])
+    assert result == regen.RegenerateResult(written=3, failures=(), skipped=())
     assert sorted(str(p.relative_to(out_root)) for p in out_root.rglob("*.s")) == [
         "gfx1250/kernel.s",
         "gfx1250/only.s",
@@ -350,19 +370,17 @@ def test_portable_case_builds_for_every_corpus_target(manifest, monkeypatch, tmp
     ]
 
 
-# --- Header preflight and the compiler's environment include paths -----------
+# --- Header preflight ignores the environment's include paths ------------------
 #
-# hipcc also searches CPATH and, for HIP, which compiles as C++,
-# CPLUS_INCLUDE_PATH. A declared header available only through one of those must
-# not be skipped as missing when the compile would find it. The compiler runs in
-# a private scratch directory, so only absolute entries are usable.
+# The compile does not inherit CPATH, CPLUS_INCLUDE_PATH or C_INCLUDE_PATH (see
+# "Only recorded inputs reach the compiler"), so the preflight does not search
+# them either: a header available only through one of them is missing, and its
+# case is skipped. Headers outside the SDK come through --cxxflags -I.
 
 
 @pytest.fixture
-def rocwmma_case(monkeypatch, kernel):
+def rocwmma_case(monkeypatch: pytest.MonkeyPatch, kernel: Path) -> None:
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
-    for name in ("CPATH", "CPLUS_INCLUDE_PATH", "C_INCLUDE_PATH"):
-        monkeypatch.delenv(name, raising=False)
 
 
 def header_dir(tmp_path: Path) -> Path:
@@ -372,39 +390,21 @@ def header_dir(tmp_path: Path) -> Path:
     return include
 
 
-@pytest.mark.parametrize("variable", ["CPATH", "CPLUS_INCLUDE_PATH"])
-def test_declared_header_found_through_environment_include_path(
-    monkeypatch, tmp_path, pinned, rocwmma_case, variable
-):
-    install_fake_compiler(monkeypatch, tmp_path, "output")
-    monkeypatch.setenv(variable, f"/nonexistent{os.pathsep}{header_dir(tmp_path)}")
-    written, failures, skipped = regen.regenerate(ROCWMMA_INVENTORY, ["gfx950"], [], pinned.parent.parent)
-    assert (written, failures, skipped) == (1, [], [])
-    assert "s_endpgm" in pinned.read_text()
-
-
-def test_c_include_path_is_not_searched_for_hip(monkeypatch, tmp_path, pinned, rocwmma_case):
+@pytest.mark.parametrize("variable", ["CPATH", "CPLUS_INCLUDE_PATH", "C_INCLUDE_PATH"])
+def test_environment_include_path_is_not_searched(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    pinned: Path,
+    rocwmma_case: None,
+    variable: str,
+) -> None:
     install_fake_compiler(monkeypatch, tmp_path, "fail")  # must not be invoked
-    monkeypatch.setenv("C_INCLUDE_PATH", str(header_dir(tmp_path)))
-    written, failures, skipped = regen.regenerate(ROCWMMA_INVENTORY, ["gfx950"], [], pinned.parent.parent)
-    assert (written, failures) == (0, [])
-    assert len(skipped) == 1
-    assert pinned.read_text() == PINNED
-
-
-def test_relative_environment_include_path_is_not_searched(
-    monkeypatch, tmp_path, pinned, rocwmma_case
-):
-    # The compiler runs in a scratch directory, where a relative entry names
-    # nothing, so the preflight must not count it even when it resolves from
-    # the caller's directory.
-    install_fake_compiler(monkeypatch, tmp_path, "fail")  # must not be invoked
-    header_dir(tmp_path)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("CPATH", "env-include")
-    written, failures, skipped = regen.regenerate(ROCWMMA_INVENTORY, ["gfx950"], [], pinned.parent.parent)
-    assert (written, failures) == (0, [])
-    assert len(skipped) == 1
+    monkeypatch.setenv(variable, str(header_dir(tmp_path)))
+    result = regen.regenerate(
+        corpus=ROCWMMA_INVENTORY, targets=["gfx950"], extra_flags=[], out_root=pinned.parent.parent
+    )
+    assert (result.written, result.failures) == (0, ())
+    assert len(result.skipped) == 1 and "--cxxflags" in result.skipped[0]
     assert pinned.read_text() == PINNED
 
 
@@ -470,9 +470,6 @@ def corpus_main(manifest, monkeypatch, tmp_path, kernel):
     output. Returns (run, committed_root).
     """
     install_fake_compiler(monkeypatch, tmp_path, "output")
-    # A rocm-sdk that describes no SDK these tests select, so the recipe falls
-    # back to .info/version, without starting the real, slower, rocm-sdk.
-    install_fake_rocm_sdk(monkeypatch, tmp_path, tmp_path / "no-sdk", "0.0.0")
     (kernel.parent / "wmma.hip").write_text("__global__ void wmma() {}\n")
     (kernel.parent / "only.hip").write_text("__global__ void only() {}\n")
     for name in ("CPATH", "CPLUS_INCLUDE_PATH"):
@@ -839,7 +836,10 @@ def test_case_without_targets_regenerates_for_every_corpus_target(
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
     out_root = tmp_path / "out"
     corpus = regen.load_inventory()
-    assert regen.regenerate(corpus, regen.targets_for(corpus, []), [], out_root) == (2, [], [])
+    result = regen.regenerate(
+        corpus=corpus, targets=regen.targets_for(corpus, []), extra_flags=[], out_root=out_root
+    )
+    assert result == regen.RegenerateResult(written=2, failures=(), skipped=())
     assert sorted(str(p.relative_to(out_root)) for p in out_root.rglob("*.s")) == [
         "gfx1250/kernel.s",
         "gfx950/kernel.s",
@@ -949,38 +949,89 @@ def test_cxxflags_come_after_the_baseline_recipe(manifest, corpus_main, tmp_path
     assert argv.index("-O3") < argv.index("-O1")
 
 
-# --- hipcc's flag-injecting environment is not inherited -------------------------
+# --- Only recorded inputs reach the compiler -----------------------------------
 #
-# hipcc appends HIPCC_COMPILE_FLAGS_APPEND to every compile, and clang edits its
-# own command line from CCC_OVERRIDE_OPTIONS. Either would change the pinned
-# assembly without leaving a trace in it, so they are removed from the compile's
-# environment, with a note, and flags go through --cxxflags, which is recorded.
+# hipcc appends HIPCC_COMPILE_FLAGS_APPEND to every compile, clang edits its own
+# command line from CCC_OVERRIDE_OPTIONS, CPATH and its relatives add header
+# directories, and hipcc's HIP_* variables point it at another SDK's parts. None
+# of them is recorded in recipe.toml, so they are removed from the compile's
+# environment, with a note, and ROCM_PATH names the selected SDK. Flags and
+# include directories go through --cxxflags, which is recorded.
 
 
-@pytest.mark.parametrize("variable", regen._FLAG_INJECTION_VARIABLES)
-def test_flag_injecting_variable_does_not_reach_the_compiler(
-    manifest, corpus_main, monkeypatch, tmp_path, capsys, variable
-):
+@pytest.mark.parametrize("variable", UNRECORDED_VARIABLES)
+def test_unrecorded_variable_does_not_reach_the_compiler(
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    variable: str,
+) -> None:
     run, _ = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
-    monkeypatch.setenv(variable, "-O1")
-    monkeypatch.setenv("CPATH", "/kept")
+    monkeypatch.setenv(variable, "/elsewhere")
+    monkeypatch.setenv("RACE_UNRELATED", "kept")
     assert run() == 0
     (environment,) = compiler_environments(tmp_path)
     assert environment[variable] is None
-    # Only the flag-injecting variables are removed.
-    assert environment["CPATH"] == "/kept"
+    # Only the unrecorded variables are removed.
+    assert environment["RACE_UNRELATED"] == "kept"
     err = capsys.readouterr().err
     assert variable in err and "--cxxflags" in err
 
 
-def test_clean_environment_prints_no_note(manifest, corpus_main, monkeypatch, capsys):
+def test_compile_sees_the_selected_sdk_as_rocm_path(
+    manifest: Manifest, corpus_main: CorpusMain, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     run, _ = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
-    for variable in regen._FLAG_INJECTION_VARIABLES:
-        monkeypatch.delenv(variable, raising=False)
+    monkeypatch.setenv("ROCM_PATH", str(tmp_path / "another-sdk"))
+    monkeypatch.setattr(regen, "rocm_path", lambda: tmp_path / "rocm")
+    assert run() == 0
+    (environment,) = compiler_environments(tmp_path)
+    assert environment["ROCM_PATH"] == str(tmp_path / "rocm")
+
+
+def test_clean_environment_prints_no_note(
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run, _ = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    for variable in list(os.environ):
+        if variable in UNRECORDED_VARIABLES or variable.startswith(("HIP_", "HIPCC_")):
+            monkeypatch.delenv(variable)
     assert run() == 0
     assert "ignoring" not in capsys.readouterr().err
+
+
+def test_header_selection_cannot_change_under_the_same_recipe(
+    manifest: Manifest, corpus_main: CorpusMain, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A CPATH header that would shadow the SDK's, and switch optimization off,
+    # must not change what is built while the recipe stays the same: the compile
+    # runs with the same arguments and environment with or without it.
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    assert run() == 0
+    recipe_without = read_recipe(committed, "gfx950")
+    shadow = tmp_path / "shadow"
+    shadow.mkdir()
+    (shadow / "hip_runtime.h").write_text("#pragma clang optimize off\n")
+    monkeypatch.setenv("CPATH", str(shadow))
+    assert run() == 0
+    assert read_recipe(committed, "gfx950") == recipe_without
+    # Each compile writes to its own scratch file; everything else is the same.
+    without, with_shadow = (
+        [arg for arg in argv if "race-asm-compile-" not in arg]
+        for argv in compiler_invocations(tmp_path)
+    )
+    assert without == with_shadow
+    environment_without, environment_with_shadow = compiler_environments(tmp_path)
+    assert environment_without == environment_with_shadow
 
 
 # --- The recipe is recorded beside the pinned assembly ----------------------------
@@ -990,25 +1041,27 @@ def test_clean_environment_prints_no_note(manifest, corpus_main, monkeypatch, ca
 # told apart from a toolchain update.
 
 
-def read_recipe(committed: Path, target: str) -> dict:
+def read_recipe(committed: Path, target: str) -> dict[str, object]:
     return tomllib.loads((committed / target / "recipe.toml").read_text())
 
 
-def set_rocm_version(tmp_path: Path, version: str) -> None:
+def set_rocm_release(tmp_path: Path, release: str) -> None:
     info = tmp_path / "rocm" / ".info"
     info.mkdir(parents=True, exist_ok=True)
-    (info / "version").write_text(f"{version}\n")
+    (info / "version").write_text(f"{release}\n")
 
 
 def test_regeneration_records_the_recipe(manifest, corpus_main, tmp_path):
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
-    set_rocm_version(tmp_path, "7.3.0")
+    set_rocm_release(tmp_path, "7.3.0")
     assert run("--cxxflags=-DX=1") == 0
     assert read_recipe(committed, "gfx950") == {
         "compiler": "fake-hipcc",
         "compiler_version": "fake clang version 1.0",
-        "rocm_version": "7.3.0",
+        "rocm_release": "7.3.0",
+        # The fake SDK was not installed as a Python distribution.
+        "rocm_build": "unknown",
         "flags": ["-O3", "-x", "hip", "-DX=1"],
     }
 
@@ -1055,10 +1108,10 @@ def test_check_reports_a_new_compiler_as_a_toolchain_change(
 ):
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
-    set_rocm_version(tmp_path, "7.3.0")
+    set_rocm_release(tmp_path, "7.3.0")
     commit_fresh_output(run, committed)
     monkeypatch.setenv("FAKE_COMPILER_VERSION", "fake clang version 2.0")
-    set_rocm_version(tmp_path, "7.4.0")
+    set_rocm_release(tmp_path, "7.4.0")
     capsys.readouterr()
     run("--check")
     out = capsys.readouterr().out
@@ -1166,51 +1219,195 @@ def test_complete_target_is_written_while_a_blocked_one_is_kept(manifest, corpus
     assert "gfx1250: not updated" in err and "gfx950: not updated" not in err
 
 
+def test_removed_case_is_removed_from_its_target(
+    manifest: Manifest, corpus_main: CorpusMain
+) -> None:
+    # A target is published with exactly the listings its cases produce, so a
+    # removed case's listing cannot stay behind under the new recipe.
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    seed_target(committed, "gfx950", ["kernel", "removed"])
+    assert run("--cxxflags=-O1") == 0
+    assert sorted(p.name for p in (committed / "gfx950").iterdir()) == ["kernel.s", "recipe.toml"]
+
+
+def test_narrowed_case_is_removed_from_targets_it_no_longer_builds_for(
+    manifest: Manifest, corpus_main: CorpusMain
+) -> None:
+    run, committed = corpus_main
+    manifest(
+        ["gfx950", "gfx1250"],
+        PORTABLE_CASE + '[[case]]\nid = "only"\nkernel = "only"\ntargets = ["gfx1250"]\n',
+    )
+    seed_target(committed, "gfx950", ["kernel", "only"])
+    assert run() == 0
+    assert sorted(p.name for p in (committed / "gfx950").iterdir()) == ["kernel.s", "recipe.toml"]
+    assert (committed / "gfx1250" / "only.s").is_file()
+
+
+def test_failed_publication_keeps_the_old_target(
+    manifest: Manifest, corpus_main: CorpusMain, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The disk fills while the second listing is staged: the target keeps its
+    # old listings and recipe, and no staging directory is left behind.
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE + '[[case]]\nid = "only"\nkernel = "only"\n')
+    seed_target(committed, "gfx950", ["kernel", "only"])
+    copies: list[Path] = []
+    real_copyfile = regen.shutil.copyfile
+
+    def copy_until_the_disk_is_full(source: Path, destination: Path) -> Path:
+        copies.append(source)
+        if len(copies) == 2:
+            raise OSError(errno.ENOSPC, "No space left on device")
+        return real_copyfile(source, destination)
+
+    monkeypatch.setattr(regen.shutil, "copyfile", copy_until_the_disk_is_full)
+    with pytest.raises(OSError, match="No space left on device"):
+        run("--cxxflags=-O1")
+    assert_untouched(committed, "gfx950", ["kernel", "only"])
+    assert [p.name for p in committed.iterdir()] == ["gfx950"]
+
+
+def test_failed_swap_restores_the_old_target(
+    manifest: Manifest, corpus_main: CorpusMain, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The old target is moved aside, and then moving the staged one into place
+    # fails: the old target is moved back.
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    seed_target(committed, "gfx950", ["kernel"])
+    renames: list[Path] = []
+    real_rename = regen.os.rename
+
+    def fail_the_second_rename(source: Path, destination: Path) -> None:
+        renames.append(Path(source))
+        if len(renames) == 2:
+            raise OSError(errno.EIO, "Input/output error")
+        real_rename(source, destination)
+
+    monkeypatch.setattr(regen.os, "rename", fail_the_second_rename)
+    with pytest.raises(OSError, match="Input/output error"):
+        run("--cxxflags=-O1")
+    monkeypatch.setattr(regen.os, "rename", real_rename)
+    assert_untouched(committed, "gfx950", ["kernel"])
+    assert [p.name for p in committed.iterdir()] == ["gfx950"]
+
+
 # --- The recipe names the SDK build ----------------------------------------------
 #
-# rocm-sdk reports the installed build, such as 10.1.0a20260822, where
-# .info/version has only the release, 10.1.0. The build is recorded when rocm-sdk
-# describes the SDK that was selected; otherwise .info/version is the fallback.
+# .info/version has only the release, such as 10.1.0, which two builds can share
+# along with their clang revision. A pip-installed SDK's build, such as
+# 10.1.0a20260822, is the version of the distributions that installed it, read
+# from the selected installation itself, so it does not depend on PATH or on how
+# the root was named.
+
+REAL_ROCM_PATH = regen.rocm_path
 
 
-def install_fake_rocm_sdk(monkeypatch, tmp_path: Path, root: Path, version: str) -> None:
-    """Put a rocm-sdk on PATH that reports *root* and *version*."""
+def pip_sdk(tmp_path: Path, versions: dict[str, str]) -> Path:
+    """
+    A pip-installed SDK under a scratch site-packages: its root, with release
+    10.1.0, and one distribution per entry of *versions* installing files in it.
+    """
+    site = tmp_path / "site-packages"
+    root = site / "_rocm_sdk_devel"
+    (root / ".info").mkdir(parents=True)
+    (root / ".info" / "version").write_text("10.1.0\n")
+    (root / "bin").mkdir()
+    for name, version in versions.items():
+        # importlib.metadata lists only the recorded files that exist.
+        (root / "bin" / name).write_text("")
+        dist = site / f"{name.replace('-', '_')}-{version}.dist-info"
+        dist.mkdir()
+        (dist / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n")
+        (dist / "RECORD").write_text(f"_rocm_sdk_devel/bin/{name},,\n{dist.name}/RECORD,,\n")
+    return root
+
+
+def install_fake_rocm_sdk(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, root: Path) -> None:
+    """Put only a rocm-sdk that reports *root* as its path on PATH."""
     bin_dir = tmp_path / "rocm-sdk-bin"
-    bin_dir.mkdir(exist_ok=True)
+    bin_dir.mkdir()
     tool = bin_dir / "rocm-sdk"
-    tool.write_text(
-        f"#!{sys.executable}\n"
-        "import sys\n"
-        f"print({str(root)!r} if sys.argv[1:] == ['path', '--root'] else {version!r})\n"
-    )
+    tool.write_text(f"#!{sys.executable}\nprint({str(root)!r})\n")
     tool.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("PATH", str(bin_dir))
 
 
-def test_recipe_records_the_build_of_the_selected_sdk(manifest, corpus_main, monkeypatch, tmp_path):
-    run, committed = corpus_main
-    manifest(["gfx950"], PORTABLE_CASE)
-    set_rocm_version(tmp_path, "10.1.0")
-    install_fake_rocm_sdk(monkeypatch, tmp_path, tmp_path / "rocm", "10.1.0a20260822")
-    assert run() == 0
-    assert read_recipe(committed, "gfx950")["rocm_version"] == "10.1.0a20260822"
+def test_build_comes_from_the_distributions_that_installed_the_sdk(tmp_path: Path) -> None:
+    root = pip_sdk(tmp_path, {"rocm-sdk-devel": "10.1.0a1", "rocm-sdk-device-gfx950": "10.1.0a1"})
+    assert regen.sdk_build(root) == "10.1.0a1"
+    assert regen.sdk_release(root) == "10.1.0"
 
 
-def test_recipe_falls_back_to_info_version_for_another_sdk(
-    manifest, corpus_main, monkeypatch, tmp_path
-):
-    # rocm-sdk describes a different install than the one selected, so its
-    # version says nothing about the compiler used.
-    run, committed = corpus_main
-    manifest(["gfx950"], PORTABLE_CASE)
-    set_rocm_version(tmp_path, "10.1.0")
-    install_fake_rocm_sdk(monkeypatch, tmp_path, tmp_path / "elsewhere", "9.9.9a1")
-    assert run() == 0
-    assert read_recipe(committed, "gfx950")["rocm_version"] == "10.1.0"
+def test_mixed_builds_are_each_recorded(tmp_path: Path) -> None:
+    root = pip_sdk(tmp_path, {"rocm-sdk-devel": "10.1.0a1", "rocm-sdk-device-gfx950": "10.1.0a2"})
+    assert regen.sdk_build(root) == "rocm-sdk-devel==10.1.0a1, rocm-sdk-device-gfx950==10.1.0a2"
 
 
-def test_build_is_a_frozen_dataclass():
-    # Like the inventory and recipe records: a plain record with immutable fields.
-    assert dataclasses.is_dataclass(regen.Build)
-    assert regen.Build.__dataclass_params__.frozen
-    assert not issubclass(regen.Build, tuple)
+def test_sdk_outside_a_distribution_has_an_unknown_build(tmp_path: Path) -> None:
+    root = tmp_path / "opt-rocm"
+    root.mkdir()
+    assert regen.sdk_build(root) == regen.recipe.UNKNOWN
+    assert regen.sdk_release(root) == regen.recipe.UNKNOWN
+
+
+def test_build_is_found_through_a_symlinked_rocm_path_without_rocm_sdk(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = pip_sdk(tmp_path, {"rocm-sdk-devel": "10.1.0a1"})
+    link = tmp_path / "rocm-link"
+    link.symlink_to(root)
+    monkeypatch.setenv("ROCM_PATH", str(link))
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
+    selected = REAL_ROCM_PATH()
+    assert selected == root
+    assert regen.sdk_build(selected) == "10.1.0a1"
+
+
+def test_build_is_found_through_rocm_sdk_discovery(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = pip_sdk(tmp_path, {"rocm-sdk-devel": "10.1.0a1"})
+    link = tmp_path / "rocm-link"
+    link.symlink_to(root)
+    monkeypatch.delenv("ROCM_PATH", raising=False)
+    install_fake_rocm_sdk(monkeypatch, tmp_path, link)
+    selected = REAL_ROCM_PATH()
+    assert selected == root
+    assert regen.sdk_build(selected) == "10.1.0a1"
+
+
+# --- Comparing builds -------------------------------------------------------------
+#
+# A build is compared only when both recipes know it. An unknown build is not a
+# toolchain change: it says the builds cannot be told apart.
+
+
+def test_unknown_build_is_incomparable_not_changed() -> None:
+    notes = regen.describe_change("gfx950", GOOD, dataclasses.replace(GOOD, rocm_build="unknown"))
+    assert notes == ["gfx950: SDK build cannot be compared: '10.1.0a20260822' -> 'unknown'"]
+
+
+def test_changed_build_is_a_toolchain_change() -> None:
+    notes = regen.describe_change("gfx950", GOOD, dataclasses.replace(GOOD, rocm_build="10.1.0a2"))
+    assert notes == ["gfx950: toolchain changed: rocm_build '10.1.0a20260822' -> '10.1.0a2'"]
+
+
+def test_changed_release_is_a_toolchain_change_even_without_builds() -> None:
+    current = dataclasses.replace(GOOD, rocm_release="10.2.0", rocm_build="unknown")
+    notes = regen.describe_change("gfx950", GOOD, current)
+    assert "gfx950: toolchain changed: rocm_release '10.1.0' -> '10.2.0'" in notes
+    assert "gfx950: SDK build cannot be compared: '10.1.0a20260822' -> 'unknown'" in notes
+
+
+@pytest.mark.parametrize("record", ["Build", "RegenerateResult"])
+def test_records_are_frozen_dataclasses_of_immutable_fields(record: str) -> None:
+    # Like the inventory and recipe records: frozen, and with tuples rather
+    # than lists, so no field can be changed in place either.
+    record_type = getattr(regen, record)
+    assert dataclasses.is_dataclass(record_type)
+    assert record_type.__dataclass_params__.frozen
+    hints = typing.get_type_hints(record_type)
+    assert not any(typing.get_origin(hint) is list for hint in hints.values())

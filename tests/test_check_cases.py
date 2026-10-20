@@ -3,6 +3,7 @@
 import importlib.util
 import sys
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -123,6 +124,21 @@ def test_case_target_does_not_widen_portable_cases(corpus, capsys):
     assert code == 1
     assert "cases.toml [only]: lists target gfx1201, which is not in [corpus] targets" in out
     assert "asm/gfx1201/portable.s is missing" not in out
+
+
+def test_interrupted_publication_is_reported(
+    corpus: Callable[[list[str] | None, str, list[str]], None],
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # regenerate_asm.py stages a target beside the committed ones and moves it
+    # into place. A run killed in between leaves the staging directory, which
+    # is not a corpus target, so the half-published state cannot pass.
+    corpus(["gfx950"], PORTABLE, ["gfx950/portable"])
+    (tmp_path / "asm" / ".gfx950.staging-1234").mkdir()
+    code, out = run(capsys)
+    assert code == 1
+    assert "asm/.gfx950.staging-1234/ is not a corpus target" in out
 
 
 def test_assembly_directory_for_an_undeclared_target_is_reported(corpus, capsys):
