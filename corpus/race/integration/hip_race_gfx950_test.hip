@@ -115,28 +115,28 @@ template <bool VmWait, bool ExpWait, bool Masked> void check_global_atomic_value
   for (unsigned lane = 0; lane < input.size(); ++lane)
     input[lane] = lane + 11;
   unsigned *values = nullptr, *output = nullptr;
-  ASSERT_EQ(hipMalloc(&values, input.size() * sizeof(unsigned)), hipSuccess);
-  ASSERT_EQ(hipMalloc(&output, result.size() * sizeof(unsigned)), hipSuccess);
-  ASSERT_EQ(hipMemcpy(values, input.data(), input.size() * sizeof(unsigned), hipMemcpyHostToDevice),
-            hipSuccess);
-  ASSERT_EQ(
-      hipMemcpy(output, result.data(), result.size() * sizeof(unsigned), hipMemcpyHostToDevice),
-      hipSuccess);
+  RACE_HIP_CHECK(hipMalloc(&values, input.size() * sizeof(unsigned)));
+  RACE_HIP_CHECK(hipMalloc(&output, result.size() * sizeof(unsigned)));
+  RACE_HIP_CHECK(
+      hipMemcpy(values, input.data(), input.size() * sizeof(unsigned), hipMemcpyHostToDevice));
+  RACE_HIP_CHECK(
+      hipMemcpy(output, result.data(), result.size() * sizeof(unsigned), hipMemcpyHostToDevice));
   global_atomic_wait_kernel<VmWait, ExpWait, Masked><<<1, 64>>>(values, output);
-  ASSERT_EQ(hipGetLastError(), hipSuccess);
-  ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
-  ASSERT_EQ(hipMemcpy(input.data(), values, input.size() * sizeof(unsigned), hipMemcpyDeviceToHost),
-            hipSuccess);
-  ASSERT_EQ(
-      hipMemcpy(result.data(), output, result.size() * sizeof(unsigned), hipMemcpyDeviceToHost),
-      hipSuccess);
+  RACE_HIP_CHECK(hipGetLastError());
+  RACE_HIP_CHECK(hipDeviceSynchronize());
+  RACE_HIP_CHECK(
+      hipMemcpy(input.data(), values, input.size() * sizeof(unsigned), hipMemcpyDeviceToHost));
+  RACE_HIP_CHECK(
+      hipMemcpy(result.data(), output, result.size() * sizeof(unsigned), hipMemcpyDeviceToHost));
   for (unsigned lane = 0; lane < input.size(); ++lane) {
     const bool active = !Masked || lane == 0;
     EXPECT_EQ(input[lane], lane + 11 + unsigned(active));
-    EXPECT_EQ(result[lane], active ? lane + 11 : 0xdeadbeef);
+    // Only waited results and untouched lanes have required values.
+    if (VmWait || !active)
+      EXPECT_EQ(result[lane], active ? lane + 11 : 0xdeadbeef);
   }
-  EXPECT_EQ(hipFree(output), hipSuccess);
-  EXPECT_EQ(hipFree(values), hipSuccess);
+  RACE_HIP_CHECK(hipFree(output));
+  RACE_HIP_CHECK(hipFree(values));
 }
 
 static constexpr RaceExpectation kGlobalAtomicWaitRaceExpectation{

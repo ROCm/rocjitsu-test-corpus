@@ -6,16 +6,8 @@
 
 #include "race_test_support.hpp"
 
+#include <cstdint>
 #include <vector>
-
-#if defined(RACE_VMEM_STANDALONE)
-int main(int argc, char **argv) {
-  ::testing::InitGoogleTest(&argc, argv);
-  int rc = RUN_ALL_TESTS();
-  (void)hipDeviceReset();
-  return rc;
-}
-#endif
 
 namespace {
 
@@ -48,7 +40,7 @@ __global__ void explicit_atomic_kernel(unsigned *values, unsigned *output) {
   output[lane] = old * 3u;
 }
 
-template <typename Launch> void check_atomic_values(Launch launch) {
+template <bool CheckResult, typename Launch> void check_atomic_values(Launch launch) {
   // One full wave32 or half a wave64. Every case has one independently checked
   // dispatch and one expected report for an unsafe result use.
   constexpr unsigned lanes = 32;
@@ -56,29 +48,30 @@ template <typename Launch> void check_atomic_values(Launch launch) {
   for (unsigned lane = 0; lane < lanes; ++lane)
     input[lane] = 17 + lane;
   unsigned *values = nullptr, *output = nullptr;
-  ASSERT_EQ(hipMalloc(&values, input.size() * sizeof(unsigned)), hipSuccess);
-  ASSERT_EQ(hipMalloc(&output, result.size() * sizeof(unsigned)), hipSuccess);
-  ASSERT_EQ(hipMemcpy(values, input.data(), input.size() * sizeof(unsigned), hipMemcpyHostToDevice),
-            hipSuccess);
+  RACE_HIP_CHECK(hipMalloc(&values, input.size() * sizeof(unsigned)));
+  RACE_HIP_CHECK(hipMalloc(&output, result.size() * sizeof(unsigned)));
+  RACE_HIP_CHECK(
+      hipMemcpy(values, input.data(), input.size() * sizeof(unsigned), hipMemcpyHostToDevice));
   launch(values, output, lanes);
-  ASSERT_EQ(hipGetLastError(), hipSuccess);
-  ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
-  ASSERT_EQ(hipMemcpy(input.data(), values, input.size() * sizeof(unsigned), hipMemcpyDeviceToHost),
-            hipSuccess);
-  ASSERT_EQ(
-      hipMemcpy(result.data(), output, result.size() * sizeof(unsigned), hipMemcpyDeviceToHost),
-      hipSuccess);
+  RACE_HIP_CHECK(hipGetLastError());
+  RACE_HIP_CHECK(hipDeviceSynchronize());
+  RACE_HIP_CHECK(
+      hipMemcpy(input.data(), values, input.size() * sizeof(unsigned), hipMemcpyDeviceToHost));
+  RACE_HIP_CHECK(
+      hipMemcpy(result.data(), output, result.size() * sizeof(unsigned), hipMemcpyDeviceToHost));
   for (unsigned lane = 0; lane < lanes; ++lane) {
     EXPECT_EQ(input[lane], 18 + lane);
-    EXPECT_EQ(result[lane], (17 + lane) * 3u);
+    // A premature result read has no required numerical value.
+    if constexpr (CheckResult)
+      EXPECT_EQ(result[lane], (17 + lane) * 3u);
   }
-  EXPECT_EQ(hipFree(output), hipSuccess);
-  EXPECT_EQ(hipFree(values), hipSuccess);
+  RACE_HIP_CHECK(hipFree(output));
+  RACE_HIP_CHECK(hipFree(values));
 }
 
 TEST_F(VmemRaceTest, compiler_generated) {
   ASSERT_NO_FATAL_FAILURE(
-      check_atomic_values([](unsigned *values, unsigned *output, unsigned lanes) {
+      check_atomic_values<true>([](unsigned *values, unsigned *output, unsigned lanes) {
         compiler_atomic_kernel<<<1, lanes>>>(values, output);
       }));
   ExpectNoRace();
@@ -86,7 +79,7 @@ TEST_F(VmemRaceTest, compiler_generated) {
 
 TEST_F(VmemRaceTest, vmcnt_only) {
   ASSERT_NO_FATAL_FAILURE(
-      check_atomic_values([](unsigned *values, unsigned *output, unsigned lanes) {
+      check_atomic_values<true>([](unsigned *values, unsigned *output, unsigned lanes) {
         explicit_atomic_kernel<true, false><<<1, lanes>>>(values, output);
       }));
   ExpectNoRace();
@@ -104,7 +97,7 @@ static constexpr rocjitsu::test::RaceExpectation kMissingVmWait{
 
 TEST_F(VmemRaceTest, no_wait_race) {
   ASSERT_NO_FATAL_FAILURE(
-      check_atomic_values([](unsigned *values, unsigned *output, unsigned lanes) {
+      check_atomic_values<false>([](unsigned *values, unsigned *output, unsigned lanes) {
         explicit_atomic_kernel<false, false><<<1, lanes>>>(values, output);
       }));
   ExpectRace(kMissingVmWait);
@@ -112,7 +105,7 @@ TEST_F(VmemRaceTest, no_wait_race) {
 
 TEST_F(VmemRaceTest, expcnt_only_race) {
   ASSERT_NO_FATAL_FAILURE(
-      check_atomic_values([](unsigned *values, unsigned *output, unsigned lanes) {
+      check_atomic_values<false>([](unsigned *values, unsigned *output, unsigned lanes) {
         explicit_atomic_kernel<false, true><<<1, lanes>>>(values, output);
       }));
   ExpectRace(kMissingVmWait);
@@ -128,7 +121,8 @@ __global__ void atomic_waw_kernel(unsigned *values, const unsigned *loaded, unsi
   unsigned value;
   if constexpr (GlobalOverwrite) {
 #if defined(__gfx1151__)
-    asm volatile("global_atomic_add_u32 %[value], %[atomic_address], %[increment], off glc\n"
+    asm volatile("global_atomic_add_u32 %[value], %[atomic_address], "
+                 "%[increment], off glc\n"
                  "global_load_b32 %[value], %[load_address], off\n"
 #else
     asm volatile("global_atomic_add %[value], %[atomic_address], %[increment], off sc0\n"
@@ -141,7 +135,8 @@ __global__ void atomic_waw_kernel(unsigned *values, const unsigned *loaded, unsi
                  : "memory");
   } else {
 #if defined(__gfx1151__)
-    asm volatile("global_atomic_add_u32 %[value], %[atomic_address], %[increment], off glc\n"
+    asm volatile("global_atomic_add_u32 %[value], %[atomic_address], "
+                 "%[increment], off glc\n"
 #else
     asm volatile("global_atomic_add %[value], %[atomic_address], %[increment], off sc0\n"
 #endif
@@ -162,27 +157,26 @@ template <bool GlobalOverwrite> void check_atomic_waw_values() {
     loaded[lane] = 101 + lane;
   }
   unsigned *values = nullptr, *load_source = nullptr, *output = nullptr;
-  ASSERT_EQ(hipMalloc(&values, lanes * sizeof(unsigned)), hipSuccess);
-  ASSERT_EQ(hipMalloc(&load_source, lanes * sizeof(unsigned)), hipSuccess);
-  ASSERT_EQ(hipMalloc(&output, lanes * sizeof(unsigned)), hipSuccess);
-  ASSERT_EQ(hipMemcpy(values, input.data(), lanes * sizeof(unsigned), hipMemcpyHostToDevice),
-            hipSuccess);
-  ASSERT_EQ(hipMemcpy(load_source, loaded.data(), lanes * sizeof(unsigned), hipMemcpyHostToDevice),
-            hipSuccess);
+  RACE_HIP_CHECK(hipMalloc(&values, lanes * sizeof(unsigned)));
+  RACE_HIP_CHECK(hipMalloc(&load_source, lanes * sizeof(unsigned)));
+  RACE_HIP_CHECK(hipMalloc(&output, lanes * sizeof(unsigned)));
+  RACE_HIP_CHECK(hipMemcpy(values, input.data(), lanes * sizeof(unsigned), hipMemcpyHostToDevice));
+  RACE_HIP_CHECK(
+      hipMemcpy(load_source, loaded.data(), lanes * sizeof(unsigned), hipMemcpyHostToDevice));
   atomic_waw_kernel<GlobalOverwrite><<<1, lanes>>>(values, load_source, output);
-  ASSERT_EQ(hipGetLastError(), hipSuccess);
-  ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
-  ASSERT_EQ(hipMemcpy(input.data(), values, lanes * sizeof(unsigned), hipMemcpyDeviceToHost),
-            hipSuccess);
-  ASSERT_EQ(hipMemcpy(result.data(), output, lanes * sizeof(unsigned), hipMemcpyDeviceToHost),
-            hipSuccess);
+  RACE_HIP_CHECK(hipGetLastError());
+  RACE_HIP_CHECK(hipDeviceSynchronize());
+  RACE_HIP_CHECK(hipMemcpy(input.data(), values, lanes * sizeof(unsigned), hipMemcpyDeviceToHost));
+  RACE_HIP_CHECK(hipMemcpy(result.data(), output, lanes * sizeof(unsigned), hipMemcpyDeviceToHost));
   for (unsigned lane = 0; lane < lanes; ++lane) {
     EXPECT_EQ(input[lane], 18 + lane);
-    EXPECT_EQ(result[lane], GlobalOverwrite ? loaded[lane] : 101u);
+    // The unordered VALU overwrite can lose to the atomic writeback.
+    if constexpr (GlobalOverwrite)
+      EXPECT_EQ(result[lane], loaded[lane]);
   }
-  EXPECT_EQ(hipFree(output), hipSuccess);
-  EXPECT_EQ(hipFree(load_source), hipSuccess);
-  EXPECT_EQ(hipFree(values), hipSuccess);
+  RACE_HIP_CHECK(hipFree(output));
+  RACE_HIP_CHECK(hipFree(load_source));
+  RACE_HIP_CHECK(hipFree(values));
 }
 
 TEST_F(VmemRaceTest, atomic_global_same_vgpr) {
@@ -238,18 +232,17 @@ template <bool Synchronized> __global__ void flat_lds_exchange_kernel(unsigned *
 template <bool Synchronized> void check_flat_lds_exchange() {
   unsigned *output = nullptr;
   std::vector<unsigned> result(128);
-  ASSERT_EQ(hipMalloc(&output, result.size() * sizeof(unsigned)), hipSuccess);
+  RACE_HIP_CHECK(hipMalloc(&output, result.size() * sizeof(unsigned)));
   flat_lds_exchange_kernel<Synchronized><<<1, 128>>>(output);
-  ASSERT_EQ(hipGetLastError(), hipSuccess);
-  ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
-  ASSERT_EQ(
-      hipMemcpy(result.data(), output, result.size() * sizeof(unsigned), hipMemcpyDeviceToHost),
-      hipSuccess);
+  RACE_HIP_CHECK(hipGetLastError());
+  RACE_HIP_CHECK(hipDeviceSynchronize());
+  RACE_HIP_CHECK(
+      hipMemcpy(result.data(), output, result.size() * sizeof(unsigned), hipMemcpyDeviceToHost));
   if constexpr (Synchronized) {
     for (unsigned tid = 0; tid < result.size(); ++tid)
       EXPECT_EQ(result[tid], 127 - tid + 11);
   }
-  EXPECT_EQ(hipFree(output), hipSuccess);
+  RACE_HIP_CHECK(hipFree(output));
 }
 
 TEST_F(VmemRaceTest, flat_lds_exchange) {
@@ -262,6 +255,7 @@ TEST_F(VmemRaceTest, flat_lds_exchange_race) {
   ExpectRace({.kernel = "flat_lds_exchange_kernel",
               .type = "LDS",
               .access = "read",
+              .producer = "flat_store",
               .consumer = "flat_load"});
 }
 

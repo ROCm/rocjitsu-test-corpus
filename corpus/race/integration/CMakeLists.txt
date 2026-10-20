@@ -91,14 +91,9 @@ target_include_directories(
 )
 target_link_libraries(race_log_expectation_test PRIVATE GTest::gtest_main)
 
-function(add_rocjitsu_race_test target_name source)
-    add_executable(${target_name} "${source}")
-    if(NOT source MATCHES "hip_race_vmem_test.hip$|race_test_support_test.hip$")
-        target_sources(
-            ${target_name} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/hip_race_vmem_test.hip"
-        )
-    endif()
-    set_source_files_properties("${source}" PROPERTIES LANGUAGE HIP)
+function(add_rocjitsu_race_test target_name)
+    add_executable(${target_name} ${ARGN})
+    set_source_files_properties(${ARGN} PROPERTIES LANGUAGE HIP)
     target_compile_features(${target_name} PRIVATE cxx_std_20)
     set_target_properties(${target_name} PROPERTIES
         HIP_STANDARD 20
@@ -124,18 +119,20 @@ endif()
 if(CMAKE_HIP_ARCHITECTURES STREQUAL "gfx942")
     add_rocjitsu_race_test(
         hip_race_tests_gfx942
+        "${CMAKE_CURRENT_LIST_DIR}/hip_race_gfx942_test.hip"
         "${CMAKE_CURRENT_LIST_DIR}/hip_race_vmem_test.hip"
     )
-    target_compile_definitions(hip_race_tests_gfx942 PRIVATE RACE_VMEM_STANDALONE)
 elseif(CMAKE_HIP_ARCHITECTURES STREQUAL "gfx950")
     add_rocjitsu_race_test(
         hip_race_tests_gfx950
         "${CMAKE_CURRENT_LIST_DIR}/hip_race_gfx950_test.hip"
+        "${CMAKE_CURRENT_LIST_DIR}/hip_race_vmem_test.hip"
     )
 elseif(CMAKE_HIP_ARCHITECTURES STREQUAL "gfx1151")
     add_rocjitsu_race_test(
         hip_race_tests_gfx1151
         "${CMAKE_CURRENT_LIST_DIR}/hip_race_gfx1151_test.hip"
+        "${CMAKE_CURRENT_LIST_DIR}/hip_race_vmem_test.hip"
     )
 else()
     message(FATAL_ERROR
