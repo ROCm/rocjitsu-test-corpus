@@ -160,7 +160,7 @@ def test_runtime_rejects_stale_log_and_times_out(tmp_path, monkeypatch):
     binary = tmp_path / "deqp-vk"
     binary.write_text("#!/bin/sh\nexit 0\n")
     binary.chmod(0o755)
-    result = BuildResult(tmp_path, binary)
+    result = BuildResult(build_dir=tmp_path, executable_path=binary)
     with pytest.raises(RuntimeError, match="diagnostics"):
         vulkan.run(case, result, context)
     run_dir = next((context.artifact_directory / "vulkan/gfx1100").iterdir())
