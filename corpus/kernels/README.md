@@ -41,6 +41,7 @@ Collected kernel cases:
 | `guitar-hero/guitar_hero_rdna4/guitar_hero_wave64` | `gfx1201`, wave64 | Launch and workgroup-consistency smoke |
 | `guitar-hero/guitar_hero_rdna3` | `gfx1100`, wave32 | Launch and workgroup-consistency smoke |
 | `guitar-hero/guitar_hero_cdna4` | `gfx950`, wave64 | Launch and workgroup-consistency smoke |
+| `guitar-hero/guitar_hero_cdna5` | `gfx1250`, wave32 | Launch and workgroup-consistency smoke |
 | `hip-stream-k/simple_streamk` | CDNA3 | Pass |
 | `hip-stream-k/two_tile_streamk` | CDNA3 | Pass |
 | `hip-matmul/matmul` | CDNA3 | Bug |
