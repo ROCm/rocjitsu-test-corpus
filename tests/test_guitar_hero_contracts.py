@@ -39,9 +39,15 @@ def test_checkpoint_layout(manifest):
     if name == "guitar_hero_cdna4":
         assert ".wavefront_size: 64" in assembly
         assert ".private_segment_fixed_size: 0" in assembly
-    elif name in ("guitar_hero_cdna5", "guitar_hero_rdna2"):
+    elif name in {"guitar_hero_cdna5", "guitar_hero_rdna1", "guitar_hero_rdna2"}:
         assert ".wavefront_size: 32" in assembly
         assert ".private_segment_fixed_size: 64" in assembly
+        if name == "guitar_hero_rdna1":
+            assert metadata["supported_targets"] == ["gfx1010"]
+            assert '.amdgcn_target "amdgcn-amd-amdhsa--gfx1010"' in assembly
+            assert ".amdhsa_kernel guitar_hero_rdna1" in assembly
+            assert "- .name: guitar_hero_rdna1" in assembly
+            assert ".symbol: guitar_hero_rdna1.kd" in assembly
 
 
 def test_cdna5_scheduling_contract():
