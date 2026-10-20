@@ -230,6 +230,23 @@ __global__ void fpsan_kernel(const float *a, const float *b, const float *c,
   exp_hom_ok[i] = (fpsan::exp(A + B) == fpsan::exp(A) * fpsan::exp(B)) ? 1u : 0u;
 }
 
+TEST(HipCheck, EvaluatesOnceAndReportsFailure) {
+  int calls = 0;
+  EXPECT_NO_THROW(HIP_CHECK_EXC((++calls, hipSuccess)));
+  EXPECT_EQ(calls, 1);
+
+  try {
+    HIP_CHECK_EXC((++calls, hipErrorInvalidValue));
+    FAIL() << "expected a HIP error exception";
+  } catch (const std::runtime_error &error) {
+    const std::string message = error.what();
+    EXPECT_NE(message.find("++calls"), std::string::npos);
+    EXPECT_NE(message.find(__FILE__), std::string::npos);
+    EXPECT_NE(message.find(hipGetErrorString(hipErrorInvalidValue)), std::string::npos);
+  }
+  EXPECT_EQ(calls, 2);
+}
+
 TEST(HipDevice, MatchesHostAndPreservesIdentities) {
   int ndev = 0;
   hipError_t e = hipGetDeviceCount(&ndev);
