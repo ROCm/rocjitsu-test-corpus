@@ -81,11 +81,19 @@ To build only selected backends, add enable flags under `cacheVariables`:
 "KERNEL_CORPUS_ENABLE_HIP_STREAMK": "ON"
 ```
 
-`ROCM_PATH` must point at a ROCm SDK root with
-`lib/cmake/hip/hip-config.cmake`. CMake first uses an explicit `-DROCM_PATH`,
-then the `ROCM_PATH` environment variable. If neither is set, it runs
+`ROCM_PATH` is a CMake cache setting that must point at a ROCm SDK root with
+`lib/cmake/hip/hip-config.cmake`. Set it in the user preset's `cacheVariables`
+above or with `-DROCM_PATH=<root>`. If the cache entry is empty, CMake uses the
+`ROCM_PATH` environment variable or, if that is unset or empty, runs
 `rocm-sdk path --root` using the executable on `PATH`; activating a TheRock/ROCm
 Python virtual environment makes that environment's SDK discoverable.
+
+Both discovery sources populate the cache entry, so later configures reuse it
+without checking the environment or running `rocm-sdk`. To switch SDKs in an
+existing build directory, update the `ROCM_PATH` cache setting through the user
+preset or `-DROCM_PATH=<new root>`, or configure in a fresh build directory.
+
+<a id="offline-googletest-setup"></a>
 
 The rocBLAS runners prefer an installed GoogleTest package and otherwise fetch
 the pinned release. For an offline standalone CMake build, supply a local
@@ -169,7 +177,9 @@ options below.
 `KERNEL_CORPUS_ENABLE_HIP_MATMUL=ON` needs `hip`.
 `KERNEL_CORPUS_ENABLE_HIPKITTENS=ON` needs `hip` and an OpenMP-capable host compiler
 runtime.
-`KERNEL_CORPUS_ENABLE_ROCBLAS=ON` needs `hip` and `rocBLAS`.
+`KERNEL_CORPUS_ENABLE_ROCBLAS=ON` needs `hip`, `rocBLAS`, and GoogleTest; see the
+[offline GoogleTest setup note](#offline-googletest-setup) for installed-package
+and local-checkout options.
 
 The Stream-K runner is intended for CDNA / gfx9-family targets and is not expected
 to work on RDNA targets. Its extracted hip-stream-k kernels use a local fragment
