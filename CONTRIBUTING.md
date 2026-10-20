@@ -105,6 +105,41 @@ Contributors are expected to:
 - Include test coverage for new functionality when applicable.
 - Document any known limitations or test exclusions.
 
+#### Helper-header isolation
+
+`scripts/check_helper_headers.py` compiles each first-party `.h` and `.hpp`
+under `corpus/cts`, `corpus/runtime-cts`, `corpus/race`, and `corpus/semantics`
+as the only include in a translation unit. It checks host C++17 runtime CTS
+headers with the gfx1250 platform definitions, and HIP C++20 headers with their
+target family (`gfx942`, `gfx950`, `gfx1151`, `gfx1201`, or `gfx1250`). Generic
+HIP headers use gfx950; the RDNA4 wave64 helper adds `-mwavefrontsize64`.
+These are compile checks and do not require a GPU. They check self-containment;
+they cannot detect direct dependencies supplied by another included header.
+
+Provide a ROCm SDK supporting those targets and a GoogleTest include directory.
+For a GoogleTest source checkout, use its `googletest/include` directory. The
+runtime CTS payload helper also needs the generated `payload_kernel.inc` from
+a gfx1250 runtime CTS build:
+
+```bash
+cmake -S corpus/runtime-cts -B "$BUILD_DIR/runtime" -G Ninja \
+  -DCMAKE_CXX_COMPILER=clang++ \
+  -DAMDGPU_LLVM_BIN="$ROCM_PATH/lib/llvm/bin" \
+  -DCTS_ARCHS=gfx1250 -DCTS_SUITES=pm4
+cmake --build "$BUILD_DIR/runtime" --parallel 4 --target kernel_payload_gfx1250
+python3 scripts/check_helper_headers.py \
+  --rocm-path "$ROCM_PATH" \
+  --gtest-include "$GTEST_INCLUDE" \
+  --runtime-kernel-dir "$BUILD_DIR/runtime/kernels/gfx1250"
+```
+
+Use `--header corpus/semantics/gfx1250/include/test_support.hpp` to check one
+header, or repeat `--header` for several. `--host-cxx` and `--hip-cxx` select
+explicit compilers. If the SDK needs additional HIP headers, pass each directory
+with `--hip-include`; these become `-idirafter` paths. The script reports every
+failure with its command and diagnostics and exits unsuccessfully if any check
+fails. It creates no source-tree build files.
+
 ### Documentation
 
 Changes that impact functionality, configuration, APIs, or user workflows should include corresponding documentation updates.
