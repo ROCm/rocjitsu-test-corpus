@@ -19,15 +19,11 @@
 // Progress waits have a separate 10-second deadline.
 // Inspiration: independent direct-KFD adaptation of public workload patterns.
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/runtimes/rocddi/frontends/libamdf/examples/sdma-dmabuf-copy.c
-#include <cstddef>
-#include <cstdint>
-#include <spawn.h>
-#include <stdlib.h>
-#include <vector>
-
 #include <fcntl.h>
 #include <linux/kfd_ioctl.h>
 #include <signal.h>
+#include <spawn.h>
+#include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/types.h>
@@ -35,9 +31,12 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <thread>
+#include <vector>
 
 #include "support/aql.h"
 #include "support/aql_payload.h"
