@@ -1981,3 +1981,23 @@ def test_sdk_is_resolved_once_per_run(
     # Four compiles, two cases on two targets, and one lookup.
     assert len(compiler_invocations(sdk / "bin", "hipcc")) == 4
     assert calls.read_text().splitlines() == ["call"]
+
+
+# --- The default SDK location -----------------------------------------------------
+
+
+def test_default_sdk_is_used_when_nothing_else_selects_one(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, no_sdk_discovery: None
+) -> None:
+    default = tmp_path / "opt-rocm"
+    default.mkdir()
+    monkeypatch.setattr(regen, "_DEFAULT_ROCM_PATH", default)
+    assert regen.rocm_path() == default
+
+
+def test_missing_default_sdk_is_reported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, no_sdk_discovery: None
+) -> None:
+    monkeypatch.setattr(regen, "_DEFAULT_ROCM_PATH", tmp_path / "missing")
+    with pytest.raises(regen.SetupError, match="no ROCm SDK"):
+        regen.rocm_path()

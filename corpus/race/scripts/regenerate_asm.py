@@ -126,6 +126,10 @@ _UNRECORDED_VARIABLES = (
 )
 _UNRECORDED_PREFIXES = ("HIP_", "HIPCC_")
 
+# Where ROCm installs by default: the SDK used when neither ROCM_PATH nor
+# rocm-sdk selects one. See rocm_path.
+_DEFAULT_ROCM_PATH = Path("/opt/rocm")
+
 
 def split_provenance(assembly: str) -> tuple[list[str], list[str]]:
     """*assembly*'s lines, split into everything else and its ``.ident`` values."""
@@ -261,8 +265,8 @@ def rocm_path() -> Path:
         return root
     if shutil.which("rocm-sdk"):
         return _rocm_sdk_root()
-    if Path("/opt/rocm").is_dir():
-        return Path("/opt/rocm").resolve()
+    if _DEFAULT_ROCM_PATH.is_dir():
+        return _DEFAULT_ROCM_PATH.resolve()
     raise SetupError("no ROCm SDK: set ROCM_PATH, or make rocm-sdk available on PATH")
 
 
