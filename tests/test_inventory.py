@@ -290,3 +290,18 @@ def test_scratch_manifests_use_the_current_schema(
     path = write_manifest(tmp_path / "cases.toml", PORTABLE)
     assert f"schema = {inventory.SCHEMA}" in path.read_text()
     assert inventory.load(path).cases[0].id == "portable"
+
+
+# --- One corpus layout ------------------------------------------------------------
+
+CORPUS_PATHS = ("CORPUS_ROOT", "CASES_PATH", "KERNELS_DIR", "ASM_DIR")
+
+
+@pytest.mark.parametrize("script", ["check_cases", "regenerate_asm"])
+def test_scripts_use_the_inventory_layout(script: str) -> None:
+    # The corpus paths are defined once, in inventory, and each script refers
+    # to them by name so that tests can point a run at a scratch corpus.
+    module = load_script(script)
+    for name in CORPUS_PATHS:
+        assert getattr(module, name) == getattr(inventory, name)
+    assert inventory.CORPUS_ROOT == CORPUS_DIR

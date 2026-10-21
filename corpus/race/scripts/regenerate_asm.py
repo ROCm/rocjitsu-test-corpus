@@ -82,10 +82,12 @@ from pathlib import Path
 import inventory
 import recipe
 
-CORPUS_ROOT = Path(__file__).resolve().parent.parent
-KERNELS_DIR = CORPUS_ROOT / "kernels"
-ASM_DIR = CORPUS_ROOT / "asm"
-CASES_PATH = CORPUS_ROOT / "cases.toml"
+# The corpus layout, from inventory. Bound here so that a test can point a run
+# at a scratch corpus.
+CORPUS_ROOT = inventory.CORPUS_ROOT
+CASES_PATH = inventory.CASES_PATH
+KERNELS_DIR = inventory.KERNELS_DIR
+ASM_DIR = inventory.ASM_DIR
 
 # hipcc's per-translation-unit id, which is regenerated on every invocation.
 # See the module docstring for why replacing it is safe.

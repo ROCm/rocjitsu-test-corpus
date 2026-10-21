@@ -21,6 +21,13 @@ from pathlib import Path
 
 SCHEMA = 1
 
+# The corpus layout. This module lives in scripts/, beside cases.toml, kernels/
+# and asm/; both scripts take their paths from here.
+CORPUS_ROOT = Path(__file__).resolve().parent.parent
+CASES_PATH = CORPUS_ROOT / "cases.toml"
+KERNELS_DIR = CORPUS_ROOT / "kernels"
+ASM_DIR = CORPUS_ROOT / "asm"
+
 
 class InventoryError(ValueError):
     """The manifest is invalid. ``problems`` lists every problem found."""
