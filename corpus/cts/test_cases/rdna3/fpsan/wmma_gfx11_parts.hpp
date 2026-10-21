@@ -282,8 +282,7 @@ template <class Traits> void run_layout_matches_hardware() {
   AE *dA = device_allocations.to_dev(m.A);
   BE *dB = device_allocations.to_dev(m.B);
   CE *dC = device_allocations.to_dev(m.C);
-  CE *dD;
-  device_allocations.allocate(&dD, M * N * sizeof(CE));
+  CE *dD = device_allocations.allocate<CE>(M * N);
   k_builtin<Traits><<<1, Traits::wave_size>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
 
@@ -293,10 +292,6 @@ template <class Traits> void run_layout_matches_hardware() {
     EXPECT_NEAR(static_cast<float>(got[i]), static_cast<float>(ref[i]), layout_tolerance<CE>())
         << "layout mismatch at " << (i / N) << "," << (i % N) << " got_bits=" << bits_of(got[i])
         << " ref_bits=" << bits_of(ref[i]);
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dD);
 }
 
 template <class Traits> void run_fpsan_matches_scalar_reference() {
@@ -326,19 +321,15 @@ template <class Traits> void run_fpsan_matches_scalar_reference() {
         ref[mm * N + nn] = acc.fpsan_payload();
       }
 
-    CBits *dD;
-    device_allocations.allocate(&dD, M * N * sizeof(CBits));
+    DeviceAllocations device_allocations;
+    CBits *dD = device_allocations.allocate<CBits>(M * N);
     k_fpsan<Traits, S><<<1, Traits::wave_size>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<CBits> got(M * N);
     HIP_CHECK(hipMemcpy(got.data(), dD, M * N * sizeof(CBits), hipMemcpyDeviceToHost));
     for (int i = 0; i < M * N; ++i)
       EXPECT_EQ(got[i], ref[i]) << "payload mismatch at " << (i / N) << "," << (i % N);
-    device_allocations.free(dD);
   });
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
 }
 
 template <class Traits> void run_tied_preserves_unselected() {
@@ -351,8 +342,7 @@ template <class Traits> void run_tied_preserves_unselected() {
   using CBits = typename H::CBits;
   const std::size_t count = static_cast<std::size_t>(Traits::wave_size) * H::c_lanes;
 
-  CE *dFloat;
-  device_allocations.allocate(&dFloat, count * sizeof(CE));
+  CE *dFloat = device_allocations.allocate<CE>(count);
   k_tied_preserve_float<Traits><<<1, Traits::wave_size>>>(dFloat);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<CE> got_float(count);
@@ -370,13 +360,12 @@ template <class Traits> void run_tied_preserves_unselected() {
 
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
-    CBits *dFpsan;
-    device_allocations.allocate(&dFpsan, count * sizeof(CBits));
+    DeviceAllocations device_allocations;
+    CBits *dFpsan = device_allocations.allocate<CBits>(count);
     k_tied_preserve_fpsan<Traits, S><<<1, Traits::wave_size>>>(dFpsan);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<CBits> got_fpsan(count);
     HIP_CHECK(hipMemcpy(got_fpsan.data(), dFpsan, count * sizeof(CBits), hipMemcpyDeviceToHost));
-    device_allocations.free(dFpsan);
 
     for (int lane = 0; lane < Traits::wave_size; ++lane)
       for (int r = 0; r < H::output_regs; ++r) {

@@ -75,8 +75,7 @@ template <class FP8> void run_decode_all_bytes() {
   for (int b = 0; b < 256; ++b)
     packed[b] = b;
   int *dIn = device_allocations.to_dev(packed);
-  _Float16 *dO;
-  device_allocations.allocate(&dO, 256 * sizeof(_Float16));
+  _Float16 *dO = device_allocations.allocate<_Float16>(256);
   k_decode_all_bytes<FP8><<<1, 256>>>(dIn, dO);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<_Float16> got(256);
@@ -89,8 +88,6 @@ template <class FP8> void run_decode_all_bytes() {
     else
       EXPECT_EQ(f16_bits(got[b]), f16_bits(ref)) << "byte 0x" << std::hex << b;
   }
-  device_allocations.free(dIn);
-  device_allocations.free(dO);
 }
 
 TEST(CvtF16Fp8, Fp8DecodeAllBytes) { run_decode_all_bytes<fpsan::fp8_e4m3>(); }
@@ -118,8 +115,7 @@ template <class FP8, int ByteIdx> void run_decode_bytesel() {
     packed[i] = static_cast<int>(static_cast<std::uint32_t>(bytes[i]) << (ByteIdx * 8));
   }
   int *dIn = device_allocations.to_dev(packed);
-  _Float16 *dO;
-  device_allocations.allocate(&dO, LANES * sizeof(_Float16));
+  _Float16 *dO = device_allocations.allocate<_Float16>(LANES);
   k_decode_bytesel<FP8, ByteIdx><<<1, LANES>>>(dIn, dO);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<_Float16> got(LANES);
@@ -128,8 +124,6 @@ template <class FP8, int ByteIdx> void run_decode_bytesel() {
     _Float16 ref = static_cast<_Float16>(static_cast<float>(FP8(bytes[i])));
     EXPECT_EQ(f16_bits(got[i]), f16_bits(ref)) << "lane " << i << " byteIdx " << ByteIdx;
   }
-  device_allocations.free(dIn);
-  device_allocations.free(dO);
 }
 
 TEST(CvtF16Fp8, Fp8DecodeByteSel) {
@@ -192,15 +186,14 @@ template <class FP8> void run_pk_roundtrip() {
     x = static_cast<_Float16>(fpsan_test::pick_int_valued<float>(rng, -4, 4)); // exact in fp8
   _Float16 *dIn = device_allocations.to_dev(in);
   {
-    _Float16 *dO;
-    device_allocations.allocate(&dO, 2 * LANES * sizeof(_Float16));
+    DeviceAllocations device_allocations;
+    _Float16 *dO = device_allocations.allocate<_Float16>(2 * LANES);
     k_pk_roundtrip<Semantics::Native, FP8, _Float16><<<1, LANES>>>(dIn, dO);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<_Float16> got(2 * LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, 2 * LANES * sizeof(_Float16), hipMemcpyDeviceToHost));
     for (int i = 0; i < 2 * LANES; ++i)
       EXPECT_EQ(f16_bits(got[i]), f16_bits(in[i])) << "Float round-trip at " << i;
-    device_allocations.free(dO);
   }
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
@@ -209,17 +202,15 @@ template <class FP8> void run_pk_roundtrip() {
     for (int i = 0; i < 2 * LANES; ++i)
       ref[i] = static_cast<std::uint16_t>(
           fpsan::cast<_Float16>(fpsan::cast<FP8>(VH(in[i]))).fpsan_payload());
-    std::uint16_t *dO;
-    device_allocations.allocate(&dO, 2 * LANES * sizeof(std::uint16_t));
+    DeviceAllocations device_allocations;
+    std::uint16_t *dO = device_allocations.allocate<std::uint16_t>(2 * LANES);
     k_pk_roundtrip<S, FP8, std::uint16_t><<<1, LANES>>>(dIn, dO);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint16_t> got(2 * LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, 2 * LANES * sizeof(std::uint16_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < 2 * LANES; ++i)
       EXPECT_EQ(got[i], ref[i]) << "FPSan payload at " << i;
-    device_allocations.free(dO);
   });
-  device_allocations.free(dIn);
 }
 
 TEST(CvtF16Fp8, Fp8PkRoundTrip) { run_pk_roundtrip<fpsan::fp8_e4m3>(); }
@@ -243,8 +234,7 @@ template <class FP8> void run_pack_bytes() {
   for (auto &x : in)
     x = static_cast<_Float16>(fpsan_test::pick_int_valued<float>(rng, -4, 4));
   _Float16 *dIn = device_allocations.to_dev(in);
-  std::uint16_t *dO;
-  device_allocations.allocate(&dO, LANES * sizeof(std::uint16_t));
+  std::uint16_t *dO = device_allocations.allocate<std::uint16_t>(LANES);
   k_pack_bytes<FP8><<<1, LANES>>>(dIn, dO);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<std::uint16_t> got(LANES);
@@ -255,8 +245,6 @@ template <class FP8> void run_pack_bytes() {
     std::uint16_t expected = static_cast<std::uint16_t>(lo | (static_cast<std::uint16_t>(hi) << 8));
     EXPECT_EQ(got[l], expected) << "lane " << l;
   }
-  device_allocations.free(dIn);
-  device_allocations.free(dO);
 }
 
 TEST(CvtF16Fp8, Fp8PackByteOrder) { run_pack_bytes<fpsan::fp8_e4m3>(); }
@@ -309,15 +297,14 @@ template <class FP8> void run_sr_roundtrip() {
     x = static_cast<_Float16>(fpsan_test::pick_int_valued<float>(rng, -4, 4));
   _Float16 *dIn = device_allocations.to_dev(in);
   {
-    _Float16 *dO;
-    device_allocations.allocate(&dO, LANES * sizeof(_Float16));
+    DeviceAllocations device_allocations;
+    _Float16 *dO = device_allocations.allocate<_Float16>(LANES);
     k_sr_roundtrip<Semantics::Native, FP8, _Float16><<<1, LANES>>>(dIn, dO);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<_Float16> got(LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, LANES * sizeof(_Float16), hipMemcpyDeviceToHost));
     for (int i = 0; i < LANES; ++i)
       EXPECT_EQ(f16_bits(got[i]), f16_bits(in[i])) << "sr round-trip " << i;
-    device_allocations.free(dO);
   }
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
@@ -326,17 +313,15 @@ template <class FP8> void run_sr_roundtrip() {
     for (int i = 0; i < LANES; ++i)
       ref[i] = static_cast<std::uint16_t>(
           fpsan::cast<_Float16>(fpsan::cast<FP8>(VH(in[i]))).fpsan_payload());
-    std::uint16_t *dO;
-    device_allocations.allocate(&dO, LANES * sizeof(std::uint16_t));
+    DeviceAllocations device_allocations;
+    std::uint16_t *dO = device_allocations.allocate<std::uint16_t>(LANES);
     k_sr_roundtrip<S, FP8, std::uint16_t><<<1, LANES>>>(dIn, dO);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint16_t> got(LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, LANES * sizeof(std::uint16_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < LANES; ++i)
       EXPECT_EQ(got[i], ref[i]) << "sr FPSan " << i;
-    device_allocations.free(dO);
   });
-  device_allocations.free(dIn);
 }
 
 TEST(CvtF16Fp8, Fp8SrRoundTrip) { run_sr_roundtrip<fpsan::fp8_e4m3>(); }

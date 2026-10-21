@@ -210,9 +210,8 @@ template <class Traits> void run_layout_matches_hardware() {
   BE *dB = device_allocations.to_dev(m.B);
   CE *dC = device_allocations.to_dev(m.C);
   int *dI = device_allocations.to_dev(m.IDX);
-  CE *dHw, *dOurs;
-  device_allocations.allocate(&dHw, M * N * sizeof(CE));
-  device_allocations.allocate(&dOurs, M * N * sizeof(CE));
+  CE *dHw = device_allocations.allocate<CE>(M * N);
+  CE *dOurs = device_allocations.allocate<CE>(M * N);
   k_builtin<Traits><<<1, 32>>>(dA, dB, dC, dI, dHw);
   k_float_dataflow<Traits><<<1, 32>>>(dA, dB, dC, dI, dOurs);
   HIP_CHECK(hipDeviceSynchronize());
@@ -221,12 +220,6 @@ template <class Traits> void run_layout_matches_hardware() {
   HIP_CHECK(hipMemcpy(ours.data(), dOurs, M * N * sizeof(CE), hipMemcpyDeviceToHost));
   for (int i = 0; i < M * N; ++i)
     EXPECT_EQ(bits_of(hw[i]), bits_of(ours[i])) << "mismatch at " << (i / N) << "," << (i % N);
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dI);
-  device_allocations.free(dHw);
-  device_allocations.free(dOurs);
 }
 
 template <class Traits, Semantics S> void run_fpsan_matches_scalar_reference() {
@@ -258,19 +251,13 @@ template <class Traits, Semantics S> void run_fpsan_matches_scalar_reference() {
   BE *dB = device_allocations.to_dev(m.B);
   CE *dC = device_allocations.to_dev(m.C);
   int *dI = device_allocations.to_dev(m.IDX);
-  CBits *dD;
-  device_allocations.allocate(&dD, M * N * sizeof(CBits));
+  CBits *dD = device_allocations.allocate<CBits>(M * N);
   k_fpsan<Traits, S><<<1, 32>>>(dA, dB, dC, dI, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<CBits> got(M * N);
   HIP_CHECK(hipMemcpy(got.data(), dD, M * N * sizeof(CBits), hipMemcpyDeviceToHost));
   for (int i = 0; i < M * N; ++i)
     EXPECT_EQ(got[i], ref[i]) << "payload mismatch at " << (i / N) << "," << (i % N);
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dI);
-  device_allocations.free(dD);
 }
 
 #define SWMMAC16_TRAITS(NAME, AVEC, BVEC, CVEC, WRAP)                                              \

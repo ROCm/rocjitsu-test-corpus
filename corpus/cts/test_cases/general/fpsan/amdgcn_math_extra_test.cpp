@@ -176,12 +176,10 @@ AMDGCN_MATH_FMED3_KERNEL(amdgcn_fmed3h, _Float16, __builtin_amdgcn_fmed3h)
     using Bits = typename Value<FT, Semantics::Triton, kCC>::bits_type;                            \
     auto inputs = INPUTS<FT>();                                                                    \
     FT *dIn = device_allocations.to_dev(inputs);                                                   \
-    FT *dDirect, *dWrapper;                                                                        \
-    Bits *dPayDirect, *dPayWrapper;                                                                \
-    device_allocations.allocate(&dDirect, kScalarN * sizeof(FT));                                  \
-    device_allocations.allocate(&dWrapper, kScalarN * sizeof(FT));                                 \
-    device_allocations.allocate(&dPayDirect, kScalarN * sizeof(Bits));                             \
-    device_allocations.allocate(&dPayWrapper, kScalarN * sizeof(Bits));                            \
+    FT *dDirect = device_allocations.allocate<FT>(kScalarN);                                       \
+    FT *dWrapper = device_allocations.allocate<FT>(kScalarN);                                      \
+    Bits *dPayDirect = device_allocations.allocate<Bits>(kScalarN);                                \
+    Bits *dPayWrapper = device_allocations.allocate<Bits>(kScalarN);                               \
     fpsan_test::for_each_fpsan_semantics([&](auto sem) {                                           \
       k_##NAME<decltype(sem)::value>                                                               \
           <<<1, kScalarN>>>(dIn, dDirect, dWrapper, dPayDirect, dPayWrapper);                      \
@@ -200,11 +198,6 @@ AMDGCN_MATH_FMED3_KERNEL(amdgcn_fmed3h, _Float16, __builtin_amdgcn_fmed3h)
         EXPECT_EQ(pay_wrapper[i], pay_direct[i]) << "FPSan lane " << i;                            \
       }                                                                                            \
     });                                                                                            \
-    device_allocations.free(dIn);                                                                  \
-    device_allocations.free(dDirect);                                                              \
-    device_allocations.free(dWrapper);                                                             \
-    device_allocations.free(dPayDirect);                                                           \
-    device_allocations.free(dPayWrapper);                                                          \
   }
 
 AMDGCN_MATH_UNARY_TEST(amdgcn_rcp, double, make_positive_inputs)
@@ -232,12 +225,10 @@ AMDGCN_MATH_UNARY_TEST(amdgcn_fracth, _Float16, make_signed_inputs)
     auto c = make_signed_inputs<FT>();                                                             \
     FT *dA = device_allocations.to_dev(a), *dB = device_allocations.to_dev(b),                     \
        *dC = device_allocations.to_dev(c);                                                         \
-    FT *dDirect, *dWrapper;                                                                        \
-    Bits *dPayDirect, *dPayWrapper;                                                                \
-    device_allocations.allocate(&dDirect, kScalarN * sizeof(FT));                                  \
-    device_allocations.allocate(&dWrapper, kScalarN * sizeof(FT));                                 \
-    device_allocations.allocate(&dPayDirect, kScalarN * sizeof(Bits));                             \
-    device_allocations.allocate(&dPayWrapper, kScalarN * sizeof(Bits));                            \
+    FT *dDirect = device_allocations.allocate<FT>(kScalarN);                                       \
+    FT *dWrapper = device_allocations.allocate<FT>(kScalarN);                                      \
+    Bits *dPayDirect = device_allocations.allocate<Bits>(kScalarN);                                \
+    Bits *dPayWrapper = device_allocations.allocate<Bits>(kScalarN);                               \
     fpsan_test::for_each_fpsan_semantics([&](auto sem) {                                           \
       k_##NAME<decltype(sem)::value>                                                               \
           <<<1, kScalarN>>>(dA, dB, dC, dDirect, dWrapper, dPayDirect, dPayWrapper);               \
@@ -256,13 +247,6 @@ AMDGCN_MATH_UNARY_TEST(amdgcn_fracth, _Float16, make_signed_inputs)
         EXPECT_EQ(pay_wrapper[i], pay_direct[i]) << "FPSan lane " << i;                            \
       }                                                                                            \
     });                                                                                            \
-    device_allocations.free(dA);                                                                   \
-    device_allocations.free(dB);                                                                   \
-    device_allocations.free(dC);                                                                   \
-    device_allocations.free(dDirect);                                                              \
-    device_allocations.free(dWrapper);                                                             \
-    device_allocations.free(dPayDirect);                                                           \
-    device_allocations.free(dPayWrapper);                                                          \
   }
 
 AMDGCN_MATH_FMED3_TEST(amdgcn_fmed3f, float)

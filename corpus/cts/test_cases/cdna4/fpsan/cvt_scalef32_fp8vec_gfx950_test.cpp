@@ -112,8 +112,7 @@ template <class FP8, class DstFT> void run_unpack_all() {
   for (int b = 0; b < 256; ++b)
     packed[b] = b; // fp8 byte b in byte0 (word0 element0)
   int *dIn = device_allocations.to_dev(packed);
-  float *dO;
-  device_allocations.allocate(&dO, 256 * sizeof(float));
+  float *dO = device_allocations.allocate<float>(256);
   k_unpack_all<FP8, DstFT><<<1, 256>>>(dIn, dO);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> got(256);
@@ -128,8 +127,6 @@ template <class FP8, class DstFT> void run_unpack_all() {
     else
       EXPECT_EQ(got[b], ref) << "byte 0x" << std::hex << b;
   }
-  device_allocations.free(dIn);
-  device_allocations.free(dO);
 }
 
 TEST(CvtScalef32Fp8Vec, UnpackAll_F32_Fp8) { run_unpack_all<fpsan::fp8_e4m3, float>(); }
@@ -219,15 +216,14 @@ template <class FP8, class SrcVEC, class SrcElem> void run_roundtrip() {
   float *dIn = device_allocations.to_dev(in);
   // Float: round-trip recovers the input exactly for exact-in-fp8 values.
   {
-    float *dO;
-    device_allocations.allocate(&dO, 2 * LANES * sizeof(float));
+    DeviceAllocations device_allocations;
+    float *dO = device_allocations.allocate<float>(2 * LANES);
     k_roundtrip<Semantics::Native, FP8, SrcVEC, SrcElem, float><<<1, LANES>>>(dIn, dO, scale);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<float> got(2 * LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, 2 * LANES * sizeof(float), hipMemcpyDeviceToHost));
     for (int i = 0; i < 2 * LANES; ++i)
       EXPECT_EQ(got[i], in[i]) << "Float round-trip at " << i;
-    device_allocations.free(dO);
   }
   // FPSan: payload must equal the payload-ring reference. Pack divides, unpack
   // multiplies: cast<float>(cast<FP8>(cast<SrcElem>(x) / scale)) * scale.
@@ -241,17 +237,15 @@ template <class FP8, class SrcVEC, class SrcElem> void run_roundtrip() {
       auto packed = fpsan::cast<FP8>(fpsan::cast<float>(src) / VF(scale));
       ref[i] = (fpsan::cast<float>(packed) * VF(scale)).fpsan_payload();
     }
-    std::uint32_t *dO;
-    device_allocations.allocate(&dO, 2 * LANES * sizeof(std::uint32_t));
+    DeviceAllocations device_allocations;
+    std::uint32_t *dO = device_allocations.allocate<std::uint32_t>(2 * LANES);
     k_roundtrip<S, FP8, SrcVEC, SrcElem, std::uint32_t><<<1, LANES>>>(dIn, dO, scale);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(2 * LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, 2 * LANES * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < 2 * LANES; ++i)
       EXPECT_EQ(got[i], ref[i]) << "FPSan payload at " << i;
-    device_allocations.free(dO);
   });
-  device_allocations.free(dIn);
 }
 
 TEST(CvtScalef32Fp8Vec, RoundTrip_Fp8_F16) {

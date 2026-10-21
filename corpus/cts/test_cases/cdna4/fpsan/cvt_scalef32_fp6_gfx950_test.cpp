@@ -87,8 +87,7 @@ void float_unpack_all(Kern kern, const fpsan::detail::FpFormat &fmt, const char 
   DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
-  float *dO;
-  device_allocations.allocate(&dO, 32 * sizeof(float));
+  float *dO = device_allocations.allocate<float>(32);
   for (int base = 0; base < 64; base += 32) {
     std::uint8_t codes[32];
     for (int i = 0; i < 32; ++i)
@@ -96,6 +95,7 @@ void float_unpack_all(Kern kern, const fpsan::detail::FpFormat &fmt, const char 
     unsigned packed[6];
     host_pack6(codes, 32, packed);
     std::vector<unsigned> hp(packed, packed + 6);
+    DeviceAllocations device_allocations;
     unsigned *dIn = device_allocations.to_dev(hp);
     kern<<<1, 1>>>(dIn, dO, 1.0f);
     HIP_CHECK(hipDeviceSynchronize());
@@ -103,9 +103,7 @@ void float_unpack_all(Kern kern, const fpsan::detail::FpFormat &fmt, const char 
     for (int i = 0; i < 32; ++i)
       EXPECT_EQ(got[i], narrow_to_f32(unsigned(codes[i]), fmt))
           << name << " code " << int(codes[i]);
-    device_allocations.free(dIn);
   }
-  device_allocations.free(dO);
 }
 
 TEST(CvtScalef32Fp6Wrap, FloatUnpackFp6AllCodes) {
@@ -137,8 +135,7 @@ TEST(CvtScalef32Fp6Wrap, FloatPack2xpk16ExactBits) {
   for (int c = 0; c < 32; ++c)
     in[c] = narrow_to_f32(unsigned(c), kFp6E2M3);
   float *dIn = device_allocations.to_dev(in);
-  unsigned *dO;
-  device_allocations.allocate(&dO, 6 * sizeof(unsigned));
+  unsigned *dO = device_allocations.allocate<unsigned>(6);
   k_f32_pack_fp6<<<1, 1>>>(dIn, dO, 1.0f);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 6);
@@ -152,8 +149,6 @@ TEST(CvtScalef32Fp6Wrap, FloatPack2xpk16ExactBits) {
   host_pack6(inter, 32, expect);
   for (int i = 0; i < 6; ++i)
     EXPECT_EQ(got[i], expect[i]) << "word " << i;
-  device_allocations.free(dIn);
-  device_allocations.free(dO);
 }
 
 // ============================ FPSan mode ====================================
@@ -186,8 +181,7 @@ TEST(CvtScalef32Fp6Wrap, FloatPack2xpk16ExactBits) {
     unsigned packed[6];                                                                            \
     host_pack6(codes, 32, packed);                                                                 \
     unsigned *dIn = device_allocations.to_dev(std::vector<unsigned>(packed, packed + 6));          \
-    unsigned *dO;                                                                                  \
-    device_allocations.allocate(&dO, 64 * sizeof(unsigned));                                       \
+    unsigned *dO = device_allocations.allocate<unsigned>(64);                                      \
     CASE##_kernel<S><<<1, 1>>>(dIn, scale, dO);                                                    \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     auto got = from_dev(dO, 64);                                                                   \
@@ -202,8 +196,6 @@ TEST(CvtScalef32Fp6Wrap, FloatPack2xpk16ExactBits) {
           << LABEL << " follow-on add elem " << i << " code=0x" << std::hex << unsigned(codes[i]); \
       (void)sizeof(Out);                                                                           \
     }                                                                                              \
-    device_allocations.free(dIn);                                                                  \
-    device_allocations.free(dO);                                                                   \
   }                                                                                                \
   TEST(CvtScalef32Fp6Wrap, CASE) { FPSAN_RUN_FPSAN_SEMANTICS(CASE##_run); }
 
@@ -239,7 +231,6 @@ template <Semantics S> __global__ void k_fpsan_pack(const float *in, unsigned *o
 }
 
 TEST(CvtScalef32Fp6Wrap, FpsanPackDivideInterleave) {
-  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
@@ -254,9 +245,9 @@ TEST(CvtScalef32Fp6Wrap, FpsanPackDivideInterleave) {
     in[19] = std::numeric_limits<float>::quiet_NaN();
     in[23] = -std::numeric_limits<float>::infinity();
     const float scale = 2.0f;
+    DeviceAllocations device_allocations;
     float *dIn = device_allocations.to_dev(in);
-    unsigned *dO;
-    device_allocations.allocate(&dO, 6 * sizeof(unsigned));
+    unsigned *dO = device_allocations.allocate<unsigned>(6);
     k_fpsan_pack<S><<<1, 1>>>(dIn, dO, scale);
     HIP_CHECK(hipDeviceSynchronize());
     auto got = from_dev(dO, 6);
@@ -266,8 +257,6 @@ TEST(CvtScalef32Fp6Wrap, FpsanPackDivideInterleave) {
       EXPECT_EQ(host_extract6(got.data(), 2 * k), refLo) << "lo " << k;
       EXPECT_EQ(host_extract6(got.data(), 2 * k + 1), refHi) << "hi " << k;
     }
-    device_allocations.free(dIn);
-    device_allocations.free(dO);
   });
 }
 

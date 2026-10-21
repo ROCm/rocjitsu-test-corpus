@@ -368,8 +368,7 @@ void run_fp8_layout_and_fpsan(std::uint32_t seed, WrapFloatFn wf, MakeFpsanFn ma
         *dC = device_allocations.to_dev(d.C);
   int *dp0 = device_allocations.to_dev(d.p0), *dp1 = device_allocations.to_dev(d.p1);
   std::uint16_t *dI = device_allocations.to_dev(d.idx);
-  float *dDf = nullptr;
-  device_allocations.allocate(&dDf, kSwM * kSwN * sizeof(float));
+  float *dDf = device_allocations.allocate<float>(kSwM * kSwN);
   k_swmmac_fp8_kernel<Semantics::Native, AScalar, BScalar, float>
       <<<1, WAVE>>>(dA, dB, dC, dp0, dp1, dI, dDf, wf);
   HIP_CHECK(hipDeviceSynchronize());
@@ -383,8 +382,8 @@ void run_fp8_layout_and_fpsan(std::uint32_t seed, WrapFloatFn wf, MakeFpsanFn ma
     constexpr Semantics S = decltype(sem)::value;
     auto wp = make_wp(sem);
     std::vector<std::uint32_t> ref_p = sw_reference_fp8_fpsan<S, AScalar, BScalar>(d);
-    std::uint32_t *dDp = nullptr;
-    device_allocations.allocate(&dDp, kSwM * kSwN * sizeof(std::uint32_t));
+    DeviceAllocations device_allocations;
+    std::uint32_t *dDp = device_allocations.allocate<std::uint32_t>(kSwM * kSwN);
     k_swmmac_fp8_kernel<S, AScalar, BScalar, std::uint32_t>
         <<<1, WAVE>>>(dA, dB, dC, dp0, dp1, dI, dDp, wp);
     HIP_CHECK(hipDeviceSynchronize());
@@ -393,13 +392,5 @@ void run_fp8_layout_and_fpsan(std::uint32_t seed, WrapFloatFn wf, MakeFpsanFn ma
         hipMemcpy(got_p.data(), dDp, kSwM * kSwN * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int t = 0; t < kSwM * kSwN; ++t)
       EXPECT_EQ(got_p[t], ref_p[t]) << "FPSan at " << t;
-    device_allocations.free(dDp);
   });
-
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dp0);
-  device_allocations.free(dp1);
-  device_allocations.free(dI);
 }

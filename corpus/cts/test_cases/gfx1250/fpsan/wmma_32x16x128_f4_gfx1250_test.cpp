@@ -141,8 +141,7 @@ TEST(WmmaF4_32x16x128, LayoutMatchesHardware) {
   std::uint32_t *dA = device_allocations.to_dev(Apack);
   std::uint32_t *dB = device_allocations.to_dev(Bpack);
   float *dC = device_allocations.to_dev(C);
-  float *dD = nullptr;
-  device_allocations.allocate(&dD, M * N * sizeof(float));
+  float *dD = device_allocations.allocate<float>(M * N);
   k_f4<0, 0><<<1, 32>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> got(M * N);
@@ -156,10 +155,6 @@ TEST(WmmaF4_32x16x128, LayoutMatchesHardware) {
       ++mism;
     }
   EXPECT_EQ(mism, 0) << mism << " / " << (M * N) << " elements mismatched";
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dD);
 }
 
 // ===================== wrapper: Float + FPSan =====================
@@ -242,8 +237,7 @@ TEST(WmmaF4_32x16x128, WrapperFloatAndFPSan) {
   std::uint32_t *dA = device_allocations.to_dev(Apack);
   std::uint32_t *dB = device_allocations.to_dev(Bpack);
   float *dC = device_allocations.to_dev(C);
-  float *dDf = nullptr;
-  device_allocations.allocate(&dDf, M * N * sizeof(float));
+  float *dDf = device_allocations.allocate<float>(M * N);
   k_wrap_float<<<1, 32>>>(dA, dB, dC, dDf);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> gotf(M * N);
@@ -269,8 +263,8 @@ TEST(WmmaF4_32x16x128, WrapperFloatAndFPSan) {
         pref[m * N + n] = acc.fpsan_payload();
       }
 
-    std::uint32_t *dDp = nullptr;
-    device_allocations.allocate(&dDp, M * N * sizeof(std::uint32_t));
+    DeviceAllocations device_allocations;
+    std::uint32_t *dDp = device_allocations.allocate<std::uint32_t>(M * N);
     k_wrap_fpsan<S><<<1, 32>>>(dA, dB, dC, dDp);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> gotp(M * N);
@@ -280,12 +274,7 @@ TEST(WmmaF4_32x16x128, WrapperFloatAndFPSan) {
       if (gotp[i] != pref[i] && np++ < 4)
         ADD_FAILURE() << "payload at " << i << " got=" << gotp[i] << " ref=" << pref[i];
     EXPECT_EQ(np, 0) << np << " payload mismatches";
-    device_allocations.free(dDp);
   });
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dDf);
 }
 
 // ===================== C-accumulator modifier (gfx1250) =====================
@@ -372,8 +361,7 @@ template <int Cmod> static void run_modifier_f4() {
   std::uint32_t *dA = device_allocations.to_dev(Apack);
   std::uint32_t *dB = device_allocations.to_dev(Bpack);
   float *dC = device_allocations.to_dev(C);
-  float *dDf = nullptr;
-  device_allocations.allocate(&dDf, M * N * sizeof(float));
+  float *dDf = device_allocations.allocate<float>(M * N);
   k_f4_mod_float<Cmod><<<1, 32>>>(dA, dB, dC, dDf);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> gotf(M * N);
@@ -403,8 +391,8 @@ template <int Cmod> static void run_modifier_f4() {
         pref[m * N + n] = acc.fpsan_payload();
       }
 
-    std::uint32_t *dDp = nullptr;
-    device_allocations.allocate(&dDp, M * N * sizeof(std::uint32_t));
+    DeviceAllocations device_allocations;
+    std::uint32_t *dDp = device_allocations.allocate<std::uint32_t>(M * N);
     k_f4_mod_fpsan<Cmod, S><<<1, 32>>>(dA, dB, dC, dDp);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> gotp(M * N);
@@ -414,12 +402,7 @@ template <int Cmod> static void run_modifier_f4() {
       if (gotp[i] != pref[i] && np++ < 4)
         ADD_FAILURE() << "Cmod=" << Cmod << " payload at " << i;
     EXPECT_EQ(np, 0) << np << " payload mismatches";
-    device_allocations.free(dDp);
   });
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dDf);
 }
 
 TEST(WmmaF4_32x16x128, ModifierNegC) { run_modifier_f4<1>(); }
@@ -609,8 +592,7 @@ template <bool SCALE16, int SFMT> static void run_scale(const char *tag) {
   std::uint32_t *dA = device_allocations.to_dev(Apack);
   std::uint32_t *dB = device_allocations.to_dev(Bpack);
   float *dC = device_allocations.to_dev(C);
-  float *dDf = nullptr;
-  device_allocations.allocate(&dDf, M * N * sizeof(float));
+  float *dDf = device_allocations.allocate<float>(M * N);
   int nf = 0;
   if constexpr (!SCALE16) {
     std::vector<unsigned> SA(32, 0u), SB(32, 0u);
@@ -626,6 +608,7 @@ template <bool SCALE16, int SFMT> static void run_scale(const char *tag) {
         w |= (unsigned(eB[n * 4 + by]) & 0xFF) << (8 * by);
       SB[n] = w;
     }
+    DeviceAllocations device_allocations;
     unsigned *dSA = device_allocations.to_dev(SA);
     unsigned *dSB = device_allocations.to_dev(SB);
     k_scale_float<SFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDf);
@@ -633,8 +616,8 @@ template <bool SCALE16, int SFMT> static void run_scale(const char *tag) {
     fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
       constexpr Semantics S = decltype(sem)::value;
       std::vector<std::uint32_t> pref = make_pref(sem);
-      std::uint32_t *dDp = nullptr;
-      device_allocations.allocate(&dDp, M * N * sizeof(std::uint32_t));
+      DeviceAllocations device_allocations;
+      std::uint32_t *dDp = device_allocations.allocate<std::uint32_t>(M * N);
       k_scale_fpsan<SFMT, S><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDp);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<std::uint32_t> gotp(M * N);
@@ -644,10 +627,7 @@ template <bool SCALE16, int SFMT> static void run_scale(const char *tag) {
         if (gotp[i] != pref[i] && np++ < 4)
           ADD_FAILURE() << tag << " payload at " << i << " got=" << gotp[i] << " ref=" << pref[i];
       EXPECT_EQ(np, 0) << np << " payload mismatches";
-      device_allocations.free(dDp);
     });
-    device_allocations.free(dSA);
-    device_allocations.free(dSB);
   } else {
     std::vector<unsigned long long> SA(32, 0ull), SB(32, 0ull);
     for (int m = 0; m < M; ++m) {
@@ -662,6 +642,7 @@ template <bool SCALE16, int SFMT> static void run_scale(const char *tag) {
         w |= static_cast<unsigned long long>(eB[n * 8 + by] & 0xFF) << (8 * by);
       SB[n] = w;
     }
+    DeviceAllocations device_allocations;
     unsigned long long *dSA = device_allocations.to_dev(SA);
     unsigned long long *dSB = device_allocations.to_dev(SB);
     k_scale16_float<SFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDf);
@@ -669,8 +650,8 @@ template <bool SCALE16, int SFMT> static void run_scale(const char *tag) {
     fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
       constexpr Semantics S = decltype(sem)::value;
       std::vector<std::uint32_t> pref = make_pref(sem);
-      std::uint32_t *dDp = nullptr;
-      device_allocations.allocate(&dDp, M * N * sizeof(std::uint32_t));
+      DeviceAllocations device_allocations;
+      std::uint32_t *dDp = device_allocations.allocate<std::uint32_t>(M * N);
       k_scale16_fpsan<SFMT, S><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDp);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<std::uint32_t> gotp(M * N);
@@ -680,10 +661,7 @@ template <bool SCALE16, int SFMT> static void run_scale(const char *tag) {
         if (gotp[i] != pref[i] && np++ < 4)
           ADD_FAILURE() << tag << " payload at " << i << " got=" << gotp[i] << " ref=" << pref[i];
       EXPECT_EQ(np, 0) << np << " payload mismatches";
-      device_allocations.free(dDp);
     });
-    device_allocations.free(dSA);
-    device_allocations.free(dSB);
   }
   std::vector<float> gotf(M * N);
   HIP_CHECK(hipMemcpy(gotf.data(), dDf, M * N * sizeof(float), hipMemcpyDeviceToHost));
@@ -692,10 +670,6 @@ template <bool SCALE16, int SFMT> static void run_scale(const char *tag) {
       ADD_FAILURE() << tag << " float at m=" << i / N << " n=" << i % N << " got=" << gotf[i]
                     << " ref=" << fref[i];
   EXPECT_EQ(nf, 0) << nf << " float mismatches";
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dDf);
 }
 
 TEST(WmmaF4_32x16x128, ScaleFloatAndFPSan) { run_scale<false, 0>("scale"); }
@@ -746,8 +720,7 @@ TEST(WmmaF4_32x16x128, DISABLED_ProbeArowDmap) {
 
   std::uint32_t *dA = device_allocations.to_dev(Apack);
   std::uint32_t *dB = device_allocations.to_dev(Bpack);
-  float *dD = nullptr;
-  device_allocations.allocate(&dD, 512 * sizeof(float));
+  float *dD = device_allocations.allocate<float>(512);
   k_raw<<<1, 32>>>(dA, dB, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> draw(512);
@@ -759,9 +732,6 @@ TEST(WmmaF4_32x16x128, DISABLED_ProbeArowDmap) {
       printf(" %3d", static_cast<int>(draw[lane * 16 + r]));
     printf("\n");
   }
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dD);
 }
 
 // Probe 2: pin B (lane,slot) and the D-col map. Stage B so column n holds (n+1)
@@ -782,8 +752,7 @@ TEST(WmmaF4_32x16x128, DISABLED_ProbeBcolDmap) {
 
   std::uint32_t *dA = device_allocations.to_dev(Apack);
   std::uint32_t *dB = device_allocations.to_dev(Bpack);
-  float *dD = nullptr;
-  device_allocations.allocate(&dD, 512 * sizeof(float));
+  float *dD = device_allocations.allocate<float>(512);
   k_raw<<<1, 32>>>(dA, dB, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> draw(512);
@@ -795,9 +764,6 @@ TEST(WmmaF4_32x16x128, DISABLED_ProbeBcolDmap) {
       printf(" %3d", static_cast<int>(draw[lane * 16 + r]));
     printf("\n");
   }
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dD);
 }
 
 // Probe 3: true single-nibble one-hot A sweep over a physical lane. For each
@@ -815,14 +781,14 @@ static void onehot_sweep(int srcLane) {
     for (int s = 0; s < 64; ++s)
       pack_nibble(&Bpack[lane * 8], s, one);
   std::uint32_t *dB = device_allocations.to_dev(Bpack);
-  float *dD = nullptr;
-  device_allocations.allocate(&dD, 512 * sizeof(float));
+  float *dD = device_allocations.allocate<float>(512);
 
   std::vector<std::vector<int>> classes;    // each: sorted lit output indices
   std::vector<std::vector<int>> classSlots; // src slots feeding each class
   for (int s = 0; s < 128; ++s) {
     std::vector<std::uint32_t> Apack(32 * 16, 0u);
     pack_nibble(&Apack[srcLane * 16], s, one);
+    DeviceAllocations device_allocations;
     std::uint32_t *dA = device_allocations.to_dev(Apack);
     k_raw<<<1, 32>>>(dA, dB, dD);
     HIP_CHECK(hipDeviceSynchronize());
@@ -844,7 +810,6 @@ static void onehot_sweep(int srcLane) {
       classSlots.emplace_back();
     }
     classSlots[ci].push_back(s);
-    device_allocations.free(dA);
   }
   printf("one-hot A lane=%d: %d row-classes\n", srcLane, static_cast<int>(classes.size()));
   for (int c = 0; c < static_cast<int>(classes.size()); ++c) {
@@ -856,8 +821,6 @@ static void onehot_sweep(int srcLane) {
       printf("%d ", s);
     printf("}\n");
   }
-  device_allocations.free(dB);
-  device_allocations.free(dD);
 }
 
 TEST(WmmaF4_32x16x128, DISABLED_ProbeOneHotLane0) { onehot_sweep(0); }
@@ -873,8 +836,7 @@ static void kprobe_row0(int srcLane) {
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const std::uint32_t one = f32_to_narrow(1.f, kFp4E2M1) & 0xF;
-  float *dD = nullptr;
-  device_allocations.allocate(&dD, 512 * sizeof(float));
+  float *dD = device_allocations.allocate<float>(512);
   // Pre-build 7 B buffers (bit b of k in column 0).
   std::vector<std::uint32_t *> dBbit(7, nullptr);
   for (int b = 0; b < 7; ++b) {
@@ -888,6 +850,7 @@ static void kprobe_row0(int srcLane) {
   for (int sa = 0; sa < 64; ++sa) {
     std::vector<std::uint32_t> Apack(32 * 16, 0u);
     pack_nibble(&Apack[srcLane * 16], sa, one);
+    DeviceAllocations device_allocations;
     std::uint32_t *dA = device_allocations.to_dev(Apack);
     int kk = 0;
     for (int b = 0; b < 7; ++b) {
@@ -899,14 +862,10 @@ static void kprobe_row0(int srcLane) {
         kk |= 1 << b;
     }
     kof[sa] = kk;
-    device_allocations.free(dA);
   }
   printf("A-slot -> k (row0, srcLane=%d):\n", srcLane);
   for (int sa = 0; sa < 64; ++sa)
     printf("s=%2d k=%3d%s", sa, kof[sa], (sa % 8 == 7) ? "\n" : "  ");
-  for (int b = 0; b < 7; ++b)
-    device_allocations.free(dBbit[b]);
-  device_allocations.free(dD);
 }
 
 TEST(WmmaF4_32x16x128, DISABLED_ProbeKrow0Lane0) { kprobe_row0(0); }
@@ -957,12 +916,12 @@ static void scale_probe() {
   std::uint32_t *dB = device_allocations.to_dev(Bpack);
   std::vector<unsigned> SB(32, 0x7f7f7f7fu);
   unsigned *dSB = device_allocations.to_dev(SB);
-  float *dD = nullptr;
-  device_allocations.allocate(&dD, 512 * sizeof(float));
+  float *dD = device_allocations.allocate<float>(512);
   printf("scale-lane -> rows (D doubled to 256):\n");
   for (int L = 0; L < 32; ++L) {
     std::vector<unsigned> SA(32, 0x7f7f7f7fu);
     SA[L] = 0x80808080u;
+    DeviceAllocations device_allocations;
     unsigned *dSA = device_allocations.to_dev(SA);
     k_raw_scale<<<1, 32>>>(dA, dB, dSA, dSB, dD);
     HIP_CHECK(hipDeviceSynchronize());
@@ -973,12 +932,7 @@ static void scale_probe() {
       if (draw[i] == 256.f)
         printf("%d ", (i % 16) + 16 * ((i / 16) >> 4)); // m
     printf("}\n");
-    device_allocations.free(dSA);
   }
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dD);
-  device_allocations.free(dSB);
 }
 
 // byte->k probe for the A-scale of row 0. A one-hot decoded at (0,k0); B all
@@ -996,17 +950,18 @@ static void scale_byte_probe(int scaleLane) {
   std::uint32_t *dB = device_allocations.to_dev(Bpack);
   std::vector<unsigned> SB(32, 0x7f7f7f7fu);
   unsigned *dSB = device_allocations.to_dev(SB);
-  float *dD = nullptr;
-  device_allocations.allocate(&dD, 512 * sizeof(float));
+  float *dD = device_allocations.allocate<float>(512);
   int kbyte[128];
   for (int k0 = 0; k0 < K; ++k0) {
     std::vector<std::uint32_t> Apack(32 * 16, 0u);
     pack_nibble(&Apack[a_lane(0, k0) * 16], a_slot(0, k0), one);
+    DeviceAllocations device_allocations;
     std::uint32_t *dA = device_allocations.to_dev(Apack);
     int byte = -1;
     for (int b = 0; b < 4; ++b) {
       std::vector<unsigned> SA(32, 0x7f7f7f7fu);
       SA[scaleLane] = (0x7f7f7f7fu & ~(0xFFu << (8 * b))) | (0x80u << (8 * b));
+      DeviceAllocations device_allocations;
       unsigned *dSA = device_allocations.to_dev(SA);
       k_raw_scale<<<1, 32>>>(dA, dB, dSA, dSB, dD);
       HIP_CHECK(hipDeviceSynchronize());
@@ -1014,17 +969,12 @@ static void scale_byte_probe(int scaleLane) {
       HIP_CHECK(hipMemcpy(&v, dD, sizeof(float), hipMemcpyDeviceToHost));
       if (v == 2.f)
         byte = b;
-      device_allocations.free(dSA);
     }
     kbyte[k0] = byte;
-    device_allocations.free(dA);
   }
   printf("k -> A-scale byte (row0, scaleLane=%d):\n", scaleLane);
   for (int k0 = 0; k0 < K; ++k0)
     printf("k=%3d byte=%d%s", k0, kbyte[k0], (k0 % 8 == 7) ? "\n" : "  ");
-  device_allocations.free(dB);
-  device_allocations.free(dD);
-  device_allocations.free(dSB);
 }
 
 // Pass 1b: scaleB-lane -> col. B nonzero only in column n0 (decoded 1.0); A all
@@ -1045,14 +995,14 @@ static void scaleB_probe(int n0) {
   std::uint32_t *dB = device_allocations.to_dev(Bpack);
   std::vector<unsigned> SA(32, 0x7f7f7f7fu);
   unsigned *dSA = device_allocations.to_dev(SA);
-  float *dD = nullptr;
-  device_allocations.allocate(&dD, 512 * sizeof(float));
+  float *dD = device_allocations.allocate<float>(512);
   // raw index of D[0][n0] = lane n0 (m=0 -> lane=n0, reg0)
   const int idx = n0 * 16 + 0;
   printf("scaleB col n0=%d:\n", n0);
   for (int L = 0; L < 32; ++L) {
     std::vector<unsigned> SB(32, 0x7f7f7f7fu);
     SB[L] = 0x80808080u;
+    DeviceAllocations device_allocations;
     unsigned *dSB = device_allocations.to_dev(SB);
     k_raw_scale<<<1, 32>>>(dA, dB, dSA, dSB, dD);
     HIP_CHECK(hipDeviceSynchronize());
@@ -1060,12 +1010,7 @@ static void scaleB_probe(int n0) {
     HIP_CHECK(hipMemcpy(draw.data(), dD, 512 * sizeof(float), hipMemcpyDeviceToHost));
     if (draw[idx] != 128.f)
       printf("  lane L=%2d -> D[0][%d]=%g\n", L, n0, draw[idx]);
-    device_allocations.free(dSB);
   }
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dD);
-  device_allocations.free(dSA);
 }
 
 TEST(WmmaF4_32x16x128, DISABLED_ProbeScaleLane) { scale_probe(); }

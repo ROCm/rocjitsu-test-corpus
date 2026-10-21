@@ -98,8 +98,7 @@ TEST(CvtScalef32Fp4, WidenAllCodes) {
   for (int c = 0; c < 16; ++c)
     in[c] = unsigned(c) | (unsigned(c) << 4);
   unsigned *dIn = device_allocations.to_dev(in);
-  float *dO;
-  device_allocations.allocate(&dO, 32 * sizeof(float));
+  float *dO = device_allocations.allocate<float>(32);
   k_fp4_widen<<<1, 16>>>(dIn, dO, 1.0f);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 32);
@@ -108,8 +107,6 @@ TEST(CvtScalef32Fp4, WidenAllCodes) {
     EXPECT_EQ(got[2 * c], ref) << "fp4 code " << c << " elem0";
     EXPECT_EQ(got[2 * c + 1], ref) << "fp4 code " << c << " elem1";
   }
-  device_allocations.free(dIn);
-  device_allocations.free(dO);
 }
 
 // opsel must select the right nibble pair (0..3 -> nibbles {0,1}..{6,7}).
@@ -126,14 +123,12 @@ TEST(CvtScalef32Fp4, WidenOpselSelectsPair) {
     GTEST_SKIP() << "no HIP device";
   std::uint8_t codes[8] = {0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x0};
   unsigned packed = pack_fp4_8(codes);
-  float *dO;
-  device_allocations.allocate(&dO, 4 * sizeof(float));
+  float *dO = device_allocations.allocate<float>(4);
   k_fp4_opsel<<<1, 1>>>(packed, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 4);
   for (int p = 0; p < 4; ++p)
     EXPECT_EQ(got[p], narrow_to_f32(codes[2 * p], kFp4E2M1)) << "opsel " << p;
-  device_allocations.free(dO);
 }
 
 // Narrow: pk_fp4_f32 packs 2 f32 -> the nibble pair selected by opsel of a u32
@@ -147,8 +142,7 @@ TEST(CvtScalef32Fp4, NarrowExactBits) {
   DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
-  unsigned *dO;
-  device_allocations.allocate(&dO, sizeof(unsigned));
+  unsigned *dO = device_allocations.allocate<unsigned>(1);
   // Every ordered pair of the 8 positive fp4 values into nibble pair 0.
   for (int ca = 0; ca < 8; ++ca)
     for (int cb = 0; cb < 8; ++cb) {
@@ -161,15 +155,13 @@ TEST(CvtScalef32Fp4, NarrowExactBits) {
           (f32_to_narrow(a, kFp4E2M1) & 0xF) | ((f32_to_narrow(b, kFp4E2M1) & 0xF) << 4);
       EXPECT_EQ(got & 0xFF, expect) << "a=" << ca << " b=" << cb;
     }
-  device_allocations.free(dO);
 }
 
 TEST(CvtScalef32Fp4, NarrowOpselPlacesPairAndPreservesOld) {
   DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
-  unsigned *dO;
-  device_allocations.allocate(&dO, sizeof(unsigned));
+  unsigned *dO = device_allocations.allocate<unsigned>(1);
   const unsigned old = 0xABCDEF12u;
   float a = narrow_to_f32(0x6u, kFp4E2M1); // code 6 -> 4.0
   float b = narrow_to_f32(0x7u, kFp4E2M1); // code 7 -> 6.0
@@ -191,7 +183,6 @@ TEST(CvtScalef32Fp4, NarrowOpselPlacesPairAndPreservesOld) {
   k_fp4_narrow<3><<<1, 1>>>(old, a, b, dO, 1.0f);
   HIP_CHECK(hipDeviceSynchronize());
   check(3, from_dev(dO, 1)[0]);
-  device_allocations.free(dO);
 }
 
 // sr_pk_fp4_f32: the PR flags a reversed-operand quirk (src0=random,src1=data).
@@ -207,8 +198,7 @@ TEST(CvtScalef32Fp4, SrPkReversedOperandExact) {
   DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
-  unsigned *dO;
-  device_allocations.allocate(&dO, sizeof(unsigned));
+  unsigned *dO = device_allocations.allocate<unsigned>(1);
   for (int ca = 0; ca < 8; ++ca)
     for (int cb = 0; cb < 8; ++cb) {
       float a = narrow_to_f32(unsigned(ca), kFp4E2M1);
@@ -220,7 +210,6 @@ TEST(CvtScalef32Fp4, SrPkReversedOperandExact) {
           (f32_to_narrow(a, kFp4E2M1) & 0xF) | ((f32_to_narrow(b, kFp4E2M1) & 0xF) << 4);
       EXPECT_EQ(got & 0xFF, expect) << "a=" << ca << " b=" << cb;
     }
-  device_allocations.free(dO);
 }
 
 // =====================  FP6 e2m3 / BF6 e3m2  =================================
@@ -249,8 +238,7 @@ void widen_all_codes(Kern kern, const fpsan::detail::FpFormat &fmt, const char *
   DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
-  float *dO;
-  device_allocations.allocate(&dO, 32 * sizeof(float));
+  float *dO = device_allocations.allocate<float>(32);
   for (int base = 0; base < 64; base += 32) {
     std::uint8_t codes[32];
     for (int i = 0; i < 32; ++i)
@@ -258,6 +246,7 @@ void widen_all_codes(Kern kern, const fpsan::detail::FpFormat &fmt, const char *
     unsigned packed[6];
     pack6(codes, 32, packed, 6);
     std::vector<unsigned> hp(packed, packed + 6);
+    DeviceAllocations device_allocations;
     unsigned *dIn = device_allocations.to_dev(hp);
     kern<<<1, 1>>>(dIn, dO, 1.0f);
     HIP_CHECK(hipDeviceSynchronize());
@@ -265,9 +254,7 @@ void widen_all_codes(Kern kern, const fpsan::detail::FpFormat &fmt, const char *
     for (int i = 0; i < 32; ++i)
       EXPECT_EQ(got[i], narrow_to_f32(unsigned(codes[i]), fmt))
           << name << " code " << int(codes[i]);
-    device_allocations.free(dIn);
   }
-  device_allocations.free(dO);
 }
 
 TEST(CvtScalef32Fp6, WidenAllCodes) { widen_all_codes(k_fp6_widen, kFp6E2M3, "fp6"); }
@@ -296,8 +283,7 @@ TEST(CvtScalef32Fp6, NarrowExactBits) {
   for (int c = 0; c < 32; ++c)
     in[c] = narrow_to_f32(unsigned(c), kFp6E2M3);
   float *dIn = device_allocations.to_dev(in);
-  unsigned *dO;
-  device_allocations.allocate(&dO, 6 * sizeof(unsigned));
+  unsigned *dO = device_allocations.allocate<unsigned>(6);
   k_fp6_narrow<<<1, 1>>>(dIn, dO, 1.0f);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 6);
@@ -310,8 +296,6 @@ TEST(CvtScalef32Fp6, NarrowExactBits) {
   pack6_2xpk16(lo, hi, expect);
   for (int i = 0; i < 6; ++i)
     EXPECT_EQ(got[i], expect[i]) << "fp6 narrow word " << i;
-  device_allocations.free(dIn);
-  device_allocations.free(dO);
 }
 
 // bf6 narrow uses the gfx950 2xpk16 form (two 16-lane groups -> 192 bits).
@@ -334,8 +318,7 @@ TEST(CvtScalef32Bf6, NarrowExactBits) {
   for (int c = 0; c < 32; ++c)
     in[c] = narrow_to_f32(unsigned(c), kBf6E3M2);
   float *dIn = device_allocations.to_dev(in);
-  unsigned *dO;
-  device_allocations.allocate(&dO, 6 * sizeof(unsigned));
+  unsigned *dO = device_allocations.allocate<unsigned>(6);
   k_bf6_narrow<<<1, 1>>>(dIn, dO, 1.0f);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 6);
@@ -348,8 +331,6 @@ TEST(CvtScalef32Bf6, NarrowExactBits) {
   pack6_2xpk16(lo, hi, expect);
   for (int i = 0; i < 6; ++i)
     EXPECT_EQ(got[i], expect[i]) << "bf6 narrow word " << i;
-  device_allocations.free(dIn);
-  device_allocations.free(dO);
 }
 
 // Stochastic-rounding fp6 narrow (sr_pk32_fp6_f32): exact inputs are
@@ -371,8 +352,7 @@ TEST(CvtScalef32Fp6, SrNarrowExactIsSeedInvariant) {
   for (int c = 0; c < 32; ++c)
     in[c] = narrow_to_f32(unsigned(c), kFp6E2M3);
   float *dIn = device_allocations.to_dev(in);
-  unsigned *dO;
-  device_allocations.allocate(&dO, 6 * sizeof(unsigned));
+  unsigned *dO = device_allocations.allocate<unsigned>(6);
   std::uint8_t codes[32];
   for (int c = 0; c < 32; ++c)
     codes[c] = f32_to_narrow(in[c], kFp6E2M3) & 0x3F;
@@ -385,8 +365,6 @@ TEST(CvtScalef32Fp6, SrNarrowExactIsSeedInvariant) {
     for (int i = 0; i < 6; ++i)
       EXPECT_EQ(got[i], expect[i]) << "seed " << std::hex << seed << " w " << i;
   }
-  device_allocations.free(dIn);
-  device_allocations.free(dO);
 }
 
 // Round-trip narrow->widen identity. sr_pk32 narrow and pk32 widen share the
@@ -401,10 +379,8 @@ TEST(CvtScalef32Fp6, RoundTripNarrowWiden) {
   for (int c = 0; c < 32; ++c)
     in[c] = narrow_to_f32(unsigned(c), kFp6E2M3);
   float *dIn = device_allocations.to_dev(in);
-  unsigned *dPacked;
-  float *dO;
-  device_allocations.allocate(&dPacked, 6 * sizeof(unsigned));
-  device_allocations.allocate(&dO, 32 * sizeof(float));
+  unsigned *dPacked = device_allocations.allocate<unsigned>(6);
+  float *dO = device_allocations.allocate<float>(32);
   k_fp6_sr_narrow<<<1, 1>>>(dIn, dPacked, 0u);
   HIP_CHECK(hipDeviceSynchronize());
   k_fp6_widen<<<1, 1>>>(dPacked, dO, 1.0f);
@@ -412,9 +388,6 @@ TEST(CvtScalef32Fp6, RoundTripNarrowWiden) {
   auto got = from_dev(dO, 32);
   for (int c = 0; c < 32; ++c)
     EXPECT_EQ(got[c], in[c]) << "fp6 round-trip " << c;
-  device_allocations.free(dIn);
-  device_allocations.free(dPacked);
-  device_allocations.free(dO);
 }
 
 // Scale multiplier: widen with scale=4 yields value*4 (block-scale model).
@@ -429,15 +402,12 @@ TEST(CvtScalef32Fp6, WidenScaleMultiplies) {
   pack6(codes, 32, packed, 6);
   std::vector<unsigned> hp(packed, packed + 6);
   unsigned *dIn = device_allocations.to_dev(hp);
-  float *dO;
-  device_allocations.allocate(&dO, 32 * sizeof(float));
+  float *dO = device_allocations.allocate<float>(32);
   k_fp6_widen<<<1, 1>>>(dIn, dO, 4.0f);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 32);
   for (int c = 0; c < 32; ++c)
     EXPECT_EQ(got[c], narrow_to_f32(unsigned(c), kFp6E2M3) * 4.0f) << "code " << c;
-  device_allocations.free(dIn);
-  device_allocations.free(dO);
 }
 
 #endif // has builtins

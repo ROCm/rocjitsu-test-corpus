@@ -91,12 +91,10 @@ BF16_TRANS_KERNEL(amdgcn_tanh_bf16, tanh)
     auto in = make_inputs();                                                                       \
     const int N = static_cast<int>(in.size());                                                     \
     __bf16 *dIn = device_allocations.to_dev(in);                                                   \
-    __bf16 *dDirect, *dWrap;                                                                       \
-    std::uint16_t *dPdir, *dPwrap;                                                                 \
-    device_allocations.allocate(&dDirect, N * sizeof(__bf16));                                     \
-    device_allocations.allocate(&dWrap, N * sizeof(__bf16));                                       \
-    device_allocations.allocate(&dPdir, N * sizeof(std::uint16_t));                                \
-    device_allocations.allocate(&dPwrap, N * sizeof(std::uint16_t));                               \
+    __bf16 *dDirect = device_allocations.allocate<__bf16>(N);                                      \
+    __bf16 *dWrap = device_allocations.allocate<__bf16>(N);                                        \
+    std::uint16_t *dPdir = device_allocations.allocate<std::uint16_t>(N);                          \
+    std::uint16_t *dPwrap = device_allocations.allocate<std::uint16_t>(N);                         \
     k_##name##_pair<Semantics::Triton><<<1, N>>>(dIn, dDirect, dWrap, dPdir, dPwrap);              \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     std::vector<__bf16> direct(N), wrap(N);                                                        \
@@ -119,11 +117,6 @@ BF16_TRANS_KERNEL(amdgcn_tanh_bf16, tanh)
       for (int i = 0; i < N; ++i)                                                                  \
         EXPECT_EQ(pwrap[i], pdir[i]) << fpsan::semantics_name(S) << " lane " << i;                 \
     });                                                                                            \
-    device_allocations.free(dIn);                                                                  \
-    device_allocations.free(dDirect);                                                              \
-    device_allocations.free(dWrap);                                                                \
-    device_allocations.free(dPdir);                                                                \
-    device_allocations.free(dPwrap);                                                               \
   }
 
 BF16_TRANS_TEST(amdgcn_rcp_bf16)

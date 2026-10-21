@@ -275,12 +275,10 @@ TEST(AmdgcnMath, fdot2_FloatAndFpsan) {
   auto c = make_acc_f32();
   v2h *dA = device_allocations.to_dev(a), *dB = device_allocations.to_dev(b);
   float *dC = device_allocations.to_dev(c);
-  float *dDir, *dWrap;
-  std::uint32_t *dPdir, *dPwrap;
-  device_allocations.allocate(&dDir, kFDot2N * sizeof(float));
-  device_allocations.allocate(&dWrap, kFDot2N * sizeof(float));
-  device_allocations.allocate(&dPdir, kFDot2N * sizeof(std::uint32_t));
-  device_allocations.allocate(&dPwrap, kFDot2N * sizeof(std::uint32_t));
+  float *dDir = device_allocations.allocate<float>(kFDot2N);
+  float *dWrap = device_allocations.allocate<float>(kFDot2N);
+  std::uint32_t *dPdir = device_allocations.allocate<std::uint32_t>(kFDot2N);
+  std::uint32_t *dPwrap = device_allocations.allocate<std::uint32_t>(kFDot2N);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     k_fdot2_pair<decltype(sem)::value><<<1, kFDot2N>>>(dA, dB, dC, dDir, dWrap, dPdir, dPwrap);
     HIP_CHECK(hipDeviceSynchronize());
@@ -297,13 +295,6 @@ TEST(AmdgcnMath, fdot2_FloatAndFpsan) {
       EXPECT_EQ(pwrap[i], pdir[i]) << "FPSan lane " << i;
     }
   });
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dDir);
-  device_allocations.free(dWrap);
-  device_allocations.free(dPdir);
-  device_allocations.free(dPwrap);
 }
 #endif
 
@@ -321,12 +312,10 @@ TEST(AmdgcnMath, fdot2_f16_f16_FloatAndFpsan) {
   auto c = make_acc_f16();
   v2h *dA = device_allocations.to_dev(a), *dB = device_allocations.to_dev(b);
   _Float16 *dC = device_allocations.to_dev(c);
-  _Float16 *dDir, *dWrap;
-  std::uint16_t *dPdir, *dPwrap;
-  device_allocations.allocate(&dDir, kFDot2N * sizeof(_Float16));
-  device_allocations.allocate(&dWrap, kFDot2N * sizeof(_Float16));
-  device_allocations.allocate(&dPdir, kFDot2N * sizeof(std::uint16_t));
-  device_allocations.allocate(&dPwrap, kFDot2N * sizeof(std::uint16_t));
+  _Float16 *dDir = device_allocations.allocate<_Float16>(kFDot2N);
+  _Float16 *dWrap = device_allocations.allocate<_Float16>(kFDot2N);
+  std::uint16_t *dPdir = device_allocations.allocate<std::uint16_t>(kFDot2N);
+  std::uint16_t *dPwrap = device_allocations.allocate<std::uint16_t>(kFDot2N);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     k_fdot2_f16_f16_pair<decltype(sem)::value>
         <<<1, kFDot2N>>>(dA, dB, dC, dDir, dWrap, dPdir, dPwrap);
@@ -347,13 +336,6 @@ TEST(AmdgcnMath, fdot2_f16_f16_FloatAndFpsan) {
       EXPECT_EQ(pwrap[i], pdir[i]) << "FPSan lane " << i;
     }
   });
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dDir);
-  device_allocations.free(dWrap);
-  device_allocations.free(dPdir);
-  device_allocations.free(dPwrap);
 }
 
 TEST(AmdgcnMath, fdot2_bf16_bf16_FloatAndFpsan) {
@@ -369,12 +351,10 @@ TEST(AmdgcnMath, fdot2_bf16_bf16_FloatAndFpsan) {
     c[i] = static_cast<__bf16>(cf[i]);
   v2bf *dA = device_allocations.to_dev(a), *dB = device_allocations.to_dev(b);
   __bf16 *dC = device_allocations.to_dev(c);
-  __bf16 *dDir, *dWrap;
-  std::uint16_t *dPdir, *dPwrap;
-  device_allocations.allocate(&dDir, kFDot2N * sizeof(__bf16));
-  device_allocations.allocate(&dWrap, kFDot2N * sizeof(__bf16));
-  device_allocations.allocate(&dPdir, kFDot2N * sizeof(std::uint16_t));
-  device_allocations.allocate(&dPwrap, kFDot2N * sizeof(std::uint16_t));
+  __bf16 *dDir = device_allocations.allocate<__bf16>(kFDot2N);
+  __bf16 *dWrap = device_allocations.allocate<__bf16>(kFDot2N);
+  std::uint16_t *dPdir = device_allocations.allocate<std::uint16_t>(kFDot2N);
+  std::uint16_t *dPwrap = device_allocations.allocate<std::uint16_t>(kFDot2N);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     k_fdot2_bf16_bf16_pair<decltype(sem)::value>
         <<<1, kFDot2N>>>(dA, dB, dC, dDir, dWrap, dPdir, dPwrap);
@@ -395,13 +375,6 @@ TEST(AmdgcnMath, fdot2_bf16_bf16_FloatAndFpsan) {
       EXPECT_EQ(pwrap[i], pdir[i]) << "FPSan lane " << i;
     }
   });
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dDir);
-  device_allocations.free(dWrap);
-  device_allocations.free(dPdir);
-  device_allocations.free(dPwrap);
 }
 
 TEST(AmdgcnMath, fdot2_f32_bf16_FloatAndFpsan) {
@@ -414,12 +387,10 @@ TEST(AmdgcnMath, fdot2_f32_bf16_FloatAndFpsan) {
   auto c = make_acc_f32();
   v2bf *dA = device_allocations.to_dev(a), *dB = device_allocations.to_dev(b);
   float *dC = device_allocations.to_dev(c);
-  float *dDir, *dWrap;
-  std::uint32_t *dPdir, *dPwrap;
-  device_allocations.allocate(&dDir, kFDot2N * sizeof(float));
-  device_allocations.allocate(&dWrap, kFDot2N * sizeof(float));
-  device_allocations.allocate(&dPdir, kFDot2N * sizeof(std::uint32_t));
-  device_allocations.allocate(&dPwrap, kFDot2N * sizeof(std::uint32_t));
+  float *dDir = device_allocations.allocate<float>(kFDot2N);
+  float *dWrap = device_allocations.allocate<float>(kFDot2N);
+  std::uint32_t *dPdir = device_allocations.allocate<std::uint32_t>(kFDot2N);
+  std::uint32_t *dPwrap = device_allocations.allocate<std::uint32_t>(kFDot2N);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     k_fdot2_f32_bf16_pair<decltype(sem)::value>
         <<<1, kFDot2N>>>(dA, dB, dC, dDir, dWrap, dPdir, dPwrap);
@@ -437,13 +408,6 @@ TEST(AmdgcnMath, fdot2_f32_bf16_FloatAndFpsan) {
       EXPECT_EQ(pwrap[i], pdir[i]) << "FPSan lane " << i;
     }
   });
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dDir);
-  device_allocations.free(dWrap);
-  device_allocations.free(dPdir);
-  device_allocations.free(dPwrap);
 }
 #endif
 

@@ -172,7 +172,6 @@ template <class FT> std::vector<FT> make_lane_inputs(int n) {
 // Test functions (parameterized on Trait T).
 // ---------------------------------------------------------------------------
 template <class T> void run_float_matches_host_butterfly() {
-  DeviceAllocations device_allocations;
   if constexpr (FPSAN_TEST_SKIP_FLOAT_WAVE_REDUCE) {
     GTEST_SKIP() << "Float wave_reduce is skipped for this target";
   } else if constexpr (!T::sequential_is_safe) {
@@ -189,15 +188,14 @@ template <class T> void run_float_matches_host_butterfly() {
       lane_vals[i] = F{in[i]};
     F ref = T::template host_butterfly<Semantics::Native>(lane_vals.data(), W);
 
-    FT *dIn = device_allocations.to_dev(in), *dOut;
-    device_allocations.allocate(&dOut, sizeof(FT));
+    DeviceAllocations device_allocations;
+    FT *dIn = device_allocations.to_dev(in);
+    FT *dOut = device_allocations.allocate<FT>(1);
     k_wave_float<T, 0><<<1, W>>>(dIn, dOut);
     HIP_CHECK(hipDeviceSynchronize());
     FT got = FT(0);
     HIP_CHECK(hipMemcpy(&got, dOut, sizeof(FT), hipMemcpyDeviceToHost));
     EXPECT_EQ(bits_of(got), bits_of(static_cast<FT>(ref)));
-    device_allocations.free(dIn);
-    device_allocations.free(dOut);
   }
 }
 
@@ -216,15 +214,12 @@ template <class T, Semantics S> void run_fpsan_matches_host_butterfly() {
   F ref = T::template host_butterfly<S>(lane_vals.data(), W);
 
   FT *dIn = device_allocations.to_dev(in);
-  Bits *dOut;
-  device_allocations.allocate(&dOut, sizeof(Bits));
+  Bits *dOut = device_allocations.allocate<Bits>(1);
   k_wave_fpsan<T, 0, S><<<1, W>>>(dIn, dOut);
   HIP_CHECK(hipDeviceSynchronize());
   Bits got = Bits(0);
   HIP_CHECK(hipMemcpy(&got, dOut, sizeof(Bits), hipMemcpyDeviceToHost));
   EXPECT_EQ(got, ref.fpsan_payload());
-  device_allocations.free(dIn);
-  device_allocations.free(dOut);
 }
 
 // Independent oracle: a left-to-right sequential fold of the lane payloads,
@@ -233,7 +228,6 @@ template <class T, Semantics S> void run_fpsan_matches_host_butterfly() {
 // must agree; this is a stronger statement than "matches a same-shaped
 // butterfly".
 template <class T, Semantics S> void run_fpsan_matches_seq_fold() {
-  DeviceAllocations device_allocations;
   if constexpr (!T::sequential_is_safe) {
     GTEST_SKIP() << "non-associative op; sequential order may differ from hw";
   } else {
@@ -249,16 +243,14 @@ template <class T, Semantics S> void run_fpsan_matches_seq_fold() {
       lane_vals[i] = F{in[i]};
     F ref = T::template host_seq_fold<S>(lane_vals.data(), W);
 
+    DeviceAllocations device_allocations;
     FT *dIn = device_allocations.to_dev(in);
-    Bits *dOut;
-    device_allocations.allocate(&dOut, sizeof(Bits));
+    Bits *dOut = device_allocations.allocate<Bits>(1);
     k_wave_fpsan<T, 0, S><<<1, W>>>(dIn, dOut);
     HIP_CHECK(hipDeviceSynchronize());
     Bits got = Bits(0);
     HIP_CHECK(hipMemcpy(&got, dOut, sizeof(Bits), hipMemcpyDeviceToHost));
     EXPECT_EQ(got, ref.fpsan_payload());
-    device_allocations.free(dIn);
-    device_allocations.free(dOut);
   }
 }
 
@@ -271,8 +263,7 @@ template <class T, Semantics S> void run_fpsan_strategy_invariant() {
   using Bits = typename T::Bits;
   auto in = make_lane_inputs<FT>(W);
   FT *dIn = device_allocations.to_dev(in);
-  Bits *dOut;
-  device_allocations.allocate(&dOut, sizeof(Bits));
+  Bits *dOut = device_allocations.allocate<Bits>(1);
   k_wave_fpsan<T, 0, S><<<1, W>>>(dIn, dOut);
   HIP_CHECK(hipDeviceSynchronize());
   Bits got0 = Bits(0);
@@ -282,8 +273,6 @@ template <class T, Semantics S> void run_fpsan_strategy_invariant() {
   Bits got1 = Bits(0);
   HIP_CHECK(hipMemcpy(&got1, dOut, sizeof(Bits), hipMemcpyDeviceToHost));
   EXPECT_EQ(got0, got1);
-  device_allocations.free(dIn);
-  device_allocations.free(dOut);
 }
 
 // ---------------------------------------------------------------------------

@@ -146,13 +146,10 @@ std::uint32_t canonical_narrow_lane(float x, float scale) {
       GTEST_SKIP() << "no HIP device";                                                             \
     auto in = exact8();                                                                            \
     float *dIn = device_allocations.to_dev(in);                                                    \
-    unsigned *dO;                                                                                  \
-    device_allocations.allocate(&dO, 2 * sizeof(unsigned));                                        \
+    unsigned *dO = device_allocations.allocate<unsigned>(2);                                       \
     CASE##_k<<<1, 1>>>(dIn, dO);                                                                   \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     check_bytes8(from_dev(dO, 2), in, FMT);                                                        \
-    device_allocations.free(dIn);                                                                  \
-    device_allocations.free(dO);                                                                   \
   }
 
 PK8_BYTES_GOLDEN(Fp8FromF32, amdgcn_cvt_scalef32_pk8_fp8_f32, kFp8E4M3, float)
@@ -178,13 +175,10 @@ PK8_BYTES_GOLDEN(Bf8FromBf16, amdgcn_cvt_scalef32_pk8_bf8_bf16, kFp8E5M2, __bf16
       GTEST_SKIP() << "no HIP device";                                                             \
     auto in = exact8();                                                                            \
     float *dIn = device_allocations.to_dev(in);                                                    \
-    unsigned *dO;                                                                                  \
-    device_allocations.allocate(&dO, sizeof(unsigned));                                            \
+    unsigned *dO = device_allocations.allocate<unsigned>(1);                                       \
     CASE##_k<<<1, 1>>>(dIn, dO);                                                                   \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     check_nibbles8(from_dev(dO, 1), in, kFp4E2M1);                                                 \
-    device_allocations.free(dIn);                                                                  \
-    device_allocations.free(dO);                                                                   \
   }
 
 PK8_NIB_GOLDEN(Fp4FromF32, amdgcn_cvt_scalef32_pk8_fp4_f32, float)
@@ -211,13 +205,10 @@ PK8_NIB_GOLDEN(Fp4FromBf16, amdgcn_cvt_scalef32_pk8_fp4_bf16, __bf16)
       GTEST_SKIP() << "no HIP device";                                                             \
     auto in = exact16();                                                                           \
     float *dIn = device_allocations.to_dev(in);                                                    \
-    unsigned *dO;                                                                                  \
-    device_allocations.allocate(&dO, 3 * sizeof(unsigned));                                        \
+    unsigned *dO = device_allocations.allocate<unsigned>(3);                                       \
     CASE##_k<<<1, 1>>>(dIn, dO);                                                                   \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     check_codes16(from_dev(dO, 3), in, FMT);                                                       \
-    device_allocations.free(dIn);                                                                  \
-    device_allocations.free(dO);                                                                   \
   }
 
 PK16_CODES_GOLDEN(Fp6FromF32, amdgcn_cvt_scalef32_pk16_fp6_f32, kFp6E2M3, float)
@@ -248,13 +239,10 @@ PK16_CODES_GOLDEN(Bf6FromBf16, amdgcn_cvt_scalef32_pk16_bf6_bf16, kBf6E3M2, __bf
       GTEST_SKIP() << "no HIP device";                                                             \
     auto in = exact8();                                                                            \
     float *dIn = device_allocations.to_dev(in);                                                    \
-    unsigned *dO;                                                                                  \
-    device_allocations.allocate(&dO, 2 * sizeof(unsigned));                                        \
+    unsigned *dO = device_allocations.allocate<unsigned>(2);                                       \
     CASE##_srb_k<<<1, 1>>>(dIn, dO);                                                               \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     check_bytes8(from_dev(dO, 2), in, FMT);                                                        \
-    device_allocations.free(dIn);                                                                  \
-    device_allocations.free(dO);                                                                   \
   }
 
 SR_PK8_BYTES_GOLDEN(Fp8FromF32, amdgcn_cvt_scalef32_sr_pk8_fp8_f32, kFp8E4M3, float)
@@ -281,13 +269,10 @@ SR_PK8_BYTES_GOLDEN(Bf8FromBf16, amdgcn_cvt_scalef32_sr_pk8_bf8_bf16, kFp8E5M2, 
       GTEST_SKIP() << "no HIP device";                                                             \
     auto in = exact8();                                                                            \
     float *dIn = device_allocations.to_dev(in);                                                    \
-    unsigned *dO;                                                                                  \
-    device_allocations.allocate(&dO, sizeof(unsigned));                                            \
+    unsigned *dO = device_allocations.allocate<unsigned>(1);                                       \
     CASE##_srn_k<<<1, 1>>>(dIn, dO);                                                               \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     check_nibbles8(from_dev(dO, 1), in, kFp4E2M1);                                                 \
-    device_allocations.free(dIn);                                                                  \
-    device_allocations.free(dO);                                                                   \
   }
 
 SR_PK8_NIB_GOLDEN(Fp4FromF32, amdgcn_cvt_scalef32_sr_pk8_fp4_f32, float)
@@ -314,13 +299,10 @@ SR_PK8_NIB_GOLDEN(Fp4FromBf16, amdgcn_cvt_scalef32_sr_pk8_fp4_bf16, __bf16)
       GTEST_SKIP() << "no HIP device";                                                             \
     auto in = exact16();                                                                           \
     float *dIn = device_allocations.to_dev(in);                                                    \
-    unsigned *dO;                                                                                  \
-    device_allocations.allocate(&dO, 3 * sizeof(unsigned));                                        \
+    unsigned *dO = device_allocations.allocate<unsigned>(3);                                       \
     CASE##_sr16_k<<<1, 1>>>(dIn, dO);                                                              \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     check_codes16(from_dev(dO, 3), in, FMT);                                                       \
-    device_allocations.free(dIn);                                                                  \
-    device_allocations.free(dO);                                                                   \
   }
 
 SR_PK16_CODES_GOLDEN(Fp6FromF32, amdgcn_cvt_scalef32_sr_pk16_fp6_f32, kFp6E2M3, float)
@@ -352,13 +334,10 @@ TEST(CvtScalef32Pk8, Fp8ScaleDivides) {
     GTEST_SKIP() << "no HIP device";
   auto in = exact8();
   float *dIn = device_allocations.to_dev(in);
-  unsigned *dO;
-  device_allocations.allocate(&dO, 2 * sizeof(unsigned));
+  unsigned *dO = device_allocations.allocate<unsigned>(2);
   k_pk8_scale<<<1, 1>>>(dIn, 2.0f, dO);
   HIP_CHECK(hipDeviceSynchronize());
   check_bytes8(from_dev(dO, 2), in, kFp8E4M3, /*scale=*/2.0f);
-  device_allocations.free(dIn);
-  device_allocations.free(dO);
 }
 
 // ============================ FPSan mode ====================================
@@ -385,8 +364,7 @@ template <Semantics S> void run_fpsan_pk8_fp8_payload() {
     GTEST_SKIP() << "no HIP device";
   auto in = exact8();
   float *dIn = device_allocations.to_dev(in);
-  unsigned *dO;
-  device_allocations.allocate(&dO, 2 * sizeof(unsigned));
+  unsigned *dO = device_allocations.allocate<unsigned>(2);
   k_fpsan_pk8_fp8<S><<<1, 1>>>(dIn, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 2);
@@ -397,8 +375,6 @@ template <Semantics S> void run_fpsan_pk8_fp8_payload() {
     std::uint32_t have = (got[i / 4] >> (8 * (i % 4))) & 0xFFu;
     EXPECT_EQ(have, want) << "byte " << i;
   }
-  device_allocations.free(dIn);
-  device_allocations.free(dO);
 }
 
 TEST(CvtScalef32Pk8, FpsanFp8Payload) { FPSAN_RUN_FPSAN_SEMANTICS(run_fpsan_pk8_fp8_payload); }
@@ -420,8 +396,7 @@ TEST(CvtScalef32Pk8, FpsanFp8Payload) { FPSAN_RUN_FPSAN_SEMANTICS(run_fpsan_pk8_
     constexpr float scale = 2.0f;                                                                  \
     auto in = fpsan_nonfinite8();                                                                  \
     float *dIn = device_allocations.to_dev(in);                                                    \
-    unsigned *dO;                                                                                  \
-    device_allocations.allocate(&dO, sizeof(unsigned));                                            \
+    unsigned *dO = device_allocations.allocate<unsigned>(1);                                       \
     CASE##_k<S><<<1, 1>>>(dIn, dO);                                                                \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     unsigned got = from_dev(dO, 1)[0];                                                             \
@@ -430,8 +405,6 @@ TEST(CvtScalef32Pk8, FpsanFp8Payload) { FPSAN_RUN_FPSAN_SEMANTICS(run_fpsan_pk8_
       std::uint32_t have = (got >> (4 * i)) & 0xFu;                                                \
       EXPECT_EQ(have, want) << "nibble " << i << " S=" << int(S);                                  \
     }                                                                                              \
-    device_allocations.free(dIn);                                                                  \
-    device_allocations.free(dO);                                                                   \
   }                                                                                                \
   TEST(SUITE, CASE) { FPSAN_RUN_FPSAN_SEMANTICS(CASE##_run); }
 
@@ -452,8 +425,7 @@ TEST(CvtScalef32Pk8, FpsanFp8Payload) { FPSAN_RUN_FPSAN_SEMANTICS(run_fpsan_pk8_
     constexpr float scale = 2.0f;                                                                  \
     auto in = fpsan_nonfinite8();                                                                  \
     float *dIn = device_allocations.to_dev(in);                                                    \
-    unsigned *dO;                                                                                  \
-    device_allocations.allocate(&dO, sizeof(unsigned));                                            \
+    unsigned *dO = device_allocations.allocate<unsigned>(1);                                       \
     CASE##_k<S><<<1, 1>>>(dIn, dO);                                                                \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     unsigned got = from_dev(dO, 1)[0];                                                             \
@@ -462,8 +434,6 @@ TEST(CvtScalef32Pk8, FpsanFp8Payload) { FPSAN_RUN_FPSAN_SEMANTICS(run_fpsan_pk8_
       std::uint32_t have = (got >> (4 * i)) & 0xFu;                                                \
       EXPECT_EQ(have, want) << "nibble " << i << " S=" << int(S);                                  \
     }                                                                                              \
-    device_allocations.free(dIn);                                                                  \
-    device_allocations.free(dO);                                                                   \
   }                                                                                                \
   TEST(SUITE, CASE) { FPSAN_RUN_FPSAN_SEMANTICS(CASE##_run); }
 
@@ -502,8 +472,7 @@ FPSAN_DEFINE_SR_PK8_FP4_CANONICAL_TEST(CvtScalef32SrPk8, FpsanSrFp4FromBf16Canon
     constexpr float scale = 2.0f;                                                                  \
     auto in = fpsan_nonfinite16();                                                                 \
     float *dIn = device_allocations.to_dev(in);                                                    \
-    unsigned *dO;                                                                                  \
-    device_allocations.allocate(&dO, 3 * sizeof(unsigned));                                        \
+    unsigned *dO = device_allocations.allocate<unsigned>(3);                                       \
     CASE##_k<S><<<1, 1>>>(dIn, dO);                                                                \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     auto got = from_dev(dO, 3);                                                                    \
@@ -512,8 +481,6 @@ FPSAN_DEFINE_SR_PK8_FP4_CANONICAL_TEST(CvtScalef32SrPk8, FpsanSrFp4FromBf16Canon
       std::uint32_t have = host_extract6(got, i);                                                  \
       EXPECT_EQ(have, want) << "code " << i << " S=" << int(S);                                    \
     }                                                                                              \
-    device_allocations.free(dIn);                                                                  \
-    device_allocations.free(dO);                                                                   \
   }                                                                                                \
   TEST(SUITE, CASE) { FPSAN_RUN_FPSAN_SEMANTICS(CASE##_run); }
 
@@ -537,8 +504,7 @@ FPSAN_DEFINE_SR_PK8_FP4_CANONICAL_TEST(CvtScalef32SrPk8, FpsanSrFp4FromBf16Canon
     constexpr float scale = 2.0f;                                                                  \
     auto in = fpsan_nonfinite16();                                                                 \
     float *dIn = device_allocations.to_dev(in);                                                    \
-    unsigned *dO;                                                                                  \
-    device_allocations.allocate(&dO, 3 * sizeof(unsigned));                                        \
+    unsigned *dO = device_allocations.allocate<unsigned>(3);                                       \
     CASE##_k<S><<<1, 1>>>(dIn, dO);                                                                \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     auto got = from_dev(dO, 3);                                                                    \
@@ -547,8 +513,6 @@ FPSAN_DEFINE_SR_PK8_FP4_CANONICAL_TEST(CvtScalef32SrPk8, FpsanSrFp4FromBf16Canon
       std::uint32_t have = host_extract6(got, i);                                                  \
       EXPECT_EQ(have, want) << "code " << i << " S=" << int(S);                                    \
     }                                                                                              \
-    device_allocations.free(dIn);                                                                  \
-    device_allocations.free(dO);                                                                   \
   }                                                                                                \
   TEST(SUITE, CASE) { FPSAN_RUN_FPSAN_SEMANTICS(CASE##_run); }
 

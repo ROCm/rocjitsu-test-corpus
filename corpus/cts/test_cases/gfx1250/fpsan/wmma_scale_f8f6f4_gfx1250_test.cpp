@@ -153,8 +153,7 @@ TEST(WmmaScaleF8f6f4_128, LayoutMatchesHardware) {
   float *dC = device_allocations.to_dev(C);
   unsigned *dSA = device_allocations.to_dev(SA);
   unsigned *dSB = device_allocations.to_dev(SB);
-  float *dD = nullptr;
-  device_allocations.allocate(&dD, M * N * sizeof(float));
+  float *dD = device_allocations.allocate<float>(M * N);
   k_scale<<<1, 32>>>(dA, dB, dC, dSA, dSB, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> got(M * N);
@@ -168,12 +167,6 @@ TEST(WmmaScaleF8f6f4_128, LayoutMatchesHardware) {
       ++mism;
     }
   EXPECT_EQ(mism, 0) << mism << " / " << (M * N) << " mismatched";
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dSA);
-  device_allocations.free(dSB);
-  device_allocations.free(dD);
 }
 
 // ===================== Sub-byte block-scaled wrapper =====================
@@ -368,10 +361,8 @@ static void run_sub_scale(const char *tag) {
   float *dC = device_allocations.to_dev(C);
   unsigned *dSA = device_allocations.to_dev(SA);
   unsigned *dSB = device_allocations.to_dev(SB);
-  float *dDf = nullptr;
-  std::uint32_t *dDp = nullptr;
-  device_allocations.allocate(&dDf, M * N * sizeof(float));
-  device_allocations.allocate(&dDp, M * N * sizeof(std::uint32_t));
+  float *dDf = device_allocations.allocate<float>(M * N);
+  std::uint32_t *dDp = device_allocations.allocate<std::uint32_t>(M * N);
   k_sub_scale_float<AFMT, BFMT, ASFMT, BSFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDf);
   k_sub_scale_fpsan<S, AFMT, BFMT, ASFMT, BSFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDp);
   HIP_CHECK(hipDeviceSynchronize());
@@ -389,13 +380,6 @@ static void run_sub_scale(const char *tag) {
   }
   EXPECT_EQ(nf, 0) << nf << " float mismatches";
   EXPECT_EQ(np, 0) << np << " payload mismatches";
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dSA);
-  device_allocations.free(dSB);
-  device_allocations.free(dDf);
-  device_allocations.free(dDp);
 }
 
 template <int AFMT, int BFMT, int ASFMT = 0, int BSFMT = 0>
@@ -470,12 +454,12 @@ template <int AFMT> static void run_probe(const char *tag) {
   unsigned *dSA = device_allocations.to_dev(SA);
   unsigned *dSB = device_allocations.to_dev(SB);
   std::uint32_t *dA = device_allocations.to_dev(Apack);
-  float *dD = nullptr;
-  device_allocations.allocate(&dD, M * N * sizeof(float));
+  float *dD = device_allocations.allocate<float>(M * N);
   int kbyte[128];
   for (int k0 = 0; k0 < K; ++k0) {
     std::vector<std::uint32_t> B1(32 * 16, 0u);
     put(&B1[ab_lane(0, k0) * 16], ab_slot(k0), f32_to_narrow(1.f, fmt_of(AFMT)));
+    DeviceAllocations device_allocations;
     std::uint32_t *dB1 = device_allocations.to_dev(B1);
     k_probe2<AFMT><<<1, 32>>>(dA, dB1, dSA, dSB, dD);
     HIP_CHECK(hipDeviceSynchronize());
@@ -486,15 +470,10 @@ template <int AFMT> static void run_probe(const char *tag) {
       if (d00 == std::ldexp(1.f, b + 1))
         byte = b;
     kbyte[k0] = byte;
-    device_allocations.free(dB1);
   }
   printf("logical k -> A-scale byte (%s):\n", tag);
   for (int k0 = 0; k0 < K; ++k0)
     printf("k=%3d byte=%d%s", k0, kbyte[k0], (k0 % 8 == 7) ? "\n" : "  ");
-  device_allocations.free(dA);
-  device_allocations.free(dD);
-  device_allocations.free(dSA);
-  device_allocations.free(dSB);
 }
 
 TEST(WmmaScaleF8f6f4_128, DISABLED_ProbeScaleLayoutFp4) { run_probe<4>("fp4"); }
@@ -548,12 +527,12 @@ template <int AFMT> static void run_probe16(const char *tag) {
   unsigned long long *dSA = device_allocations.to_dev(SA);
   unsigned long long *dSB = device_allocations.to_dev(SB);
   std::uint32_t *dA = device_allocations.to_dev(Apack);
-  float *dD = nullptr;
-  device_allocations.allocate(&dD, M * N * sizeof(float));
+  float *dD = device_allocations.allocate<float>(M * N);
   int kbyte[128];
   for (int k0 = 0; k0 < K; ++k0) {
     std::vector<std::uint32_t> B1(32 * 16, 0u);
     put(&B1[ab_lane(0, k0) * 16], ab_slot(k0), f32_to_narrow(1.f, fmt_of(AFMT)));
+    DeviceAllocations device_allocations;
     std::uint32_t *dB1 = device_allocations.to_dev(B1);
     k_probe16<AFMT><<<1, 32>>>(dA, dB1, dSA, dSB, dD);
     HIP_CHECK(hipDeviceSynchronize());
@@ -564,15 +543,10 @@ template <int AFMT> static void run_probe16(const char *tag) {
       if (d00 == std::ldexp(1.f, b + 1))
         byte = b;
     kbyte[k0] = byte;
-    device_allocations.free(dB1);
   }
   printf("logical k -> A-scale16 byte (%s):\n", tag);
   for (int k0 = 0; k0 < K; ++k0)
     printf("k=%3d byte=%d%s", k0, kbyte[k0], (k0 % 8 == 7) ? "\n" : "  ");
-  device_allocations.free(dA);
-  device_allocations.free(dD);
-  device_allocations.free(dSA);
-  device_allocations.free(dSB);
 }
 
 TEST(WmmaScaleF8f6f4_128, DISABLED_ProbeScale16LayoutFp4) { run_probe16<4>("fp4"); }
@@ -721,10 +695,8 @@ template <Semantics S, int AFMT, int BFMT> static void run_sub_scale16(const cha
   float *dC = device_allocations.to_dev(C);
   unsigned long long *dSA = device_allocations.to_dev(SA);
   unsigned long long *dSB = device_allocations.to_dev(SB);
-  float *dDf = nullptr;
-  std::uint32_t *dDp = nullptr;
-  device_allocations.allocate(&dDf, M * N * sizeof(float));
-  device_allocations.allocate(&dDp, M * N * sizeof(std::uint32_t));
+  float *dDf = device_allocations.allocate<float>(M * N);
+  std::uint32_t *dDp = device_allocations.allocate<std::uint32_t>(M * N);
   k_sub_scale16_float<AFMT, BFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDf);
   k_sub_scale16_fpsan<S, AFMT, BFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDp);
   HIP_CHECK(hipDeviceSynchronize());
@@ -742,13 +714,6 @@ template <Semantics S, int AFMT, int BFMT> static void run_sub_scale16(const cha
   }
   EXPECT_EQ(nf, 0) << nf << " float mismatches";
   EXPECT_EQ(np, 0) << np << " payload mismatches";
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dSA);
-  device_allocations.free(dSB);
-  device_allocations.free(dDf);
-  device_allocations.free(dDp);
 }
 
 template <int AFMT, int BFMT> static void run_sub_scale16_all(const char *tag) {
@@ -890,10 +855,8 @@ static void run_mixed_scale(const char *tag) {
   float *dC = device_allocations.to_dev(C);
   unsigned *dSA = device_allocations.to_dev(SA);
   unsigned *dSB = device_allocations.to_dev(SB);
-  float *dDf = nullptr;
-  std::uint32_t *dDp = nullptr;
-  device_allocations.allocate(&dDf, M * N * sizeof(float));
-  device_allocations.allocate(&dDp, M * N * sizeof(std::uint32_t));
+  float *dDf = device_allocations.allocate<float>(M * N);
+  std::uint32_t *dDp = device_allocations.allocate<std::uint32_t>(M * N);
   k_mix_scale_float<AFMT, BFMT, ASFMT, BSFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDf);
   k_mix_scale_fpsan<S, AFMT, BFMT, ASFMT, BSFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDp);
   HIP_CHECK(hipDeviceSynchronize());
@@ -911,13 +874,6 @@ static void run_mixed_scale(const char *tag) {
   }
   EXPECT_EQ(nf, 0) << nf << " float mismatches";
   EXPECT_EQ(np, 0) << np << " payload mismatches";
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dSA);
-  device_allocations.free(dSB);
-  device_allocations.free(dDf);
-  device_allocations.free(dDp);
 }
 
 template <int AFMT, int BFMT, int ASFMT = 0, int BSFMT = 0>
@@ -1054,10 +1010,8 @@ template <Semantics S, int AFMT, int BFMT> static void run_mixed_scale16(const c
   float *dC = device_allocations.to_dev(C);
   unsigned long long *dSA = device_allocations.to_dev(SA);
   unsigned long long *dSB = device_allocations.to_dev(SB);
-  float *dDf = nullptr;
-  std::uint32_t *dDp = nullptr;
-  device_allocations.allocate(&dDf, M * N * sizeof(float));
-  device_allocations.allocate(&dDp, M * N * sizeof(std::uint32_t));
+  float *dDf = device_allocations.allocate<float>(M * N);
+  std::uint32_t *dDp = device_allocations.allocate<std::uint32_t>(M * N);
   k_mix_scale16_float<AFMT, BFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDf);
   k_mix_scale16_fpsan<S, AFMT, BFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDp);
   HIP_CHECK(hipDeviceSynchronize());
@@ -1075,13 +1029,6 @@ template <Semantics S, int AFMT, int BFMT> static void run_mixed_scale16(const c
   }
   EXPECT_EQ(nf, 0) << nf << " float mismatches";
   EXPECT_EQ(np, 0) << np << " payload mismatches";
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dSA);
-  device_allocations.free(dSB);
-  device_allocations.free(dDf);
-  device_allocations.free(dDp);
 }
 
 template <int AFMT, int BFMT> static void run_mixed_scale16_all(const char *tag) {

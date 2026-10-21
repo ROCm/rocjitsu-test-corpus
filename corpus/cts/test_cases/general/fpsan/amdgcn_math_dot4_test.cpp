@@ -186,12 +186,10 @@ std::vector<float> make_dot4_acc() {
     auto c = make_dot4_acc();                                                                      \
     unsigned *dA = device_allocations.to_dev(a), *dB = device_allocations.to_dev(b);               \
     float *dC = device_allocations.to_dev(c);                                                      \
-    float *dDir, *dWrap;                                                                           \
-    std::uint32_t *dPdir, *dPwrap;                                                                 \
-    device_allocations.allocate(&dDir, kDot4N * sizeof(float));                                    \
-    device_allocations.allocate(&dWrap, kDot4N * sizeof(float));                                   \
-    device_allocations.allocate(&dPdir, kDot4N * sizeof(std::uint32_t));                           \
-    device_allocations.allocate(&dPwrap, kDot4N * sizeof(std::uint32_t));                          \
+    float *dDir = device_allocations.allocate<float>(kDot4N);                                      \
+    float *dWrap = device_allocations.allocate<float>(kDot4N);                                     \
+    std::uint32_t *dPdir = device_allocations.allocate<std::uint32_t>(kDot4N);                     \
+    std::uint32_t *dPwrap = device_allocations.allocate<std::uint32_t>(kDot4N);                    \
     fpsan_test::for_each_fpsan_semantics([&](auto sem) {                                           \
       k_##NAME##_pair<decltype(sem)::value>                                                        \
           <<<1, kDot4N>>>(dA, dB, dC, dDir, dWrap, dPdir, dPwrap);                                 \
@@ -209,13 +207,6 @@ std::vector<float> make_dot4_acc() {
         EXPECT_EQ(pwrap[i], pdir[i]) << "FPSan lane " << i;                                        \
       }                                                                                            \
     });                                                                                            \
-    device_allocations.free(dA);                                                                   \
-    device_allocations.free(dB);                                                                   \
-    device_allocations.free(dC);                                                                   \
-    device_allocations.free(dDir);                                                                 \
-    device_allocations.free(dWrap);                                                                \
-    device_allocations.free(dPdir);                                                                \
-    device_allocations.free(dPwrap);                                                               \
   }
 
 DOT4_TEST(amdgcn_dot4_f32_fp8_fp8)

@@ -58,8 +58,8 @@ TEST(CvtSrPkF16, FloatExactInputs) {
   std::vector<float> a = {0.0f, 1.0f, -2.0f, 0.5f, 3.0f, -0.25f, 16.0f, -1.5f};
   std::vector<float> b = {1.0f, -1.0f, 2.0f, -0.5f, 4.0f, 0.125f, -8.0f, 6.0f};
   const int n = static_cast<int>(a.size());
-  float *dA = device_allocations.to_dev(a), *dB = device_allocations.to_dev(b), *dO;
-  device_allocations.allocate(&dO, 2 * n * sizeof(float));
+  float *dA = device_allocations.to_dev(a), *dB = device_allocations.to_dev(b);
+  float *dO = device_allocations.allocate<float>(2 * n);
   k_f16_exact<<<1, n>>>(dA, dB, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 2 * n);
@@ -67,9 +67,6 @@ TEST(CvtSrPkF16, FloatExactInputs) {
     EXPECT_EQ(got[2 * i], static_cast<float>(static_cast<_Float16>(a[i]))) << "lane0 i=" << i;
     EXPECT_EQ(got[2 * i + 1], static_cast<float>(static_cast<_Float16>(b[i]))) << "lane1 i=" << i;
   }
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dO);
 }
 
 // One f32 strictly between two f16 neighbors; each thread uses a distinct seed.
@@ -92,8 +89,7 @@ TEST(CvtSrPkF16, FloatStochasticBracket) {
   for (int i = 0; i < N; ++i)
     seeds[i] = 0x10000u * (i + 1) + 0x9E3779B9u * i; // spread across the u32 range
   unsigned *dS = device_allocations.to_dev(seeds);
-  float *dO;
-  device_allocations.allocate(&dO, N * sizeof(float));
+  float *dO = device_allocations.allocate<float>(N);
   k_f16_sr<<<1, N>>>(x, dS, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, N);
@@ -104,8 +100,6 @@ TEST(CvtSrPkF16, FloatStochasticBracket) {
   }
   EXPECT_TRUE(seen.count(lo) && seen.count(hi))
       << "rounding was not stochastic (got " << seen.size() << " distinct values)";
-  device_allocations.free(dS);
-  device_allocations.free(dO);
 }
 
 template <Semantics S> __global__ void k_f16_fpsan(const float *a, const float *b, unsigned *out) {
@@ -125,8 +119,7 @@ template <Semantics S> void run_f16_fpsan_payload_truncate() {
   std::vector<float> b = {2.0f, 0.25f, -4.0f, 7.0f};
   const int n = static_cast<int>(a.size());
   float *dA = device_allocations.to_dev(a), *dB = device_allocations.to_dev(b);
-  unsigned *dO;
-  device_allocations.allocate(&dO, 2 * n * sizeof(unsigned));
+  unsigned *dO = device_allocations.allocate<unsigned>(2 * n);
   k_f16_fpsan<S><<<1, n>>>(dA, dB, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 2 * n);
@@ -134,9 +127,6 @@ template <Semantics S> void run_f16_fpsan_payload_truncate() {
     EXPECT_EQ(got[2 * i], fpsan::cast<_Float16>(VF{a[i]}).fpsan_payload()) << "lane0 i=" << i;
     EXPECT_EQ(got[2 * i + 1], fpsan::cast<_Float16>(VF{b[i]}).fpsan_payload()) << "lane1 i=" << i;
   }
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dO);
 }
 
 TEST(CvtSrPkF16, FpsanPayloadTruncate) {
@@ -163,8 +153,8 @@ TEST(CvtSrPkBf16, FloatExactInputs) {
   std::vector<float> a = {0.0f, 1.0f, -2.0f, 0.5f, 3.0f, -0.25f, 16.0f, -1.5f};
   std::vector<float> b = {1.0f, -1.0f, 2.0f, -0.5f, 4.0f, 0.125f, -8.0f, 6.0f};
   const int n = static_cast<int>(a.size());
-  float *dA = device_allocations.to_dev(a), *dB = device_allocations.to_dev(b), *dO;
-  device_allocations.allocate(&dO, 2 * n * sizeof(float));
+  float *dA = device_allocations.to_dev(a), *dB = device_allocations.to_dev(b);
+  float *dO = device_allocations.allocate<float>(2 * n);
   k_bf16_exact<<<1, n>>>(dA, dB, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 2 * n);
@@ -172,9 +162,6 @@ TEST(CvtSrPkBf16, FloatExactInputs) {
     EXPECT_EQ(got[2 * i], static_cast<float>(static_cast<__bf16>(a[i]))) << "lane0 i=" << i;
     EXPECT_EQ(got[2 * i + 1], static_cast<float>(static_cast<__bf16>(b[i]))) << "lane1 i=" << i;
   }
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dO);
 }
 
 __global__ void k_bf16_sr(float x, const unsigned *seeds, float *out) {
@@ -196,8 +183,7 @@ TEST(CvtSrPkBf16, FloatStochasticBracket) {
   for (int i = 0; i < N; ++i)
     seeds[i] = 0x10000u * (i + 1) + 0x9E3779B9u * i;
   unsigned *dS = device_allocations.to_dev(seeds);
-  float *dO;
-  device_allocations.allocate(&dO, N * sizeof(float));
+  float *dO = device_allocations.allocate<float>(N);
   k_bf16_sr<<<1, N>>>(x, dS, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, N);
@@ -207,8 +193,6 @@ TEST(CvtSrPkBf16, FloatStochasticBracket) {
     seen.insert(got[i]);
   }
   EXPECT_TRUE(seen.count(lo) && seen.count(hi)) << "rounding was not stochastic";
-  device_allocations.free(dS);
-  device_allocations.free(dO);
 }
 
 template <Semantics S> __global__ void k_bf16_fpsan(const float *a, const float *b, unsigned *out) {
@@ -228,8 +212,7 @@ template <Semantics S> void run_bf16_fpsan_payload_truncate() {
   std::vector<float> b = {2.0f, 0.25f, -4.0f, 7.0f};
   const int n = static_cast<int>(a.size());
   float *dA = device_allocations.to_dev(a), *dB = device_allocations.to_dev(b);
-  unsigned *dO;
-  device_allocations.allocate(&dO, 2 * n * sizeof(unsigned));
+  unsigned *dO = device_allocations.allocate<unsigned>(2 * n);
   k_bf16_fpsan<S><<<1, n>>>(dA, dB, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 2 * n);
@@ -237,9 +220,6 @@ template <Semantics S> void run_bf16_fpsan_payload_truncate() {
     EXPECT_EQ(got[2 * i], fpsan::cast<__bf16>(VF{a[i]}).fpsan_payload()) << "lane0 i=" << i;
     EXPECT_EQ(got[2 * i + 1], fpsan::cast<__bf16>(VF{b[i]}).fpsan_payload()) << "lane1 i=" << i;
   }
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dO);
 }
 
 TEST(CvtSrPkBf16, FpsanPayloadTruncate) {

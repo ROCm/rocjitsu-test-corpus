@@ -234,9 +234,8 @@ template <class Traits> void run_layout_matches_hardware() {
   AE *dA = device_allocations.to_dev(m.A);
   BE *dB = device_allocations.to_dev(m.B);
   CE *dC = device_allocations.to_dev(m.C);
-  CE *dHw, *dOurs;
-  device_allocations.allocate(&dHw, M * N * sizeof(CE));
-  device_allocations.allocate(&dOurs, M * N * sizeof(CE));
+  CE *dHw = device_allocations.allocate<CE>(M * N);
+  CE *dOurs = device_allocations.allocate<CE>(M * N);
 
   k_builtin<Traits><<<1, kWaveSize>>>(dA, dB, dC, dHw);
   k_float_dataflow<Traits><<<1, kWaveSize>>>(dA, dB, dC, dOurs);
@@ -251,11 +250,6 @@ template <class Traits> void run_layout_matches_hardware() {
     EXPECT_EQ(bits_of(ours[i]), bits_of(ref[i]))
         << "dataflow mismatch at " << (i / N) << "," << (i % N);
   }
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dHw);
-  device_allocations.free(dOurs);
 }
 
 // (2) Payload test: the shipped FPSan path vs a host scalar FPSan reference, in
@@ -287,18 +281,13 @@ template <class Traits, Semantics S> void run_fpsan_matches_scalar_reference() {
   AE *dA = device_allocations.to_dev(m.A);
   BE *dB = device_allocations.to_dev(m.B);
   CE *dC = device_allocations.to_dev(m.C);
-  CBits *dD;
-  device_allocations.allocate(&dD, M * N * sizeof(CBits));
+  CBits *dD = device_allocations.allocate<CBits>(M * N);
   k_fpsan<Traits, S><<<1, kWaveSize>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<CBits> got(M * N);
   HIP_CHECK(hipMemcpy(got.data(), dD, M * N * sizeof(CBits), hipMemcpyDeviceToHost));
   for (int i = 0; i < M * N; ++i)
     EXPECT_EQ(got[i], ref[i]) << "payload mismatch at " << (i / N) << "," << (i % N);
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dD);
 }
 
 // Run the payload test for representative FPSan-family semantics (Triton + one

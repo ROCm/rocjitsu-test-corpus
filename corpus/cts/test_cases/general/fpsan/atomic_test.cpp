@@ -118,8 +118,7 @@ TEST(Atomic, FaddFloatExact) {
   auto in = make_inputs();
   float *dIn = device_allocations.to_dev(in);
   using V = Value<float, Semantics::Native, kCC>;
-  V *dSlot;
-  device_allocations.allocate(&dSlot, sizeof(V));
+  V *dSlot = device_allocations.allocate<V>(1);
   V init{0.f};
   HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
   k_atomic_fadd<Semantics::Native><<<1, LANES>>>(dSlot, dIn);
@@ -130,8 +129,6 @@ TEST(Atomic, FaddFloatExact) {
   for (float x : in)
     ref += x;
   EXPECT_EQ(static_cast<float>(got), ref);
-  device_allocations.free(dIn);
-  device_allocations.free(dSlot);
 }
 
 TEST(Atomic, FaddFpsanMatchesScalarRingSum) {
@@ -145,8 +142,8 @@ TEST(Atomic, FaddFpsanMatchesScalarRingSum) {
   float *dIn = device_allocations.to_dev(in);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     using V = Value<float, decltype(sem)::value, kCC>;
-    V *dSlot;
-    device_allocations.allocate(&dSlot, sizeof(V));
+    DeviceAllocations device_allocations;
+    V *dSlot = device_allocations.allocate<V>(1);
     V init{0.f};
     HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
     k_atomic_fadd<decltype(sem)::value><<<1, LANES>>>(dSlot, dIn);
@@ -157,9 +154,7 @@ TEST(Atomic, FaddFpsanMatchesScalarRingSum) {
     for (float x : in)
       acc = acc + V{x};
     EXPECT_EQ(got.fpsan_payload(), acc.fpsan_payload());
-    device_allocations.free(dSlot);
   });
-  device_allocations.free(dIn);
 }
 
 // ---- atomic_fmin / atomic_fmax: final value = min / max of all lanes -------
@@ -171,8 +166,7 @@ TEST(Atomic, FminFloatMatchesScalarMin) {
   auto in = make_inputs();
   float *dIn = device_allocations.to_dev(in);
   using V = Value<float, Semantics::Native, kCC>;
-  V *dSlot;
-  device_allocations.allocate(&dSlot, sizeof(V));
+  V *dSlot = device_allocations.allocate<V>(1);
   // Seed with +INFINITY so the first observed value sets the min.
   V init{1e30f};
   HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
@@ -182,8 +176,6 @@ TEST(Atomic, FminFloatMatchesScalarMin) {
   HIP_CHECK(hipMemcpy(&got, dSlot, sizeof(V), hipMemcpyDeviceToHost));
   float ref = *std::min_element(in.begin(), in.end());
   EXPECT_EQ(static_cast<float>(got), ref);
-  device_allocations.free(dIn);
-  device_allocations.free(dSlot);
 }
 
 TEST(Atomic, FmaxFloatMatchesScalarMax) {
@@ -194,8 +186,7 @@ TEST(Atomic, FmaxFloatMatchesScalarMax) {
   auto in = make_inputs();
   float *dIn = device_allocations.to_dev(in);
   using V = Value<float, Semantics::Native, kCC>;
-  V *dSlot;
-  device_allocations.allocate(&dSlot, sizeof(V));
+  V *dSlot = device_allocations.allocate<V>(1);
   V init{-1e30f};
   HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
   k_atomic_fmax<Semantics::Native><<<1, LANES>>>(dSlot, dIn);
@@ -204,8 +195,6 @@ TEST(Atomic, FmaxFloatMatchesScalarMax) {
   HIP_CHECK(hipMemcpy(&got, dSlot, sizeof(V), hipMemcpyDeviceToHost));
   float ref = *std::max_element(in.begin(), in.end());
   EXPECT_EQ(static_cast<float>(got), ref);
-  device_allocations.free(dIn);
-  device_allocations.free(dSlot);
 }
 
 TEST(Atomic, FminFpsanMatchesScalarMin) {
@@ -217,8 +206,8 @@ TEST(Atomic, FminFpsanMatchesScalarMin) {
   float *dIn = device_allocations.to_dev(in);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     using V = Value<float, decltype(sem)::value, kCC>;
-    V *dSlot;
-    device_allocations.allocate(&dSlot, sizeof(V));
+    DeviceAllocations device_allocations;
+    V *dSlot = device_allocations.allocate<V>(1);
     V init{1e30f};
     HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
     k_atomic_fmin<decltype(sem)::value><<<1, LANES>>>(dSlot, dIn);
@@ -229,9 +218,7 @@ TEST(Atomic, FminFpsanMatchesScalarMin) {
     for (float x : in)
       acc = fpsan::min(acc, V{x});
     EXPECT_EQ(got.fpsan_payload(), acc.fpsan_payload());
-    device_allocations.free(dSlot);
   });
-  device_allocations.free(dIn);
 }
 
 // ---- atomic_fadd returned-old correctness (single thread, no contention) ----
@@ -250,10 +237,9 @@ TEST(Atomic, FaddReturnsOldFloat) {
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
-  float *dSlot, *dOld1, *dOld2;
-  device_allocations.allocate(&dSlot, sizeof(float));
-  device_allocations.allocate(&dOld1, sizeof(float));
-  device_allocations.allocate(&dOld2, sizeof(float));
+  float *dSlot = device_allocations.allocate<float>(1);
+  float *dOld1 = device_allocations.allocate<float>(1);
+  float *dOld2 = device_allocations.allocate<float>(1);
   float zero = 0.f;
   HIP_CHECK(hipMemcpy(dSlot, &zero, sizeof(float), hipMemcpyHostToDevice));
   k_atomic_fadd_returns_old_float<<<1, 1>>>(dSlot, dOld1, dOld2);
@@ -265,9 +251,6 @@ TEST(Atomic, FaddReturnsOldFloat) {
   EXPECT_EQ(old1, 0.f);
   EXPECT_EQ(old2, 5.f);
   EXPECT_EQ(final, 12.f);
-  device_allocations.free(dSlot);
-  device_allocations.free(dOld1);
-  device_allocations.free(dOld2);
 }
 
 // FPSan fmin/fmax returned-old correctness. These use explicit payloads so the
@@ -305,12 +288,10 @@ template <bool IsMin, Semantics S> static void run_fpsan_fmm_returns_old32(const
   const V after2 = IsMin ? fpsan::min(after1, V::from_fpsan_payload(rhs2p))
                          : fpsan::max(after1, V::from_fpsan_payload(rhs2p));
 
-  V *dSlot;
-  Bits *dOld1, *dOld2, *dFinal;
-  device_allocations.allocate(&dSlot, sizeof(V));
-  device_allocations.allocate(&dOld1, sizeof(Bits));
-  device_allocations.allocate(&dOld2, sizeof(Bits));
-  device_allocations.allocate(&dFinal, sizeof(Bits));
+  V *dSlot = device_allocations.allocate<V>(1);
+  Bits *dOld1 = device_allocations.allocate<Bits>(1);
+  Bits *dOld2 = device_allocations.allocate<Bits>(1);
+  Bits *dFinal = device_allocations.allocate<Bits>(1);
   HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
   k_atomic_fmm_returns_old32<IsMin, S><<<1, 1>>>(dSlot, dOld1, dOld2, dFinal, rhs1p, rhs2p);
   HIP_CHECK(hipDeviceSynchronize());
@@ -322,11 +303,6 @@ template <bool IsMin, Semantics S> static void run_fpsan_fmm_returns_old32(const
   EXPECT_EQ(old1, init.fpsan_payload()) << label << " S=" << int(S);
   EXPECT_EQ(old2, after1.fpsan_payload()) << label << " S=" << int(S);
   EXPECT_EQ(final, after2.fpsan_payload()) << label << " S=" << int(S);
-
-  device_allocations.free(dSlot);
-  device_allocations.free(dOld1);
-  device_allocations.free(dOld2);
-  device_allocations.free(dFinal);
 }
 
 TEST(Atomic, FminFpsanReturnsOld) {
@@ -348,8 +324,8 @@ TEST(Atomic, FmaxFpsanMatchesScalarMax) {
   float *dIn = device_allocations.to_dev(in);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     using V = Value<float, decltype(sem)::value, kCC>;
-    V *dSlot;
-    device_allocations.allocate(&dSlot, sizeof(V));
+    DeviceAllocations device_allocations;
+    V *dSlot = device_allocations.allocate<V>(1);
     V init{-1e30f};
     HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
     k_atomic_fmax<decltype(sem)::value><<<1, LANES>>>(dSlot, dIn);
@@ -360,9 +336,7 @@ TEST(Atomic, FmaxFpsanMatchesScalarMax) {
     for (float x : in)
       acc = fpsan::max(acc, V{x});
     EXPECT_EQ(got.fpsan_payload(), acc.fpsan_payload());
-    device_allocations.free(dSlot);
   });
-  device_allocations.free(dIn);
 }
 
 // ===========================================================================
@@ -376,8 +350,7 @@ TEST(Atomic, Fadd64FloatExact) {
   auto in = make_inputs64();
   double *dIn = device_allocations.to_dev(in);
   using V = Value<double, Semantics::Native, kCC>;
-  V *dSlot;
-  device_allocations.allocate(&dSlot, sizeof(V));
+  V *dSlot = device_allocations.allocate<V>(1);
   V init{0.0};
   HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
   k_atomic_fadd64<Semantics::Native><<<1, LANES>>>(dSlot, dIn);
@@ -388,8 +361,6 @@ TEST(Atomic, Fadd64FloatExact) {
   for (double x : in)
     ref += x;
   EXPECT_EQ(static_cast<double>(got), ref);
-  device_allocations.free(dIn);
-  device_allocations.free(dSlot);
 }
 
 TEST(Atomic, Fadd64FpsanMatchesScalarRingSum) {
@@ -402,8 +373,8 @@ TEST(Atomic, Fadd64FpsanMatchesScalarRingSum) {
   double *dIn = device_allocations.to_dev(in);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     using V = Value<double, decltype(sem)::value, kCC>;
-    V *dSlot;
-    device_allocations.allocate(&dSlot, sizeof(V));
+    DeviceAllocations device_allocations;
+    V *dSlot = device_allocations.allocate<V>(1);
     V init{0.0};
     HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
     k_atomic_fadd64<decltype(sem)::value><<<1, LANES>>>(dSlot, dIn);
@@ -414,9 +385,7 @@ TEST(Atomic, Fadd64FpsanMatchesScalarRingSum) {
     for (double x : in)
       acc = acc + V{x};
     EXPECT_EQ(got.fpsan_payload(), acc.fpsan_payload());
-    device_allocations.free(dSlot);
   });
-  device_allocations.free(dIn);
 }
 
 TEST(Atomic, Fmin64FloatMatchesScalarMin) {
@@ -427,8 +396,7 @@ TEST(Atomic, Fmin64FloatMatchesScalarMin) {
   auto in = make_inputs64();
   double *dIn = device_allocations.to_dev(in);
   using V = Value<double, Semantics::Native, kCC>;
-  V *dSlot;
-  device_allocations.allocate(&dSlot, sizeof(V));
+  V *dSlot = device_allocations.allocate<V>(1);
   V init{1e300};
   HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
   k_atomic_fmin64<Semantics::Native><<<1, LANES>>>(dSlot, dIn);
@@ -437,8 +405,6 @@ TEST(Atomic, Fmin64FloatMatchesScalarMin) {
   HIP_CHECK(hipMemcpy(&got, dSlot, sizeof(V), hipMemcpyDeviceToHost));
   double ref = *std::min_element(in.begin(), in.end());
   EXPECT_EQ(static_cast<double>(got), ref);
-  device_allocations.free(dIn);
-  device_allocations.free(dSlot);
 }
 
 TEST(Atomic, Fmax64FloatMatchesScalarMax) {
@@ -449,8 +415,7 @@ TEST(Atomic, Fmax64FloatMatchesScalarMax) {
   auto in = make_inputs64();
   double *dIn = device_allocations.to_dev(in);
   using V = Value<double, Semantics::Native, kCC>;
-  V *dSlot;
-  device_allocations.allocate(&dSlot, sizeof(V));
+  V *dSlot = device_allocations.allocate<V>(1);
   V init{-1e300};
   HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
   k_atomic_fmax64<Semantics::Native><<<1, LANES>>>(dSlot, dIn);
@@ -459,8 +424,6 @@ TEST(Atomic, Fmax64FloatMatchesScalarMax) {
   HIP_CHECK(hipMemcpy(&got, dSlot, sizeof(V), hipMemcpyDeviceToHost));
   double ref = *std::max_element(in.begin(), in.end());
   EXPECT_EQ(static_cast<double>(got), ref);
-  device_allocations.free(dIn);
-  device_allocations.free(dSlot);
 }
 
 template <bool IsMin, Semantics S>
@@ -496,12 +459,10 @@ template <bool IsMin, Semantics S> static void run_fpsan_fmm_returns_old64(const
   const V after2 = IsMin ? fpsan::min(after1, V::from_fpsan_payload(rhs2p))
                          : fpsan::max(after1, V::from_fpsan_payload(rhs2p));
 
-  V *dSlot;
-  Bits *dOld1, *dOld2, *dFinal;
-  device_allocations.allocate(&dSlot, sizeof(V));
-  device_allocations.allocate(&dOld1, sizeof(Bits));
-  device_allocations.allocate(&dOld2, sizeof(Bits));
-  device_allocations.allocate(&dFinal, sizeof(Bits));
+  V *dSlot = device_allocations.allocate<V>(1);
+  Bits *dOld1 = device_allocations.allocate<Bits>(1);
+  Bits *dOld2 = device_allocations.allocate<Bits>(1);
+  Bits *dFinal = device_allocations.allocate<Bits>(1);
   HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
   k_atomic_fmm_returns_old64<IsMin, S><<<1, 1>>>(dSlot, dOld1, dOld2, dFinal, rhs1p, rhs2p);
   HIP_CHECK(hipDeviceSynchronize());
@@ -513,11 +474,6 @@ template <bool IsMin, Semantics S> static void run_fpsan_fmm_returns_old64(const
   EXPECT_EQ(old1, init.fpsan_payload()) << label << " S=" << int(S);
   EXPECT_EQ(old2, after1.fpsan_payload()) << label << " S=" << int(S);
   EXPECT_EQ(final, after2.fpsan_payload()) << label << " S=" << int(S);
-
-  device_allocations.free(dSlot);
-  device_allocations.free(dOld1);
-  device_allocations.free(dOld2);
-  device_allocations.free(dFinal);
 }
 
 TEST(Atomic, Fmin64FpsanReturnsOld) {
@@ -539,8 +495,8 @@ TEST(Atomic, Fmin64FpsanMatchesScalarMin) {
   double *dIn = device_allocations.to_dev(in);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     using V = Value<double, decltype(sem)::value, kCC>;
-    V *dSlot;
-    device_allocations.allocate(&dSlot, sizeof(V));
+    DeviceAllocations device_allocations;
+    V *dSlot = device_allocations.allocate<V>(1);
     V init{1e300};
     HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
     k_atomic_fmin64<decltype(sem)::value><<<1, LANES>>>(dSlot, dIn);
@@ -551,9 +507,7 @@ TEST(Atomic, Fmin64FpsanMatchesScalarMin) {
     for (double x : in)
       acc = fpsan::min(acc, V{x});
     EXPECT_EQ(got.fpsan_payload(), acc.fpsan_payload());
-    device_allocations.free(dSlot);
   });
-  device_allocations.free(dIn);
 }
 
 TEST(Atomic, Fmax64FpsanMatchesScalarMax) {
@@ -565,8 +519,8 @@ TEST(Atomic, Fmax64FpsanMatchesScalarMax) {
   double *dIn = device_allocations.to_dev(in);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     using V = Value<double, decltype(sem)::value, kCC>;
-    V *dSlot;
-    device_allocations.allocate(&dSlot, sizeof(V));
+    DeviceAllocations device_allocations;
+    V *dSlot = device_allocations.allocate<V>(1);
     V init{-1e300};
     HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
     k_atomic_fmax64<decltype(sem)::value><<<1, LANES>>>(dSlot, dIn);
@@ -577,9 +531,7 @@ TEST(Atomic, Fmax64FpsanMatchesScalarMax) {
     for (double x : in)
       acc = fpsan::max(acc, V{x});
     EXPECT_EQ(got.fpsan_payload(), acc.fpsan_payload());
-    device_allocations.free(dSlot);
   });
-  device_allocations.free(dIn);
 }
 
 // ===========================================================================
@@ -599,8 +551,7 @@ void run_pk_add(void (*k)(Value<VEC, S, kCC> *, const float *)) {
     x = fpsan_test::pick_int_valued<float>(rng, -3, 3); // exact in f16/bf16
   float *dIn = device_allocations.to_dev(in);
   using V = Value<VEC, S, kCC>;
-  V *dSlot;
-  device_allocations.allocate(&dSlot, sizeof(V));
+  V *dSlot = device_allocations.allocate<V>(1);
   V init{};
   init.set(0, Value<Elem, S, kCC>{static_cast<Elem>(0)});
   init.set(1, Value<Elem, S, kCC>{static_cast<Elem>(0)});
@@ -624,8 +575,6 @@ void run_pk_add(void (*k)(Value<VEC, S, kCC> *, const float *)) {
     EXPECT_EQ(got.get(0).fpsan_payload(), acc.get(0).fpsan_payload());
     EXPECT_EQ(got.get(1).fpsan_payload(), acc.get(1).fpsan_payload());
   }
-  device_allocations.free(dIn);
-  device_allocations.free(dSlot);
 }
 
 TEST(Atomic, PkAddF16Float) {

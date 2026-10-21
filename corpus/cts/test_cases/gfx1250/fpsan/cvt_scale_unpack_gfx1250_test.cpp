@@ -175,15 +175,12 @@ void expect_canonical_device_payloads(const std::array<unsigned, N> &codes,
     auto in = exact8();                                                                            \
     auto w = host_pack_bytes8(in, FMT);                                                            \
     unsigned *dIn = device_allocations.to_dev(std::vector<unsigned>(w.begin(), w.end()));          \
-    float *dO;                                                                                     \
-    device_allocations.allocate(&dO, 8 * sizeof(float));                                           \
+    float *dO = device_allocations.allocate<float>(8);                                             \
     CASE##_k<<<1, 1>>>(dIn, kE8M0_x1, dO);                                                         \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     auto got = from_dev(dO, 8);                                                                    \
     for (int i = 0; i < 8; ++i)                                                                    \
       EXPECT_EQ(got[i], narrow_to_f32(f32_to_narrow(in[i], FMT) & 0xFFu, FMT)) << "elem " << i;    \
-    device_allocations.free(dIn);                                                                  \
-    device_allocations.free(dO);                                                                   \
   }
 
 PK8_BYTES_GOLDEN(Fp8ToF32, amdgcn_cvt_scale_pk8_f32_fp8, kFp8E4M3, float)
@@ -206,15 +203,13 @@ PK8_BYTES_GOLDEN(Bf8ToBf16, amdgcn_cvt_scale_pk8_bf16_bf8, kFp8E5M2, __bf16)
       GTEST_SKIP() << "no HIP device";                                                             \
     auto in = exact8();                                                                            \
     unsigned packed = host_pack_nibbles8(in);                                                      \
-    float *dO;                                                                                     \
-    device_allocations.allocate(&dO, 8 * sizeof(float));                                           \
+    float *dO = device_allocations.allocate<float>(8);                                             \
     CASE##_k<<<1, 1>>>(packed, kE8M0_x1, dO);                                                      \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     auto got = from_dev(dO, 8);                                                                    \
     for (int i = 0; i < 8; ++i)                                                                    \
       EXPECT_EQ(got[i], narrow_to_f32(f32_to_narrow(in[i], kFp4E2M1) & 0xFu, kFp4E2M1))            \
           << "elem " << i;                                                                         \
-    device_allocations.free(dO);                                                                   \
   }
 
 PK8_NIB_GOLDEN(Fp4ToF32, amdgcn_cvt_scale_pk8_f32_fp4, float)
@@ -239,15 +234,12 @@ PK8_NIB_GOLDEN(Fp4ToBf16, amdgcn_cvt_scale_pk8_bf16_fp4, __bf16)
     auto in = exact16();                                                                           \
     auto w = host_pack_codes16(in, FMT);                                                           \
     unsigned *dIn = device_allocations.to_dev(std::vector<unsigned>(w.begin(), w.end()));          \
-    float *dO;                                                                                     \
-    device_allocations.allocate(&dO, 16 * sizeof(float));                                          \
+    float *dO = device_allocations.allocate<float>(16);                                            \
     CASE##_k<<<1, 1>>>(dIn, kE8M0_x1, dO);                                                         \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     auto got = from_dev(dO, 16);                                                                   \
     for (int i = 0; i < 16; ++i)                                                                   \
       EXPECT_EQ(got[i], narrow_to_f32(f32_to_narrow(in[i], FMT) & 0x3Fu, FMT)) << "elem " << i;    \
-    device_allocations.free(dIn);                                                                  \
-    device_allocations.free(dO);                                                                   \
   }
 
 PK16_CODES_GOLDEN(Fp6ToF32, amdgcn_cvt_scale_pk16_f32_fp6, kFp6E2M3, float)
@@ -278,8 +270,7 @@ TEST(CvtScalePk8Unpack, Fp8ScaleMultiplies) {
   auto in = exact8();
   auto w = host_pack_bytes8(in, kFp8E4M3);
   unsigned *dIn = device_allocations.to_dev(std::vector<unsigned>(w.begin(), w.end()));
-  float *dO;
-  device_allocations.allocate(&dO, 8 * sizeof(float));
+  float *dO = device_allocations.allocate<float>(8);
   k_pk8_scale_x2<<<1, 1>>>(dIn, kE8M0_x2, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 8);
@@ -287,8 +278,6 @@ TEST(CvtScalePk8Unpack, Fp8ScaleMultiplies) {
     EXPECT_EQ(got[i], narrow_to_f32(f32_to_narrow(in[i], kFp8E4M3) & 0xFFu, kFp8E4M3) *
                           e8m0_decode(kE8M0_x2))
         << "elem " << i;
-  device_allocations.free(dIn);
-  device_allocations.free(dO);
 }
 
 // ============================ FPSan mode ====================================
@@ -313,8 +302,7 @@ template <Semantics S> void run_fpsan_pk8_fp8_payload() {
   auto in = exact8();
   auto w = host_pack_payload_bytes8<S, fpsan::fp8_e4m3>(in, kFp8E4M3);
   unsigned *dIn = device_allocations.to_dev(std::vector<unsigned>(w.begin(), w.end()));
-  unsigned *dO;
-  device_allocations.allocate(&dO, 8 * sizeof(unsigned));
+  unsigned *dO = device_allocations.allocate<unsigned>(8);
   k_fpsan_pk8_fp8<S><<<1, 1>>>(dIn, kE8M0_x2, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 8);
@@ -325,8 +313,6 @@ template <Semantics S> void run_fpsan_pk8_fp8_payload() {
     const auto want = static_cast<unsigned>(fpsan::cast<float>(src).fpsan_payload());
     EXPECT_EQ(got[i], want) << "elem " << i;
   }
-  device_allocations.free(dIn);
-  device_allocations.free(dO);
 }
 
 TEST(CvtScalePk8Unpack, FpsanFp8Payload) { FPSAN_RUN_FPSAN_SEMANTICS(run_fpsan_pk8_fp8_payload); }
@@ -366,15 +352,13 @@ template <Semantics S> void run_fpsan_pk8_fp4_f32_canonical() {
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   constexpr std::array<unsigned, 8> codes{0x0u, 0x1u, 0x7u, 0x8u, 0x9u, 0xAu, 0xEu, 0xFu};
-  unsigned *dO;
-  device_allocations.allocate(&dO, 16 * sizeof(unsigned));
+  unsigned *dO = device_allocations.allocate<unsigned>(16);
   k_fpsan_pk8_fp4_f32_canonical<S><<<1, 1>>>(host_pack_raw_nibbles8(codes), kE8M0_x2, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got_all = from_dev(dO, 16);
   std::vector<unsigned> got(got_all.begin(), got_all.begin() + 8);
   std::vector<unsigned> got_sum(got_all.begin() + 8, got_all.end());
   expect_canonical_device_payloads<float, 4, S>(codes, got, got_sum, "gfx1250 pk8 fp4->f32");
-  device_allocations.free(dO);
 }
 
 template <Semantics S> void run_fpsan_pk8_fp4_f16_canonical() {
@@ -382,15 +366,13 @@ template <Semantics S> void run_fpsan_pk8_fp4_f16_canonical() {
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   constexpr std::array<unsigned, 8> codes{0x0u, 0x1u, 0x7u, 0x8u, 0x9u, 0xAu, 0xEu, 0xFu};
-  unsigned *dO;
-  device_allocations.allocate(&dO, 16 * sizeof(unsigned));
+  unsigned *dO = device_allocations.allocate<unsigned>(16);
   k_fpsan_pk8_fp4_f16_canonical<S><<<1, 1>>>(host_pack_raw_nibbles8(codes), kE8M0_x2, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got_all = from_dev(dO, 16);
   std::vector<unsigned> got(got_all.begin(), got_all.begin() + 8);
   std::vector<unsigned> got_sum(got_all.begin() + 8, got_all.end());
   expect_canonical_device_payloads<_Float16, 4, S>(codes, got, got_sum, "gfx1250 pk8 fp4->f16");
-  device_allocations.free(dO);
 }
 
 template <Semantics S> void run_fpsan_pk8_fp4_bf16_canonical() {
@@ -398,15 +380,13 @@ template <Semantics S> void run_fpsan_pk8_fp4_bf16_canonical() {
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   constexpr std::array<unsigned, 8> codes{0x0u, 0x1u, 0x7u, 0x8u, 0x9u, 0xAu, 0xEu, 0xFu};
-  unsigned *dO;
-  device_allocations.allocate(&dO, 16 * sizeof(unsigned));
+  unsigned *dO = device_allocations.allocate<unsigned>(16);
   k_fpsan_pk8_fp4_bf16_canonical<S><<<1, 1>>>(host_pack_raw_nibbles8(codes), kE8M0_x2, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got_all = from_dev(dO, 16);
   std::vector<unsigned> got(got_all.begin(), got_all.begin() + 8);
   std::vector<unsigned> got_sum(got_all.begin() + 8, got_all.end());
   expect_canonical_device_payloads<__bf16, 4, S>(codes, got, got_sum, "gfx1250 pk8 fp4->bf16");
-  device_allocations.free(dO);
 }
 
 TEST(CvtScalePk8Unpack, FpsanFp4ToF16CanonicalPayload) {
@@ -444,16 +424,13 @@ TEST(CvtScalePk8Unpack, FpsanFp4ToBf16CanonicalPayload) {
                                              0x22u, 0x2Fu, 0x3Eu, 0x15u};                          \
     auto w = host_pack_raw_codes16(codes);                                                         \
     unsigned *dIn = device_allocations.to_dev(std::vector<unsigned>(w.begin(), w.end()));          \
-    unsigned *dO;                                                                                  \
-    device_allocations.allocate(&dO, 32 * sizeof(unsigned));                                       \
+    unsigned *dO = device_allocations.allocate<unsigned>(32);                                      \
     CASE##_k<S><<<1, 1>>>(dIn, kE8M0_x2, dO);                                                      \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     auto got_all = from_dev(dO, 32);                                                               \
     std::vector<unsigned> got(got_all.begin(), got_all.begin() + 16);                              \
     std::vector<unsigned> got_sum(got_all.begin() + 16, got_all.end());                            \
     expect_canonical_device_payloads<DST, 6, S>(codes, got, got_sum, LABEL);                       \
-    device_allocations.free(dIn);                                                                  \
-    device_allocations.free(dO);                                                                   \
   }                                                                                                \
   TEST(CvtScalePk16Unpack, CASE) { FPSAN_RUN_FPSAN_SEMANTICS(CASE##_run); }
 

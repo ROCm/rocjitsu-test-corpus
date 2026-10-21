@@ -98,21 +98,21 @@ class DeviceAllocations {
   std::vector<std::unique_ptr<void, Deleter>> allocations_;
 
 public:
-  template <class T> void allocate(T **device, std::size_t bytes) {
+  template <class T> T *allocate(std::size_t count) {
     T *pointer = nullptr;
-    HIP_CHECK_EXC(hipMalloc(&pointer, bytes));
+    HIP_CHECK_EXC(hipMalloc(&pointer, count * sizeof(T)));
     std::unique_ptr<void, Deleter> allocation(pointer);
     allocations_.push_back(std::move(allocation));
-    *device = pointer;
+    return pointer;
   }
 
   template <class T> T *to_dev(const std::vector<T> &host) {
-    T *device = nullptr;
-    allocate(&device, host.size() * sizeof(T));
+    T *device = allocate<T>(host.size());
     HIP_CHECK_EXC(hipMemcpy(device, host.data(), host.size() * sizeof(T), hipMemcpyHostToDevice));
     return device;
   }
 
+  // Release an owned allocation early; ignore pointers this guard does not own.
   void free(void *device) {
     const auto allocation =
         std::find_if(allocations_.begin(), allocations_.end(),

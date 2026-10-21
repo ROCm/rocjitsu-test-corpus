@@ -32,21 +32,13 @@ TEST(SwmmacGfx12, F16_F16_LayoutMatchesHardware) {
         *dC = device_allocations.to_dev(d.C);
   int *dp0 = device_allocations.to_dev(d.p0), *dp1 = device_allocations.to_dev(d.p1);
   std::uint16_t *dI = device_allocations.to_dev(d.idx);
-  _Float16 *dD = nullptr;
-  device_allocations.allocate(&dD, kSwM * kSwN * sizeof(_Float16));
+  _Float16 *dD = device_allocations.allocate<_Float16>(kSwM * kSwN);
   k_swmmac_f16h_float<<<1, WAVE>>>(dA, dB, dC, dp0, dp1, dI, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<_Float16> got(kSwM * kSwN);
   HIP_CHECK(hipMemcpy(got.data(), dD, kSwM * kSwN * sizeof(_Float16), hipMemcpyDeviceToHost));
   for (int t = 0; t < kSwM * kSwN; ++t)
     EXPECT_EQ(bits_of(got[t]), bits_of(ref[t])) << "at " << t;
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dp0);
-  device_allocations.free(dp1);
-  device_allocations.free(dI);
-  device_allocations.free(dD);
 }
 
 TEST(SwmmacGfx12, F16_F16_FpsanMatchesScalarReference) {
@@ -61,8 +53,8 @@ TEST(SwmmacGfx12, F16_F16_FpsanMatchesScalarReference) {
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     std::vector<std::uint64_t> ref = sw_reference_fpsan_h<S, _Float16, _Float16, _Float16>(d);
-    std::uint16_t *dD = nullptr;
-    device_allocations.allocate(&dD, kSwM * kSwN * sizeof(std::uint16_t));
+    DeviceAllocations device_allocations;
+    std::uint16_t *dD = device_allocations.allocate<std::uint16_t>(kSwM * kSwN);
     k_swmmac_f16h_fpsan<S><<<1, WAVE>>>(dA, dB, dC, dp0, dp1, dI, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint16_t> got(kSwM * kSwN);
@@ -70,12 +62,5 @@ TEST(SwmmacGfx12, F16_F16_FpsanMatchesScalarReference) {
         hipMemcpy(got.data(), dD, kSwM * kSwN * sizeof(std::uint16_t), hipMemcpyDeviceToHost));
     for (int t = 0; t < kSwM * kSwN; ++t)
       EXPECT_EQ(static_cast<std::uint64_t>(got[t]), ref[t]) << "at " << t;
-    device_allocations.free(dD);
   });
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dp0);
-  device_allocations.free(dp1);
-  device_allocations.free(dI);
 }

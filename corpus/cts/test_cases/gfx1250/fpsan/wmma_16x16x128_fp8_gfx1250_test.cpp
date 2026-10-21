@@ -155,9 +155,8 @@ template <class Traits> void run_layout_matches_hardware() {
   AE *dA = device_allocations.to_dev(m.A);
   BE *dB = device_allocations.to_dev(m.B);
   CE *dC = device_allocations.to_dev(m.C);
-  CE *dHw, *dOurs;
-  device_allocations.allocate(&dHw, M * N * sizeof(CE));
-  device_allocations.allocate(&dOurs, M * N * sizeof(CE));
+  CE *dHw = device_allocations.allocate<CE>(M * N);
+  CE *dOurs = device_allocations.allocate<CE>(M * N);
   k_builtin<Traits><<<1, 32>>>(dA, dB, dC, dHw);
   k_float_dataflow<Traits><<<1, 32>>>(dA, dB, dC, dOurs);
   HIP_CHECK(hipDeviceSynchronize());
@@ -166,11 +165,6 @@ template <class Traits> void run_layout_matches_hardware() {
   HIP_CHECK(hipMemcpy(ours.data(), dOurs, M * N * sizeof(CE), hipMemcpyDeviceToHost));
   for (int i = 0; i < M * N; ++i)
     EXPECT_EQ(bits_of(hw[i]), bits_of(ours[i])) << "mismatch at " << (i / N) << "," << (i % N);
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dHw);
-  device_allocations.free(dOurs);
 }
 
 template <class Traits, Semantics S> void run_fpsan_matches_scalar_reference() {
@@ -197,18 +191,13 @@ template <class Traits, Semantics S> void run_fpsan_matches_scalar_reference() {
   AE *dA = device_allocations.to_dev(m.A);
   BE *dB = device_allocations.to_dev(m.B);
   CE *dC = device_allocations.to_dev(m.C);
-  CBits *dD;
-  device_allocations.allocate(&dD, M * N * sizeof(CBits));
+  CBits *dD = device_allocations.allocate<CBits>(M * N);
   k_fpsan<Traits, S><<<1, 32>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<CBits> got(M * N);
   HIP_CHECK(hipMemcpy(got.data(), dD, M * N * sizeof(CBits), hipMemcpyDeviceToHost));
   for (int i = 0; i < M * N; ++i)
     EXPECT_EQ(got[i], ref[i]) << "payload mismatch at " << (i / N) << "," << (i % N);
-  device_allocations.free(dA);
-  device_allocations.free(dB);
-  device_allocations.free(dC);
-  device_allocations.free(dD);
 }
 
 // K=128: keep magnitudes small so 128-term integer sums stay exact in f32/f16

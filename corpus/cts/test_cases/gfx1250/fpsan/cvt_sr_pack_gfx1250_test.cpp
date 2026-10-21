@@ -66,8 +66,7 @@ template <class FP8> void run_chain(void (*k)(float, float, float, float, int *)
     GTEST_SKIP() << "no HIP device";
   // Four distinct values exactly representable in both fp8 formats.
   const float v[4] = {1.0f, -2.0f, 0.5f, 3.0f};
-  int *dO;
-  device_allocations.allocate(&dO, sizeof(int));
+  int *dO = device_allocations.allocate<int>(1);
   k<<<1, 1>>>(v[0], v[1], v[2], v[3], dO);
   HIP_CHECK(hipDeviceSynchronize());
   std::uint32_t got = static_cast<std::uint32_t>(from_dev(dO, 1)[0]);
@@ -76,7 +75,6 @@ template <class FP8> void run_chain(void (*k)(float, float, float, float, int *)
     std::uint32_t have = (got >> (8 * i)) & 0xFFu;
     EXPECT_EQ(have, want) << "byte " << i << " (val " << v[i] << ")";
   }
-  device_allocations.free(dO);
 }
 
 TEST(CvtSrPack, ChainFp8F32) { run_chain<fpsan::fp8_e4m3>(k_chain_fp8_f32); }
@@ -92,8 +90,7 @@ TEST(CvtSrPack, PreservesOldFp8F32) {
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const int old = static_cast<int>(0xAABBCCDDu);
-  int *dO;
-  device_allocations.allocate(&dO, sizeof(int));
+  int *dO = device_allocations.allocate<int>(1);
   const float v = 3.0f; // exact in fp8
   k_preserve_fp8_f32<<<1, 1>>>(old, v, 0x9999u, dO);
   HIP_CHECK(hipDeviceSynchronize());
@@ -101,7 +98,6 @@ TEST(CvtSrPack, PreservesOldFp8F32) {
   std::uint32_t enc = fpsan::fp8_e4m3(v).bits;
   std::uint32_t want = (static_cast<std::uint32_t>(old) & ~(0xFFu << 16)) | (enc << 16);
   EXPECT_EQ(got, want);
-  device_allocations.free(dO);
 }
 
 #endif // cvt_sr_fp8_f32
@@ -133,8 +129,7 @@ template <class FP8> void run_chain_f16(void (*k)(_Float16, _Float16, _Float16, 
     GTEST_SKIP() << "no HIP device";
   const _Float16 v[4] = {static_cast<_Float16>(1.0f), static_cast<_Float16>(-2.0f),
                          static_cast<_Float16>(0.5f), static_cast<_Float16>(3.0f)};
-  int *dO;
-  device_allocations.allocate(&dO, sizeof(int));
+  int *dO = device_allocations.allocate<int>(1);
   k<<<1, 1>>>(v[0], v[1], v[2], v[3], dO);
   HIP_CHECK(hipDeviceSynchronize());
   std::uint32_t got = static_cast<std::uint32_t>(from_dev(dO, 1)[0]);
@@ -143,7 +138,6 @@ template <class FP8> void run_chain_f16(void (*k)(_Float16, _Float16, _Float16, 
     std::uint32_t have = (got >> (8 * i)) & 0xFFu;
     EXPECT_EQ(have, want) << "byte " << i;
   }
-  device_allocations.free(dO);
 }
 
 TEST(CvtSrPack, ChainFp8F16) { run_chain_f16<fpsan::fp8_e4m3>(k_chain_fp8_f16); }
