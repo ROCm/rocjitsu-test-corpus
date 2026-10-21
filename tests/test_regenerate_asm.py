@@ -84,6 +84,22 @@ else:
 """
 
 
+def write_script(path: Path, body: str) -> Path:
+    """An executable Python script at *path* that runs *body*: a fake tool."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"#!{sys.executable}\n{body}")
+    path.chmod(0o755)
+    return path
+
+
+def prepend_to_path(
+    monkeypatch: pytest.MonkeyPatch, directory: Path, only: bool = False
+) -> None:
+    """Search *directory* for tools first, or, when *only*, nowhere else."""
+    rest = "" if only else f"{os.pathsep}{os.environ['PATH']}"
+    monkeypatch.setenv("PATH", f"{directory}{rest}")
+
+
 def write_fake_compiler(compiler: Path, behaviour: str) -> Path:
     """
     Stand in for hipcc with a script, so these tests need no ROCm install.
@@ -101,13 +117,11 @@ def write_fake_compiler(compiler: Path, behaviour: str) -> Path:
                   directory, as hipcc sometimes does under --cuda-device-only
       silent      exit 0 without writing anything
     """
-    compiler.write_text(
-        f"#!{sys.executable}\n"
+    return write_script(
+        compiler,
         f"BEHAVIOUR = {behaviour!r}\n"
-        f"WATCHED = {WATCHED_ENVIRONMENT!r}\n" + FAKE_COMPILER_BODY
+        f"WATCHED = {WATCHED_ENVIRONMENT!r}\n" + FAKE_COMPILER_BODY,
     )
-    compiler.chmod(0o755)
-    return compiler
 
 
 def install_fake_compiler(
@@ -1568,12 +1582,10 @@ def install_fake_rocm_sdk(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, root: Path
 ) -> None:
     """Put only a rocm-sdk that reports *root* as its path on PATH."""
-    bin_dir = tmp_path / "rocm-sdk-bin"
-    bin_dir.mkdir()
-    tool = bin_dir / "rocm-sdk"
-    tool.write_text(f"#!{sys.executable}\nprint({str(root)!r})\n")
-    tool.chmod(0o755)
-    monkeypatch.setenv("PATH", str(bin_dir))
+    tool = write_script(
+        tmp_path / "rocm-sdk-bin" / "rocm-sdk", f"print({str(root)!r})\n"
+    )
+    prepend_to_path(monkeypatch, tool.parent, only=True)
 
 
 def test_build_comes_from_the_distributions_that_installed_the_sdk(
@@ -1610,7 +1622,7 @@ def test_build_is_found_through_a_symlinked_rocm_path_without_rocm_sdk(
     link = tmp_path / "rocm-link"
     link.symlink_to(root)
     monkeypatch.setenv("ROCM_PATH", str(link))
-    monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
+    prepend_to_path(monkeypatch, tmp_path / "empty-bin", only=True)
     selected = REAL_ROCM_PATH()
     assert selected == root
     assert regen.sdk_build(selected) == "10.1.0a1"
@@ -1721,15 +1733,12 @@ def test_check_can_be_switched_off_explicitly(
 def test_failing_rocm_sdk_is_reported_rather_than_skipped(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    bin_dir = tmp_path / "rocm-sdk-bin"
-    bin_dir.mkdir()
-    tool = bin_dir / "rocm-sdk"
-    tool.write_text(
-        f"#!{sys.executable}\nimport sys\nprint('no SDK installed')\nsys.exit(1)\n"
+    tool = write_script(
+        tmp_path / "rocm-sdk-bin" / "rocm-sdk",
+        "import sys\nprint('no SDK installed')\nsys.exit(1)\n",
     )
-    tool.chmod(0o755)
     monkeypatch.delenv("ROCM_PATH", raising=False)
-    monkeypatch.setenv("PATH", str(bin_dir))
+    prepend_to_path(monkeypatch, tool.parent, only=True)
     with pytest.raises(
         regen.SetupError, match="rocm-sdk path --root failed .*no SDK installed"
     ):
@@ -1739,11 +1748,9 @@ def test_failing_rocm_sdk_is_reported_rather_than_skipped(
 def test_failing_compiler_version_is_reported_rather_than_unknown(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    tool = tmp_path / "broken-hipcc"
-    tool.write_text(
-        f"#!{sys.executable}\nimport sys\nprint('cannot start')\nsys.exit(1)\n"
+    tool = write_script(
+        tmp_path / "broken-hipcc", "import sys\nprint('cannot start')\nsys.exit(1)\n"
     )
-    tool.chmod(0o755)
     with pytest.raises(regen.SetupError, match="--version failed .*cannot start"):
         regen.compiler_version(regen.Toolchain(root=tmp_path / "rocm", compiler=tool))
 
@@ -1773,18 +1780,14 @@ def install_hipcc_on_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Pa
     Put a hipcc on PATH that records being run at all, in front of the rest of
     PATH. Returns the file it writes when run.
     """
-    bin_dir = tmp_path / "path-bin"
-    bin_dir.mkdir()
     ran = tmp_path / "path-hipcc-ran"
-    hipcc = bin_dir / "hipcc"
-    hipcc.write_text(
-        f"#!{sys.executable}\n"
+    hipcc = write_script(
+        tmp_path / "path-bin" / "hipcc",
         "from pathlib import Path\n"
         f"Path({str(ran)!r}).write_text('ran')\n"
-        "print('clang version from PATH')\n"
+        "print('clang version from PATH')\n",
     )
-    hipcc.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    prepend_to_path(monkeypatch, hipcc.parent)
     return ran
 
 
@@ -1964,19 +1967,15 @@ def test_sdk_is_resolved_once_per_run(
     sdk = tmp_path / "sdk"
     fake_sdk(sdk)
     calls = tmp_path / "rocm-sdk-calls"
-    bin_dir = tmp_path / "counting-bin"
-    bin_dir.mkdir()
-    tool = bin_dir / "rocm-sdk"
-    tool.write_text(
-        f"#!{sys.executable}\n"
+    tool = write_script(
+        tmp_path / "counting-bin" / "rocm-sdk",
         "from pathlib import Path\n"
         f"with Path({str(calls)!r}).open('a') as log:\n"
         "    log.write('call\\n')\n"
-        f"print({str(sdk)!r})\n"
+        f"print({str(sdk)!r})\n",
     )
-    tool.chmod(0o755)
     monkeypatch.delenv("ROCM_PATH", raising=False)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    prepend_to_path(monkeypatch, tool.parent)
     monkeypatch.setattr(regen, "select_toolchain", SELECT_TOOLCHAIN)
     assert run() == regen.ExitCode.SUCCESS
     # Four compiles, two cases on two targets, and one lookup.
