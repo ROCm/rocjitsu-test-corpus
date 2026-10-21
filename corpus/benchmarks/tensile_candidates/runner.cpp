@@ -11,6 +11,7 @@
 #include <Tensile/MasterSolutionLibrary.hpp>
 #include <Tensile/hip/HipHardware.hpp>
 #include <Tensile/hip/HipSolutionAdapter.hpp>
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
