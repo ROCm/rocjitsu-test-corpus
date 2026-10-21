@@ -154,7 +154,7 @@ def test_every_problem_is_reported_at_once(tmp_path: Path) -> None:
 
 def test_unsupported_schema_is_rejected(tmp_path: Path) -> None:
     path = tmp_path / "cases.toml"
-    path.write_text('[corpus]\nschema = 2\ntargets = ["gfx950"]\n')
+    path.write_text(corpus_table(["gfx950"], schema=inventory.SCHEMA + 1))
     with pytest.raises(inventory.InventoryError, match="unsupported corpus schema"):
         inventory.load(path)
 
@@ -170,7 +170,8 @@ CORPUS = corpus_table(["gfx950"])
 
 MALFORMED_FILES = {
     "unterminated table header": (
-        "[corpus\nschema = 1\n",
+        # The header's closing bracket removed.
+        corpus_table(["gfx950"]).replace("[corpus]", "[corpus", 1),
         "cases.toml: not valid TOML",
     ),
     "corpus not a table": ("corpus = 1\n", "cases.toml: [corpus] must be a table"),
@@ -275,3 +276,17 @@ def test_both_scripts_report_an_unreadable_file(
         tmp_path / "cases.toml", monkeypatch, capsys
     )
     assert "cannot be read" in checker and "cannot be read" in regeneration
+
+
+# --- Scratch manifests follow the current schema --------------------------------
+
+
+def test_scratch_manifests_use_the_current_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The helper writes inventory.SCHEMA rather than its own copy of it, so a
+    # schema change updates every scratch manifest with it.
+    monkeypatch.setattr(inventory, "SCHEMA", inventory.SCHEMA + 1)
+    path = write_manifest(tmp_path / "cases.toml", PORTABLE)
+    assert f"schema = {inventory.SCHEMA}" in path.read_text()
+    assert inventory.load(path).cases[0].id == "portable"

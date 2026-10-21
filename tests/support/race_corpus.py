@@ -46,12 +46,15 @@ def load_script(name: str) -> ModuleType:
     return module
 
 
-def corpus_table(targets: list[str] | None) -> str:
+def corpus_table(targets: list[str] | None, schema: int | None = None) -> str:
     """
-    The ``[corpus]`` table of a scratch cases.toml, at the current schema,
-    listing *targets*, or with no targets at all when *targets* is None.
+    The ``[corpus]`` table of a scratch cases.toml, listing *targets*, or with
+    no targets at all when *targets* is None. Its schema is *schema*, or the
+    current one, inventory.SCHEMA, when *schema* is None.
     """
-    table = '[corpus]\nschema = 1\nname = "race"\n'
+    if schema is None:
+        schema = import_module("inventory").SCHEMA
+    table = f'[corpus]\nschema = {schema}\nname = "race"\n'
     if targets is not None:
         table += f"targets = {json.dumps(targets)}\n"
     return table + "\n"
