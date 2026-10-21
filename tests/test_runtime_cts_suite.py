@@ -118,18 +118,22 @@ def fake_case(tmp_path, script, **overrides):
         id="fake", binary="fake", args=[], status="", timeout_seconds=2, **overrides
     )
     case = CorpusCase(
-        "pm4.gfx1250.fake",
-        "pm4",
-        "gfx1250",
-        None,
-        None,
-        tmp_path,
-        {},
-        row,
-        {},
+        id="pm4.gfx1250.fake",
+        suite="pm4",
+        target="gfx1250",
+        collection=None,
+        backend=None,
+        path=tmp_path,
+        build={},
+        run=row,
+        metadata={},
     )
-    context = RunContext(tmp_path, tmp_path / "artifacts", False)
-    build = BuildResult(tmp_path, binary, {})
+    context = RunContext(
+        repo_root=tmp_path,
+        artifact_directory=tmp_path / "artifacts",
+        skip_all_runs=False,
+    )
+    build = BuildResult(build_dir=tmp_path, executable_path=binary, metadata={})
     return case, build, context
 
 

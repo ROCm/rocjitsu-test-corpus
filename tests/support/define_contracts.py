@@ -42,7 +42,7 @@ class SelectionOptions:
     exclude_cases: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class RunContext:
     repo_root: Path
     artifact_directory: Path
