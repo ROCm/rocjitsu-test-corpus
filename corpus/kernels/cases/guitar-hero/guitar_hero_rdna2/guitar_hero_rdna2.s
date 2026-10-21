@@ -134,12 +134,16 @@ s_endpgm
 .Lcontinue\@:
 .endm
 guitar_hero_rdna2:
-s_mov_b32 s48, s2
+s_add_u32 s2, s2, s5
+s_addc_u32 s3, s3, 0
+s_setreg_b32 hwreg(HW_REG_FLAT_SCR_LO), s2
+s_setreg_b32 hwreg(HW_REG_FLAT_SCR_HI), s3
+s_mov_b32 s48, s4
 s_load_dwordx4 s[4:7], s[0:1], 0
 s_load_dwordx2 s[8:9], s[0:1], 16
 s_load_dword s11, s[0:1], 24
 s_waitcnt lgkmcnt(0)
-; With two user SGPRs, gfx10 delivers workgroup id X in s2.
+; With four user SGPRs, gfx10 delivers workgroup id X in s4.
 ; Preserve it before the instruction sweep reuses the input registers.
 s_mul_i32 s12, s48, 250368
 s_add_u32 s4, s4, s12
@@ -16760,14 +16764,17 @@ s_endpgm
   .amdhsa_group_segment_fixed_size 4096
   .amdhsa_private_segment_fixed_size 64
   .amdhsa_kernarg_size 40
-  .amdhsa_user_sgpr_count 2
+  .amdhsa_user_sgpr_count 4
   .amdhsa_user_sgpr_kernarg_segment_ptr 1
+  .amdhsa_user_sgpr_flat_scratch_init 1
   .amdhsa_wavefront_size32 1
   .amdhsa_system_sgpr_workgroup_id_x 1
+  .amdhsa_system_sgpr_private_segment_wavefront_offset 1
   .amdhsa_system_vgpr_workitem_id 0
   .amdhsa_next_free_vgpr 64
   .amdhsa_next_free_sgpr 80
   .amdhsa_reserve_vcc 1
+  .amdhsa_reserve_flat_scratch 1
   .amdhsa_dx10_clamp 1
   .amdhsa_ieee_mode 1
   .amdhsa_float_round_mode_32 0

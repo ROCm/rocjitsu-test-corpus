@@ -39,7 +39,21 @@ def test_checkpoint_layout(manifest):
     if name == "guitar_hero_cdna4":
         assert ".wavefront_size: 64" in assembly
         assert ".private_segment_fixed_size: 0" in assembly
-    elif name in ("guitar_hero_cdna5", "guitar_hero_rdna2"):
+    elif name == "guitar_hero_rdna2":
+        assert ".wavefront_size: 32" in assembly
+        assert ".private_segment_fixed_size: 64" in assembly
+        assert ".amdhsa_user_sgpr_count 4" in assembly
+        assert ".amdhsa_user_sgpr_flat_scratch_init 1" in assembly
+        assert ".amdhsa_system_sgpr_private_segment_wavefront_offset 1" in assembly
+        assert ".amdhsa_reserve_flat_scratch 1" in assembly
+        assert """guitar_hero_rdna2:
+s_add_u32 s2, s2, s5
+s_addc_u32 s3, s3, 0
+s_setreg_b32 hwreg(HW_REG_FLAT_SCR_LO), s2
+s_setreg_b32 hwreg(HW_REG_FLAT_SCR_HI), s3
+s_mov_b32 s48, s4
+""" in assembly
+    elif name == "guitar_hero_cdna5":
         assert ".wavefront_size: 32" in assembly
         assert ".private_segment_fixed_size: 64" in assembly
 

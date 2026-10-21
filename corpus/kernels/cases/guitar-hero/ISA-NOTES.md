@@ -31,10 +31,12 @@ exercise packed-dot DPP permutations. The shipped smoke has no hardware oracle.
 The gfx1030 variant is an independent wave32 source port of the gfx1100 case,
 audited against the RDNA2 manual and instruction inventory and assembled with
 `-mcpu=gfx1030 -mno-wavefrontsize64`. It keeps the gfx10 ABI: s0:s1 holds the
-kernarg pointer and the workgroup ID from s2 is preserved in s48. Each 64-item
-group contains two waves and owns 4 KiB of LDS/workspace. The 40-byte kernarg,
-64-byte private segment per lane, rolling hashes, bounded EXEC regions, dumps
-and checkpoint stopping are unchanged.
+kernarg pointer, s2:s3 supplies the flat-scratch initializer, s4 is the
+workgroup ID and s5 is the private-segment wavefront offset. The prologue adds
+the offset to the initializer, writes `HW_REG_FLAT_SCR_LO/HI` and preserves the
+workgroup ID in s48. Each 64-item group contains two waves and owns 4 KiB of
+LDS/workspace. The 40-byte kernarg, 64-byte private segment per lane, rolling
+hashes, bounded EXEC regions, dumps and checkpoint stopping are unchanged.
 
 RDNA3-only WMMA, VOPD, BF16-dot and global-addtid sections are removed. The port
 retains F16 and integer packed dots, DPP8/DPP16, DS addtid, scalar/vector ALU,
@@ -58,7 +60,9 @@ instruction or modes, which is summarized below.
 * `v_mad_u64_u32` with the gfx10 null scalar destination encoding
 * `v_movrels_b32_e64`
 * Flat addressing
-* Scratch/private-memory
+* Scratch/private-memory remains unsupported by the simulator. With the gfx10
+  flat-scratch ABI setup present, RocJITsu reports `HW_REG_FLAT_SCR_LO/HI` as
+  read-only and still rejects the resulting `0x100000000` address.
 * All nine regular and D16 `buffer_store_format` variants were bypassed after failures in `buffer_store_format_d16_x`, `buffer_store_format_d16_xy` and `buffer_store_format_x`
 * `v_movrelsd_b32_e64` is rejected by the decoder; the adjacent `v_movrelsd_2_b32_e64` probe was also bypassed.
 
