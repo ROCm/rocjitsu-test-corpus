@@ -152,6 +152,14 @@ def test_rdna2_legacy_accumulators():
     assert "v_dot2c_f32_f16_e64" not in e64
 
 
+def test_rdna2_vop3_plain_11_is_not_empty():
+    assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
+    body = assembly.split("; Checkpoint 126: vop3_plain_11", 1)[1]
+    body = body.split("checkpoint 126", 1)[0]
+    assert "v_min_i16_e64 v16, v8, v9" in body
+    assert "v_min_u16_e64 v18, v8, v9" in body
+
+
 def test_cdna5_scheduling_contract():
     assembly = (CASES / "guitar_hero_cdna5/guitar_hero_cdna5.s").read_text()
     lines = [line.split(";", 1)[0].strip() for line in assembly.splitlines()]

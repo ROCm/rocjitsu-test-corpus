@@ -4026,16 +4026,6 @@ v_min3_u16_e64 v20, v8, v9, v10
 sweep_inputs int
 v_mov_b32 v22, 0xa5a5a5a5
 v_min3_u32_e64 v22, v8, v9, v10
-sweep_inputs int
-v_mov_b32 v24, 0xa5a5a5a5
-v_min_i16_e64 v24, v8, v9
-sweep_inputs int
-v_mov_b32 v26, 0xa5a5a5a5
-v_min_u16_e64 v26, v8, v9
-sweep_inputs half
-v_mov_b32 v28, 0xa5a5a5a5
-sweep_inputs float
-v_mov_b32 v30, 0xa5a5a5a5
 masked_end 125
 checkpoint 125
 
@@ -4044,20 +4034,10 @@ clear_results
 masked_begin 126
 sweep_inputs int
 v_mov_b32 v16, 0xa5a5a5a5
+v_min_i16_e64 v16, v8, v9
 sweep_inputs int
 v_mov_b32 v18, 0xa5a5a5a5
-sweep_inputs half
-v_mov_b32 v20, 0xa5a5a5a5
-sweep_inputs float
-v_mov_b32 v22, 0xa5a5a5a5
-sweep_inputs half
-v_mov_b32 v24, 0xa5a5a5a5
-sweep_inputs float
-v_mov_b32 v26, 0xa5a5a5a5
-sweep_inputs half
-v_mov_b32 v28, 0xa5a5a5a5
-sweep_inputs float
-v_mov_b32 v30, 0xa5a5a5a5
+v_min_u16_e64 v18, v8, v9
 masked_end 126
 checkpoint 126
 
