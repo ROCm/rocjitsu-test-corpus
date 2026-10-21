@@ -7,6 +7,20 @@ numbers, not strings.
 
 ```json
 {
+  "schema_version": 1,
+  "publication": {
+    "id": null,
+    "source": {
+      "branch": null,
+      "message": null,
+      "base": null,
+      "pull_request": null
+    },
+    "trigger": null,
+    "machine_label": null,
+    "workflow_commit_sha": null,
+    "tensile_commit_sha": null
+  },
   "execution_summary": {
     "warmups": "<nonnegative integer>",
     "samples": "<positive odd integer>",
@@ -61,6 +75,15 @@ numbers, not strings.
 
 ## Reading the results
 
+- **One schema version covers the whole document.** Corpus owns `schema_version`,
+  currently `1`, including the publication metadata and raw results.
+- **The workflow owns publication metadata.** Corpus leaves every
+  `publication.source` field null, along with the other publication fields,
+  including `workflow_commit_sha` and `tensile_commit_sha`. The workflow fills
+  them later without changing raw provenance. When known,
+  `source.base` is `{"branch": "develop", "commit": "<base SHA>"}` and
+  `source.pull_request` is `{"number": 42}` with an optional `url` string.
+  Unavailable values remain null, including runs with no base or PR.
 - **One result per case, target and policy.** The same corpus-owned `id` occurs
   unchanged across targets/policies; use `(id, target, thread_policy)` as identity.
   `operation` and `thread_policy` are present even on failed/timeout results.
