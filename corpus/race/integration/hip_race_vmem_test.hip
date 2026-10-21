@@ -42,7 +42,7 @@ __global__ void explicit_atomic_kernel(unsigned *values, unsigned *output) {
 
 template <bool CheckResult, typename Launch> void check_atomic_values(Launch launch) {
   // One full wave32 or half a wave64. Every case has one independently checked
-  // dispatch and one expected report for an unsafe result use.
+  // dispatch; only unsafe callers expect a race report for the result use.
   constexpr unsigned lanes = 32;
   std::vector<unsigned> input(lanes), result(lanes);
   for (unsigned lane = 0; lane < lanes; ++lane)
