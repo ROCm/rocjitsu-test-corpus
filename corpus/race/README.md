@@ -85,7 +85,10 @@ python corpus/race/scripts/regenerate_asm.py --target gfx950    # one target
 
 - **Toolchain.** The compiler comes from `ROCM_PATH`, else `rocm-sdk path
   --root`, else `/opt/rocm`. Within that SDK, `bin/hipcc` is used, falling back
-  to `llvm/bin/clang++`, then to `hipcc` on `PATH`.
+  to `llvm/bin/clang++`. A compiler elsewhere, such as a `hipcc` on `PATH`, is
+  never used: the recipe records the compiler's `--version`, so it must be the
+  selected SDK's compiler that builds the listings. An SDK with neither is
+  rejected (exit 4).
 - **Extra flags.** `--cxxflags` passes extra compiler flags, split like shell
   words, so a path with spaces can be quoted:
   `--cxxflags='-I"/path/to/my headers"'`.

@@ -282,19 +282,21 @@ def _rocm_sdk_root() -> Path:
 
 def find_hip_compiler() -> Path:
     """
-    The HIP compiler, as an absolute path: the SDK's ``bin/hipcc``, else its
-    ``llvm/bin/clang++``, else ``hipcc`` on PATH. Absolute for the same reason
-    as rocm_path: it is run from the scratch directory.
+    The selected SDK's HIP compiler, as an absolute path: its ``bin/hipcc``,
+    else its ``llvm/bin/clang++``. Raises SetupError if it has neither.
+
+    Only the selected SDK is searched, never PATH: the recipe records what this
+    compiler reports for ``--version``, and the compile runs against the
+    selected SDK, so both must be the SDK's own compiler. Absolute for the same
+    reason as rocm_path: it is run from the scratch directory.
     """
     root = rocm_path()
     for candidate in (root / "bin" / "hipcc", root / "llvm" / "bin" / "clang++"):
         if candidate.is_file():
             return candidate
-    if found := shutil.which("hipcc"):
-        return Path(found).absolute()
     raise SetupError(
-        f"no HIP compiler: neither {root}/bin/hipcc nor {root}/llvm/bin/clang++ exists, "
-        f"and hipcc is not on PATH; set ROCM_PATH to a ROCm install"
+        f"no HIP compiler in the selected SDK {root}: neither bin/hipcc nor "
+        f"llvm/bin/clang++ exists; set ROCM_PATH to a ROCm install that has one"
     )
 
 

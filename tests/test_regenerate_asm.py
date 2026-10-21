@@ -780,9 +780,8 @@ def test_malformed_quoting_is_rejected_before_compiling(
 # --- SDK and compiler paths survive the compiler's scratch directory --------
 #
 # The compiler runs from a private scratch directory, so every path handed to it,
-# the executable included, must already be absolute. A relative ROCM_PATH, or a
-# compiler found through a relative PATH entry, means something only from the
-# caller's directory.
+# the executable included, must already be absolute. A relative ROCM_PATH means
+# something only from the caller's directory.
 
 
 @pytest.fixture
@@ -828,21 +827,6 @@ def test_rocm_path_is_absolute(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("ROCM_PATH", "rocm")
     assert regen.rocm_path() == tmp_path / "rocm"
-
-
-def test_compiler_found_through_a_relative_path_entry_is_absolute(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, no_sdk_discovery: None
-) -> None:
-    (tmp_path / "rocm").mkdir()  # an SDK root with neither candidate in it
-    compiler = fake_sdk(tmp_path / "tools", layout="bin/hipcc")
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("ROCM_PATH", str(tmp_path / "rocm"))
-    monkeypatch.setattr(
-        regen.shutil,
-        "which",
-        lambda name: "tools/bin/hipcc" if name == "hipcc" else None,
-    )
-    assert regen.find_hip_compiler() == compiler
 
 
 def test_clang_is_used_when_the_sdk_has_no_hipcc(
@@ -1731,3 +1715,114 @@ def test_rocm_path_that_is_not_a_directory_is_reported(
         regen.SetupError, match="ROCM_PATH .*missing.* is not a directory"
     ):
         REAL_ROCM_PATH()
+
+
+# --- The compiler always comes from the selected SDK ------------------------------
+#
+# The recipe records what the compiler reports for --version, and the compile
+# runs against the selected SDK. Both must be the SDK's own compiler: a hipcc
+# found on PATH can report one clang and build with another. So an SDK without
+# bin/hipcc or llvm/bin/clang++ is rejected, whatever is on PATH.
+
+
+def install_hipcc_on_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """
+    Put a hipcc on PATH that records being run at all, in front of the rest of
+    PATH. Returns the file it writes when run.
+    """
+    bin_dir = tmp_path / "path-bin"
+    bin_dir.mkdir()
+    ran = tmp_path / "path-hipcc-ran"
+    hipcc = bin_dir / "hipcc"
+    hipcc.write_text(
+        f"#!{sys.executable}\n"
+        "from pathlib import Path\n"
+        f"Path({str(ran)!r}).write_text('ran')\n"
+        "print('clang version from PATH')\n"
+    )
+    hipcc.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    return ran
+
+
+@pytest.fixture
+def sdk_without_a_compiler(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Select an SDK with neither bin/hipcc nor llvm/bin/clang++. Returns its root."""
+    root = tmp_path / "rocm"
+    (root / "include").mkdir(parents=True)
+    monkeypatch.setenv("ROCM_PATH", str(root))
+    return root
+
+
+def test_hipcc_on_path_is_not_used_for_an_sdk_without_a_compiler(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, sdk_without_a_compiler: Path
+) -> None:
+    install_hipcc_on_path(monkeypatch, tmp_path)
+    with pytest.raises(regen.SetupError, match="no HIP compiler in the selected SDK"):
+        regen.find_hip_compiler()
+
+
+def test_recipe_is_not_created_from_a_compiler_on_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, sdk_without_a_compiler: Path
+) -> None:
+    ran = install_hipcc_on_path(monkeypatch, tmp_path)
+    with pytest.raises(regen.SetupError, match="no HIP compiler in the selected SDK"):
+        regen.current_recipe([])
+    assert not ran.exists()
+
+
+def test_compile_does_not_use_a_compiler_on_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    sdk_without_a_compiler: Path,
+    kernel: Path,
+    pinned: Path,
+) -> None:
+    ran = install_hipcc_on_path(monkeypatch, tmp_path)
+    with pytest.raises(regen.SetupError, match="no HIP compiler in the selected SDK"):
+        regen.compile_device_asm(
+            kernel=kernel, target="gfx950", out=pinned, extra_flags=[]
+        )
+    assert not ran.exists()
+    assert pinned.read_text() == PINNED
+
+
+def test_run_with_a_compiler_only_on_path_compiles_nothing(
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    sdk_without_a_compiler: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    monkeypatch.setattr(regen, "rocm_path", REAL_ROCM_PATH)
+    monkeypatch.setattr(regen, "find_hip_compiler", FIND_HIP_COMPILER)
+    ran = install_hipcc_on_path(monkeypatch, tmp_path)
+    assert run() == regen.ExitCode.SETUP_FAILED
+    assert "no HIP compiler in the selected SDK" in capsys.readouterr().err
+    assert not ran.exists()
+    assert not (committed / "gfx950").exists()
+
+
+def test_recipe_names_the_sdk_compiler_that_compiles(
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # With a hipcc on PATH as well, the SDK's own clang++ reports the version
+    # and compiles every listing.
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    sdk_clang = fake_sdk(tmp_path / "sdk", layout="llvm/bin/clang++")
+    monkeypatch.setenv("ROCM_PATH", str(tmp_path / "sdk"))
+    monkeypatch.setattr(regen, "rocm_path", REAL_ROCM_PATH)
+    monkeypatch.setattr(regen, "find_hip_compiler", FIND_HIP_COMPILER)
+    ran = install_hipcc_on_path(monkeypatch, tmp_path)
+    assert run() == regen.ExitCode.SUCCESS
+    assert not ran.exists()
+    assert read_recipe(committed, "gfx950")["compiler"] == "clang++"
+    (argv,) = compiler_invocations(sdk_clang.parent, sdk_clang.name)
+    assert any(arg.endswith("kernel.hip") for arg in argv)
