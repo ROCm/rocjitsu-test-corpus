@@ -6166,7 +6166,7 @@ s_mov_b32 exec_lo, 0xa5a55a5a
 v_xor_b32 v40, 0x00400000, v8
 v_and_b32 v41, 1, v0
 v_xor_b32 v41, v41, v8
-ds_cmpst_b32 v52, v40, v41
+ds_cmpst_b32 v52, v41, v40
 s_waitcnt lgkmcnt(0)
 s_mov_b32 exec_lo, -1
 ds_read_b128 v[20:23], v52
@@ -6179,7 +6179,9 @@ v_mov_b32 v25, 0xa5a5a5a5
 v_mov_b32 v26, 0xa5a5a5a5
 v_mov_b32 v27, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
-ds_cmpst_b64 v52, v[32:33], v[34:35]
+v_and_b32 v36, 1, v0
+v_xor_b32 v34, v36, v8
+ds_cmpst_b64 v52, v[34:35], v[32:33]
 s_waitcnt lgkmcnt(0)
 s_mov_b32 exec_lo, -1
 ds_read_b128 v[28:31], v52
@@ -6200,7 +6202,7 @@ s_mov_b32 exec_lo, 0xa5a55a5a
 v_xor_b32 v40, 0x00400000, v8
 v_and_b32 v41, 1, v0
 v_xor_b32 v41, v41, v8
-ds_cmpst_rtn_b32 v16, v52, v40, v41
+ds_cmpst_rtn_b32 v16, v52, v41, v40
 s_waitcnt lgkmcnt(0)
 s_mov_b32 exec_lo, -1
 ds_read_b128 v[20:23], v52
@@ -6213,7 +6215,9 @@ v_mov_b32 v25, 0xa5a5a5a5
 v_mov_b32 v26, 0xa5a5a5a5
 v_mov_b32 v27, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
-ds_cmpst_rtn_b64 v[24:25], v52, v[32:33], v[34:35]
+v_and_b32 v36, 1, v0
+v_xor_b32 v34, v36, v8
+ds_cmpst_rtn_b64 v[24:25], v52, v[34:35], v[32:33]
 s_waitcnt lgkmcnt(0)
 s_mov_b32 exec_lo, -1
 ds_read_b128 v[28:31], v52
@@ -16356,7 +16360,7 @@ v_mov_b32 v41, 0x40000000
 v_and_b32 v44, 1, v0
 v_xor_b32 v42, v44, v8
 v_mov_b32 v43, v9
-ds_cmpst_f32 v52, v40, v42
+ds_cmpst_f32 v52, v42, v40
 s_waitcnt lgkmcnt(0)
 s_mov_b32 exec_lo, -1
 ds_read_b32 v20, v52
@@ -16379,7 +16383,7 @@ v_mov_b32 v41, 0x40000000
 v_and_b32 v44, 1, v0
 v_xor_b32 v42, v44, v8
 v_mov_b32 v43, v9
-ds_cmpst_rtn_f32 v16, v52, v40, v42
+ds_cmpst_rtn_f32 v16, v52, v42, v40
 s_waitcnt lgkmcnt(0)
 s_mov_b32 exec_lo, -1
 ds_read_b32 v20, v52
@@ -16402,7 +16406,7 @@ v_mov_b32 v41, 0x40000000
 v_and_b32 v44, 1, v0
 v_xor_b32 v42, v44, v8
 v_mov_b32 v43, v9
-ds_cmpst_f64 v52, v[40:41], v[42:43]
+ds_cmpst_f64 v52, v[42:43], v[40:41]
 s_waitcnt lgkmcnt(0)
 s_mov_b32 exec_lo, -1
 ds_read_b64 v[20:21], v52
@@ -16425,7 +16429,7 @@ v_mov_b32 v41, 0x40000000
 v_and_b32 v44, 1, v0
 v_xor_b32 v42, v44, v8
 v_mov_b32 v43, v9
-ds_cmpst_rtn_f64 v[16:17], v52, v[40:41], v[42:43]
+ds_cmpst_rtn_f64 v[16:17], v52, v[42:43], v[40:41]
 s_waitcnt lgkmcnt(0)
 s_mov_b32 exec_lo, -1
 ds_read_b64 v[20:21], v52

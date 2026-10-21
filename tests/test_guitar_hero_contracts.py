@@ -58,6 +58,34 @@ s_mov_b32 s48, s4
         assert ".private_segment_fixed_size: 64" in assembly
 
 
+def test_rdna2_ds_cmpst_compare_and_replacement_operands():
+    assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
+    instructions = re.findall(r"^ds_cmpst.*$", assembly, re.MULTILINE)
+    assert instructions == [
+        "ds_cmpst_b32 v52, v41, v40",
+        "ds_cmpst_b64 v52, v[34:35], v[32:33]",
+        "ds_cmpst_rtn_b32 v16, v52, v41, v40",
+        "ds_cmpst_rtn_b64 v[24:25], v52, v[34:35], v[32:33]",
+        "ds_cmpst_f32 v52, v42, v40",
+        "ds_cmpst_rtn_f32 v16, v52, v42, v40",
+        "ds_cmpst_f64 v52, v[42:43], v[40:41]",
+        "ds_cmpst_rtn_f64 v[16:17], v52, v[42:43], v[40:41]",
+    ]
+
+    # Comparison values equal initialized LDS on even lanes and differ on odd
+    # lanes; replacement values differ from initialized LDS on every lane.
+    for checkpoint in (178, 179):
+        body = assembly.split(f"; Checkpoint {checkpoint}:", 1)[1]
+        body = body.split(f"checkpoint {checkpoint}", 1)[0]
+        assert "v_xor_b32 v40, 0x00400000, v8" in body
+        assert "v_and_b32 v41, 1, v0\nv_xor_b32 v41, v41, v8" in body
+        assert "v_and_b32 v36, 1, v0\nv_xor_b32 v34, v36, v8" in body
+    for checkpoint in (473, 474, 475, 476):
+        body = assembly.split(f"; Checkpoint {checkpoint}:", 1)[1]
+        body = body.split(f"checkpoint {checkpoint}", 1)[0]
+        assert "v_and_b32 v44, 1, v0\nv_xor_b32 v42, v44, v8" in body
+
+
 def test_cdna5_scheduling_contract():
     assembly = (CASES / "guitar_hero_cdna5/guitar_hero_cdna5.s").read_text()
     lines = [line.split(";", 1)[0].strip() for line in assembly.splitlines()]
