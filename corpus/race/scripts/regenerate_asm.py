@@ -76,7 +76,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Sequence, Set
 from pathlib import Path
 
 import inventory
@@ -960,8 +960,8 @@ class FileComparison:
 def _report_drift(
     targets: Sequence[str],
     out_root: Path,
-    expected: set[tuple[str, str]],
-    not_compared: set[tuple[str, str]] = frozenset(),
+    expected: Set[tuple[str, str]],
+    not_compared: Set[tuple[str, str]] = frozenset(),
 ) -> ExitCode:
     """
     Compare freshly generated assembly against what is committed.
@@ -1006,7 +1006,7 @@ def _report_drift(
 
 
 def _files_to_compare(
-    target: str, out_root: Path, expected: set[tuple[str, str]]
+    target: str, out_root: Path, expected: Set[tuple[str, str]]
 ) -> list[str]:
     """Every listing *target* should have, was generated with, or has committed."""
     names = {file for expected_target, file in expected if expected_target == target}
@@ -1020,8 +1020,8 @@ def _compare_file(
     target: str,
     file: str,
     out_root: Path,
-    expected: set[tuple[str, str]],
-    not_compared: set[tuple[str, str]],
+    expected: Set[tuple[str, str]],
+    not_compared: Set[tuple[str, str]],
 ) -> FileComparison:
     name = f"{target}/{file}"
     fresh, committed = out_root / target / file, ASM_DIR / target / file
@@ -1069,7 +1069,7 @@ def _print_provenance(provenance: dict[tuple[str, str], list[str]]) -> None:
         print("only update their .ident lines.")
 
 
-def _print_not_compared(not_compared: set[tuple[str, str]]) -> None:
+def _print_not_compared(not_compared: Set[tuple[str, str]]) -> None:
     if not not_compared:
         return
     print(f"\n{len(not_compared)} case(s) skipped and not compared (--allow-skipped):")
