@@ -51,8 +51,10 @@ class Recipe:
             not installed that way. Two builds can share a release and a clang
             revision, so only the build tells them apart.
         flags: The explicit flags: the baseline recipe, then ``--cxxflags`` as
-            given. The flags every compile gets, such as the target and the
-            SDK's include directory, are implied.
+            the compiler receives them, with relative paths made absolute, so
+            the recipe changes when a flag selects a different file. The flags
+            every compile gets, such as the target and the SDK's include
+            directory, are implied.
     """
 
     compiler: str

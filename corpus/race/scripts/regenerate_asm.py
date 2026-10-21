@@ -375,8 +375,11 @@ def sdk_build(root: Path) -> str:
     return ", ".join(f"{name}=={version}" for name, version in sorted(versions.items()))
 
 
-def current_recipe(cxxflags: Sequence[str]) -> recipe.Recipe:
-    """The recipe a regeneration with *cxxflags*, as given, uses on this machine."""
+def current_recipe(extra_flags: Sequence[str]) -> recipe.Recipe:
+    """
+    The recipe a regeneration with *extra_flags* uses on this machine.
+    *extra_flags* are the flags as the compiler receives them; see absolute_flags.
+    """
     tool = find_hip_compiler()
     root = rocm_path()
     return recipe.Recipe(
@@ -384,7 +387,7 @@ def current_recipe(cxxflags: Sequence[str]) -> recipe.Recipe:
         compiler_version=compiler_version(tool),
         rocm_release=sdk_release(root),
         rocm_build=sdk_build(root),
-        flags=(*_BASELINE_COMPILER_FLAGS, *cxxflags),
+        flags=(*_BASELINE_COMPILER_FLAGS, *extra_flags),
     )
 
 
@@ -649,11 +652,14 @@ def _plan_build(args: argparse.Namespace) -> Build:
             f"include directories with --cxxflags, so they are recorded in {recipe.FILE_NAME}",
             file=sys.stderr,
         )
+    # The recipe records the flags as the compiler receives them, so a relative
+    # path that selects a different file from another directory changes it.
+    extra_flags = tuple(absolute_flags(cxxflags, Path.cwd()))
     return Build(
         corpus=corpus,
         targets=tuple(targets),
-        extra_flags=tuple(absolute_flags(cxxflags, Path.cwd())),
-        recipe=current_recipe(cxxflags),
+        extra_flags=extra_flags,
+        recipe=current_recipe(extra_flags),
     )
 
 

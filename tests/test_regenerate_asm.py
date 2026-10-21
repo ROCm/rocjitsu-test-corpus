@@ -1826,3 +1826,60 @@ def test_recipe_names_the_sdk_compiler_that_compiles(
     assert read_recipe(committed, "gfx950")["compiler"] == "clang++"
     (argv,) = compiler_invocations(sdk_clang.parent, sdk_clang.name)
     assert any(arg.endswith("kernel.hip") for arg in argv)
+
+
+# --- The recipe records the flags the compiler receives ---------------------------
+#
+# A relative path in --cxxflags is resolved against the directory the script
+# runs from, so one spelling can select different files. The recipe records each
+# flag as the compiler receives it, with the path made absolute, so changing
+# which file a flag selects changes the recipe.
+
+
+def caller_with_options(tmp_path: Path, name: str, value: int) -> Path:
+    """A caller directory holding an options.h that defines VALUE as *value*."""
+    caller = tmp_path / name
+    (caller / "include").mkdir(parents=True)
+    (caller / "options.h").write_text(f"#define VALUE {value}\n")
+    return caller
+
+
+def test_recipe_records_path_flags_as_the_compiler_receives_them(
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    caller = caller_with_options(tmp_path, name="caller", value=2)
+    monkeypatch.chdir(caller)
+    assert run("--cxxflags=-include options.h -Iinclude -DX=1") == 0
+    extra = ["-include", str(caller / "options.h"), f"-I{caller / 'include'}", "-DX=1"]
+    assert read_recipe(committed, "gfx950")["flags"] == ["-O3", "-x", "hip", *extra]
+    (argv,) = compiler_invocations(tmp_path)
+    assert argv[-len(extra) :] == extra
+
+
+def test_header_selected_from_another_directory_changes_the_recipe(
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The same --cxxflags, run from two directories whose options.h differ,
+    # selects different headers, so the recipes differ too.
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    first = caller_with_options(tmp_path, name="first", value=2)
+    second = caller_with_options(tmp_path, name="second", value=7)
+    monkeypatch.chdir(first)
+    assert run("--cxxflags=-include options.h") == 0
+    capsys.readouterr()
+    monkeypatch.chdir(second)
+    run("--check", "--cxxflags=-include options.h")
+    out = capsys.readouterr().out
+    assert "gfx950: recipe changed: flags" in out
+    assert str(first / "options.h") in out and str(second / "options.h") in out
+    assert "recipe unchanged" not in out

@@ -66,7 +66,7 @@ produce different code under the same `.ident`. So regenerating also writes
 | `compiler_version` | The `clang version` line of the compiler's `--version`. |
 | `rocm_release` | The SDK's release, from its `.info/version`, such as `10.1.0`, or `unknown`. |
 | `rocm_build` | The SDK's build, such as `10.1.0a20260822`: the version of the Python distributions that installed it, read from the selected installation. `unknown` for an SDK not installed that way, such as `/opt/rocm`. Two builds can share a release and a clang revision, so only the build tells them apart. |
-| `flags` | The explicit flags: `-O3 -x hip`, then `--cxxflags` as given. |
+| `flags` | The explicit flags: `-O3 -x hip`, then `--cxxflags` as the compiler receives them. A relative path, such as `-include options.h` or `-Iinclude`, is made absolute against the directory the script runs from, so running from another directory, where it selects a different file, changes the recipe. |
 
 The recipe describes every listing in its target directory, and only those: a
 target directory holds its listings and `recipe.toml`, nothing else. `--check`
