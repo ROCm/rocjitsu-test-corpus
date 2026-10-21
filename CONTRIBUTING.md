@@ -110,7 +110,10 @@ Contributors are expected to:
 `scripts/check_helper_headers.py` compiles each first-party `.h` and `.hpp`
 under `corpus/cts`, `corpus/runtime-cts`, `corpus/race`, and `corpus/semantics`
 as the only include in a translation unit. It checks host C++17 runtime CTS
-headers with the gfx1250 platform definitions, and HIP C++20 headers with their
+headers with the gfx1250 platform definitions, HIP GNU C++17 CTS headers, and
+HIP C++20 race and semantics headers. Each suite uses its own include roots:
+CTS support and vendored hip-fpsan, race's owning directory, or semantics'
+include directory. HIP headers use their
 target family (`gfx942`, `gfx950`, `gfx1151`, `gfx1201`, or `gfx1250`). Generic
 HIP headers use gfx950; the RDNA4 wave64 helper adds `-mwavefrontsize64`.
 These are compile checks and do not require a GPU. They check self-containment;

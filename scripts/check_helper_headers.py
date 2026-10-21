@@ -132,15 +132,21 @@ def main() -> int:
                 hip_cxx,
                 "-x",
                 "hip",
-                "-std=c++20",
+                "-std=gnu++17" if "cts" in header.parts else "-std=c++20",
                 f"--offload-arch={target}",
                 f"--rocm-path={args.rocm_path}",
                 f"--hip-path={args.rocm_path}",
                 f"-I{args.gtest_include}",
-                "-Icorpus/cts/support",
-                "-Icorpus/cts/third_party/hip-fpsan/include",
-                "-Icorpus/semantics/gfx1250/include",
             ]
+            if "cts" in header.parts:
+                command.extend(
+                    [
+                        "-Icorpus/cts/support",
+                        "-Icorpus/cts/third_party/hip-fpsan/include",
+                    ]
+                )
+            else:
+                command.append(f"-I{header.parent}")
             for directory in args.hip_include:
                 command.extend(["-idirafter", str(directory.resolve())])
             if "_w64_" in header.name:
