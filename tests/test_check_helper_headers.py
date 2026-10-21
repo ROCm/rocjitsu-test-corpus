@@ -65,10 +65,14 @@ class HelperHeaderCheckTests(unittest.TestCase):
         self.write(header, "#include <hip/hip_runtime.h>\n")
         result = self.check(
             header,
-            "--rocm-path", self.root / "sdk",
-            "--gtest-include", self.root / "missing-gtest",
-            "--runtime-kernel-dir", self.root / "missing-payload",
-            "--host-cxx", "missing-host-compiler",
+            "--rocm-path",
+            self.root / "sdk",
+            "--gtest-include",
+            self.root / "missing-gtest",
+            "--runtime-kernel-dir",
+            self.root / "missing-payload",
+            "--host-cxx",
+            "missing-host-compiler",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         command = self.command()
@@ -92,20 +96,26 @@ class HelperHeaderCheckTests(unittest.TestCase):
     def test_transitive_gtest_dependency_is_required(self):
         header = "corpus/cts/test_cases/general/helper.hpp"
         self.write(header, '#include "hip_test_utils.hpp"\n')
-        self.write("corpus/cts/support/hip_test_utils.hpp", "#include <gtest/gtest.h>\n")
+        self.write(
+            "corpus/cts/support/hip_test_utils.hpp", "#include <gtest/gtest.h>\n"
+        )
         result = self.check(header, "--rocm-path", self.root / "sdk")
         self.assertEqual(result.returncode, 2)
         self.assertIn("--gtest-include is required", result.stderr)
         self.assertFalse(self.log.exists())
         gtest = self.write("gtest/gtest/gtest.h", "").parents[1]
-        result = self.check(header, "--rocm-path", self.root / "sdk", "--gtest-include", gtest)
+        result = self.check(
+            header, "--rocm-path", self.root / "sdk", "--gtest-include", gtest
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(f"-I{gtest}", self.command())
 
     def test_runtime_header_needs_no_hip_toolchain_or_payload(self):
         header = "corpus/runtime-cts/common/test.h"
         self.write(header, "#include <cstdint>\n")
-        result = self.check(header, "--host-cxx", self.compiler, "--hip-cxx", "missing-hip")
+        result = self.check(
+            header, "--host-cxx", self.compiler, "--hip-cxx", "missing-hip"
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("-std=c++17", self.command())
         self.assertNotIn("hip", self.command())
@@ -113,16 +123,23 @@ class HelperHeaderCheckTests(unittest.TestCase):
     def test_transitive_payload_dependency_is_required_and_validated(self):
         header = "corpus/runtime-cts/common/support/wrapper.h"
         self.write(header, '#include "support/aql_payload.h"\n')
-        self.write("corpus/runtime-cts/common/support/aql_payload.h", '#include "payload_kernel.inc"\n')
+        self.write(
+            "corpus/runtime-cts/common/support/aql_payload.h",
+            '#include "payload_kernel.inc"\n',
+        )
         result = self.check(header, "--host-cxx", self.compiler)
         self.assertEqual(result.returncode, 2)
         self.assertIn("--runtime-kernel-dir is required", result.stderr)
         payload_dir = self.root / "payload"
-        result = self.check(header, "--host-cxx", self.compiler, "--runtime-kernel-dir", payload_dir)
+        result = self.check(
+            header, "--host-cxx", self.compiler, "--runtime-kernel-dir", payload_dir
+        )
         self.assertEqual(result.returncode, 2)
         self.assertIn("required input does not exist", result.stderr)
         self.write("payload/payload_kernel.inc", "")
-        result = self.check(header, "--host-cxx", self.compiler, "--runtime-kernel-dir", payload_dir)
+        result = self.check(
+            header, "--host-cxx", self.compiler, "--runtime-kernel-dir", payload_dir
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(f"-I{payload_dir}", self.command())
 
@@ -148,6 +165,23 @@ class HelperHeaderCheckTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("unknown helper headers", result.stderr)
         self.assertFalse(self.log.exists())
+
+    def test_compile_failure_reports_command_and_source(self):
+        header = "corpus/cts/support/test_utils.hpp"
+        self.write(header, "")
+        self.compiler.write_text(
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            "print('synthetic compile failure', file=sys.stderr)\n"
+            "sys.exit(1)\n"
+        )
+        result = self.check(header, "--rocm-path", self.root / "sdk")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"FAIL {header}", result.stdout)
+        self.assertIn("-std=gnu++17", result.stdout)
+        self.assertIn(f'#include "{header}"', result.stdout)
+        self.assertIn("synthetic compile failure", result.stdout)
+        self.assertIn("0/1 helper headers passed", result.stdout)
 
 
 if __name__ == "__main__":
