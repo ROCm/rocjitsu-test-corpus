@@ -245,7 +245,7 @@ def test_missing_header_skips_case_and_keeps_pinned_file(
         out_root=pinned.parent.parent,
         toolchain=toolchain,
     )
-    assert (result.written, result.failures) == (0, ())
+    assert result.failures == ()
     assert len(result.skipped) == 1 and "rocwmma/rocwmma.hpp" in result.skipped[0]
     assert pinned.read_text() == PINNED
 
@@ -265,7 +265,7 @@ def test_declared_header_found_through_include_flag(
         out_root=pinned.parent.parent,
         toolchain=toolchain,
     )
-    assert result == regen.RegenerateResult(written=1, failures=(), skipped=())
+    assert result == regen.RegenerateResult(failures=(), skipped=())
     assert "s_endpgm" in pinned.read_text()
 
 
@@ -453,7 +453,7 @@ def test_portable_case_builds_for_every_corpus_target(
         out_root=out_root,
         toolchain=toolchain,
     )
-    assert result == regen.RegenerateResult(written=3, failures=(), skipped=())
+    assert result == regen.RegenerateResult(failures=(), skipped=())
     assert sorted(str(p.relative_to(out_root)) for p in out_root.rglob("*.s")) == [
         "gfx1250/kernel.s",
         "gfx1250/only.s",
@@ -500,7 +500,7 @@ def test_environment_include_path_is_not_searched(
         out_root=pinned.parent.parent,
         toolchain=toolchain,
     )
-    assert (result.written, result.failures) == (0, ())
+    assert result.failures == ()
     assert len(result.skipped) == 1 and "--cxxflags" in result.skipped[0]
     assert pinned.read_text() == PINNED
 
@@ -1001,7 +1001,7 @@ def test_case_without_targets_regenerates_for_every_corpus_target(
         out_root=out_root,
         toolchain=toolchain,
     )
-    assert result == regen.RegenerateResult(written=2, failures=(), skipped=())
+    assert result == regen.RegenerateResult(failures=(), skipped=())
     assert sorted(str(p.relative_to(out_root)) for p in out_root.rglob("*.s")) == [
         "gfx1250/kernel.s",
         "gfx950/kernel.s",

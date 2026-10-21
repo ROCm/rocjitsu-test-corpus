@@ -598,17 +598,15 @@ def targets_for(corpus: inventory.Inventory, requested: list[str]) -> list[str]:
 @dataclasses.dataclass(frozen=True)
 class RegenerateResult:
     """
-    What regenerate() did.
+    What regenerate() could not do. Every other case's listing was written.
 
     Attributes:
-        written: How many listings were written.
         failures: One message per case that failed to compile: the kernel and
             target, then the compiler's diagnostic.
         skipped: One message per case skipped because a declared header is not
             on the include path.
     """
 
-    written: int
     failures: tuple[str, ...]
     skipped: tuple[str, ...]
 
@@ -626,7 +624,6 @@ def regenerate(
     A skipped or failed case writes nothing, so any existing listing of it
     under *out_root* is left as it was.
     """
-    written = 0
     failures: list[str] = []
     skipped: list[str] = []
     for target in targets:
@@ -647,12 +644,9 @@ def regenerate(
                     extra_flags=extra_flags,
                     toolchain=toolchain,
                 )
-                written += 1
             except CompileError as error:
                 failures.append(str(error))
-    return RegenerateResult(
-        written=written, failures=tuple(failures), skipped=tuple(skipped)
-    )
+    return RegenerateResult(failures=tuple(failures), skipped=tuple(skipped))
 
 
 @dataclasses.dataclass(frozen=True)
