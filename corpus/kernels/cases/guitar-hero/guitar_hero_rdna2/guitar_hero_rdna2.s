@@ -14,7 +14,7 @@
 v_mov_b32 v\r, 0
 .endr
 .endm
-; Fold under the current EXEC so every active loop iteration affects the oracle.
+; Fold under the current EXEC so every active loop iteration affects the rolling hashes.
 .macro fold_results
 .irp r,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
 v_xor_b32 v60, v60, v\r
