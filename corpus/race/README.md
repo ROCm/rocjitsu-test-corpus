@@ -96,7 +96,8 @@ python corpus/race/scripts/regenerate_asm.py --target gfx950    # one target
   A target is published only when all of its cases compiled: its new listings,
   exactly the ones its cases produce, and its `recipe.toml` are staged in a
   hidden directory beside it, which then replaces it. A listing of a removed
-  case, or of a target a case no longer builds for, is not carried over. A
+  case, or of a target a case no longer builds for, is not carried over; a
+  target no case builds for any more is published with only its recipe. A
   target with a failed or skipped case, or whose staging fails, for example on
   a full disk, keeps all of its committed files. Other, complete targets are
   still published.

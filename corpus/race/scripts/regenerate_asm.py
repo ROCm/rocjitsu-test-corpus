@@ -811,9 +811,11 @@ def _install(
     """
     Publish each complete target from *scratch* into ASM_DIR; see _publish_target.
 
-    A target with a failed or skipped case is not published, so its committed
-    listings and recipe stay exactly as they were, rather than mixing new
-    listings with old ones under one recipe.
+    Every target whose cases all compiled is published, including one that no
+    case builds for any more, which is published with no listings so that its
+    old ones go. A target with a failed or skipped case is not published, so its
+    committed listings and recipe stay exactly as they were, rather than mixing
+    new listings with old ones under one recipe.
     """
     published = 0
     blocked = []
@@ -823,11 +825,13 @@ def _install(
                 f"{target}: not updated: {len(result.failures)} case(s) failed and "
                 f"{len(result.skipped)} skipped, and its recipe covers every listing"
             )
-        elif result.written:
+        else:
             published += _publish_target(
                 target, built=scratch / target, build_recipe=build.recipe
             )
-    _print_install_summary(published=published, blocked=blocked)
+    _print_install_summary(
+        published=published, targets=len(results) - len(blocked), blocked=blocked
+    )
     if any(result.failures for result in results.values()):
         return ExitCode.COMPILE_FAILED
     return ExitCode.INCOMPLETE if blocked else ExitCode.SUCCESS
@@ -872,13 +876,14 @@ def _swap_in(staging: Path, live: Path) -> None:
     shutil.rmtree(retired, ignore_errors=True)
 
 
-def _print_install_summary(published: int, blocked: Sequence[str]) -> None:
-    print(
-        f"\nwrote {published} file(s) under {ASM_DIR.relative_to(CORPUS_ROOT.parent.parent)}"
-    )
+def _print_install_summary(
+    published: int, targets: int, blocked: Sequence[str]
+) -> None:
+    where = ASM_DIR.relative_to(CORPUS_ROOT.parent.parent)
+    print(f"\nwrote {published} file(s) for {targets} target(s) under {where}")
     for note in blocked:
         print(note, file=sys.stderr)
-    if published:
+    if targets:
         print(
             "Review the diff before committing: regenerating is a deliberate change to"
         )

@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: MIT
 import dataclasses
 import errno
-import importlib.util
 import json
 import os
 import sys
@@ -10,32 +9,13 @@ import tomllib
 import typing
 from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
+from support.race_corpus import corpus_table, load_script
 from test_recipe import BAD_RECIPES, GOOD, GOOD_TEXT
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = REPO_ROOT / "corpus" / "race" / "scripts" / "regenerate_asm.py"
-
-
-# The scripts import their shared inventory module as a sibling, as they do when
-# run directly from scripts/.
-sys.path.insert(0, str(SCRIPT.parent))
-
-
-def load_script() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("regenerate_asm", SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["regenerate_asm"] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-regen = load_script()
+regen = load_script("regenerate_asm")
 FIND_HIP_COMPILER = regen.find_hip_compiler
 
 # A case that needs the rocWMMA headers, as inventory.load returns it.
@@ -369,10 +349,7 @@ def manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Manifest:
     monkeypatch.setattr(regen, "CASES_PATH", path)
 
     def write(targets: list[str] | None, cases: str) -> None:
-        corpus_table = 'schema = 1\nname = "race"\n'
-        if targets is not None:
-            corpus_table += f"targets = {targets!r}\n".replace("'", '"')
-        path.write_text(f"[corpus]\n{corpus_table}\n{cases}")
+        path.write_text(corpus_table(targets) + cases)
 
     return write
 
@@ -1438,6 +1415,29 @@ def test_narrowed_case_is_removed_from_targets_it_no_longer_builds_for(
         "recipe.toml",
     ]
     assert (committed / "gfx1250" / "only.s").is_file()
+
+
+def test_narrowing_the_last_case_empties_its_old_target(
+    manifest: Manifest, corpus_main: CorpusMain
+) -> None:
+    # The only case builds for both targets, then is narrowed to gfx1250. No
+    # case builds for gfx950 any more, so gfx950 is published with no listings:
+    # its old listing goes, and its recipe is the new one.
+    run, committed = corpus_main
+    manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
+    assert run() == regen.ExitCode.SUCCESS
+    assert (committed / "gfx950" / "kernel.s").is_file()
+    manifest(
+        ["gfx950", "gfx1250"],
+        PORTABLE_CASE.replace("targets = []", 'targets = ["gfx1250"]'),
+    )
+    assert run("--cxxflags=-DNARROWED") == regen.ExitCode.SUCCESS
+    assert sorted(p.name for p in (committed / "gfx950").iterdir()) == ["recipe.toml"]
+    assert (
+        regen.recipe.load(committed / "gfx950" / "recipe.toml").flags[-1]
+        == "-DNARROWED"
+    )
+    assert (committed / "gfx1250" / "kernel.s").is_file()
 
 
 def test_failed_publication_keeps_the_old_target(

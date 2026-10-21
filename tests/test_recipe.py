@@ -1,17 +1,14 @@
 # Copyright (c) 2026 Advanced Micro Devices, Inc.
 # SPDX-License-Identifier: MIT
 import dataclasses
-import sys
 import tomllib
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = REPO_ROOT / "corpus" / "race" / "scripts"
-sys.path.insert(0, str(SCRIPTS))
+from support.race_corpus import CORPUS_DIR, import_module
 
-import recipe  # noqa: E402
+recipe = import_module("recipe")
 
 GOOD = recipe.Recipe(
     compiler="hipcc",
@@ -108,9 +105,7 @@ def test_recipe_is_a_frozen_dataclass() -> None:
 
 def test_committed_recipes_load() -> None:
     for target in ("gfx950", "gfx1250"):
-        assert (
-            recipe.load(SCRIPTS.parent / "asm" / target / recipe.FILE_NAME) is not None
-        )
+        assert recipe.load(CORPUS_DIR / "asm" / target / recipe.FILE_NAME) is not None
 
 
 def test_invalid_toml_keeps_the_parse_error(tmp_path: Path) -> None:

@@ -1,36 +1,15 @@
 # Copyright (c) 2026 Advanced Micro Devices, Inc.
 # SPDX-License-Identifier: MIT
-import importlib.util
-import sys
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
+from support.race_corpus import CORPUS_DIR, corpus_table, load_script
 from test_recipe import BAD_RECIPES, GOOD_TEXT
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = REPO_ROOT / "corpus" / "race" / "scripts" / "check_cases.py"
-
-
-# The scripts import their shared inventory module as a sibling, as they do when
-# run directly from scripts/.
-sys.path.insert(0, str(SCRIPT.parent))
-
-
-def load_script() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("check_cases", SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["check_cases"] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-check_cases = load_script()
+check_cases = load_script("check_cases")
 
 # The corpus fixture: writes cases.toml with the given [corpus] targets and
 # cases, and the assembly files given as "target/kernel" paths.
@@ -59,10 +38,7 @@ def corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BuildCorpus:
     monkeypatch.setattr(check_cases, "CASES_PATH", tmp_path / "cases.toml")
 
     def build(targets: list[str] | None, cases: str, asm: list[str]) -> None:
-        corpus_table = 'schema = 1\nname = "race"\n'
-        if targets is not None:
-            corpus_table += f"targets = {targets!r}\n".replace("'", '"')
-        (tmp_path / "cases.toml").write_text(f"[corpus]\n{corpus_table}\n{cases}")
+        (tmp_path / "cases.toml").write_text(corpus_table(targets) + cases)
         (tmp_path / "kernels").mkdir(exist_ok=True)
         for kernel in ("portable", "only"):
             (tmp_path / "kernels" / f"{kernel}.hip").write_text("")
@@ -90,6 +66,18 @@ def test_consistent_corpus_passes(
         cases=PORTABLE + GFX1250_ONLY,
         asm=["gfx950/portable", "gfx1250/portable", "gfx1250/only"],
     )
+    code, out = run(capsys)
+    assert code == 0, out
+
+
+def test_target_with_no_listings_passes(
+    corpus: BuildCorpus, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    # What regenerate_asm.py publishes when no case builds for a target any
+    # more: the target's directory with only its recipe.
+    corpus(targets=["gfx950", "gfx1250"], cases=GFX1250_ONLY, asm=["gfx1250/only"])
+    (tmp_path / "asm" / "gfx950").mkdir()
+    (tmp_path / "asm" / "gfx950" / "recipe.toml").write_text(GOOD_TEXT)
     code, out = run(capsys)
     assert code == 0, out
 
@@ -185,7 +173,7 @@ def test_manifest_without_targets_is_rejected(
 
 
 def test_committed_manifest_declares_its_targets() -> None:
-    manifest = tomllib.loads((SCRIPT.parent.parent / "cases.toml").read_text())
+    manifest = tomllib.loads((CORPUS_DIR / "cases.toml").read_text())
     assert manifest["corpus"]["targets"] == ["gfx950", "gfx1250"]
 
 
@@ -199,7 +187,7 @@ def test_committed_manifest_declares_its_targets() -> None:
 
 def test_committed_inventory_passes(capsys: pytest.CaptureFixture[str]) -> None:
     # The real corpus, as committed, with no paths redirected.
-    module = load_script()
+    module = load_script("check_cases")
     code = module.main([])
     out = capsys.readouterr()
     assert code == 0, out.err

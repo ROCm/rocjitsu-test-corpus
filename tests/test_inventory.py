@@ -1,35 +1,20 @@
 # Copyright (c) 2026 Advanced Micro Devices, Inc.
 # SPDX-License-Identifier: MIT
 import dataclasses
-import importlib.util
-import sys
 import tomllib
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = REPO_ROOT / "corpus" / "race" / "scripts"
-sys.path.insert(0, str(SCRIPTS))
+from support.race_corpus import CORPUS_DIR, corpus_table, import_module, load_script
 
-import inventory  # noqa: E402
-
-
-def load_script(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(name, SCRIPTS / f"{name}.py")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
+inventory = import_module("inventory")
 
 
 def write_manifest(
-    path: Path, body: str, targets: str = '["gfx950", "gfx1250"]'
+    path: Path, body: str, targets: tuple[str, ...] = ("gfx950", "gfx1250")
 ) -> Path:
-    path.write_text(
-        f'[corpus]\nschema = 1\nname = "race"\ntargets = {targets}\n\n{body}'
-    )
+    path.write_text(corpus_table(list(targets)) + body)
     return path
 
 
@@ -51,7 +36,9 @@ def test_load_gives_named_case_records(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("record", [inventory.Case, inventory.Inventory])
-def test_records_are_frozen_dataclasses(record: str) -> None:
+def test_records_are_frozen_dataclasses(
+    record: type[inventory.Case] | type[inventory.Inventory],
+) -> None:
     # Both inventory records are represented the same way: immutable fields,
     # and no tuple behaviour such as indexing or unpacking to depend on.
     assert dataclasses.is_dataclass(record)
@@ -88,7 +75,7 @@ def test_targets_of_and_outputs_apply_one_rule(tmp_path: Path) -> None:
 
 
 def test_committed_inventory_loads() -> None:
-    loaded = inventory.load(REPO_ROOT / "corpus" / "race" / "cases.toml")
+    loaded = inventory.load(CORPUS_DIR / "cases.toml")
     assert loaded.targets == ("gfx950", "gfx1250")
     assert len(loaded.cases) == 21
 
@@ -136,9 +123,9 @@ def test_invalid_manifest_is_rejected(tmp_path: Path, body: str, problem: str) -
     assert problem in error.value.problems
 
 
-@pytest.mark.parametrize("targets", ["[]", '["gfx950", "gfx950"]', '[""]'])
+@pytest.mark.parametrize("targets", [(), ("gfx950", "gfx950"), ("",)])
 def test_invalid_corpus_targets_are_rejected(
-    tmp_path: Path, targets: list[str] | None
+    tmp_path: Path, targets: tuple[str, ...]
 ) -> None:
     with pytest.raises(inventory.InventoryError, match=r"\[corpus\] targets"):
         inventory.load(
@@ -170,7 +157,7 @@ def test_unsupported_schema_is_rejected(tmp_path: Path) -> None:
 # whatever exception reading it happened to hit. The TOML parser's error is kept
 # as the cause.
 
-CORPUS = '[corpus]\nschema = 1\nname = "race"\ntargets = ["gfx950"]\n'
+CORPUS = corpus_table(["gfx950"])
 
 MALFORMED_FILES = {
     "unterminated table header": (
