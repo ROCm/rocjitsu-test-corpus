@@ -31,8 +31,8 @@ class HelperHeaderCheckTests(unittest.TestCase):
             "#!/usr/bin/env python3\n"
             "import json, os, sys\n"
             "from pathlib import Path\n"
-            "Path(os.environ['HEADER_CHECK_COMMAND']).write_text(\n"
-            "    json.dumps(sys.argv[1:]))\n",
+            "with Path(os.environ['HEADER_CHECK_COMMAND']).open('a') as log:\n"
+            "    log.write(json.dumps(sys.argv[1:]) + '\\n')\n",
         )
         self.compiler.chmod(0o755)
         self.log = self.root / "command.json"
@@ -44,12 +44,17 @@ class HelperHeaderCheckTests(unittest.TestCase):
         return path
 
     def check(self, header, *arguments):
+        self.log.unlink(missing_ok=True)
         return subprocess.run(
             [
                 sys.executable,
                 str(self.root / "scripts/check_helper_headers.py"),
                 "--header",
                 header,
+                "--jobs",
+                "1",
+                "--host-cxx",
+                str(self.compiler),
                 *map(str, arguments),
             ],
             env={**os.environ, "HEADER_CHECK_COMMAND": str(self.log)},
@@ -58,7 +63,10 @@ class HelperHeaderCheckTests(unittest.TestCase):
         )
 
     def command(self):
-        return json.loads(self.log.read_text())
+        return self.commands()[0]
+
+    def commands(self):
+        return [json.loads(line) for line in self.log.read_text().splitlines()]
 
     def test_semantics_ignores_unrelated_inputs_and_host_compiler(self):
         header = "corpus/semantics/gfx1250/include/test_support.hpp"
@@ -87,11 +95,13 @@ class HelperHeaderCheckTests(unittest.TestCase):
         self.write(header, "#include <cstdint>\n")
         result = self.check(header, "--rocm-path", self.root / "sdk")
         self.assertEqual(result.returncode, 0, result.stderr)
-        command = self.command()
-        self.assertIn("-std=gnu++17", command)
-        self.assertIn("-Icorpus/cts/support", command)
-        self.assertIn("-Icorpus/cts/third_party/hip-fpsan/include", command)
-        self.assertNotIn("-Icorpus/semantics/gfx1250/include", command)
+        hip, host = self.commands()
+        self.assertIn("-std=gnu++17", hip)
+        self.assertIn("-std=c++17", host)
+        for command in (hip, host):
+            self.assertIn("-Icorpus/cts/support", command)
+            self.assertIn("-Icorpus/cts/third_party/hip-fpsan/include", command)
+            self.assertNotIn("-Icorpus/semantics/gfx1250/include", command)
 
     def test_transitive_gtest_dependency_is_required(self):
         header = "corpus/cts/test_cases/general/helper.hpp"
@@ -148,9 +158,133 @@ class HelperHeaderCheckTests(unittest.TestCase):
         self.write(header, "#include <string>\n")
         result = self.check(header, "--rocm-path", self.root / "sdk")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("-std=c++20", self.command())
+        self.assertIn("-std=gnu++20", self.command())
         self.assertIn("-Icorpus/race/integration", self.command())
         self.assertNotIn("-Icorpus/cts/support", self.command())
+
+    def test_host_helpers_compile_without_hip_runtime_or_flags(self):
+        for header, standard in (
+            ("corpus/cts/support/fpsan_generic.hpp", "c++17"),
+            ("corpus/cts/support/fpsan_semantics.hpp", "c++17"),
+            ("corpus/cts/support/parity_ops.hpp", "c++17"),
+            ("corpus/cts/support/test_random.hpp", "c++17"),
+            ("corpus/cts/support/test_utils.hpp", "c++17"),
+            ("corpus/race/integration/race_log_expectation.hpp", "c++20"),
+        ):
+            with self.subTest(header=header):
+                self.write(header, "")
+                result = self.check(
+                    header,
+                    "--rocm-path",
+                    self.root / "sdk",
+                    "--hip-include",
+                    self.root / "hip-only-includes",
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                hip, host = self.commands()
+                self.assertIn("hip", hip)
+                self.assertIn("c++", host)
+                self.assertIn(f"-std={standard}", host)
+                self.assertFalse(
+                    any(
+                        flag.startswith(
+                            ("--rocm-path=", "--hip-path=", "--offload-arch=")
+                        )
+                        for flag in host
+                    )
+                )
+                self.assertNotIn("hip", host)
+                self.assertNotIn(str(self.root / "hip-only-includes"), host)
+                self.assertNotIn("-idirafter", host)
+                self.assertIn(f"{header} [c++ {standard}]", result.stdout)
+                self.assertIn(
+                    "1 helper headers: 2/2 configurations passed", result.stdout
+                )
+
+    def test_host_helper_requires_executable_host_compiler(self):
+        header = "corpus/race/integration/race_log_expectation.hpp"
+        self.write(header, "")
+        result = self.check(
+            header,
+            "--rocm-path",
+            self.root / "sdk",
+            "--host-cxx",
+            "missing-host-compiler",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("host compiler must be executable", result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_host_failure_fails_even_when_hip_passes(self):
+        header = "corpus/race/integration/race_log_expectation.hpp"
+        self.write(header, "")
+        self.compiler.write_text(
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            "if 'c++' in sys.argv:\n"
+            "    print('missing host declaration', file=sys.stderr)\n"
+            "    sys.exit(1)\n"
+        )
+        result = self.check(header, "--rocm-path", self.root / "sdk")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"PASS {header} [hip gnu++20 gfx950]", result.stdout)
+        self.assertIn(f"FAIL {header} [c++ c++20]", result.stdout)
+        self.assertIn("missing host declaration", result.stdout)
+        self.assertIn("1 helper headers: 1/2 configurations passed", result.stdout)
+
+    def test_shared_wave64_helpers_check_both_variants(self):
+        for header, target, definitions in (
+            (
+                "corpus/cts/test_cases/rdna3/fpsan/wmma_gfx11_parts.hpp",
+                "gfx1151",
+                ("FPSAN_TEST_GFX11_WAVE64=1",),
+            ),
+            (
+                "corpus/cts/test_cases/rdna4/fpsan/wmma_gfx12_parts.hpp",
+                "gfx1201",
+                ("FPSAN_TEST_GFX12_WAVE64=1", "FPSAN_TEST_FORCE_WAVE_SIZE=64"),
+            ),
+            (
+                "corpus/cts/test_cases/general/int_isa/matrix_test_parts.hpp",
+                "gfx1201",
+                ("INT_ISA_TEST_WAVE64=1",),
+            ),
+            (
+                "corpus/cts/support/wave_test_harness.hpp",
+                "gfx1201",
+                ("INT_ISA_TEST_WAVE64=1",),
+            ),
+        ):
+            with self.subTest(header=header):
+                self.write(header, "")
+                result = self.check(header, "--rocm-path", self.root / "sdk")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                default, wave64 = self.commands()
+                self.assertNotIn("-mwavefrontsize64", default)
+                self.assertIn("-mwavefrontsize64", wave64)
+                self.assertIn(f"--offload-arch={target}", wave64)
+                self.assertIn("-std=gnu++17", wave64)
+                for definition in definitions:
+                    self.assertNotIn(f"-D{definition}", default)
+                    self.assertIn(f"-D{definition}", wave64)
+                self.assertIn(f"hip gnu++17 {target} wave64", result.stdout)
+
+    def test_wave64_failure_fails_even_when_default_passes(self):
+        header = "corpus/cts/support/wave_test_harness.hpp"
+        self.write(header, "")
+        self.compiler.write_text(
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            "if '-DINT_ISA_TEST_WAVE64=1' in sys.argv:\n"
+            "    print('wave64 branch error', file=sys.stderr)\n"
+            "    sys.exit(1)\n"
+        )
+        result = self.check(header, "--rocm-path", self.root / "sdk")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"PASS {header} [hip gnu++17 gfx950]", result.stdout)
+        self.assertIn(f"FAIL {header} [hip gnu++17 gfx1201 wave64]", result.stdout)
+        self.assertIn("wave64 branch error", result.stdout)
+        self.assertIn("1 helper headers: 1/2 configurations passed", result.stdout)
 
     def test_cts_wave64_target_is_preserved(self):
         header = "corpus/cts/test_cases/rdna4/fpsan/swmmac_gfx12_w64_parts.hpp"
@@ -167,7 +301,7 @@ class HelperHeaderCheckTests(unittest.TestCase):
         self.assertFalse(self.log.exists())
 
     def test_compile_failure_reports_command_and_source(self):
-        header = "corpus/cts/support/test_utils.hpp"
+        header = "corpus/cts/support/hip_test_utils.hpp"
         self.write(header, "")
         self.compiler.write_text(
             "#!/usr/bin/env python3\n"
@@ -181,7 +315,7 @@ class HelperHeaderCheckTests(unittest.TestCase):
         self.assertIn("-std=gnu++17", result.stdout)
         self.assertIn(f'#include "{header}"', result.stdout)
         self.assertIn("synthetic compile failure", result.stdout)
-        self.assertIn("0/1 helper headers passed", result.stdout)
+        self.assertIn("1 helper headers: 0/1 configurations passed", result.stdout)
 
 
 if __name__ == "__main__":

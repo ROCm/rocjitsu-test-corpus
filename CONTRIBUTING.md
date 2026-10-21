@@ -113,12 +113,20 @@ declare the names they use, rather than relying on transitive includes.
 `scripts/check_helper_headers.py` compiles each first-party `.h` and `.hpp`
 under `corpus/cts`, `corpus/runtime-cts`, `corpus/race`, and `corpus/semantics`
 as the only include in a translation unit. It checks host C++17 runtime CTS
-headers with the gfx1250 platform definitions, HIP GNU C++17 CTS headers, and
-HIP C++20 race and semantics headers. Each suite uses its own include roots:
+headers with the gfx1250 platform definitions, HIP GNU C++17 CTS headers,
+HIP GNU C++20 race headers, and HIP C++20 semantics headers. It also checks
+the host-used CTS helpers `fpsan_generic.hpp`, `fpsan_semantics.hpp`,
+`parity_ops.hpp`, `test_random.hpp`, and `test_utils.hpp` in plain C++17
+and race's `race_log_expectation.hpp` in plain C++20, without HIP's
+implicit runtime includes. Each suite uses its own include roots:
 CTS support and vendored hip-fpsan, race's owning directory, or semantics'
 include directory. HIP headers use their
 target family (`gfx942`, `gfx950`, `gfx1151`, `gfx1201`, or `gfx1250`). Generic
 HIP headers use gfx950; the RDNA4 wave64 helper adds `-mwavefrontsize64`.
+Additional wave64 configurations check `wmma_gfx11_parts.hpp` on gfx1151 and
+`wmma_gfx12_parts.hpp`, `matrix_test_parts.hpp`, and `wave_test_harness.hpp`
+on gfx1201, using the owning targets' wave64 definitions and
+`-mwavefrontsize64`.
 These are compile checks and do not require a GPU. They check self-containment;
 they cannot detect direct dependencies supplied by another included header.
 

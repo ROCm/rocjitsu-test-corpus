@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 import re
 import shlex
@@ -23,6 +24,92 @@ HIP_TARGETS = {
     "rdna3": "gfx1151",
     "rdna4": "gfx1201",
 }
+HOST_HEADERS = {
+    Path("corpus/cts/support/fpsan_generic.hpp"),
+    Path("corpus/cts/support/fpsan_semantics.hpp"),
+    Path("corpus/cts/support/parity_ops.hpp"),
+    Path("corpus/cts/support/test_random.hpp"),
+    Path("corpus/cts/support/test_utils.hpp"),
+    Path("corpus/race/integration/race_log_expectation.hpp"),
+}
+WAVE64_HEADERS = {
+    Path("corpus/cts/test_cases/rdna3/fpsan/wmma_gfx11_parts.hpp"): (
+        "gfx1151",
+        ("-DFPSAN_TEST_GFX11_WAVE64=1",),
+    ),
+    Path("corpus/cts/test_cases/rdna4/fpsan/wmma_gfx12_parts.hpp"): (
+        "gfx1201",
+        ("-DFPSAN_TEST_GFX12_WAVE64=1", "-DFPSAN_TEST_FORCE_WAVE_SIZE=64"),
+    ),
+    Path("corpus/cts/test_cases/general/int_isa/matrix_test_parts.hpp"): (
+        "gfx1201",
+        ("-DINT_ISA_TEST_WAVE64=1",),
+    ),
+    Path("corpus/cts/support/wave_test_harness.hpp"): (
+        "gfx1201",
+        ("-DINT_ISA_TEST_WAVE64=1",),
+    ),
+}
+
+
+@dataclass(frozen=True)
+class Configuration:
+    header: Path
+    language: str
+    standard: str
+    target: str | None = None
+    flags: tuple[str, ...] = ()
+
+    def label(self) -> str:
+        mode = f"{self.language} {self.standard}"
+        if self.target:
+            mode += f" {self.target}"
+        if "-mwavefrontsize64" in self.flags:
+            mode += " wave64"
+        return f"{self.header} [{mode}]"
+
+
+def configurations(header: Path) -> list[Configuration]:
+    if "runtime-cts" in header.parts:
+        return [
+            Configuration(
+                header,
+                "c++",
+                "c++17",
+                flags=(
+                    "-DCTS_GFX_VERSION=120500",
+                    '-DCTS_TARGET_NAME="gfx1250"',
+                ),
+            )
+        ]
+    target = next(
+        (
+            target
+            for directory, target in HIP_TARGETS.items()
+            if directory in header.parts
+        ),
+        "gfx950",
+    )
+    standard = (
+        "gnu++17"
+        if "cts" in header.parts
+        else ("gnu++20" if "race" in header.parts else "c++20")
+    )
+    flags = ("-mwavefrontsize64",) if "_w64_" in header.name else ()
+    checks = [Configuration(header, "hip", standard, target, flags)]
+    if header in HOST_HEADERS:
+        # HIP's implicit runtime includes can hide missing host dependencies.
+        checks.append(
+            Configuration(header, "c++", "c++17" if "cts" in header.parts else "c++20")
+        )
+    if header in WAVE64_HEADERS:
+        target, flags = WAVE64_HEADERS[header]
+        checks.append(
+            Configuration(
+                header, "hip", standard, target, (*flags, "-mwavefrontsize64")
+            )
+        )
+    return checks
 
 
 def include_roots(header: Path) -> list[Path]:
@@ -122,8 +209,9 @@ def main() -> int:
         parser.error("no helper headers found")
 
     dependencies = {header: required_inputs(header) for header in headers}
-    needs_host = any("runtime-cts" in header.parts for header in headers)
-    needs_hip = any("runtime-cts" not in header.parts for header in headers)
+    checks = [check for header in headers for check in configurations(header)]
+    needs_host = any(check.language == "c++" for check in checks)
+    needs_hip = any(check.language == "hip" for check in checks)
     required = set().union(*dependencies.values())
     if needs_hip:
         required.add("rocm_path")
@@ -160,38 +248,25 @@ def main() -> int:
         if not hip_cxx:
             parser.error("HIP compiler must be executable")
 
-    def check(header: Path) -> tuple[Path, int, str]:
-        if "runtime-cts" in header.parts:
-            command = [
-                host_cxx,
-                "-x",
-                "c++",
-                "-std=c++17",
-                "-DCTS_GFX_VERSION=120500",
-                '-DCTS_TARGET_NAME="gfx1250"',
-            ]
-        else:
-            target = next(
-                (
-                    target
-                    for directory, target in HIP_TARGETS.items()
-                    if directory in header.parts
-                ),
-                "gfx950",
+    def check(config: Configuration) -> tuple[Configuration, int, str]:
+        header = config.header
+        command = [
+            host_cxx if config.language == "c++" else hip_cxx,
+            "-x",
+            config.language,
+            f"-std={config.standard}",
+            *config.flags,
+        ]
+        if config.language == "hip":
+            command.extend(
+                [
+                    f"--offload-arch={config.target}",
+                    f"--rocm-path={args.rocm_path}",
+                    f"--hip-path={args.rocm_path}",
+                ]
             )
-            command = [
-                hip_cxx,
-                "-x",
-                "hip",
-                "-std=gnu++17" if "cts" in header.parts else "-std=c++20",
-                f"--offload-arch={target}",
-                f"--rocm-path={args.rocm_path}",
-                f"--hip-path={args.rocm_path}",
-            ]
             for directory in args.hip_include:
                 command.extend(["-idirafter", str(directory.resolve())])
-            if "_w64_" in header.name:
-                command.append("-mwavefrontsize64")
         command.extend(f"-I{directory}" for directory in include_roots(header))
         for name in sorted(dependencies[header]):
             command.append(f"-I{getattr(args, name)}")
@@ -201,16 +276,18 @@ def main() -> int:
             command, input=source, cwd=ROOT, capture_output=True, text=True
         )
         detail = f"{shlex.join(command)}\n{source}{result.stdout}{result.stderr}"
-        return header, result.returncode, detail
+        return config, result.returncode, detail
 
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        results = list(pool.map(check, headers))
-    for header, status, detail in results:
-        print(f"{'FAIL' if status else 'PASS'} {header}")
+        results = list(pool.map(check, checks))
+    for config, status, detail in results:
+        print(f"{'FAIL' if status else 'PASS'} {config.label()}")
         if status:
             print(detail)
     failed = sum(status != 0 for _, status, _ in results)
-    print(f"{len(results) - failed}/{len(results)} helper headers passed")
+    print(
+        f"{len(headers)} helper headers: {len(results) - failed}/{len(results)} configurations passed"
+    )
     return int(failed != 0)
 
 
