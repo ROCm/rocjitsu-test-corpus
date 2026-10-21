@@ -12,7 +12,6 @@
 
 #ifdef GGML_USE_CPU_HBM
 #include <hbwmalloc.h>
-#include <stddef.h>
 #endif
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
@@ -22,6 +21,7 @@
 #endif
 
 #include <assert.h>
+#include <stddef.h>
 #include <errno.h>
 #include <time.h>
 #include <math.h>

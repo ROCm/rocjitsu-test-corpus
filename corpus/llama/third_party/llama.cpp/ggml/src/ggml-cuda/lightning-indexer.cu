@@ -3,6 +3,9 @@
 #include "fattn-common.cuh"
 #include "convert.cuh"
 
+#include <cstddef>
+#include <cstdint>
+
 #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
 #if defined(TURING_MMA_AVAILABLE)
 
@@ -12,8 +15,6 @@ typedef union {
 } half4;
 
 // TODO add support for AMD cards via rocWMMA
-#include <cstddef>
-#include <cstdint>
 #include <mma.h>
 namespace wmma = nvcuda::wmma;
 
