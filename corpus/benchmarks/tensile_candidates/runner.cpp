@@ -5,9 +5,9 @@
 #include <hip/hip_runtime.h>
 
 #include <Tensile/ContractionLibrary.hpp>
-#include <Tensile/DataTypes.hpp>
 #include <Tensile/ContractionProblem.hpp>
 #include <Tensile/ContractionSolution.hpp>
+#include <Tensile/DataTypes.hpp>
 #include <Tensile/MasterSolutionLibrary.hpp>
 #include <Tensile/hip/HipHardware.hpp>
 #include <Tensile/hip/HipSolutionAdapter.hpp>
