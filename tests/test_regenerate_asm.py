@@ -53,7 +53,6 @@ CorpusMain = tuple[Callable[..., int], Path]
 PINNED = "; pinned assembly that must survive a failed regeneration\n"
 
 
-# The variables the fake compiler records from its environment.
 # The variables that must not reach the compile: none of them is recorded in
 # recipe.toml, and each changes what is built.
 UNRECORDED_VARIABLES = (
