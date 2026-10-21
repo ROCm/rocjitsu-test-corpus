@@ -48,7 +48,7 @@ ROCWMMA_INVENTORY = regen.inventory.Inventory(
 
 # The fixtures that build and run a scratch corpus: see manifest and corpus_main.
 Manifest = Callable[[list[str] | None, str], None]
-CorpusMain = tuple[Callable[..., int], Path]
+CorpusMain = tuple[Callable[..., regen.ExitCode], Path]
 
 PINNED = "; pinned assembly that must survive a failed regeneration\n"
 
@@ -284,7 +284,9 @@ def drift_dirs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path, P
     return committed_root / "gfx950", fresh_root
 
 
-def check(fresh_root: Path, expected: set[tuple[str, str]] | None = None) -> int:
+def check(
+    fresh_root: Path, expected: set[tuple[str, str]] | None = None
+) -> regen.ExitCode:
     """_report_drift for gfx950, expecting by default exactly the generated files."""
     if expected is None:
         expected = {
@@ -299,7 +301,7 @@ def test_check_passes_identical_assembly(drift_dirs: tuple[Path, Path]) -> None:
     committed, fresh_root = drift_dirs
     (committed / "k.s").write_text(assembly())
     (fresh_root / "gfx950" / "k.s").write_text(assembly())
-    assert check(fresh_root) == 0
+    assert check(fresh_root) == regen.ExitCode.SUCCESS
 
 
 def test_check_reports_ident_only_change_as_provenance_not_drift(
@@ -310,7 +312,7 @@ def test_check_reports_ident_only_change_as_provenance_not_drift(
     (fresh_root / "gfx950" / "k.s").write_text(
         assembly(ident="AMD clang version 24 (def)")
     )
-    assert check(fresh_root) == 0
+    assert check(fresh_root) == regen.ExitCode.SUCCESS
     out = capsys.readouterr()
     assert "gfx950/k.s" in out.out
     assert (
@@ -326,7 +328,7 @@ def test_check_fails_on_instruction_change(
     committed, fresh_root = drift_dirs
     (committed / "k.s").write_text(assembly(wait="s_waitcnt vmcnt(0)"))
     (fresh_root / "gfx950" / "k.s").write_text(assembly(wait="s_waitcnt vmcnt(1)"))
-    assert check(fresh_root) == 1
+    assert check(fresh_root) == regen.ExitCode.DRIFT
     assert "gfx950/k.s" in capsys.readouterr().err
 
 
@@ -338,7 +340,7 @@ def test_check_counts_instruction_change_as_drift_even_with_new_ident(
     (fresh_root / "gfx950" / "k.s").write_text(
         assembly(ident="B", wait="s_waitcnt vmcnt(1)")
     )
-    assert check(fresh_root) == 1
+    assert check(fresh_root) == regen.ExitCode.DRIFT
     out = capsys.readouterr()
     assert "gfx950/k.s" in out.err
     assert "gfx950/k.s" not in out.out  # not also listed as provenance-only
@@ -349,7 +351,7 @@ def test_check_fails_on_uncommitted_file(
 ) -> None:
     _, fresh_root = drift_dirs
     (fresh_root / "gfx950" / "new.s").write_text(assembly())
-    assert check(fresh_root) == 1
+    assert check(fresh_root) == regen.ExitCode.DRIFT
     assert "gfx950/new.s: not committed" in capsys.readouterr().err
 
 
@@ -509,7 +511,7 @@ def test_drift_report_does_not_mention_ordinals(
     committed, fresh_root = drift_dirs
     (committed / "k.s").write_text("s_waitcnt 0\n")
     (fresh_root / "gfx950" / "k.s").write_text("s_nop 0\n")
-    assert check(fresh_root) == 1
+    assert check(fresh_root) == regen.ExitCode.DRIFT
     err = " ".join(capsys.readouterr().err.split())
     assert "ordinal" not in err
     assert "pinned assembly" in err
@@ -527,7 +529,7 @@ def test_write_summary_does_not_mention_ordinals(
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
     monkeypatch.setattr(regen, "CORPUS_ROOT", tmp_path / "corpus" / "race")
     monkeypatch.setattr(regen, "ASM_DIR", tmp_path / "corpus" / "race" / "asm")
-    assert regen.main([]) == 0
+    assert regen.main([]) == regen.ExitCode.SUCCESS
     out = " ".join(capsys.readouterr().out.split())
     assert "ordinal" not in out
     assert "pinned assembly" in out
@@ -567,15 +569,15 @@ def corpus_main(
     monkeypatch.setattr(regen, "ASM_DIR", committed)
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
 
-    def run(*argv: str) -> int:
+    def run(*argv: str) -> regen.ExitCode:
         return regen.main([*argv])
 
     return run, committed
 
 
-def commit_fresh_output(run: Callable[..., int], committed: Path) -> None:
+def commit_fresh_output(run: Callable[..., regen.ExitCode], committed: Path) -> None:
     """Populate the committed tree by running update mode, as a person would."""
-    assert run() == 0
+    assert run() == regen.ExitCode.SUCCESS
     assert any(committed.rglob("*.s"))
 
 
@@ -586,7 +588,7 @@ def test_check_with_only_a_skipped_case_is_incomplete(
     manifest(["gfx950"], ROCWMMA_CASE)
     code = run("--check")
     out = capsys.readouterr()
-    assert code == 3
+    assert code == regen.ExitCode.INCOMPLETE
     assert "matches" not in out.out
     assert "incomplete" in out.err and "wmma" in out.err
 
@@ -599,7 +601,7 @@ def test_check_with_some_cases_skipped_is_incomplete(
     commit_fresh_output(run, committed)
     manifest(["gfx950"], PORTABLE_CASE + ROCWMMA_CASE)
     capsys.readouterr()
-    assert run("--check") == 3
+    assert run("--check") == regen.ExitCode.INCOMPLETE
     assert "matches" not in capsys.readouterr().out
 
 
@@ -611,7 +613,7 @@ def test_check_with_nothing_selected_is_incomplete(
         ["gfx950", "gfx1250"],
         '[[case]]\nid = "only"\nkernel = "only"\ntargets = ["gfx1250"]\n',
     )
-    assert run("--check", "--target", "gfx950") == 3
+    assert run("--check", "--target", "gfx950") == regen.ExitCode.INCOMPLETE
     out = capsys.readouterr()
     assert "matches" not in out.out
     assert "incomplete" in out.err
@@ -624,7 +626,7 @@ def test_check_passes_a_complete_matching_inventory(
     manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
     capsys.readouterr()
-    assert run("--check") == 0
+    assert run("--check") == regen.ExitCode.SUCCESS
     assert "matches" in capsys.readouterr().out
 
 
@@ -636,7 +638,7 @@ def test_check_reports_an_obsolete_committed_file(
     commit_fresh_output(run, committed)
     (committed / "gfx950" / "obsolete.s").write_text("; no case builds this\n")
     capsys.readouterr()
-    assert run("--check") == 1
+    assert run("--check") == regen.ExitCode.DRIFT
     err = capsys.readouterr().err
     assert "gfx950/obsolete.s" in err and "no selected case" in err
 
@@ -651,7 +653,7 @@ def test_check_reports_a_missing_committed_target_directory(
         path.unlink()
     (committed / "gfx1250").rmdir()
     capsys.readouterr()
-    assert run("--check") == 1
+    assert run("--check") == regen.ExitCode.DRIFT
     assert "gfx1250/kernel.s: not committed" in capsys.readouterr().err
 
 
@@ -660,7 +662,7 @@ def test_check_reports_an_expected_output_absent_from_both_trees(
 ) -> None:
     # A selected case whose output was neither generated nor committed.
     _, fresh_root = drift_dirs
-    assert check(fresh_root, expected={("gfx950", "k.s")}) == 1
+    assert check(fresh_root, expected={("gfx950", "k.s")}) == regen.ExitCode.DRIFT
     assert "gfx950/k.s: not generated and not committed" in capsys.readouterr().err
 
 
@@ -671,7 +673,7 @@ def test_update_mode_reports_a_skipped_case_and_leaves_its_target(
     # either: its recipe could not describe both.
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE + ROCWMMA_CASE)
-    assert run() == 3
+    assert run() == regen.ExitCode.INCOMPLETE
     out = capsys.readouterr().out
     assert "skip: wmma" in out
     assert not (committed / "gfx950" / "kernel.s").exists()
@@ -709,7 +711,7 @@ def test_main_preserves_the_compiler_diagnostic(
     # Replace the fixture's compiler with one that fails the way hipcc does on
     # a bad flag: exit 1, with the cause on stderr.
     install_fake_compiler(monkeypatch, tmp_path, "fail")
-    assert run() == 2
+    assert run() == regen.ExitCode.COMPILE_FAILED
     err = capsys.readouterr().err
     assert "FAIL: kernel.hip (gfx950):" in err
     assert "error: unknown argument" in err
@@ -749,7 +751,8 @@ def test_quoted_include_path_with_spaces_reaches_the_compiler_whole(
     caller.mkdir()
     monkeypatch.chdir(caller)
     assert (
-        run("--cxxflags", '-I"headers with spaces" -isystem "/abs dir/inc" -DX=1') == 0
+        run("--cxxflags", '-I"headers with spaces" -isystem "/abs dir/inc" -DX=1')
+        == regen.ExitCode.SUCCESS
     )
     (argv,) = compiler_invocations(tmp_path)
     assert f"-I{caller / 'headers with spaces'}" in argv
@@ -861,7 +864,7 @@ def test_check_allowing_skips_names_the_cases_not_compared(
     commit_fresh_output(run, committed)
     manifest(["gfx950"], PORTABLE_CASE + ROCWMMA_CASE)
     capsys.readouterr()
-    assert run("--check", "--allow-skipped") == 0
+    assert run("--check", "--allow-skipped") == regen.ExitCode.SUCCESS
     out = capsys.readouterr()
     verdict = " ".join((out.out + out.err).split())
     assert "not compared: wmma (gfx950)" in verdict
@@ -877,7 +880,7 @@ def test_check_allowing_skips_still_fails_on_drift(
     commit_fresh_output(run, committed)
     (committed / "gfx950" / "kernel.s").write_text("; changed by hand\n")
     manifest(["gfx950"], PORTABLE_CASE + ROCWMMA_CASE)
-    assert run("--check", "--allow-skipped") == 1
+    assert run("--check", "--allow-skipped") == regen.ExitCode.DRIFT
 
 
 def test_check_allowing_skips_with_nothing_compared_is_still_incomplete(
@@ -885,7 +888,7 @@ def test_check_allowing_skips_with_nothing_compared_is_still_incomplete(
 ) -> None:
     run, _ = corpus_main
     manifest(["gfx950"], ROCWMMA_CASE)
-    assert run("--check", "--allow-skipped") == 3
+    assert run("--check", "--allow-skipped") == regen.ExitCode.INCOMPLETE
     out = capsys.readouterr()
     assert "matches" not in out.out
     assert "incomplete" in out.err
@@ -898,6 +901,7 @@ def test_allow_skipped_only_applies_with_check(
     manifest(["gfx950"], PORTABLE_CASE)
     with pytest.raises(SystemExit) as exit_info:
         run("--allow-skipped")
+    # argparse's own status for a usage error, not an ExitCode.
     assert exit_info.value.code == 2
     assert "--allow-skipped only applies with --check" in capsys.readouterr().err
 
@@ -926,16 +930,16 @@ def test_check_leaves_no_temporary_directory(
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
-    expected_code = 0
+    expected_code = regen.ExitCode.SUCCESS
     if outcome == "drift":
         (committed / "gfx950" / "kernel.s").write_text("; changed by hand\n")
-        expected_code = 1
+        expected_code = regen.ExitCode.DRIFT
     elif outcome == "compile-failure":
         install_fake_compiler(monkeypatch, tmp_path, "fail")
-        expected_code = 2
+        expected_code = regen.ExitCode.COMPILE_FAILED
     elif outcome == "incomplete":
         manifest(["gfx950"], PORTABLE_CASE + ROCWMMA_CASE)
-        expected_code = 3
+        expected_code = regen.ExitCode.INCOMPLETE
     assert run("--check") == expected_code
     assert list(temp_root.iterdir()) == []
 
@@ -1016,7 +1020,7 @@ def test_main_reads_the_manifest_once(
     monkeypatch.setattr(
         regen.inventory, "load", lambda path: reads.append(path) or real_load(path)
     )
-    assert run("--check") == 0
+    assert run("--check") == regen.ExitCode.SUCCESS
     assert len(reads) == 1
 
 
@@ -1076,7 +1080,7 @@ def test_baseline_recipe_is_passed_to_either_compiler(
     compiler = write_fake_compiler(sdk / sdk_compiler, "output")
     monkeypatch.setattr(regen, "rocm_path", lambda: sdk)
     monkeypatch.setattr(regen, "find_hip_compiler", FIND_HIP_COMPILER)
-    assert run() == 0
+    assert run() == regen.ExitCode.SUCCESS
     (argv,) = compiler_invocations(compiler.parent, compiler.name)
     assert "-O3" in argv
     assert argv[argv.index("-x") + 1] == "hip"
@@ -1091,7 +1095,7 @@ def test_cxxflags_come_after_the_baseline_recipe(
 ) -> None:
     run, _ = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
-    assert run("--cxxflags=-O1") == 0
+    assert run("--cxxflags=-O1") == regen.ExitCode.SUCCESS
     (argv,) = compiler_invocations(tmp_path)
     # The last -O wins, so --cxxflags can still override the baseline.
     assert argv.index("-O3") < argv.index("-O1")
@@ -1120,7 +1124,7 @@ def test_unrecorded_variable_does_not_reach_the_compiler(
     manifest(["gfx950"], PORTABLE_CASE)
     monkeypatch.setenv(variable, "/elsewhere")
     monkeypatch.setenv("RACE_UNRELATED", "kept")
-    assert run() == 0
+    assert run() == regen.ExitCode.SUCCESS
     (environment,) = compiler_environments(tmp_path)
     assert environment[variable] is None
     # Only the unrecorded variables are removed.
@@ -1139,7 +1143,7 @@ def test_compile_sees_the_selected_sdk_as_rocm_path(
     manifest(["gfx950"], PORTABLE_CASE)
     monkeypatch.setenv("ROCM_PATH", str(tmp_path / "another-sdk"))
     monkeypatch.setattr(regen, "rocm_path", lambda: tmp_path / "rocm")
-    assert run() == 0
+    assert run() == regen.ExitCode.SUCCESS
     (environment,) = compiler_environments(tmp_path)
     assert environment["ROCM_PATH"] == str(tmp_path / "rocm")
 
@@ -1155,7 +1159,7 @@ def test_clean_environment_prints_no_note(
     for variable in list(os.environ):
         if variable in UNRECORDED_VARIABLES or variable.startswith(("HIP_", "HIPCC_")):
             monkeypatch.delenv(variable)
-    assert run() == 0
+    assert run() == regen.ExitCode.SUCCESS
     assert "ignoring" not in capsys.readouterr().err
 
 
@@ -1170,13 +1174,13 @@ def test_header_selection_cannot_change_under_the_same_recipe(
     # runs with the same arguments and environment with or without it.
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
-    assert run() == 0
+    assert run() == regen.ExitCode.SUCCESS
     recipe_without = read_recipe(committed, "gfx950")
     shadow = tmp_path / "shadow"
     shadow.mkdir()
     (shadow / "hip_runtime.h").write_text("#pragma clang optimize off\n")
     monkeypatch.setenv("CPATH", str(shadow))
-    assert run() == 0
+    assert run() == regen.ExitCode.SUCCESS
     assert read_recipe(committed, "gfx950") == recipe_without
     # Each compile writes to its own scratch file; everything else is the same.
     without, with_shadow = (
@@ -1211,7 +1215,7 @@ def test_regeneration_records_the_recipe(
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     set_rocm_release(tmp_path, "7.3.0")
-    assert run("--cxxflags=-DX=1") == 0
+    assert run("--cxxflags=-DX=1") == regen.ExitCode.SUCCESS
     assert read_recipe(committed, "gfx950") == {
         "compiler": "fake-hipcc",
         "compiler_version": "fake clang version 1.0",
@@ -1227,7 +1231,7 @@ def test_regenerating_one_target_records_only_its_recipe(
 ) -> None:
     run, committed = corpus_main
     manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
-    assert run("--target", "gfx1250") == 0
+    assert run("--target", "gfx1250") == regen.ExitCode.SUCCESS
     assert (committed / "gfx1250" / "recipe.toml").is_file()
     assert not (committed / "gfx950" / "recipe.toml").exists()
 
@@ -1250,7 +1254,7 @@ def test_check_reports_an_unchanged_recipe(
     manifest(["gfx950"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
     capsys.readouterr()
-    assert run("--check") == 0
+    assert run("--check") == regen.ExitCode.SUCCESS
     assert "gfx950: recipe unchanged" in capsys.readouterr().out
 
 
@@ -1296,7 +1300,7 @@ def test_check_without_a_committed_recipe_says_so(
     commit_fresh_output(run, committed)
     (committed / "gfx950" / "recipe.toml").unlink()
     capsys.readouterr()
-    assert run("--check") == 0
+    assert run("--check") == regen.ExitCode.SUCCESS
     assert "gfx950: no recipe.toml committed" in capsys.readouterr().out
 
 
@@ -1317,7 +1321,7 @@ def test_check_reports_an_invalid_committed_recipe(
     (committed / "gfx950" / "recipe.toml").write_text(text)
     capsys.readouterr()
     # The recipe comparison is informational: the assembly still matches.
-    assert run("--check") == 0
+    assert run("--check") == regen.ExitCode.SUCCESS
     out = capsys.readouterr().out
     assert "gfx950: recipe.toml cannot be compared" in out
     assert problem in out
@@ -1353,7 +1357,7 @@ def test_partial_skip_leaves_the_target_as_it_was(
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE + ROCWMMA_CASE)
     seed_target(committed, "gfx950", ["kernel", "wmma"])
-    assert run("--cxxflags=-O1") == 3
+    assert run("--cxxflags=-O1") == regen.ExitCode.INCOMPLETE
     assert_untouched(committed, "gfx950", ["kernel", "wmma"])
     assert "gfx950: not updated" in capsys.readouterr().err
 
@@ -1368,7 +1372,7 @@ def test_partial_failure_leaves_the_target_as_it_was(
     manifest(["gfx950"], PORTABLE_CASE + '[[case]]\nid = "only"\nkernel = "only"\n')
     seed_target(committed, "gfx950", ["kernel", "only"])
     monkeypatch.setenv("FAKE_COMPILER_FAIL", "only")
-    assert run("--cxxflags=-O1") == 2
+    assert run("--cxxflags=-O1") == regen.ExitCode.COMPILE_FAILED
     assert_untouched(committed, "gfx950", ["kernel", "only"])
     assert "gfx950: not updated" in capsys.readouterr().err
 
@@ -1379,7 +1383,7 @@ def test_all_skipped_run_leaves_the_recipe_as_it_was(
     run, committed = corpus_main
     manifest(["gfx950"], ROCWMMA_CASE)
     seed_target(committed, "gfx950", ["wmma"])
-    assert run("--cxxflags=-O1") == 3
+    assert run("--cxxflags=-O1") == regen.ExitCode.INCOMPLETE
     assert_untouched(committed, "gfx950", ["wmma"])
 
 
@@ -1393,7 +1397,7 @@ def test_complete_target_is_written_while_a_blocked_one_is_kept(
     )
     seed_target(committed, "gfx950", ["kernel"])
     seed_target(committed, "gfx1250", ["kernel", "wmma"])
-    assert run("--cxxflags=-O1") == 3
+    assert run("--cxxflags=-O1") == regen.ExitCode.INCOMPLETE
     # gfx950 compiled completely: its listing and its recipe are both new.
     assert "s_endpgm" in (committed / "gfx950" / "kernel.s").read_text()
     assert regen.recipe.load(committed / "gfx950" / "recipe.toml").flags[-1] == "-O1"
@@ -1411,7 +1415,7 @@ def test_removed_case_is_removed_from_its_target(
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     seed_target(committed, "gfx950", ["kernel", "removed"])
-    assert run("--cxxflags=-O1") == 0
+    assert run("--cxxflags=-O1") == regen.ExitCode.SUCCESS
     assert sorted(p.name for p in (committed / "gfx950").iterdir()) == [
         "kernel.s",
         "recipe.toml",
@@ -1428,7 +1432,7 @@ def test_narrowed_case_is_removed_from_targets_it_no_longer_builds_for(
         + '[[case]]\nid = "only"\nkernel = "only"\ntargets = ["gfx1250"]\n',
     )
     seed_target(committed, "gfx950", ["kernel", "only"])
-    assert run() == 0
+    assert run() == regen.ExitCode.SUCCESS
     assert sorted(p.name for p in (committed / "gfx950").iterdir()) == [
         "kernel.s",
         "recipe.toml",
@@ -1646,7 +1650,7 @@ def test_invalid_inventory_exits_with_setup_failed(
 ) -> None:
     run, _ = corpus_main
     manifest(["gfx950"], PORTABLE_CASE + "ordinal = 3\n")
-    assert run() == regen.ExitCode.SETUP_FAILED == 4
+    assert run() == regen.ExitCode.SETUP_FAILED
     assert (
         "error: cases.toml [portable]: unknown field 'ordinal'"
         in capsys.readouterr().err
@@ -1660,6 +1664,7 @@ def test_target_outside_the_corpus_is_a_usage_error(
     manifest(["gfx950"], PORTABLE_CASE)
     with pytest.raises(SystemExit) as exit_info:
         run("--target", "gfx1201")
+    # argparse's own status for a usage error, not an ExitCode.
     assert exit_info.value.code == 2
     assert "gfx1201 is not in [corpus] targets" in capsys.readouterr().err
 
@@ -1853,7 +1858,9 @@ def test_recipe_records_path_flags_as_the_compiler_receives_them(
     manifest(["gfx950"], PORTABLE_CASE)
     caller = caller_with_options(tmp_path, name="caller", value=2)
     monkeypatch.chdir(caller)
-    assert run("--cxxflags=-include options.h -Iinclude -DX=1") == 0
+    assert (
+        run("--cxxflags=-include options.h -Iinclude -DX=1") == regen.ExitCode.SUCCESS
+    )
     extra = ["-include", str(caller / "options.h"), f"-I{caller / 'include'}", "-DX=1"]
     assert read_recipe(committed, "gfx950")["flags"] == ["-O3", "-x", "hip", *extra]
     (argv,) = compiler_invocations(tmp_path)
@@ -1874,7 +1881,7 @@ def test_header_selected_from_another_directory_changes_the_recipe(
     first = caller_with_options(tmp_path, name="first", value=2)
     second = caller_with_options(tmp_path, name="second", value=7)
     monkeypatch.chdir(first)
-    assert run("--cxxflags=-include options.h") == 0
+    assert run("--cxxflags=-include options.h") == regen.ExitCode.SUCCESS
     capsys.readouterr()
     monkeypatch.chdir(second)
     run("--check", "--cxxflags=-include options.h")
@@ -1882,3 +1889,15 @@ def test_header_selected_from_another_directory_changes_the_recipe(
     assert "gfx950: recipe changed: flags" in out
     assert str(first / "options.h") in out and str(second / "options.h") in out
     assert "recipe unchanged" not in out
+
+
+def test_exit_codes_keep_their_public_numbers() -> None:
+    # The numbers are part of the script's interface: --help and the README
+    # document them, and callers may test them. Everything else names them.
+    assert {code.name: int(code) for code in regen.ExitCode} == {
+        "SUCCESS": 0,
+        "DRIFT": 1,
+        "COMPILE_FAILED": 2,
+        "INCOMPLETE": 3,
+        "SETUP_FAILED": 4,
+    }

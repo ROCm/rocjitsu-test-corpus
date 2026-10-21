@@ -619,7 +619,7 @@ class Build:
     recipe: recipe.Recipe
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str]) -> ExitCode:
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.allow_skipped and not args.check:
