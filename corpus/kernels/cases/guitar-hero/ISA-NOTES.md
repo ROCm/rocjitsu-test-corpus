@@ -48,10 +48,20 @@ the applicable VM/LGKM waits. The split VM, LGKM, EXP and dependency waits and
 `buffer_gl0_inv`, `buffer_gl1_inv` and `s_gl1_inv` cache operations are retained
 and followed by a checked load.
 
-The final inventory has 489 checkpoints. Qualification covers successful
-gfx1030 assembly, code-object/runner build and host structural checks; no
-gfx1030 runtime capture or expected-output oracle is committed. Wave64 is
-supported by the architecture but remains deferred and unqualified.
+* The unmodified test does not run successfully in the simulator, it fails before kernel launch.
+* A modified version ran only after bypassing unsupported instructions.
+* It has not been run on gfx1030 hardware.
+
+https://github.com/ROCm/rocjitsu-test-corpus/pull/75 contains a record of unsupported
+instruction or modes, which is summarized below.
+
+* `v_mad_u64_u32` with the gfx10 null scalar destination encoding
+* `v_movrels_b32_e64`
+* Flat addressing
+* Scratch/private-memory
+* All nine regular and D16 `buffer_store_format` variants were bypassed after failures in `buffer_store_format_d16_x`, `buffer_store_format_d16_xy` and `buffer_store_format_x`
+* `v_movrelsd_b32_e64` is rejected by the decoder; the adjacent `v_movrelsd_2_b32_e64` probe was also bypassed.
+
 
 ## RDNA3
 
