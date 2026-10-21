@@ -89,9 +89,14 @@ above or with `-DROCM_PATH=<root>`. If the cache entry is empty, CMake uses the
 Python virtual environment makes that environment's SDK discoverable.
 
 Both discovery sources populate the cache entry, so later configures reuse it
-without checking the environment or running `rocm-sdk`. To switch SDKs in an
-existing build directory, update the `ROCM_PATH` cache setting through the user
-preset or `-DROCM_PATH=<new root>`, or configure in a fresh build directory.
+without checking the environment or running `rocm-sdk`. If an initial configure
+fails the SDK-root check before enabling HIP, recover with
+`-DROCM_PATH=<valid root>` or configure afresh. After a successful configure,
+switching SDKs requires a fresh build directory or
+`cmake --preset local-hip --fresh` with the new root set in the user preset or
+via `-DROCM_PATH=<new root>`.
+Updating `ROCM_PATH` alone retains cached HIP compiler and package paths from
+the original SDK.
 
 <a id="offline-googletest-setup"></a>
 
