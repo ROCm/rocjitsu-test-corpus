@@ -52,7 +52,9 @@ def corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BuildCorpus:
     return build
 
 
-def run(capsys: pytest.CaptureFixture[str]) -> tuple[int, str]:
+def run(
+    capsys: pytest.CaptureFixture[str],
+) -> tuple[check_cases.ExitCode, str]:
     code = check_cases.main([])
     captured = capsys.readouterr()
     return code, captured.out + captured.err
@@ -67,7 +69,7 @@ def test_consistent_corpus_passes(
         asm=["gfx950/portable", "gfx1250/portable", "gfx1250/only"],
     )
     code, out = run(capsys)
-    assert code == 0, out
+    assert code == check_cases.ExitCode.SUCCESS, out
 
 
 def test_target_with_no_listings_passes(
@@ -79,7 +81,7 @@ def test_target_with_no_listings_passes(
     (tmp_path / "asm" / "gfx950").mkdir()
     (tmp_path / "asm" / "gfx950" / "recipe.toml").write_text(GOOD_TEXT)
     code, out = run(capsys)
-    assert code == 0, out
+    assert code == check_cases.ExitCode.SUCCESS, out
 
 
 def test_missing_target_directory_is_reported(
@@ -94,7 +96,7 @@ def test_missing_target_directory_is_reported(
         asm=["gfx1250/portable", "gfx1250/only"],
     )
     code, out = run(capsys)
-    assert code == 1
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert "asm/gfx950/ is missing" in out
     assert "asm/gfx950/portable.s is missing" in out
 
@@ -109,7 +111,7 @@ def test_case_target_outside_the_corpus_targets_is_reported(
         asm=["gfx950/portable", "gfx1250/portable"],
     )
     code, out = run(capsys)
-    assert code == 1
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert "lists target gfx1201, which is not in [corpus] targets" in out
 
 
@@ -128,7 +130,7 @@ def test_case_target_does_not_widen_portable_cases(
         asm=["gfx950/portable", "gfx1250/portable", "gfx1201/only"],
     )
     code, out = run(capsys)
-    assert code == 1
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert (
         "cases.toml [only]: lists target gfx1201, which is not in [corpus] targets"
         in out
@@ -147,7 +149,7 @@ def test_interrupted_publication_is_reported(
     corpus(targets=["gfx950"], cases=PORTABLE, asm=["gfx950/portable"])
     (tmp_path / "asm" / ".gfx950.staging-1234").mkdir()
     code, out = run(capsys)
-    assert code == 1
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert "asm/.gfx950.staging-1234/ is not a corpus target" in out
 
 
@@ -158,7 +160,7 @@ def test_assembly_directory_for_an_undeclared_target_is_reported(
         targets=["gfx950"], cases=PORTABLE, asm=["gfx950/portable", "gfx1250/portable"]
     )
     code, out = run(capsys)
-    assert code == 1
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert "asm/gfx1250/ is not a corpus target" in out
 
 
@@ -168,7 +170,7 @@ def test_manifest_without_targets_is_rejected(
 ) -> None:
     corpus(targets=targets, cases=PORTABLE, asm=["gfx950/portable"])
     code, out = run(capsys)
-    assert code != 0
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert "[corpus] targets" in out
 
 
@@ -190,7 +192,7 @@ def test_committed_inventory_passes(capsys: pytest.CaptureFixture[str]) -> None:
     module = load_script("check_cases")
     code = module.main([])
     out = capsys.readouterr()
-    assert code == 0, out.err
+    assert code == check_cases.ExitCode.SUCCESS, out.err
 
 
 def test_unknown_field_is_reported(
@@ -202,7 +204,7 @@ def test_unknown_field_is_reported(
         asm=["gfx950/portable"],
     )
     code, out = run(capsys)
-    assert code == 1
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert "cases.toml [portable]: unknown field 'ordinal'" in out
 
 
@@ -215,7 +217,7 @@ def test_missing_assembly_is_reported(
         asm=["gfx950/portable", "gfx1250/unrelated"],
     )
     code, out = run(capsys)
-    assert code == 1
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert "cases.toml [portable]: asm/gfx1250/portable.s is missing" in out
 
 
@@ -226,7 +228,7 @@ def test_orphan_assembly_is_reported(
         targets=["gfx950"], cases=PORTABLE, asm=["gfx950/portable", "gfx950/leftover"]
     )
     code, out = run(capsys)
-    assert code == 1
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert "asm/gfx950/leftover.s: no case builds leftover for gfx950" in out
 
 
@@ -239,7 +241,7 @@ def test_assembly_for_a_target_the_case_does_not_build_for_is_an_orphan(
         asm=["gfx950/only", "gfx1250/only"],
     )
     code, out = run(capsys)
-    assert code == 1
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert "asm/gfx950/only.s: no case builds only for gfx950" in out
 
 
@@ -249,7 +251,7 @@ def test_missing_kernel_source_is_reported(
     corpus(targets=["gfx950"], cases=PORTABLE, asm=["gfx950/portable"])
     (tmp_path / "kernels" / "portable.hip").unlink()
     code, out = run(capsys)
-    assert code == 1
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert "cases.toml [portable]: kernels/portable.hip is missing" in out
 
 
@@ -258,7 +260,7 @@ def test_duplicate_id_and_kernel_are_reported(
 ) -> None:
     corpus(targets=["gfx950"], cases=PORTABLE + PORTABLE, asm=["gfx950/portable"])
     code, out = run(capsys)
-    assert code == 1
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert "cases.toml [portable]: duplicate id" in out
     assert (
         "cases.toml [portable]: kernel portable is already used by another case" in out
@@ -281,7 +283,7 @@ def test_case_without_targets_builds_for_every_corpus_target(
         asm=["gfx950/portable", "gfx1250/portable"],
     )
     code, out = run(capsys)
-    assert code == 0, out
+    assert code == check_cases.ExitCode.SUCCESS, out
 
 
 def test_requires_is_rejected_with_its_new_name(
@@ -293,7 +295,7 @@ def test_requires_is_rejected_with_its_new_name(
         asm=["gfx1250/only"],
     )
     code, out = run(capsys)
-    assert code == 1
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert "cases.toml [only]: 'requires' is now 'targets'" in out
 
 
@@ -314,7 +316,7 @@ def test_empty_listing_is_reported(
     corpus(targets=["gfx950"], cases=PORTABLE, asm=["gfx950/portable"])
     write_asm(tmp_path=tmp_path, target="gfx950", kernel="portable", text="")
     code, out = run(capsys)
-    assert code == 1
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert "asm/gfx950/portable.s: no .amdgcn_target directive" in out
 
 
@@ -330,7 +332,7 @@ def test_listing_for_another_target_is_reported(
         tmp_path=tmp_path, target="gfx1250", kernel="portable", text=listing("gfx950")
     )
     code, out = run(capsys)
-    assert code == 1
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert "asm/gfx1250/portable.s: .amdgcn_target is gfx950, not gfx1250" in out
 
 
@@ -345,7 +347,7 @@ def test_target_features_do_not_change_the_processor(
         text='\t.amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx950:sramecc+:xnack-"\n',
     )
     code, out = run(capsys)
-    assert code == 0, out
+    assert code == check_cases.ExitCode.SUCCESS, out
 
 
 def test_target_name_that_only_starts_with_the_directory_is_reported(
@@ -357,7 +359,7 @@ def test_target_name_that_only_starts_with_the_directory_is_reported(
         tmp_path=tmp_path, target="gfx950", kernel="portable", text=listing("gfx9500")
     )
     code, out = run(capsys)
-    assert code == 1
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert ".amdgcn_target is gfx9500, not gfx950" in out
 
 
@@ -374,7 +376,7 @@ def test_missing_recipe_is_reported(
     corpus(targets=["gfx950"], cases=PORTABLE, asm=["gfx950/portable"])
     (tmp_path / "asm" / "gfx950" / "recipe.toml").unlink()
     code, out = run(capsys)
-    assert code == 1
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert "asm/gfx950/recipe.toml is missing" in out
 
 
@@ -392,5 +394,38 @@ def test_invalid_recipe_is_reported_as_the_shared_loader_reports_it(
     corpus(targets=["gfx950"], cases=PORTABLE, asm=["gfx950/portable"])
     (tmp_path / "asm" / "gfx950" / "recipe.toml").write_text(text)
     code, out = run(capsys)
-    assert code == 1
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert f"asm/gfx950/recipe.toml: {problem}" in out
+
+
+# --- Exit codes and the summary line ----------------------------------------------
+
+
+def test_exit_codes_keep_their_public_numbers() -> None:
+    # The numbers are part of the checker's interface: CI reads them.
+    # Everything else names them.
+    assert {code.name: int(code) for code in check_cases.ExitCode} == {
+        "SUCCESS": 0,
+        "PROBLEMS_FOUND": 1,
+    }
+
+
+def test_invalid_manifest_is_not_summarized_as_a_mismatch(
+    corpus: BuildCorpus, capsys: pytest.CaptureFixture[str]
+) -> None:
+    corpus(targets=None, cases=PORTABLE, asm=[])
+    code, out = run(capsys)
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
+    assert "cases.toml is invalid: 1 problem(s)" in out
+    assert "mismatch" not in out
+
+
+def test_mismatch_is_summarized_as_one(
+    corpus: BuildCorpus, capsys: pytest.CaptureFixture[str]
+) -> None:
+    corpus(
+        targets=["gfx950"], cases=PORTABLE, asm=["gfx950/portable", "gfx950/leftover"]
+    )
+    code, out = run(capsys)
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
+    assert "1 mismatch(es) between cases.toml and the corpus" in out

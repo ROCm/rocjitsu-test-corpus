@@ -232,7 +232,7 @@ def report_from_both_scripts(
     regenerate_asm = load_script("regenerate_asm")
     monkeypatch.setattr(check_cases, "CASES_PATH", path)
     monkeypatch.setattr(regenerate_asm, "CASES_PATH", path)
-    assert check_cases.main([]) == 1
+    assert check_cases.main([]) == check_cases.ExitCode.PROBLEMS_FOUND
     checker = capsys.readouterr().err
     assert regenerate_asm.main([]) == regenerate_asm.ExitCode.SETUP_FAILED
     return checker, capsys.readouterr().err

@@ -8,7 +8,7 @@ Check that ``cases.toml`` agrees with ``kernels/`` and the committed ``asm/``.
 This needs no compiler: it checks the kernel inventory against the files on
 disk::
 
-    python corpus/race/scripts/check_cases.py   # exit 1 on any mismatch
+    python corpus/race/scripts/check_cases.py   # exit 1 on any problem
 
 Its guarantee is about the inventory only: every case has its source and its
 assembly, and every assembly file belongs to a case. It does not check that
@@ -37,12 +37,21 @@ caught. It checks that:
 """
 
 import argparse
+import enum
 import re
 import sys
 from pathlib import Path
 
 import inventory
 import recipe
+
+
+class ExitCode(enum.IntEnum):
+    """How a check ended."""
+
+    SUCCESS = 0
+    PROBLEMS_FOUND = 1
+
 
 # The corpus layout, from inventory. Bound here so that a test can point a run
 # at a scratch corpus.
@@ -129,30 +138,35 @@ def check(corpus: inventory.Inventory) -> list[str]:
     return errors
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str]) -> ExitCode:
     argparse.ArgumentParser(
         description="Check cases.toml against kernels/ and the committed asm/, without a compiler."
     ).parse_args(argv)
     try:
         corpus = inventory.load(CASES_PATH)
     except inventory.InventoryError as error:
-        errors = error.problems
-    else:
-        errors = check(corpus)
-
-    for problem in errors:
-        print(f"error: {problem}", file=sys.stderr)
-    if errors:
-        print(
-            f"\n{len(errors)} mismatch(es) between cases.toml and the corpus",
-            file=sys.stderr,
+        _print_problems(
+            error.problems, summary=f"{CASES_PATH.name} is invalid: {{}} problem(s)"
         )
-        return 1
+        return ExitCode.PROBLEMS_FOUND
+    if mismatches := check(corpus):
+        _print_problems(
+            mismatches,
+            summary=f"{{}} mismatch(es) between {CASES_PATH.name} and the corpus",
+        )
+        return ExitCode.PROBLEMS_FOUND
     print(
         f"cases.toml agrees with kernels/ and asm/ "
         f"({len(corpus.cases)} cases, targets: {', '.join(corpus.targets)})"
     )
-    return 0
+    return ExitCode.SUCCESS
+
+
+def _print_problems(problems: list[str], summary: str) -> None:
+    """Each problem, then *summary* with their count in place of ``{}``."""
+    for problem in problems:
+        print(f"error: {problem}", file=sys.stderr)
+    print("\n" + summary.format(len(problems)), file=sys.stderr)
 
 
 if __name__ == "__main__":
