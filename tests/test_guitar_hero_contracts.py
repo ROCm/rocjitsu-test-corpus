@@ -86,6 +86,57 @@ def test_rdna2_ds_cmpst_compare_and_replacement_operands():
         assert "v_and_b32 v44, 1, v0\nv_xor_b32 v42, v44, v8" in body
 
 
+def test_rdna2_low_half_dpp8_coverage():
+    assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
+    start = assembly.index("; Checkpoint 91: vop1_dpp8_00")
+    end = assembly.index("; Checkpoint 115: vop3_plain_00")
+    dpp8 = assembly[start:end]
+    expected = {
+        "v_ceil_f16",
+        "v_cos_f16",
+        "v_cvt_f16_f32",
+        "v_cvt_f16_i16",
+        "v_cvt_f16_u16",
+        "v_cvt_f32_f16",
+        "v_cvt_i16_f16",
+        "v_cvt_norm_i16_f16",
+        "v_cvt_norm_u16_f16",
+        "v_cvt_u16_f16",
+        "v_exp_f16",
+        "v_floor_f16",
+        "v_fract_f16",
+        "v_frexp_exp_i16_f16",
+        "v_frexp_mant_f16",
+        "v_log_f16",
+        "v_rcp_f16",
+        "v_rndne_f16",
+        "v_rsq_f16",
+        "v_sat_pk_u8_i16",
+        "v_sin_f16",
+        "v_sqrt_f16",
+        "v_trunc_f16",
+        "v_add_f16",
+        "v_fmac_f16",
+        "v_ldexp_f16",
+        "v_max_f16",
+        "v_min_f16",
+        "v_mul_f16",
+        "v_sub_f16",
+        "v_subrev_f16",
+    }
+    observed = [
+        line.split()[0]
+        for line in dpp8.splitlines()
+        if " dpp8:" in line and line.split()[0] in expected
+    ]
+    assert len(observed) == len(expected) == 31
+    assert set(observed) == expected
+
+    conversion = dpp8.split("; Checkpoint 92: vop1_dpp8_01", 1)[1]
+    conversion = conversion.split("checkpoint 92", 1)[0]
+    assert "s_mov_b32 exec_lo, 0xa5a55a5a\ns_mov_b32 exec_lo, -1" not in conversion
+
+
 def test_cdna5_scheduling_contract():
     assembly = (CASES / "guitar_hero_cdna5/guitar_hero_cdna5.s").read_text()
     lines = [line.split(";", 1)[0].strip() for line in assembly.splitlines()]

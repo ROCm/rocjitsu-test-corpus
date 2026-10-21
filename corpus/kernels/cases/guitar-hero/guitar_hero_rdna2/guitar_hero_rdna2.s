@@ -2789,6 +2789,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v18, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_ceil_f16 v18, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v20, 0xa5a5a5a5
@@ -2806,6 +2807,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v26, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_cos_f16 v26, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v28, 0xa5a5a5a5
@@ -2820,29 +2822,25 @@ checkpoint 91
 
 ; Checkpoint 92: vop1_dpp8_01
 clear_results
-sweep_inputs int
-v_mov_b32 v16, 0xa5a5a5a5
-s_mov_b32 exec_lo, 0xa5a55a5a
-s_mov_b32 exec_lo, -1
-sweep_inputs int
-v_mov_b32 v18, 0xa5a5a5a5
-s_mov_b32 exec_lo, 0xa5a55a5a
-s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v20, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_cvt_f16_f32 v20, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v22, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_cvt_f16_i16 v22, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v24, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_cvt_f16_u16 v24, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v26, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_cvt_f32_f16 v26, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v28, 0xa5a5a5a5
@@ -2891,6 +2889,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v28, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_cvt_i16_f16 v28, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v30, 0xa5a5a5a5
@@ -2912,10 +2911,12 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v20, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_cvt_norm_i16_f16 v20, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v22, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_cvt_norm_u16_f16 v22, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v24, 0xa5a5a5a5
@@ -2930,6 +2931,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v28, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_cvt_u16_f16 v28, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v30, 0xa5a5a5a5
@@ -2947,6 +2949,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v18, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_exp_f16 v18, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v20, 0xa5a5a5a5
@@ -2971,6 +2974,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v28, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_floor_f16 v28, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v30, 0xa5a5a5a5
@@ -2984,6 +2988,7 @@ clear_results
 sweep_inputs half
 v_mov_b32 v16, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_fract_f16 v16, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v18, 0xa5a5a5a5
@@ -2993,6 +2998,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v20, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_frexp_exp_i16_f16 v20, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v22, 0xa5a5a5a5
@@ -3002,6 +3008,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v24, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_frexp_mant_f16 v24, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v26, 0xa5a5a5a5
@@ -3011,6 +3018,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v28, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_log_f16 v28, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v30, 0xa5a5a5a5
@@ -3058,6 +3066,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v30, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_rcp_f16 v30, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 checkpoint 97
 
@@ -3076,6 +3085,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v20, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_rndne_f16 v20, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v22, 0xa5a5a5a5
@@ -3085,6 +3095,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v24, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_rsq_f16 v24, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v26, 0xa5a5a5a5
@@ -3094,10 +3105,12 @@ s_mov_b32 exec_lo, -1
 sweep_inputs int
 v_mov_b32 v28, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_sat_pk_u8_i16 v28, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v30, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_sin_f16 v30, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 checkpoint 98
 
@@ -3111,6 +3124,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v18, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_sqrt_f16 v18, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v20, 0xa5a5a5a5
@@ -3120,6 +3134,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v22, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_trunc_f16 v22, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v24, 0xa5a5a5a5
@@ -3509,6 +3524,7 @@ v_mov_b32 v17, vcc_lo
 sweep_inputs half
 v_mov_b32 v18, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_add_f16 v18, v8, v9 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v20, 0xa5a5a5a5
@@ -3547,6 +3563,7 @@ clear_results
 sweep_inputs half
 v_mov_b32 v16, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_fmac_f16 v16, v8, v9 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v18, 0xa5a5a5a5
@@ -3557,6 +3574,7 @@ sweep_inputs half
 v_mov_b32 v20, 0xa5a5a5a5
 v_and_b32 v9, 7, v0
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_ldexp_f16 v20, v8, v9 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs int
 v_mov_b32 v22, 0xa5a5a5a5
@@ -3571,6 +3589,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v26, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_max_f16 v26, v8, v9 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v28, 0xa5a5a5a5
@@ -3594,6 +3613,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v18, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_min_f16 v18, v8, v9 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v20, 0xa5a5a5a5
@@ -3618,6 +3638,7 @@ s_mov_b32 exec_lo, -1
 sweep_inputs half
 v_mov_b32 v28, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_mul_f16 v28, v8, v9 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v30, 0xa5a5a5a5
@@ -3662,6 +3683,7 @@ v_mov_b32 v27, vcc_lo
 sweep_inputs half
 v_mov_b32 v28, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_sub_f16 v28, v8, v9 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v30, 0xa5a5a5a5
@@ -3686,6 +3708,7 @@ v_mov_b32 v19, vcc_lo
 sweep_inputs half
 v_mov_b32 v20, 0xa5a5a5a5
 s_mov_b32 exec_lo, 0xa5a55a5a
+v_subrev_f16 v20, v8, v9 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v22, 0xa5a5a5a5
