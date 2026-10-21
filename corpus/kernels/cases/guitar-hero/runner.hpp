@@ -4,7 +4,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
