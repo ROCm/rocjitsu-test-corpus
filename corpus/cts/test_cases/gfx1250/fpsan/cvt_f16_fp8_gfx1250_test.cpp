@@ -68,14 +68,15 @@ template <class FP8> __global__ void k_decode_all_bytes(const int *packed, _Floa
 }
 
 template <class FP8> void run_decode_all_bytes() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::vector<int> packed(256);
   for (int b = 0; b < 256; ++b)
     packed[b] = b;
-  int *dIn = to_dev(packed);
+  int *dIn = device_allocations.to_dev(packed);
   _Float16 *dO;
-  HIP_CHECK(hipMalloc(&dO, 256 * sizeof(_Float16)));
+  device_allocations.allocate(&dO, 256 * sizeof(_Float16));
   k_decode_all_bytes<FP8><<<1, 256>>>(dIn, dO);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<_Float16> got(256);
@@ -88,8 +89,8 @@ template <class FP8> void run_decode_all_bytes() {
     else
       EXPECT_EQ(f16_bits(got[b]), f16_bits(ref)) << "byte 0x" << std::hex << b;
   }
-  (void)hipFree(dIn);
-  (void)hipFree(dO);
+  device_allocations.free(dIn);
+  device_allocations.free(dO);
 }
 
 TEST(CvtF16Fp8, Fp8DecodeAllBytes) { run_decode_all_bytes<fpsan::fp8_e4m3>(); }
@@ -103,6 +104,7 @@ __global__ void k_decode_bytesel(const int *packed, _Float16 *out) {
 }
 
 template <class FP8, int ByteIdx> void run_decode_bytesel() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   // Finite e4m3/e5m2 bytes only (0x00..0x7B span small finite values); place at
@@ -115,9 +117,9 @@ template <class FP8, int ByteIdx> void run_decode_bytesel() {
     bytes[i] = static_cast<std::uint8_t>(bdist(rng));
     packed[i] = static_cast<int>(static_cast<std::uint32_t>(bytes[i]) << (ByteIdx * 8));
   }
-  int *dIn = to_dev(packed);
+  int *dIn = device_allocations.to_dev(packed);
   _Float16 *dO;
-  HIP_CHECK(hipMalloc(&dO, LANES * sizeof(_Float16)));
+  device_allocations.allocate(&dO, LANES * sizeof(_Float16));
   k_decode_bytesel<FP8, ByteIdx><<<1, LANES>>>(dIn, dO);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<_Float16> got(LANES);
@@ -126,8 +128,8 @@ template <class FP8, int ByteIdx> void run_decode_bytesel() {
     _Float16 ref = static_cast<_Float16>(static_cast<float>(FP8(bytes[i])));
     EXPECT_EQ(f16_bits(got[i]), f16_bits(ref)) << "lane " << i << " byteIdx " << ByteIdx;
   }
-  (void)hipFree(dIn);
-  (void)hipFree(dO);
+  device_allocations.free(dIn);
+  device_allocations.free(dO);
 }
 
 TEST(CvtF16Fp8, Fp8DecodeByteSel) {
@@ -181,23 +183,24 @@ __global__ void k_pk_roundtrip(const _Float16 *in, Out *out) {
 }
 
 template <class FP8> void run_pk_roundtrip() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::vector<_Float16> in(2 * LANES);
   std::mt19937 rng = fpsan_test::make_rng();
   for (auto &x : in)
     x = static_cast<_Float16>(fpsan_test::pick_int_valued<float>(rng, -4, 4)); // exact in fp8
-  _Float16 *dIn = to_dev(in);
+  _Float16 *dIn = device_allocations.to_dev(in);
   {
     _Float16 *dO;
-    HIP_CHECK(hipMalloc(&dO, 2 * LANES * sizeof(_Float16)));
+    device_allocations.allocate(&dO, 2 * LANES * sizeof(_Float16));
     k_pk_roundtrip<Semantics::Native, FP8, _Float16><<<1, LANES>>>(dIn, dO);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<_Float16> got(2 * LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, 2 * LANES * sizeof(_Float16), hipMemcpyDeviceToHost));
     for (int i = 0; i < 2 * LANES; ++i)
       EXPECT_EQ(f16_bits(got[i]), f16_bits(in[i])) << "Float round-trip at " << i;
-    (void)hipFree(dO);
+    device_allocations.free(dO);
   }
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
@@ -207,16 +210,16 @@ template <class FP8> void run_pk_roundtrip() {
       ref[i] = static_cast<std::uint16_t>(
           fpsan::cast<_Float16>(fpsan::cast<FP8>(VH(in[i]))).fpsan_payload());
     std::uint16_t *dO;
-    HIP_CHECK(hipMalloc(&dO, 2 * LANES * sizeof(std::uint16_t)));
+    device_allocations.allocate(&dO, 2 * LANES * sizeof(std::uint16_t));
     k_pk_roundtrip<S, FP8, std::uint16_t><<<1, LANES>>>(dIn, dO);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint16_t> got(2 * LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, 2 * LANES * sizeof(std::uint16_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < 2 * LANES; ++i)
       EXPECT_EQ(got[i], ref[i]) << "FPSan payload at " << i;
-    (void)hipFree(dO);
+    device_allocations.free(dO);
   });
-  (void)hipFree(dIn);
+  device_allocations.free(dIn);
 }
 
 TEST(CvtF16Fp8, Fp8PkRoundTrip) { run_pk_roundtrip<fpsan::fp8_e4m3>(); }
@@ -232,15 +235,16 @@ template <class FP8> __global__ void k_pack_bytes(const _Float16 *in, std::uint1
 }
 
 template <class FP8> void run_pack_bytes() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::vector<_Float16> in(2 * LANES);
   std::mt19937 rng = fpsan_test::make_rng();
   for (auto &x : in)
     x = static_cast<_Float16>(fpsan_test::pick_int_valued<float>(rng, -4, 4));
-  _Float16 *dIn = to_dev(in);
+  _Float16 *dIn = device_allocations.to_dev(in);
   std::uint16_t *dO;
-  HIP_CHECK(hipMalloc(&dO, LANES * sizeof(std::uint16_t)));
+  device_allocations.allocate(&dO, LANES * sizeof(std::uint16_t));
   k_pack_bytes<FP8><<<1, LANES>>>(dIn, dO);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<std::uint16_t> got(LANES);
@@ -251,8 +255,8 @@ template <class FP8> void run_pack_bytes() {
     std::uint16_t expected = static_cast<std::uint16_t>(lo | (static_cast<std::uint16_t>(hi) << 8));
     EXPECT_EQ(got[l], expected) << "lane " << l;
   }
-  (void)hipFree(dIn);
-  (void)hipFree(dO);
+  device_allocations.free(dIn);
+  device_allocations.free(dO);
 }
 
 TEST(CvtF16Fp8, Fp8PackByteOrder) { run_pack_bytes<fpsan::fp8_e4m3>(); }
@@ -296,23 +300,24 @@ __global__ void k_sr_roundtrip(const _Float16 *in, Out *out) {
 }
 
 template <class FP8> void run_sr_roundtrip() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::vector<_Float16> in(LANES);
   std::mt19937 rng = fpsan_test::make_rng();
   for (auto &x : in)
     x = static_cast<_Float16>(fpsan_test::pick_int_valued<float>(rng, -4, 4));
-  _Float16 *dIn = to_dev(in);
+  _Float16 *dIn = device_allocations.to_dev(in);
   {
     _Float16 *dO;
-    HIP_CHECK(hipMalloc(&dO, LANES * sizeof(_Float16)));
+    device_allocations.allocate(&dO, LANES * sizeof(_Float16));
     k_sr_roundtrip<Semantics::Native, FP8, _Float16><<<1, LANES>>>(dIn, dO);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<_Float16> got(LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, LANES * sizeof(_Float16), hipMemcpyDeviceToHost));
     for (int i = 0; i < LANES; ++i)
       EXPECT_EQ(f16_bits(got[i]), f16_bits(in[i])) << "sr round-trip " << i;
-    (void)hipFree(dO);
+    device_allocations.free(dO);
   }
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
@@ -322,16 +327,16 @@ template <class FP8> void run_sr_roundtrip() {
       ref[i] = static_cast<std::uint16_t>(
           fpsan::cast<_Float16>(fpsan::cast<FP8>(VH(in[i]))).fpsan_payload());
     std::uint16_t *dO;
-    HIP_CHECK(hipMalloc(&dO, LANES * sizeof(std::uint16_t)));
+    device_allocations.allocate(&dO, LANES * sizeof(std::uint16_t));
     k_sr_roundtrip<S, FP8, std::uint16_t><<<1, LANES>>>(dIn, dO);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint16_t> got(LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, LANES * sizeof(std::uint16_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < LANES; ++i)
       EXPECT_EQ(got[i], ref[i]) << "sr FPSan " << i;
-    (void)hipFree(dO);
+    device_allocations.free(dO);
   });
-  (void)hipFree(dIn);
+  device_allocations.free(dIn);
 }
 
 TEST(CvtF16Fp8, Fp8SrRoundTrip) { run_sr_roundtrip<fpsan::fp8_e4m3>(); }

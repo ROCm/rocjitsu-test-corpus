@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
+#include "hip_test_utils.hpp"
 #include "mfma_gfx950_parts.hpp"
 
 // ---------------------------------------------------------------------------
@@ -46,6 +47,7 @@ struct Smf_32x32x32_f16 {
 } // namespace
 
 template <class Wrap, class CVec, int LANEREGS> void run_smfmac_zeroA() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -56,8 +58,8 @@ template <class Wrap, class CVec, int LANEREGS> void run_smfmac_zeroA() {
     for (int r = 0; r < LANEREGS; ++r)
       hC[l][r] = static_cast<float>((l * LANEREGS + r) % 17 - 8);
   CVec *dC, *dD;
-  HIP_CHECK(hipMalloc(&dC, WAVE * sizeof(CVec)));
-  HIP_CHECK(hipMalloc(&dD, WAVE * sizeof(CVec)));
+  device_allocations.allocate(&dC, WAVE * sizeof(CVec));
+  device_allocations.allocate(&dD, WAVE * sizeof(CVec));
   HIP_CHECK(hipMemcpy(dC, hC.data(), WAVE * sizeof(CVec), hipMemcpyHostToDevice));
   k_smfmac_zeroA<Semantics::Native, fpsan::v8h_native, fpsan::v16h_native, CVec, 0, 0, Wrap>
       <<<1, WAVE>>>(dC, dD, 0, Wrap{});
@@ -67,8 +69,8 @@ template <class Wrap, class CVec, int LANEREGS> void run_smfmac_zeroA() {
   for (int l = 0; l < WAVE; ++l)
     for (int r = 0; r < LANEREGS; ++r)
       EXPECT_EQ(bits_of(hD[l][r]), bits_of(hC[l][r])) << "lane " << l << " reg " << r;
-  (void)hipFree(dC);
-  (void)hipFree(dD);
+  device_allocations.free(dC);
+  device_allocations.free(dD);
 }
 
 TEST(Smfmac, F32_16x16x64_F16_ZeroAGivesC) { run_smfmac_zeroA<Smf_16x16x64_f16, v4f_native, 4>(); }
@@ -169,6 +171,7 @@ SmfData make_smf_data() {
 template <int CBSZ, int ABID> void run_smf64_f16_fpsan();
 
 TEST(SmfmacF16_16x16x64, LayoutMatchesHardware) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -185,31 +188,34 @@ TEST(SmfmacF16_16x16x64, LayoutMatchesHardware) {
       }
       ref[i * QN + j] = static_cast<float>(acc);
     }
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C), *dD;
-  int *dI = to_dev(m.idxbuf);
-  HIP_CHECK(hipMalloc(&dD, QM * QN * sizeof(float)));
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C), *dD;
+  int *dI = device_allocations.to_dev(m.idxbuf);
+  device_allocations.allocate(&dD, QM * QN * sizeof(float));
   k_smf64<0, 0, Semantics::Native, float><<<1, WAVE>>>(dA, dB, dC, dI, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> got(QM * QN);
   HIP_CHECK(hipMemcpy(got.data(), dD, QM * QN * sizeof(float), hipMemcpyDeviceToHost));
   for (int t = 0; t < QM * QN; ++t)
     EXPECT_EQ(bits_of(got[t]), bits_of(ref[t])) << "at " << t;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
-  (void)hipFree(dI);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dD);
+  device_allocations.free(dI);
 }
 
 TEST(SmfmacF16_16x16x64, FpsanMatchesScalarReference) { run_smf64_f16_fpsan<0, 0>(); }
 
 template <int CBSZ, int ABID> void run_smf64_f16_fpsan() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
   SmfData m = make_smf_data();
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C);
-  int *dI = to_dev(m.idxbuf);
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C);
+  int *dI = device_allocations.to_dev(m.idxbuf);
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     using VF = Value<float, S, kCC>;
@@ -229,22 +235,23 @@ template <int CBSZ, int ABID> void run_smf64_f16_fpsan() {
         ref[i * QN + j] = acc.fpsan_payload();
       }
     std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, QM * QN * sizeof(std::uint32_t)));
+    device_allocations.allocate(&dD, QM * QN * sizeof(std::uint32_t));
     k_smf64<CBSZ, ABID, S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(QM * QN);
     HIP_CHECK(hipMemcpy(got.data(), dD, QM * QN * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int t = 0; t < QM * QN; ++t)
       EXPECT_EQ(got[t], ref[t]) << "at " << t;
-    (void)hipFree(dD);
+    device_allocations.free(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dI);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dI);
 }
 
 TEST(SmfmacF16_16x16x64_Modifiers, CBSZNonzeroUsesFirstIndexSetLayout) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -261,20 +268,21 @@ TEST(SmfmacF16_16x16x64_Modifiers, CBSZNonzeroUsesFirstIndexSetLayout) {
       }
       ref[i * QN + j] = static_cast<float>(acc);
     }
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C), *dD;
-  int *dI = to_dev(m.idxbuf);
-  HIP_CHECK(hipMalloc(&dD, QM * QN * sizeof(float)));
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C), *dD;
+  int *dI = device_allocations.to_dev(m.idxbuf);
+  device_allocations.allocate(&dD, QM * QN * sizeof(float));
   k_smf64<1, 3, Semantics::Native, float><<<1, WAVE>>>(dA, dB, dC, dI, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> got(QM * QN);
   HIP_CHECK(hipMemcpy(got.data(), dD, QM * QN * sizeof(float), hipMemcpyDeviceToHost));
   for (int t = 0; t < QM * QN; ++t)
     EXPECT_EQ(bits_of(got[t]), bits_of(ref[t])) << "at " << t;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
-  (void)hipFree(dI);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dD);
+  device_allocations.free(dI);
 }
 
 TEST(SmfmacF16_16x16x64_Modifiers, CBSZNonzeroUsesFirstIndexSetFpsan) {
@@ -373,6 +381,7 @@ Smf32Data make_smf32_data() {
 } // namespace
 
 TEST(SmfmacF16_32x32x32, LayoutMatchesHardware) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -389,29 +398,32 @@ TEST(SmfmacF16_32x32x32, LayoutMatchesHardware) {
       }
       ref[i * TN + j] = static_cast<float>(acc);
     }
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C), *dD;
-  int *dI = to_dev(m.idxbuf);
-  HIP_CHECK(hipMalloc(&dD, TM * TN * sizeof(float)));
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C), *dD;
+  int *dI = device_allocations.to_dev(m.idxbuf);
+  device_allocations.allocate(&dD, TM * TN * sizeof(float));
   k_smf32<Semantics::Native, float><<<1, WAVE>>>(dA, dB, dC, dI, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> got(TM * TN);
   HIP_CHECK(hipMemcpy(got.data(), dD, TM * TN * sizeof(float), hipMemcpyDeviceToHost));
   for (int t = 0; t < TM * TN; ++t)
     EXPECT_EQ(bits_of(got[t]), bits_of(ref[t])) << "at " << t;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
-  (void)hipFree(dI);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dD);
+  device_allocations.free(dI);
 }
 
 TEST(SmfmacF16_32x32x32, FpsanMatchesScalarReference) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
   Smf32Data m = make_smf32_data();
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C);
-  int *dI = to_dev(m.idxbuf);
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C);
+  int *dI = device_allocations.to_dev(m.idxbuf);
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     using VF = Value<float, S, kCC>;
@@ -431,19 +443,19 @@ TEST(SmfmacF16_32x32x32, FpsanMatchesScalarReference) {
         ref[i * TN + j] = acc.fpsan_payload();
       }
     std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, TM * TN * sizeof(std::uint32_t)));
+    device_allocations.allocate(&dD, TM * TN * sizeof(std::uint32_t));
     k_smf32<S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(TM * TN);
     HIP_CHECK(hipMemcpy(got.data(), dD, TM * TN * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int t = 0; t < TM * TN; ++t)
       EXPECT_EQ(got[t], ref[t]) << "at " << t;
-    (void)hipFree(dD);
+    device_allocations.free(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dI);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dI);
 }
 
 // ---------------------------------------------------------------------------
@@ -485,6 +497,7 @@ __global__ void k_smf64_bf16(const float *Acomp, const float *B, const float *C,
 }
 
 TEST(SmfmacBf16_16x16x64, LayoutMatchesHardware) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -501,29 +514,32 @@ TEST(SmfmacBf16_16x16x64, LayoutMatchesHardware) {
       }
       ref[i * QN + j] = static_cast<float>(acc);
     }
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C), *dD;
-  int *dI = to_dev(m.idxbuf);
-  HIP_CHECK(hipMalloc(&dD, QM * QN * sizeof(float)));
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C), *dD;
+  int *dI = device_allocations.to_dev(m.idxbuf);
+  device_allocations.allocate(&dD, QM * QN * sizeof(float));
   k_smf64_bf16<Semantics::Native, float><<<1, WAVE>>>(dA, dB, dC, dI, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> got(QM * QN);
   HIP_CHECK(hipMemcpy(got.data(), dD, QM * QN * sizeof(float), hipMemcpyDeviceToHost));
   for (int t = 0; t < QM * QN; ++t)
     EXPECT_EQ(bits_of(got[t]), bits_of(ref[t])) << "at " << t;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
-  (void)hipFree(dI);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dD);
+  device_allocations.free(dI);
 }
 
 TEST(SmfmacBf16_16x16x64, FpsanMatchesScalarReference) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
   SmfData m = make_smf_data();
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C);
-  int *dI = to_dev(m.idxbuf);
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C);
+  int *dI = device_allocations.to_dev(m.idxbuf);
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     using VF = Value<float, S, kCC>;
@@ -543,19 +559,19 @@ TEST(SmfmacBf16_16x16x64, FpsanMatchesScalarReference) {
         ref[i * QN + j] = acc.fpsan_payload();
       }
     std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, QM * QN * sizeof(std::uint32_t)));
+    device_allocations.allocate(&dD, QM * QN * sizeof(std::uint32_t));
     k_smf64_bf16<S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(QM * QN);
     HIP_CHECK(hipMemcpy(got.data(), dD, QM * QN * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int t = 0; t < QM * QN; ++t)
       EXPECT_EQ(got[t], ref[t]) << "at " << t;
-    (void)hipFree(dD);
+    device_allocations.free(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dI);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dI);
 }
 
 template <Semantics S, class Out>
@@ -597,6 +613,7 @@ __global__ void k_smf32_bf16(const float *Acomp, const float *B, const float *C,
 }
 
 TEST(SmfmacBf16_32x32x32, LayoutMatchesHardware) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -613,29 +630,32 @@ TEST(SmfmacBf16_32x32x32, LayoutMatchesHardware) {
       }
       ref[i * TN + j] = static_cast<float>(acc);
     }
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C), *dD;
-  int *dI = to_dev(m.idxbuf);
-  HIP_CHECK(hipMalloc(&dD, TM * TN * sizeof(float)));
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C), *dD;
+  int *dI = device_allocations.to_dev(m.idxbuf);
+  device_allocations.allocate(&dD, TM * TN * sizeof(float));
   k_smf32_bf16<Semantics::Native, float><<<1, WAVE>>>(dA, dB, dC, dI, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> got(TM * TN);
   HIP_CHECK(hipMemcpy(got.data(), dD, TM * TN * sizeof(float), hipMemcpyDeviceToHost));
   for (int t = 0; t < TM * TN; ++t)
     EXPECT_EQ(bits_of(got[t]), bits_of(ref[t])) << "at " << t;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
-  (void)hipFree(dI);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dD);
+  device_allocations.free(dI);
 }
 
 TEST(SmfmacBf16_32x32x32, FpsanMatchesScalarReference) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
   Smf32Data m = make_smf32_data();
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C);
-  int *dI = to_dev(m.idxbuf);
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C);
+  int *dI = device_allocations.to_dev(m.idxbuf);
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     using VF = Value<float, S, kCC>;
@@ -655,19 +675,19 @@ TEST(SmfmacBf16_32x32x32, FpsanMatchesScalarReference) {
         ref[i * TN + j] = acc.fpsan_payload();
       }
     std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, TM * TN * sizeof(std::uint32_t)));
+    device_allocations.allocate(&dD, TM * TN * sizeof(std::uint32_t));
     k_smf32_bf16<S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(TM * TN);
     HIP_CHECK(hipMemcpy(got.data(), dD, TM * TN * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int t = 0; t < TM * TN; ++t)
       EXPECT_EQ(got[t], ref[t]) << "at " << t;
-    (void)hipFree(dD);
+    device_allocations.free(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dI);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dI);
 }
 
 // ===========================================================================
@@ -794,6 +814,7 @@ SmfCdna3Data make_cdna3(int Mm, int Nn, int Kk) {
 } // namespace
 
 template <class E> static void cdna3_layout_test(int Mm, int Nn, int Kk) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -811,9 +832,10 @@ template <class E> static void cdna3_layout_test(int Mm, int Nn, int Kk) {
       }
       ref[i * Nn + j] = static_cast<float>(acc);
     }
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C), *dD;
-  int *dI = to_dev(m.idxbuf);
-  HIP_CHECK(hipMalloc(&dD, Mm * Nn * sizeof(float)));
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C), *dD;
+  int *dI = device_allocations.to_dev(m.idxbuf);
+  device_allocations.allocate(&dD, Mm * Nn * sizeof(float));
   if (Mm == 16)
     k_smf1632<E, Semantics::Native, float><<<1, WAVE>>>(dA, dB, dC, dI, dD);
   else
@@ -823,21 +845,23 @@ template <class E> static void cdna3_layout_test(int Mm, int Nn, int Kk) {
   HIP_CHECK(hipMemcpy(got.data(), dD, Mm * Nn * sizeof(float), hipMemcpyDeviceToHost));
   for (int t = 0; t < Mm * Nn; ++t)
     EXPECT_EQ(bits_of(got[t]), bits_of(ref[t])) << "at " << t;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
-  (void)hipFree(dI);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dD);
+  device_allocations.free(dI);
 }
 
 template <class E> static void cdna3_fpsan_test(int Mm, int Nn, int Kk) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
   const int G = Kk / 4, Cc = 2 * G;
   SmfCdna3Data m = make_cdna3(Mm, Nn, Kk);
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C);
-  int *dI = to_dev(m.idxbuf);
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C);
+  int *dI = device_allocations.to_dev(m.idxbuf);
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     using VF = Value<float, S, kCC>;
@@ -857,7 +881,7 @@ template <class E> static void cdna3_fpsan_test(int Mm, int Nn, int Kk) {
         ref[i * Nn + j] = acc.fpsan_payload();
       }
     std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, Mm * Nn * sizeof(std::uint32_t)));
+    device_allocations.allocate(&dD, Mm * Nn * sizeof(std::uint32_t));
     if (Mm == 16)
       k_smf1632<E, S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dD);
     else
@@ -867,12 +891,12 @@ template <class E> static void cdna3_fpsan_test(int Mm, int Nn, int Kk) {
     HIP_CHECK(hipMemcpy(got.data(), dD, Mm * Nn * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int t = 0; t < Mm * Nn; ++t)
       EXPECT_EQ(got[t], ref[t]) << "at " << t;
-    (void)hipFree(dD);
+    device_allocations.free(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dI);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dI);
 }
 
 TEST(SmfmacF16_16x16x32, LayoutMatchesHardware) { cdna3_layout_test<_Float16>(HM, HN, HK); }
@@ -1023,6 +1047,7 @@ SmfCdna3Data make_fp8(int Mm, int Kk) {
 } // namespace
 
 template <class AE, class BE> static void fp8_smf_test(int Mm, int Kk) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -1042,9 +1067,10 @@ template <class AE, class BE> static void fp8_smf_test(int Mm, int Kk) {
       }
       ref[i * Nn + j] = static_cast<float>(acc);
     }
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C), *dDf;
-  int *dI = to_dev(m.idxbuf);
-  HIP_CHECK(hipMalloc(&dDf, Mm * Nn * sizeof(float)));
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C), *dDf;
+  int *dI = device_allocations.to_dev(m.idxbuf);
+  device_allocations.allocate(&dDf, Mm * Nn * sizeof(float));
   if (Mm == 16)
     k_smf_fp8_1664<AE, BE, Semantics::Native, float><<<1, WAVE>>>(dA, dB, dC, dI, dDf);
   else
@@ -1073,7 +1099,7 @@ template <class AE, class BE> static void fp8_smf_test(int Mm, int Kk) {
         refp[i * Nn + j] = accp.fpsan_payload();
       }
     std::uint32_t *dDp;
-    HIP_CHECK(hipMalloc(&dDp, Mm * Nn * sizeof(std::uint32_t)));
+    device_allocations.allocate(&dDp, Mm * Nn * sizeof(std::uint32_t));
     if (Mm == 16)
       k_smf_fp8_1664<AE, BE, S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dDp);
     else
@@ -1083,13 +1109,13 @@ template <class AE, class BE> static void fp8_smf_test(int Mm, int Kk) {
     HIP_CHECK(hipMemcpy(gotp.data(), dDp, Mm * Nn * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int t = 0; t < Mm * Nn; ++t)
       EXPECT_EQ(gotp[t], refp[t]) << "fpsan at " << t;
-    (void)hipFree(dDp);
+    device_allocations.free(dDp);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dDf);
-  (void)hipFree(dI);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dDf);
+  device_allocations.free(dI);
 }
 
 TEST(SmfmacFp8_16x16x64, FP8_FP8) { fp8_smf_test<fpsan::fp8_e4m3, fpsan::fp8_e4m3>(FW, FK); }
@@ -1244,6 +1270,7 @@ SmfCdna3Data make_fp8big(int Mm, int Kk) {
 } // namespace
 
 template <class AE, class BE> static void fp8big_smf_test(int Mm, int Kk) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -1262,9 +1289,10 @@ template <class AE, class BE> static void fp8big_smf_test(int Mm, int Kk) {
       }
       ref[i * Nn + j] = static_cast<float>(acc);
     }
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C), *dDf;
-  int *dI = to_dev(m.idxbuf);
-  HIP_CHECK(hipMalloc(&dDf, Mm * Nn * sizeof(float)));
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C), *dDf;
+  int *dI = device_allocations.to_dev(m.idxbuf);
+  device_allocations.allocate(&dDf, Mm * Nn * sizeof(float));
   if (Mm == 16)
     k_smf_fp8big_16128<AE, BE, Semantics::Native, float><<<1, WAVE>>>(dA, dB, dC, dI, dDf);
   else
@@ -1293,7 +1321,7 @@ template <class AE, class BE> static void fp8big_smf_test(int Mm, int Kk) {
         refp[i * Nn + j] = accp.fpsan_payload();
       }
     std::uint32_t *dDp;
-    HIP_CHECK(hipMalloc(&dDp, Mm * Nn * sizeof(std::uint32_t)));
+    device_allocations.allocate(&dDp, Mm * Nn * sizeof(std::uint32_t));
     if (Mm == 16)
       k_smf_fp8big_16128<AE, BE, S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dDp);
     else
@@ -1303,13 +1331,13 @@ template <class AE, class BE> static void fp8big_smf_test(int Mm, int Kk) {
     HIP_CHECK(hipMemcpy(gotp.data(), dDp, Mm * Nn * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int t = 0; t < Mm * Nn; ++t)
       EXPECT_EQ(gotp[t], refp[t]) << "fpsan at " << t;
-    (void)hipFree(dDp);
+    device_allocations.free(dDp);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dDf);
-  (void)hipFree(dI);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dDf);
+  device_allocations.free(dI);
 }
 
 TEST(SmfmacFp8_16x16x128, FP8_FP8) { fp8big_smf_test<fpsan::fp8_e4m3, fpsan::fp8_e4m3>(GW, GK); }

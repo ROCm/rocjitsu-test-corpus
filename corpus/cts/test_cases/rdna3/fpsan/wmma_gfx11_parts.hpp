@@ -262,6 +262,7 @@ template <class T> float layout_tolerance() {
 } // namespace
 
 template <class Traits> void run_layout_matches_hardware() {
+  DeviceAllocations device_allocations;
   if (!current_device_is_gfx11())
     GTEST_SKIP() << "current HIP device is not gfx11";
   using CE = typename Harness<Traits>::CElem;
@@ -278,11 +279,11 @@ template <class Traits> void run_layout_matches_hardware() {
       ref[mm * N + nn] = static_cast<CE>(acc);
     }
 
-  AE *dA = to_dev(m.A);
-  BE *dB = to_dev(m.B);
-  CE *dC = to_dev(m.C);
+  AE *dA = device_allocations.to_dev(m.A);
+  BE *dB = device_allocations.to_dev(m.B);
+  CE *dC = device_allocations.to_dev(m.C);
   CE *dD;
-  HIP_CHECK(hipMalloc(&dD, M * N * sizeof(CE)));
+  device_allocations.allocate(&dD, M * N * sizeof(CE));
   k_builtin<Traits><<<1, Traits::wave_size>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
 
@@ -292,13 +293,14 @@ template <class Traits> void run_layout_matches_hardware() {
     EXPECT_NEAR(static_cast<float>(got[i]), static_cast<float>(ref[i]), layout_tolerance<CE>())
         << "layout mismatch at " << (i / N) << "," << (i % N) << " got_bits=" << bits_of(got[i])
         << " ref_bits=" << bits_of(ref[i]);
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dD);
 }
 
 template <class Traits> void run_fpsan_matches_scalar_reference() {
+  DeviceAllocations device_allocations;
   if (!current_device_is_gfx11())
     GTEST_SKIP() << "current HIP device is not gfx11";
   using AE = typename Harness<Traits>::AElem;
@@ -307,9 +309,9 @@ template <class Traits> void run_fpsan_matches_scalar_reference() {
   using CBits = typename Harness<Traits>::CBits;
   Mats<Traits> m = make_inputs<Traits>();
 
-  AE *dA = to_dev(m.A);
-  BE *dB = to_dev(m.B);
-  CE *dC = to_dev(m.C);
+  AE *dA = device_allocations.to_dev(m.A);
+  BE *dB = device_allocations.to_dev(m.B);
+  CE *dC = device_allocations.to_dev(m.C);
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     using VA = Value<AE, S, kCC>;
@@ -325,21 +327,22 @@ template <class Traits> void run_fpsan_matches_scalar_reference() {
       }
 
     CBits *dD;
-    HIP_CHECK(hipMalloc(&dD, M * N * sizeof(CBits)));
+    device_allocations.allocate(&dD, M * N * sizeof(CBits));
     k_fpsan<Traits, S><<<1, Traits::wave_size>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<CBits> got(M * N);
     HIP_CHECK(hipMemcpy(got.data(), dD, M * N * sizeof(CBits), hipMemcpyDeviceToHost));
     for (int i = 0; i < M * N; ++i)
       EXPECT_EQ(got[i], ref[i]) << "payload mismatch at " << (i / N) << "," << (i % N);
-    (void)hipFree(dD);
+    device_allocations.free(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
 }
 
 template <class Traits> void run_tied_preserves_unselected() {
+  DeviceAllocations device_allocations;
   static_assert(Traits::has_opsel, "preservation is only meaningful for OPSEL WMMA forms");
   if (!current_device_is_gfx11())
     GTEST_SKIP() << "current HIP device is not gfx11";
@@ -349,12 +352,12 @@ template <class Traits> void run_tied_preserves_unselected() {
   const std::size_t count = static_cast<std::size_t>(Traits::wave_size) * H::c_lanes;
 
   CE *dFloat;
-  HIP_CHECK(hipMalloc(&dFloat, count * sizeof(CE)));
+  device_allocations.allocate(&dFloat, count * sizeof(CE));
   k_tied_preserve_float<Traits><<<1, Traits::wave_size>>>(dFloat);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<CE> got_float(count);
   HIP_CHECK(hipMemcpy(got_float.data(), dFloat, count * sizeof(CE), hipMemcpyDeviceToHost));
-  (void)hipFree(dFloat);
+  device_allocations.free(dFloat);
 
   for (int lane = 0; lane < Traits::wave_size; ++lane)
     for (int r = 0; r < H::output_regs; ++r) {
@@ -368,12 +371,12 @@ template <class Traits> void run_tied_preserves_unselected() {
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     CBits *dFpsan;
-    HIP_CHECK(hipMalloc(&dFpsan, count * sizeof(CBits)));
+    device_allocations.allocate(&dFpsan, count * sizeof(CBits));
     k_tied_preserve_fpsan<Traits, S><<<1, Traits::wave_size>>>(dFpsan);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<CBits> got_fpsan(count);
     HIP_CHECK(hipMemcpy(got_fpsan.data(), dFpsan, count * sizeof(CBits), hipMemcpyDeviceToHost));
-    (void)hipFree(dFpsan);
+    device_allocations.free(dFpsan);
 
     for (int lane = 0; lane < Traits::wave_size; ++lane)
       for (int r = 0; r < H::output_regs; ++r) {

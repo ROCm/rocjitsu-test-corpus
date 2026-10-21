@@ -23,6 +23,7 @@
 #include "fpsan/amdgcn_swmmac_gfx12.hpp"
 #include "fpsan/fpsan.hpp"
 #include "fpsan_semantics.hpp"
+#include "hip_test_utils.hpp"
 #include "test_random.hpp"
 
 #include <hip/hip_runtime.h>
@@ -30,7 +31,6 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
-#include <cstring>
 #include <random>
 #include <vector>
 
@@ -38,20 +38,10 @@ using fpsan::Conversions;
 using fpsan::Semantics;
 using fpsan::Value;
 
-#define HIP_CHECK(e)                                                                               \
-  do {                                                                                             \
-    hipError_t e_ = (e);                                                                           \
-    ASSERT_EQ(e_, hipSuccess) << hipGetErrorString(e_);                                            \
-  } while (0)
-
 static constexpr Conversions kCC = Conversions::Explicit;
 
 namespace {
 constexpr int WAVE = 32;
-bool have_device() {
-  int n = 0;
-  return hipGetDeviceCount(&n) == hipSuccess && n > 0;
-}
 } // namespace
 namespace {
 constexpr int kSwM = 16, kSwN = 16, kSwK = 32;
@@ -143,18 +133,6 @@ template <class EncodeIdxFn> SwData make_sw_data(std::uint32_t seed, EncodeIdxFn
   return v;
 }
 
-template <class T> T *to_dev(const std::vector<T> &h) {
-  T *d = nullptr;
-  (void)hipMalloc(&d, h.size() * sizeof(T));
-  (void)hipMemcpy(d, h.data(), h.size() * sizeof(T), hipMemcpyHostToDevice);
-  return d;
-}
-
-template <class T> std::uint64_t bits_of(T v) {
-  std::uint64_t u = 0;
-  std::memcpy(&u, &v, sizeof v);
-  return u;
-}
 } // namespace
 
 // ---- shared f16 / bf16 / f16-out kernels ----------------------------------
@@ -381,15 +359,17 @@ std::vector<std::uint32_t> sw_reference_fp8_fpsan(const SwData &d) {
 // invoked once per FPSan-family variant.
 template <class AScalar, class BScalar, class WrapFloatFn, class MakeFpsanFn>
 void run_fp8_layout_and_fpsan(std::uint32_t seed, WrapFloatFn wf, MakeFpsanFn make_wp) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   SwData d = make_sw_data(seed, encode_idx_fp8);
   std::vector<float> ref = sw_reference_fp8<AScalar, BScalar>(d);
-  float *dA = to_dev(d.A), *dB = to_dev(d.B), *dC = to_dev(d.C);
-  int *dp0 = to_dev(d.p0), *dp1 = to_dev(d.p1);
-  std::uint16_t *dI = to_dev(d.idx);
+  float *dA = device_allocations.to_dev(d.A), *dB = device_allocations.to_dev(d.B),
+        *dC = device_allocations.to_dev(d.C);
+  int *dp0 = device_allocations.to_dev(d.p0), *dp1 = device_allocations.to_dev(d.p1);
+  std::uint16_t *dI = device_allocations.to_dev(d.idx);
   float *dDf = nullptr;
-  HIP_CHECK(hipMalloc(&dDf, kSwM * kSwN * sizeof(float)));
+  device_allocations.allocate(&dDf, kSwM * kSwN * sizeof(float));
   k_swmmac_fp8_kernel<Semantics::Native, AScalar, BScalar, float>
       <<<1, WAVE>>>(dA, dB, dC, dp0, dp1, dI, dDf, wf);
   HIP_CHECK(hipDeviceSynchronize());
@@ -397,14 +377,14 @@ void run_fp8_layout_and_fpsan(std::uint32_t seed, WrapFloatFn wf, MakeFpsanFn ma
   HIP_CHECK(hipMemcpy(got.data(), dDf, kSwM * kSwN * sizeof(float), hipMemcpyDeviceToHost));
   for (int t = 0; t < kSwM * kSwN; ++t)
     EXPECT_EQ(bits_of(got[t]), bits_of(ref[t])) << "Layout at " << t;
-  (void)hipFree(dDf);
+  device_allocations.free(dDf);
 
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     auto wp = make_wp(sem);
     std::vector<std::uint32_t> ref_p = sw_reference_fp8_fpsan<S, AScalar, BScalar>(d);
     std::uint32_t *dDp = nullptr;
-    HIP_CHECK(hipMalloc(&dDp, kSwM * kSwN * sizeof(std::uint32_t)));
+    device_allocations.allocate(&dDp, kSwM * kSwN * sizeof(std::uint32_t));
     k_swmmac_fp8_kernel<S, AScalar, BScalar, std::uint32_t>
         <<<1, WAVE>>>(dA, dB, dC, dp0, dp1, dI, dDp, wp);
     HIP_CHECK(hipDeviceSynchronize());
@@ -413,13 +393,13 @@ void run_fp8_layout_and_fpsan(std::uint32_t seed, WrapFloatFn wf, MakeFpsanFn ma
         hipMemcpy(got_p.data(), dDp, kSwM * kSwN * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int t = 0; t < kSwM * kSwN; ++t)
       EXPECT_EQ(got_p[t], ref_p[t]) << "FPSan at " << t;
-    (void)hipFree(dDp);
+    device_allocations.free(dDp);
   });
 
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dp0);
-  (void)hipFree(dp1);
-  (void)hipFree(dI);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dp0);
+  device_allocations.free(dp1);
+  device_allocations.free(dI);
 }

@@ -213,6 +213,7 @@ __global__ void k_smf_32x32x16(const float *A, const float *B, const float *C, c
 }
 
 template <class E> static void run_smf_layout(int m, int n, int k) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
 
@@ -235,12 +236,12 @@ template <class E> static void run_smf_layout(int m, int n, int k) {
       ref[i * n + j] = static_cast<float>(acc);
     }
 
-  float *dA = to_dev(data.A);
-  float *dB = to_dev(data.B);
-  float *dC = to_dev(data.C);
-  int *dI = to_dev(data.idxbuf);
+  float *dA = device_allocations.to_dev(data.A);
+  float *dB = device_allocations.to_dev(data.B);
+  float *dC = device_allocations.to_dev(data.C);
+  int *dI = device_allocations.to_dev(data.idxbuf);
   float *dD;
-  HIP_CHECK(hipMalloc(&dD, ref.size() * sizeof(float)));
+  device_allocations.allocate(&dD, ref.size() * sizeof(float));
   if (m == 16)
     k_smf_16x16x32<E, Semantics::Native, float><<<1, WAVE>>>(dA, dB, dC, dI, dD);
   else
@@ -252,14 +253,15 @@ template <class E> static void run_smf_layout(int m, int n, int k) {
   for (std::size_t i = 0; i < got.size(); ++i)
     EXPECT_EQ(bits_of(got[i]), bits_of(ref[i])) << "elem " << i;
 
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dI);
-  (void)hipFree(dD);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dI);
+  device_allocations.free(dD);
 }
 
 template <class E> static void run_smf_fpsan(int m, int n, int k) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
 
@@ -267,10 +269,10 @@ template <class E> static void run_smf_fpsan(int m, int n, int k) {
   const int ccols = 2 * groups;
   SparseData data = make_sparse_data(m, n, k);
 
-  float *dA = to_dev(data.A);
-  float *dB = to_dev(data.B);
-  float *dC = to_dev(data.C);
-  int *dI = to_dev(data.idxbuf);
+  float *dA = device_allocations.to_dev(data.A);
+  float *dB = device_allocations.to_dev(data.B);
+  float *dC = device_allocations.to_dev(data.C);
+  int *dI = device_allocations.to_dev(data.idxbuf);
 
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
@@ -292,7 +294,7 @@ template <class E> static void run_smf_fpsan(int m, int n, int k) {
       }
 
     std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, ref.size() * sizeof(std::uint32_t)));
+    device_allocations.allocate(&dD, ref.size() * sizeof(std::uint32_t));
     if (m == 16)
       k_smf_16x16x32<E, S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dD);
     else
@@ -304,13 +306,13 @@ template <class E> static void run_smf_fpsan(int m, int n, int k) {
     for (std::size_t i = 0; i < got.size(); ++i)
       EXPECT_EQ(got[i], ref[i]) << "elem " << i;
 
-    (void)hipFree(dD);
+    device_allocations.free(dD);
   });
 
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dI);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dI);
 }
 
 template <class AE, class BE, Semantics S, class Out>
@@ -425,6 +427,7 @@ __global__ void k_smf_fp8_32x32x32(const float *A, const float *B, const float *
 }
 
 template <class AE, class BE> static void run_smf_fp8(int m, int k) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
 
@@ -452,12 +455,12 @@ template <class AE, class BE> static void run_smf_fp8(int m, int k) {
       ref[i * n + j] = static_cast<float>(acc);
     }
 
-  float *dA = to_dev(data.A);
-  float *dB = to_dev(data.B);
-  float *dC = to_dev(data.C);
-  int *dI = to_dev(data.idxbuf);
+  float *dA = device_allocations.to_dev(data.A);
+  float *dB = device_allocations.to_dev(data.B);
+  float *dC = device_allocations.to_dev(data.C);
+  int *dI = device_allocations.to_dev(data.idxbuf);
   float *dDf;
-  HIP_CHECK(hipMalloc(&dDf, ref.size() * sizeof(float)));
+  device_allocations.allocate(&dDf, ref.size() * sizeof(float));
 
   if (m == 16)
     k_smf_fp8_16x16x64<AE, BE, Semantics::Native, float><<<1, WAVE>>>(dA, dB, dC, dI, dDf);
@@ -494,7 +497,7 @@ template <class AE, class BE> static void run_smf_fp8(int m, int k) {
       }
 
     std::uint32_t *dDp;
-    HIP_CHECK(hipMalloc(&dDp, refp.size() * sizeof(std::uint32_t)));
+    device_allocations.allocate(&dDp, refp.size() * sizeof(std::uint32_t));
     if (m == 16)
       k_smf_fp8_16x16x64<AE, BE, S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dDp);
     else
@@ -507,14 +510,14 @@ template <class AE, class BE> static void run_smf_fp8(int m, int k) {
     for (std::size_t i = 0; i < gotp.size(); ++i)
       EXPECT_EQ(gotp[i], refp[i]) << "fpsan elem " << i;
 
-    (void)hipFree(dDp);
+    device_allocations.free(dDp);
   });
 
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dI);
-  (void)hipFree(dDf);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dI);
+  device_allocations.free(dDf);
 }
 
 TEST(SmfmacF16_16x16x32, LayoutMatchesHardware) { run_smf_layout<_Float16>(16, 16, 32); }

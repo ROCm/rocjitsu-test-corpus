@@ -266,20 +266,21 @@ constexpr int kFDot2N = 32;
 #if FPSAN_TEST_ENABLE_FDOT2 &&                                                                     \
     (!defined(__HIP_DEVICE_COMPILE__) || __has_builtin(__builtin_amdgcn_fdot2))
 TEST(AmdgcnMath, fdot2_FloatAndFpsan) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   if (!current_arch_supports_fdot2())
     GTEST_SKIP() << "current device does not support fdot2";
   auto a = make_v2h(), b = make_v2h();
   auto c = make_acc_f32();
-  v2h *dA = to_dev(a), *dB = to_dev(b);
-  float *dC = to_dev(c);
+  v2h *dA = device_allocations.to_dev(a), *dB = device_allocations.to_dev(b);
+  float *dC = device_allocations.to_dev(c);
   float *dDir, *dWrap;
   std::uint32_t *dPdir, *dPwrap;
-  HIP_CHECK(hipMalloc(&dDir, kFDot2N * sizeof(float)));
-  HIP_CHECK(hipMalloc(&dWrap, kFDot2N * sizeof(float)));
-  HIP_CHECK(hipMalloc(&dPdir, kFDot2N * sizeof(std::uint32_t)));
-  HIP_CHECK(hipMalloc(&dPwrap, kFDot2N * sizeof(std::uint32_t)));
+  device_allocations.allocate(&dDir, kFDot2N * sizeof(float));
+  device_allocations.allocate(&dWrap, kFDot2N * sizeof(float));
+  device_allocations.allocate(&dPdir, kFDot2N * sizeof(std::uint32_t));
+  device_allocations.allocate(&dPwrap, kFDot2N * sizeof(std::uint32_t));
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     k_fdot2_pair<decltype(sem)::value><<<1, kFDot2N>>>(dA, dB, dC, dDir, dWrap, dPdir, dPwrap);
     HIP_CHECK(hipDeviceSynchronize());
@@ -296,13 +297,13 @@ TEST(AmdgcnMath, fdot2_FloatAndFpsan) {
       EXPECT_EQ(pwrap[i], pdir[i]) << "FPSan lane " << i;
     }
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dDir);
-  (void)hipFree(dWrap);
-  (void)hipFree(dPdir);
-  (void)hipFree(dPwrap);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dDir);
+  device_allocations.free(dWrap);
+  device_allocations.free(dPdir);
+  device_allocations.free(dPwrap);
 }
 #endif
 
@@ -311,20 +312,21 @@ TEST(AmdgcnMath, fdot2_FloatAndFpsan) {
                                           __has_builtin(__builtin_amdgcn_fdot2_bf16_bf16) &&       \
                                           __has_builtin(__builtin_amdgcn_fdot2_f32_bf16)))
 TEST(AmdgcnMath, fdot2_f16_f16_FloatAndFpsan) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   if (!current_arch_supports_fdot2_extended())
     GTEST_SKIP() << "current device does not support extended fdot2";
   auto a = make_v2h(), b = make_v2h();
   auto c = make_acc_f16();
-  v2h *dA = to_dev(a), *dB = to_dev(b);
-  _Float16 *dC = to_dev(c);
+  v2h *dA = device_allocations.to_dev(a), *dB = device_allocations.to_dev(b);
+  _Float16 *dC = device_allocations.to_dev(c);
   _Float16 *dDir, *dWrap;
   std::uint16_t *dPdir, *dPwrap;
-  HIP_CHECK(hipMalloc(&dDir, kFDot2N * sizeof(_Float16)));
-  HIP_CHECK(hipMalloc(&dWrap, kFDot2N * sizeof(_Float16)));
-  HIP_CHECK(hipMalloc(&dPdir, kFDot2N * sizeof(std::uint16_t)));
-  HIP_CHECK(hipMalloc(&dPwrap, kFDot2N * sizeof(std::uint16_t)));
+  device_allocations.allocate(&dDir, kFDot2N * sizeof(_Float16));
+  device_allocations.allocate(&dWrap, kFDot2N * sizeof(_Float16));
+  device_allocations.allocate(&dPdir, kFDot2N * sizeof(std::uint16_t));
+  device_allocations.allocate(&dPwrap, kFDot2N * sizeof(std::uint16_t));
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     k_fdot2_f16_f16_pair<decltype(sem)::value>
         <<<1, kFDot2N>>>(dA, dB, dC, dDir, dWrap, dPdir, dPwrap);
@@ -345,16 +347,17 @@ TEST(AmdgcnMath, fdot2_f16_f16_FloatAndFpsan) {
       EXPECT_EQ(pwrap[i], pdir[i]) << "FPSan lane " << i;
     }
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dDir);
-  (void)hipFree(dWrap);
-  (void)hipFree(dPdir);
-  (void)hipFree(dPwrap);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dDir);
+  device_allocations.free(dWrap);
+  device_allocations.free(dPdir);
+  device_allocations.free(dPwrap);
 }
 
 TEST(AmdgcnMath, fdot2_bf16_bf16_FloatAndFpsan) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   if (!current_arch_supports_fdot2_extended())
@@ -364,14 +367,14 @@ TEST(AmdgcnMath, fdot2_bf16_bf16_FloatAndFpsan) {
   std::vector<__bf16> c(kFDot2N);
   for (int i = 0; i < kFDot2N; ++i)
     c[i] = static_cast<__bf16>(cf[i]);
-  v2bf *dA = to_dev(a), *dB = to_dev(b);
-  __bf16 *dC = to_dev(c);
+  v2bf *dA = device_allocations.to_dev(a), *dB = device_allocations.to_dev(b);
+  __bf16 *dC = device_allocations.to_dev(c);
   __bf16 *dDir, *dWrap;
   std::uint16_t *dPdir, *dPwrap;
-  HIP_CHECK(hipMalloc(&dDir, kFDot2N * sizeof(__bf16)));
-  HIP_CHECK(hipMalloc(&dWrap, kFDot2N * sizeof(__bf16)));
-  HIP_CHECK(hipMalloc(&dPdir, kFDot2N * sizeof(std::uint16_t)));
-  HIP_CHECK(hipMalloc(&dPwrap, kFDot2N * sizeof(std::uint16_t)));
+  device_allocations.allocate(&dDir, kFDot2N * sizeof(__bf16));
+  device_allocations.allocate(&dWrap, kFDot2N * sizeof(__bf16));
+  device_allocations.allocate(&dPdir, kFDot2N * sizeof(std::uint16_t));
+  device_allocations.allocate(&dPwrap, kFDot2N * sizeof(std::uint16_t));
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     k_fdot2_bf16_bf16_pair<decltype(sem)::value>
         <<<1, kFDot2N>>>(dA, dB, dC, dDir, dWrap, dPdir, dPwrap);
@@ -392,30 +395,31 @@ TEST(AmdgcnMath, fdot2_bf16_bf16_FloatAndFpsan) {
       EXPECT_EQ(pwrap[i], pdir[i]) << "FPSan lane " << i;
     }
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dDir);
-  (void)hipFree(dWrap);
-  (void)hipFree(dPdir);
-  (void)hipFree(dPwrap);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dDir);
+  device_allocations.free(dWrap);
+  device_allocations.free(dPdir);
+  device_allocations.free(dPwrap);
 }
 
 TEST(AmdgcnMath, fdot2_f32_bf16_FloatAndFpsan) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   if (!current_arch_supports_fdot2_extended())
     GTEST_SKIP() << "current device does not support extended fdot2";
   auto a = make_v2bf(), b = make_v2bf();
   auto c = make_acc_f32();
-  v2bf *dA = to_dev(a), *dB = to_dev(b);
-  float *dC = to_dev(c);
+  v2bf *dA = device_allocations.to_dev(a), *dB = device_allocations.to_dev(b);
+  float *dC = device_allocations.to_dev(c);
   float *dDir, *dWrap;
   std::uint32_t *dPdir, *dPwrap;
-  HIP_CHECK(hipMalloc(&dDir, kFDot2N * sizeof(float)));
-  HIP_CHECK(hipMalloc(&dWrap, kFDot2N * sizeof(float)));
-  HIP_CHECK(hipMalloc(&dPdir, kFDot2N * sizeof(std::uint32_t)));
-  HIP_CHECK(hipMalloc(&dPwrap, kFDot2N * sizeof(std::uint32_t)));
+  device_allocations.allocate(&dDir, kFDot2N * sizeof(float));
+  device_allocations.allocate(&dWrap, kFDot2N * sizeof(float));
+  device_allocations.allocate(&dPdir, kFDot2N * sizeof(std::uint32_t));
+  device_allocations.allocate(&dPwrap, kFDot2N * sizeof(std::uint32_t));
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     k_fdot2_f32_bf16_pair<decltype(sem)::value>
         <<<1, kFDot2N>>>(dA, dB, dC, dDir, dWrap, dPdir, dPwrap);
@@ -433,13 +437,13 @@ TEST(AmdgcnMath, fdot2_f32_bf16_FloatAndFpsan) {
       EXPECT_EQ(pwrap[i], pdir[i]) << "FPSan lane " << i;
     }
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dDir);
-  (void)hipFree(dWrap);
-  (void)hipFree(dPdir);
-  (void)hipFree(dPwrap);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dDir);
+  device_allocations.free(dWrap);
+  device_allocations.free(dPdir);
+  device_allocations.free(dPwrap);
 }
 #endif
 

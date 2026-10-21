@@ -105,15 +105,16 @@ template <class FP8> __global__ void k_a_float_all(const int *src, float *lane0,
 }
 
 template <class FP8> void run_a_float_all(const fpsan::detail::FpFormat &fmt, const char *name) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::vector<int> src(256);
   for (int b = 0; b < 256; ++b)
     src[b] = b; // fp8 byte b in byte0
-  int *dS = to_dev(src);
+  int *dS = device_allocations.to_dev(src);
   float *d0, *d1;
-  HIP_CHECK(hipMalloc(&d0, 256 * sizeof(float)));
-  HIP_CHECK(hipMalloc(&d1, 256 * sizeof(float)));
+  device_allocations.allocate(&d0, 256 * sizeof(float));
+  device_allocations.allocate(&d1, 256 * sizeof(float));
   k_a_float_all<FP8><<<1, 256>>>(dS, d0, d1);
   HIP_CHECK(hipDeviceSynchronize());
   auto g0 = from_dev(d0, 256), g1 = from_dev(d1, 256);
@@ -126,9 +127,9 @@ template <class FP8> void run_a_float_all(const fpsan::detail::FpFormat &fmt, co
       EXPECT_EQ(g0[b], ref) << name << " byte 0x" << std::hex << b;
     EXPECT_EQ(g1[b], 222.0f) << name << " preserve byte 0x" << std::hex << b;
   }
-  (void)hipFree(dS);
-  (void)hipFree(d0);
-  (void)hipFree(d1);
+  device_allocations.free(dS);
+  device_allocations.free(d0);
+  device_allocations.free(d1);
 }
 
 TEST(CvtScalef32Sr, A_FloatUnpackAll_Fp8) { run_a_float_all<fp8_e4m3>(kFp8E4M3, "fp8"); }
@@ -153,6 +154,7 @@ template <class FP8> __global__ void k_a_float_sel(int src, float scale, float *
 }
 
 template <class FP8> void run_a_float_sel(const fpsan::detail::FpFormat &fmt, const char *name) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   // Four bytes that are exact, small, nonzero (so *scale is also exact in f16).
@@ -164,7 +166,7 @@ template <class FP8> void run_a_float_sel(const fpsan::detail::FpFormat &fmt, co
   int src = bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24);
   const float scale = 2.0f;
   float *dO;
-  HIP_CHECK(hipMalloc(&dO, 10 * sizeof(float)));
+  device_allocations.allocate(&dO, 10 * sizeof(float));
   k_a_float_sel<FP8><<<1, 1>>>(src, scale, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto g = from_dev(dO, 10);
@@ -186,7 +188,7 @@ template <class FP8> void run_a_float_sel(const fpsan::detail::FpFormat &fmt, co
   // (Byte=3,Hi=false)
   EXPECT_EQ(g[8], dec(3)) << name;
   EXPECT_EQ(g[9], 222.0f) << name;
-  (void)hipFree(dO);
+  device_allocations.free(dO);
 }
 
 TEST(CvtScalef32Sr, A_FloatSelLoHiScale_Fp8) { run_a_float_sel<fp8_e4m3>(kFp8E4M3, "fp8"); }
@@ -209,6 +211,7 @@ template <Semantics S, class FP8> __global__ void k_a_fpsan(int src, float scale
 }
 
 template <class FP8> void run_a_fpsan() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   // payload bytes 0xA3 (byte1) and 0x5C (byte2).
@@ -220,7 +223,7 @@ template <class FP8> void run_a_fpsan() {
     using VF = Value<float, S, kCC>;
     using V8 = Value<FP8, S, kCC>;
     unsigned *dO;
-    HIP_CHECK(hipMalloc(&dO, 4 * sizeof(unsigned)));
+    device_allocations.allocate(&dO, 4 * sizeof(unsigned));
     k_a_fpsan<S, FP8><<<1, 1>>>(src, scale, dO);
     HIP_CHECK(hipDeviceSynchronize());
     auto g = from_dev(dO, 4);
@@ -234,7 +237,7 @@ template <class FP8> void run_a_fpsan() {
     EXPECT_EQ(g[1], 0x5678u); // lo: lane1 preserved
     EXPECT_EQ(g[2], 0x1234u); // hi: lane0 preserved
     EXPECT_EQ(g[3], ref_hi);  // hi: lane1 written
-    (void)hipFree(dO);
+    device_allocations.free(dO);
   });
 }
 
@@ -290,6 +293,7 @@ __global__ void k_b(int old, const float *vin, unsigned seed, float scale, Out *
 }
 
 template <class FP8, class SrcElem> void run_b(const fpsan::detail::FpFormat &fmt) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const int N = 64;
@@ -299,12 +303,12 @@ template <class FP8, class SrcElem> void run_b(const fpsan::detail::FpFormat &fm
   std::vector<float> vin(N);
   for (auto &x : vin)
     x = fpsan_test::pick_int_valued<float>(rng, -4, 4); // x/2 exact in fp8
-  float *dV = to_dev(vin);
+  float *dV = device_allocations.to_dev(vin);
 
   // ---- Float: byte `l&3` == host encode(SrcElem(x)/scale), others preserved.
   {
     int *dO;
-    HIP_CHECK(hipMalloc(&dO, N * sizeof(int)));
+    device_allocations.allocate(&dO, N * sizeof(int));
     k_b<Semantics::Native, FP8, SrcElem, int><<<1, N>>>(old, dV, 0xABCDu, scale, dO);
     HIP_CHECK(hipDeviceSynchronize());
     auto g = from_dev(dO, N);
@@ -318,7 +322,7 @@ template <class FP8, class SrcElem> void run_b(const fpsan::detail::FpFormat &fm
           (static_cast<unsigned>(old) & ~mask) | (static_cast<unsigned>(byte) << (8 * sel));
       EXPECT_EQ(static_cast<unsigned>(g[l]), expect) << "Float lane " << l;
     }
-    (void)hipFree(dO);
+    device_allocations.free(dO);
   }
   // ---- FPSan: byte == cast<FP8>(cast<float>(v)/scale) payload; seed opaque.
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
@@ -326,7 +330,7 @@ template <class FP8, class SrcElem> void run_b(const fpsan::detail::FpFormat &fm
     using VF = Value<float, S, kCC>;
     using VS = Value<SrcElem, S, kCC>;
     unsigned *dO;
-    HIP_CHECK(hipMalloc(&dO, N * sizeof(unsigned)));
+    device_allocations.allocate(&dO, N * sizeof(unsigned));
     // A different seed must give the same answer (opaque).
     k_b<S, FP8, SrcElem, unsigned><<<1, N>>>(old, dV, 0x12345u, scale, dO);
     HIP_CHECK(hipDeviceSynchronize());
@@ -341,9 +345,9 @@ template <class FP8, class SrcElem> void run_b(const fpsan::detail::FpFormat &fm
           (static_cast<unsigned>(old) & ~mask) | (static_cast<unsigned>(byte) << (8 * sel));
       EXPECT_EQ(g[l], expect) << "FPSan lane " << l;
     }
-    (void)hipFree(dO);
+    device_allocations.free(dO);
   });
-  (void)hipFree(dV);
+  device_allocations.free(dV);
 }
 
 TEST(CvtScalef32Sr, B_Fp8_F32) { run_b<fp8_e4m3, float>(kFp8E4M3); }
@@ -402,6 +406,7 @@ __global__ void k_c(const float *in, unsigned seed, float scale, unsigned *out) 
 }
 
 template <class SrcElem, class VEC, bool IsFp6> void run_c(const fpsan::detail::FpFormat &fmt) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const float scale = 2.0f;
@@ -409,9 +414,9 @@ template <class SrcElem, class VEC, bool IsFp6> void run_c(const fpsan::detail::
   std::vector<float> in(32);
   for (auto &x : in)
     x = fpsan_test::pick_int_valued<float>(rng, -6, 6); // x/2 representable
-  float *dIn = to_dev(in);
+  float *dIn = device_allocations.to_dev(in);
   unsigned *dO;
-  HIP_CHECK(hipMalloc(&dO, 6 * sizeof(unsigned)));
+  device_allocations.allocate(&dO, 6 * sizeof(unsigned));
 
   // ---- Float: contiguous stream of host codes
   // f32_to_narrow(SrcElem(x)/scale).
@@ -433,8 +438,8 @@ template <class SrcElem, class VEC, bool IsFp6> void run_c(const fpsan::detail::
   in[9] = std::numeric_limits<float>::infinity();
   in[23] = std::numeric_limits<float>::quiet_NaN();
   in[27] = -std::numeric_limits<float>::infinity();
-  (void)hipFree(dIn);
-  dIn = to_dev(in);
+  device_allocations.free(dIn);
+  dIn = device_allocations.to_dev(in);
   // ---- FPSan: contiguous stream of canonical subbyte narrow codes; seed opaque.
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
@@ -454,8 +459,8 @@ template <class SrcElem, class VEC, bool IsFp6> void run_c(const fpsan::detail::
     for (int i = 0; i < 6; ++i)
       EXPECT_EQ(g[i], expect[i]) << "FPSan word " << i;
   });
-  (void)hipFree(dIn);
-  (void)hipFree(dO);
+  device_allocations.free(dIn);
+  device_allocations.free(dO);
 }
 
 TEST(CvtScalef32Sr, C_Fp6_F16) { run_c<_Float16, fpsan::v32h_native, true>(kFp6E2M3); }
@@ -496,13 +501,14 @@ __global__ void k_d(unsigned old, float a, float b, unsigned seed, float scale, 
 }
 
 template <class SrcElem, class VEC> void run_d() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const float scale = 2.0f;
   const unsigned old = 0u;
   std::mt19937 rng = fpsan_test::make_rng();
   unsigned *dO;
-  HIP_CHECK(hipMalloc(&dO, sizeof(unsigned)));
+  device_allocations.allocate(&dO, sizeof(unsigned));
   // fp4 e2m1 representable magnitudes; a/scale must be EXACT or hardware SR
   // (stochastic) diverges from the RNE host reference.
   const float kFp4[8] = {0.0f, 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f, 6.0f};
@@ -558,7 +564,7 @@ template <class SrcElem, class VEC> void run_d() {
       EXPECT_EQ(g, na | (nb << 4)) << "FPSan non-finite source";
     });
   }
-  (void)hipFree(dO);
+  device_allocations.free(dO);
 }
 
 TEST(CvtScalef32Sr, D_Fp4_F16) { run_d<_Float16, fpsan::v2h_native>(); }

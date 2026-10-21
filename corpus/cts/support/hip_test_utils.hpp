@@ -4,8 +4,8 @@
 // tests/hip_test_utils.hpp
 // ----------------------------------------------------------------------------
 // HIP-side test helpers shared by the GPU test files: HIP error-checking
-// macros, a device-availability probe, and host<->device vector copies. Kept in
-// the global namespace so the existing unqualified call sites need no change.
+// macros, device-availability probes, scoped device allocations, and
+// host<->device vector copies.
 // Include only from tests compiled as HIP.
 // ----------------------------------------------------------------------------
 #ifndef FPSAN_TESTS_HIP_TEST_UTILS_HPP
@@ -17,9 +17,12 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstddef>
+#include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 // Assert a HIP call succeeded (prints the HIP error string on failure).
@@ -83,19 +86,41 @@ inline bool device_is_gfx950() {
   return std::string(prop.gcnArchName).compare(0, 6, "gfx950") == 0;
 }
 
-// Allocate device memory and copy a host vector into it. Caller hipFree()s.
-template <class T> T *to_dev(const std::vector<T> &h) {
-  T *d = nullptr;
-  HIP_CHECK_EXC(hipMalloc(&d, h.size() * sizeof(T)));
-  try {
-    HIP_CHECK_EXC(hipMemcpy(d, h.data(), h.size() * sizeof(T), hipMemcpyHostToDevice));
-  } catch (...) {
-    // Preserve the copy error even if releasing the failed transfer also fails.
-    (void)hipFree(d);
-    throw;
+// Own a caller's device allocations so later transfer failures and fatal
+// assertions release everything acquired in that scope.
+class DeviceAllocations {
+  struct Deleter {
+    void operator()(void *device) const noexcept {
+      // Cleanup must not replace an allocation, copy, or assertion failure.
+      (void)hipFree(device);
+    }
+  };
+  std::vector<std::unique_ptr<void, Deleter>> allocations_;
+
+public:
+  template <class T> void allocate(T **device, std::size_t bytes) {
+    T *pointer = nullptr;
+    HIP_CHECK_EXC(hipMalloc(&pointer, bytes));
+    std::unique_ptr<void, Deleter> allocation(pointer);
+    allocations_.push_back(std::move(allocation));
+    *device = pointer;
   }
-  return d;
-}
+
+  template <class T> T *to_dev(const std::vector<T> &host) {
+    T *device = nullptr;
+    allocate(&device, host.size() * sizeof(T));
+    HIP_CHECK_EXC(hipMemcpy(device, host.data(), host.size() * sizeof(T), hipMemcpyHostToDevice));
+    return device;
+  }
+
+  void free(void *device) {
+    const auto allocation =
+        std::find_if(allocations_.begin(), allocations_.end(),
+                     [device](const auto &owned) { return owned.get() == device; });
+    if (allocation != allocations_.end())
+      allocations_.erase(allocation);
+  }
+};
 
 // Copy n elements back from device memory into a host vector.
 template <class T> std::vector<T> from_dev(const T *d, std::size_t n) {

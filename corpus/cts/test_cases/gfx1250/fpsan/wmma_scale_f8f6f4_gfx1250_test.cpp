@@ -90,6 +90,7 @@ static const float kGrid[] = {0.f,   0.5f, 1.f,   1.5f, 2.f,  3.f,  4.f, 6.f,
                               -0.5f, -1.f, -1.5f, -2.f, -3.f, -4.f, -6.f};
 
 TEST(WmmaScaleF8f6f4_128, LayoutMatchesHardware) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::mt19937 rng = fpsan_test::make_rng();
@@ -147,13 +148,13 @@ TEST(WmmaScaleF8f6f4_128, LayoutMatchesHardware) {
       ref[m * N + n] = acc;
     }
 
-  std::uint32_t *dA = to_dev(Apack);
-  std::uint32_t *dB = to_dev(Bpack);
-  float *dC = to_dev(C);
-  unsigned *dSA = to_dev(SA);
-  unsigned *dSB = to_dev(SB);
+  std::uint32_t *dA = device_allocations.to_dev(Apack);
+  std::uint32_t *dB = device_allocations.to_dev(Bpack);
+  float *dC = device_allocations.to_dev(C);
+  unsigned *dSA = device_allocations.to_dev(SA);
+  unsigned *dSB = device_allocations.to_dev(SB);
   float *dD = nullptr;
-  HIP_CHECK(hipMalloc(&dD, M * N * sizeof(float)));
+  device_allocations.allocate(&dD, M * N * sizeof(float));
   k_scale<<<1, 32>>>(dA, dB, dC, dSA, dSB, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> got(M * N);
@@ -167,12 +168,12 @@ TEST(WmmaScaleF8f6f4_128, LayoutMatchesHardware) {
       ++mism;
     }
   EXPECT_EQ(mism, 0) << mism << " / " << (M * N) << " mismatched";
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dSA);
-  (void)hipFree(dSB);
-  (void)hipFree(dD);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dSA);
+  device_allocations.free(dSB);
+  device_allocations.free(dD);
 }
 
 // ===================== Sub-byte block-scaled wrapper =====================
@@ -300,6 +301,7 @@ __global__ void k_sub_scale_fpsan(const std::uint32_t *Apack, const std::uint32_
 
 template <Semantics S, int AFMT, int BFMT, int ASFMT = 0, int BSFMT = 0>
 static void run_sub_scale(const char *tag) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::mt19937 rng = fpsan_test::make_rng();
@@ -361,15 +363,15 @@ static void run_sub_scale(const char *tag) {
       pref[m * N + n] = acc.fpsan_payload();
     }
 
-  std::uint32_t *dA = to_dev(Apack);
-  std::uint32_t *dB = to_dev(Bpack);
-  float *dC = to_dev(C);
-  unsigned *dSA = to_dev(SA);
-  unsigned *dSB = to_dev(SB);
+  std::uint32_t *dA = device_allocations.to_dev(Apack);
+  std::uint32_t *dB = device_allocations.to_dev(Bpack);
+  float *dC = device_allocations.to_dev(C);
+  unsigned *dSA = device_allocations.to_dev(SA);
+  unsigned *dSB = device_allocations.to_dev(SB);
   float *dDf = nullptr;
   std::uint32_t *dDp = nullptr;
-  HIP_CHECK(hipMalloc(&dDf, M * N * sizeof(float)));
-  HIP_CHECK(hipMalloc(&dDp, M * N * sizeof(std::uint32_t)));
+  device_allocations.allocate(&dDf, M * N * sizeof(float));
+  device_allocations.allocate(&dDp, M * N * sizeof(std::uint32_t));
   k_sub_scale_float<AFMT, BFMT, ASFMT, BSFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDf);
   k_sub_scale_fpsan<S, AFMT, BFMT, ASFMT, BSFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDp);
   HIP_CHECK(hipDeviceSynchronize());
@@ -387,13 +389,13 @@ static void run_sub_scale(const char *tag) {
   }
   EXPECT_EQ(nf, 0) << nf << " float mismatches";
   EXPECT_EQ(np, 0) << np << " payload mismatches";
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dSA);
-  (void)hipFree(dSB);
-  (void)hipFree(dDf);
-  (void)hipFree(dDp);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dSA);
+  device_allocations.free(dSB);
+  device_allocations.free(dDf);
+  device_allocations.free(dDp);
 }
 
 template <int AFMT, int BFMT, int ASFMT = 0, int BSFMT = 0>
@@ -443,6 +445,7 @@ __global__ void k_probe2(const std::uint32_t *Apack, const std::uint32_t *Bpack,
 }
 
 template <int AFMT> static void run_probe(const char *tag) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const int w = width_of(AFMT);
@@ -464,16 +467,16 @@ template <int AFMT> static void run_probe(const char *tag) {
       word |= unsigned(128 + b) << (8 * b); // bytes -> factors 2,4,8,16
     SA[L] = word;
   }
-  unsigned *dSA = to_dev(SA);
-  unsigned *dSB = to_dev(SB);
-  std::uint32_t *dA = to_dev(Apack);
+  unsigned *dSA = device_allocations.to_dev(SA);
+  unsigned *dSB = device_allocations.to_dev(SB);
+  std::uint32_t *dA = device_allocations.to_dev(Apack);
   float *dD = nullptr;
-  HIP_CHECK(hipMalloc(&dD, M * N * sizeof(float)));
+  device_allocations.allocate(&dD, M * N * sizeof(float));
   int kbyte[128];
   for (int k0 = 0; k0 < K; ++k0) {
     std::vector<std::uint32_t> B1(32 * 16, 0u);
     put(&B1[ab_lane(0, k0) * 16], ab_slot(k0), f32_to_narrow(1.f, fmt_of(AFMT)));
-    std::uint32_t *dB1 = to_dev(B1);
+    std::uint32_t *dB1 = device_allocations.to_dev(B1);
     k_probe2<AFMT><<<1, 32>>>(dA, dB1, dSA, dSB, dD);
     HIP_CHECK(hipDeviceSynchronize());
     float d00 = 0;
@@ -483,15 +486,15 @@ template <int AFMT> static void run_probe(const char *tag) {
       if (d00 == std::ldexp(1.f, b + 1))
         byte = b;
     kbyte[k0] = byte;
-    (void)hipFree(dB1);
+    device_allocations.free(dB1);
   }
   printf("logical k -> A-scale byte (%s):\n", tag);
   for (int k0 = 0; k0 < K; ++k0)
     printf("k=%3d byte=%d%s", k0, kbyte[k0], (k0 % 8 == 7) ? "\n" : "  ");
-  (void)hipFree(dA);
-  (void)hipFree(dD);
-  (void)hipFree(dSA);
-  (void)hipFree(dSB);
+  device_allocations.free(dA);
+  device_allocations.free(dD);
+  device_allocations.free(dSA);
+  device_allocations.free(dSB);
 }
 
 TEST(WmmaScaleF8f6f4_128, DISABLED_ProbeScaleLayoutFp4) { run_probe<4>("fp4"); }
@@ -518,6 +521,7 @@ __global__ void k_probe16(const std::uint32_t *Apack, const std::uint32_t *Bpack
 }
 
 template <int AFMT> static void run_probe16(const char *tag) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const int w = width_of(AFMT);
@@ -541,16 +545,16 @@ template <int AFMT> static void run_probe16(const char *tag) {
       word |= static_cast<unsigned long long>(128 + b) << (8 * b);
     SA[L] = word;
   }
-  unsigned long long *dSA = to_dev(SA);
-  unsigned long long *dSB = to_dev(SB);
-  std::uint32_t *dA = to_dev(Apack);
+  unsigned long long *dSA = device_allocations.to_dev(SA);
+  unsigned long long *dSB = device_allocations.to_dev(SB);
+  std::uint32_t *dA = device_allocations.to_dev(Apack);
   float *dD = nullptr;
-  HIP_CHECK(hipMalloc(&dD, M * N * sizeof(float)));
+  device_allocations.allocate(&dD, M * N * sizeof(float));
   int kbyte[128];
   for (int k0 = 0; k0 < K; ++k0) {
     std::vector<std::uint32_t> B1(32 * 16, 0u);
     put(&B1[ab_lane(0, k0) * 16], ab_slot(k0), f32_to_narrow(1.f, fmt_of(AFMT)));
-    std::uint32_t *dB1 = to_dev(B1);
+    std::uint32_t *dB1 = device_allocations.to_dev(B1);
     k_probe16<AFMT><<<1, 32>>>(dA, dB1, dSA, dSB, dD);
     HIP_CHECK(hipDeviceSynchronize());
     float d00 = 0;
@@ -560,15 +564,15 @@ template <int AFMT> static void run_probe16(const char *tag) {
       if (d00 == std::ldexp(1.f, b + 1))
         byte = b;
     kbyte[k0] = byte;
-    (void)hipFree(dB1);
+    device_allocations.free(dB1);
   }
   printf("logical k -> A-scale16 byte (%s):\n", tag);
   for (int k0 = 0; k0 < K; ++k0)
     printf("k=%3d byte=%d%s", k0, kbyte[k0], (k0 % 8 == 7) ? "\n" : "  ");
-  (void)hipFree(dA);
-  (void)hipFree(dD);
-  (void)hipFree(dSA);
-  (void)hipFree(dSB);
+  device_allocations.free(dA);
+  device_allocations.free(dD);
+  device_allocations.free(dSA);
+  device_allocations.free(dSB);
 }
 
 TEST(WmmaScaleF8f6f4_128, DISABLED_ProbeScale16LayoutFp4) { run_probe16<4>("fp4"); }
@@ -638,6 +642,7 @@ __global__ void k_sub_scale16_fpsan(const std::uint32_t *Apack, const std::uint3
 }
 
 template <Semantics S, int AFMT, int BFMT> static void run_sub_scale16(const char *tag) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::mt19937 rng = fpsan_test::make_rng();
@@ -711,15 +716,15 @@ template <Semantics S, int AFMT, int BFMT> static void run_sub_scale16(const cha
       pref[m * N + n] = acc.fpsan_payload();
     }
 
-  std::uint32_t *dA = to_dev(Apack);
-  std::uint32_t *dB = to_dev(Bpack);
-  float *dC = to_dev(C);
-  unsigned long long *dSA = to_dev(SA);
-  unsigned long long *dSB = to_dev(SB);
+  std::uint32_t *dA = device_allocations.to_dev(Apack);
+  std::uint32_t *dB = device_allocations.to_dev(Bpack);
+  float *dC = device_allocations.to_dev(C);
+  unsigned long long *dSA = device_allocations.to_dev(SA);
+  unsigned long long *dSB = device_allocations.to_dev(SB);
   float *dDf = nullptr;
   std::uint32_t *dDp = nullptr;
-  HIP_CHECK(hipMalloc(&dDf, M * N * sizeof(float)));
-  HIP_CHECK(hipMalloc(&dDp, M * N * sizeof(std::uint32_t)));
+  device_allocations.allocate(&dDf, M * N * sizeof(float));
+  device_allocations.allocate(&dDp, M * N * sizeof(std::uint32_t));
   k_sub_scale16_float<AFMT, BFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDf);
   k_sub_scale16_fpsan<S, AFMT, BFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDp);
   HIP_CHECK(hipDeviceSynchronize());
@@ -737,13 +742,13 @@ template <Semantics S, int AFMT, int BFMT> static void run_sub_scale16(const cha
   }
   EXPECT_EQ(nf, 0) << nf << " float mismatches";
   EXPECT_EQ(np, 0) << np << " payload mismatches";
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dSA);
-  (void)hipFree(dSB);
-  (void)hipFree(dDf);
-  (void)hipFree(dDp);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dSA);
+  device_allocations.free(dSB);
+  device_allocations.free(dDf);
+  device_allocations.free(dDp);
 }
 
 template <int AFMT, int BFMT> static void run_sub_scale16_all(const char *tag) {
@@ -827,6 +832,7 @@ __global__ void k_mix_scale_fpsan(const std::uint32_t *Apack, const std::uint32_
 
 template <Semantics S, int AFMT, int BFMT, int ASFMT = 0, int BSFMT = 0>
 static void run_mixed_scale(const char *tag) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::mt19937 rng = fpsan_test::make_rng();
@@ -879,15 +885,15 @@ static void run_mixed_scale(const char *tag) {
       pref[m * N + n] = acc.fpsan_payload();
     }
 
-  std::uint32_t *dA = to_dev(Apack);
-  std::uint32_t *dB = to_dev(Bpack);
-  float *dC = to_dev(C);
-  unsigned *dSA = to_dev(SA);
-  unsigned *dSB = to_dev(SB);
+  std::uint32_t *dA = device_allocations.to_dev(Apack);
+  std::uint32_t *dB = device_allocations.to_dev(Bpack);
+  float *dC = device_allocations.to_dev(C);
+  unsigned *dSA = device_allocations.to_dev(SA);
+  unsigned *dSB = device_allocations.to_dev(SB);
   float *dDf = nullptr;
   std::uint32_t *dDp = nullptr;
-  HIP_CHECK(hipMalloc(&dDf, M * N * sizeof(float)));
-  HIP_CHECK(hipMalloc(&dDp, M * N * sizeof(std::uint32_t)));
+  device_allocations.allocate(&dDf, M * N * sizeof(float));
+  device_allocations.allocate(&dDp, M * N * sizeof(std::uint32_t));
   k_mix_scale_float<AFMT, BFMT, ASFMT, BSFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDf);
   k_mix_scale_fpsan<S, AFMT, BFMT, ASFMT, BSFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDp);
   HIP_CHECK(hipDeviceSynchronize());
@@ -905,13 +911,13 @@ static void run_mixed_scale(const char *tag) {
   }
   EXPECT_EQ(nf, 0) << nf << " float mismatches";
   EXPECT_EQ(np, 0) << np << " payload mismatches";
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dSA);
-  (void)hipFree(dSB);
-  (void)hipFree(dDf);
-  (void)hipFree(dDp);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dSA);
+  device_allocations.free(dSB);
+  device_allocations.free(dDf);
+  device_allocations.free(dDp);
 }
 
 template <int AFMT, int BFMT, int ASFMT = 0, int BSFMT = 0>
@@ -976,6 +982,7 @@ __global__ void k_mix_scale16_fpsan(const std::uint32_t *Apack, const std::uint3
 }
 
 template <Semantics S, int AFMT, int BFMT> static void run_mixed_scale16(const char *tag) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::mt19937 rng = fpsan_test::make_rng();
@@ -1042,15 +1049,15 @@ template <Semantics S, int AFMT, int BFMT> static void run_mixed_scale16(const c
       pref[m * N + n] = acc.fpsan_payload();
     }
 
-  std::uint32_t *dA = to_dev(Apack);
-  std::uint32_t *dB = to_dev(Bpack);
-  float *dC = to_dev(C);
-  unsigned long long *dSA = to_dev(SA);
-  unsigned long long *dSB = to_dev(SB);
+  std::uint32_t *dA = device_allocations.to_dev(Apack);
+  std::uint32_t *dB = device_allocations.to_dev(Bpack);
+  float *dC = device_allocations.to_dev(C);
+  unsigned long long *dSA = device_allocations.to_dev(SA);
+  unsigned long long *dSB = device_allocations.to_dev(SB);
   float *dDf = nullptr;
   std::uint32_t *dDp = nullptr;
-  HIP_CHECK(hipMalloc(&dDf, M * N * sizeof(float)));
-  HIP_CHECK(hipMalloc(&dDp, M * N * sizeof(std::uint32_t)));
+  device_allocations.allocate(&dDf, M * N * sizeof(float));
+  device_allocations.allocate(&dDp, M * N * sizeof(std::uint32_t));
   k_mix_scale16_float<AFMT, BFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDf);
   k_mix_scale16_fpsan<S, AFMT, BFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDp);
   HIP_CHECK(hipDeviceSynchronize());
@@ -1068,13 +1075,13 @@ template <Semantics S, int AFMT, int BFMT> static void run_mixed_scale16(const c
   }
   EXPECT_EQ(nf, 0) << nf << " float mismatches";
   EXPECT_EQ(np, 0) << np << " payload mismatches";
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dSA);
-  (void)hipFree(dSB);
-  (void)hipFree(dDf);
-  (void)hipFree(dDp);
+  device_allocations.free(dA);
+  device_allocations.free(dB);
+  device_allocations.free(dC);
+  device_allocations.free(dSA);
+  device_allocations.free(dSB);
+  device_allocations.free(dDf);
+  device_allocations.free(dDp);
 }
 
 template <int AFMT, int BFMT> static void run_mixed_scale16_all(const char *tag) {
