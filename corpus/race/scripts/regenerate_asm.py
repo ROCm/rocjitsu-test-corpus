@@ -208,15 +208,15 @@ def absolute_flags(flags: list[str], base: Path) -> list[str]:
     return out
 
 
-def include_dirs(flags: Sequence[str]) -> list[Path]:
+def include_dirs(flags: Sequence[str], root: Path) -> list[Path]:
     """
-    Where the compiler will look for headers.
+    Where the compiler will look for headers, with the SDK at *root*.
 
-    ROCm's include, then -I/-isystem/-iquote. The include-path environment
+    The SDK's include, then -I/-isystem/-iquote. The include-path environment
     variables are not searched, because the compile does not inherit them; see
     _UNRECORDED_VARIABLES.
     """
-    dirs = [rocm_path() / "include"]
+    dirs = [root / "include"]
     tokens = iter(flags)
     for flag in tokens:
         for prefix in _INCLUDE_DIR_FLAGS:
@@ -230,9 +230,11 @@ def include_dirs(flags: Sequence[str]) -> list[Path]:
     return dirs
 
 
-def missing_headers(case: inventory.Case, flags: Sequence[str]) -> list[str]:
+def missing_headers(
+    case: inventory.Case, flags: Sequence[str], root: Path
+) -> list[str]:
     """The case's declared ``headers`` that no include directory provides."""
-    dirs = include_dirs(flags)
+    dirs = include_dirs(flags, root)
     return [h for h in case.headers if not any((d / h).is_file() for d in dirs)]
 
 
@@ -280,17 +282,17 @@ def _rocm_sdk_root() -> Path:
     return Path(output.strip()).resolve()
 
 
-def find_hip_compiler() -> Path:
+def find_hip_compiler(root: Path) -> Path:
     """
-    The selected SDK's HIP compiler, as an absolute path: its ``bin/hipcc``,
-    else its ``llvm/bin/clang++``. Raises SetupError if it has neither.
+    The HIP compiler of the SDK at *root*, as an absolute path: its
+    ``bin/hipcc``, else its ``llvm/bin/clang++``. Raises SetupError if it has
+    neither.
 
     Only the selected SDK is searched, never PATH: the recipe records what this
     compiler reports for ``--version``, and the compile runs against the
     selected SDK, so both must be the SDK's own compiler. Absolute for the same
     reason as rocm_path: it is run from the scratch directory.
     """
-    root = rocm_path()
     for candidate in (root / "bin" / "hipcc", root / "llvm" / "bin" / "clang++"):
         if candidate.is_file():
             return candidate
@@ -319,20 +321,42 @@ def ignored_environment() -> list[str]:
     return sorted(name for name in os.environ if _is_unrecorded(name))
 
 
+@dataclasses.dataclass(frozen=True)
+class Toolchain:
+    """
+    The SDK a run uses, and its compiler, resolved once so that the recipe and
+    every compile use the same ones.
+
+    Attributes:
+        root: The SDK root; see rocm_path.
+        compiler: The SDK's HIP compiler; see find_hip_compiler.
+    """
+
+    root: Path
+    compiler: Path
+
+
+def select_toolchain() -> Toolchain:
+    """The selected SDK and its compiler. Raises SetupError if either is missing."""
+    root = rocm_path()
+    return Toolchain(root=root, compiler=find_hip_compiler(root))
+
+
 # --- Recipe ------------------------------------------------------------------
 
 
-def compiler_version(tool: Path) -> str:
+def compiler_version(toolchain: Toolchain) -> str:
     """
-    The ``clang version`` line *tool* reports, or its first line. Raises
-    SetupError if *tool* cannot report a version.
+    The ``clang version`` line the toolchain's compiler reports, or its first
+    line. Raises SetupError if it cannot report a version.
     """
+    tool = toolchain.compiler
     try:
         output = subprocess.check_output(
             [str(tool), "--version"],
             stderr=subprocess.STDOUT,
             text=True,
-            env=compiler_environment(rocm_path()),
+            env=compiler_environment(toolchain.root),
         )
     except subprocess.CalledProcessError as error:
         raise SetupError(
@@ -375,18 +399,16 @@ def sdk_build(root: Path) -> str:
     return ", ".join(f"{name}=={version}" for name, version in sorted(versions.items()))
 
 
-def current_recipe(extra_flags: Sequence[str]) -> recipe.Recipe:
+def current_recipe(toolchain: Toolchain, extra_flags: Sequence[str]) -> recipe.Recipe:
     """
-    The recipe a regeneration with *extra_flags* uses on this machine.
+    The recipe a regeneration with *toolchain* and *extra_flags* uses.
     *extra_flags* are the flags as the compiler receives them; see absolute_flags.
     """
-    tool = find_hip_compiler()
-    root = rocm_path()
     return recipe.Recipe(
-        compiler=tool.name,
-        compiler_version=compiler_version(tool),
-        rocm_release=sdk_release(root),
-        rocm_build=sdk_build(root),
+        compiler=toolchain.compiler.name,
+        compiler_version=compiler_version(toolchain),
+        rocm_release=sdk_release(toolchain.root),
+        rocm_build=sdk_build(toolchain.root),
         flags=(*_BASELINE_COMPILER_FLAGS, *extra_flags),
     )
 
@@ -443,7 +465,11 @@ def describe_change(
 
 
 def compile_device_asm(
-    kernel: Path, target: str, out: Path, extra_flags: Sequence[str]
+    kernel: Path,
+    target: str,
+    out: Path,
+    extra_flags: Sequence[str],
+    toolchain: Toolchain,
 ) -> None:
     """
     ``hipcc -S --cuda-device-only`` for one kernel, writing *out* on success.
@@ -457,43 +483,61 @@ def compile_device_asm(
     the caller's directory. *extra_flags* must not hold relative paths; see
     absolute_flags.
     """
-    root = rocm_path()
     with tempfile.TemporaryDirectory(prefix="race-asm-compile-") as scratch_dir:
         scratch = Path(scratch_dir)
         compiled = scratch / f"{kernel.stem}.s"
         try:
             subprocess.run(
                 _compile_command(
-                    kernel=kernel, target=target, out=compiled, extra_flags=extra_flags
+                    kernel=kernel,
+                    target=target,
+                    out=compiled,
+                    extra_flags=extra_flags,
+                    toolchain=toolchain,
                 ),
                 cwd=scratch,
                 capture_output=True,
                 text=True,
                 check=True,
-                env=compiler_environment(root),
+                env=compiler_environment(toolchain.root),
             )
         except subprocess.CalledProcessError as error:
             raise CompileError(
                 f"{kernel.name} ({target}):\n{error.stderr.strip()}"
             ) from error
-        if not compiled.is_file():
-            compiled = scratch / f"{kernel.stem}-hip-amdgcn-amd-amdhsa-{target}.s"
-            if not compiled.is_file():
-                raise CompileError(
-                    f"{kernel.name} ({target}): hipcc produced no output file"
-                )
-        assembly = normalize(compiled.read_text())
+        assembly = normalize(_compiled_listing(compiled, target=target).read_text())
 
     _replace(out, assembly)
 
 
+def _compiled_listing(requested: Path, target: str) -> Path:
+    """
+    The listing a compile wrote: *requested*, or the file hipcc names itself in
+    the same directory when it ignores ``-o``. Raises CompileError if neither.
+    """
+    if requested.is_file():
+        return requested
+    auto_named = requested.with_name(
+        f"{requested.stem}-hip-amdgcn-amd-amdhsa-{target}.s"
+    )
+    if auto_named.is_file():
+        return auto_named
+    raise CompileError(
+        f"{requested.stem}.hip ({target}): hipcc produced no output file"
+    )
+
+
 def _compile_command(
-    kernel: Path, target: str, out: Path, extra_flags: Sequence[str]
+    kernel: Path,
+    target: str,
+    out: Path,
+    extra_flags: Sequence[str],
+    toolchain: Toolchain,
 ) -> list[str]:
     """The compiler's arguments: the baseline recipe, the target, then *extra_flags*."""
-    root = rocm_path()
+    root = toolchain.root
     argv = [
-        str(find_hip_compiler()),
+        str(toolchain.compiler),
         f"--rocm-path={root}",
         *_BASELINE_COMPILER_FLAGS,
         "-S",
@@ -574,6 +618,7 @@ def regenerate(
     targets: Sequence[str],
     extra_flags: Sequence[str],
     out_root: Path,
+    toolchain: Toolchain,
 ) -> RegenerateResult:
     """
     Compile every case in *corpus* for every target into ``out_root/<target>``.
@@ -588,7 +633,7 @@ def regenerate(
         for case in corpus.cases:
             if not case.builds_for(target):
                 continue
-            if missing := missing_headers(case, extra_flags):
+            if missing := missing_headers(case, extra_flags, toolchain.root):
                 skipped.append(
                     f"{case.kernel} ({target}): {', '.join(missing)} not found; "
                     f"pass its include directory with --cxxflags"
@@ -600,6 +645,7 @@ def regenerate(
                     target=target,
                     out=out_root / target / f"{case.kernel}.s",
                     extra_flags=extra_flags,
+                    toolchain=toolchain,
                 )
                 written += 1
             except CompileError as error:
@@ -616,6 +662,7 @@ class Build:
     corpus: inventory.Inventory
     targets: tuple[str, ...]
     extra_flags: tuple[str, ...]
+    toolchain: Toolchain
     recipe: recipe.Recipe
 
 
@@ -655,11 +702,13 @@ def _plan_build(args: argparse.Namespace) -> Build:
     # The recipe records the flags as the compiler receives them, so a relative
     # path that selects a different file from another directory changes it.
     extra_flags = tuple(absolute_flags(cxxflags, Path.cwd()))
+    toolchain = select_toolchain()
     return Build(
         corpus=corpus,
         targets=tuple(targets),
         extra_flags=extra_flags,
-        recipe=current_recipe(extra_flags),
+        toolchain=toolchain,
+        recipe=current_recipe(toolchain=toolchain, extra_flags=extra_flags),
     )
 
 
@@ -732,6 +781,7 @@ def _regenerate_and_report(
             targets=[target],
             extra_flags=build.extra_flags,
             out_root=out_root,
+            toolchain=build.toolchain,
         )
         for target in build.targets
     }

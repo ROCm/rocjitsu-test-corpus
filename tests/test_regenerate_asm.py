@@ -16,7 +16,7 @@ from support.race_corpus import corpus_table, load_script
 from test_recipe import BAD_RECIPES, GOOD, GOOD_TEXT
 
 regen = load_script("regenerate_asm")
-FIND_HIP_COMPILER = regen.find_hip_compiler
+SELECT_TOOLCHAIN = regen.select_toolchain
 
 # A case that needs the rocWMMA headers, as inventory.load returns it.
 ROCWMMA_RECORD = regen.inventory.Case(
@@ -74,6 +74,8 @@ if BEHAVIOUR == "fail" or (failing and source.name == failing + ".hip"):
     sys.stderr.write("error: unknown argument\n")
     sys.exit(1)
 text = "kernel:\n\ts_endpgm\n.globl __hip_cuid_0123abcd\n"
+if BEHAVIOUR == "silent":
+    sys.exit(0)
 if BEHAVIOUR == "output":
     Path(args[args.index("-o") + 1]).write_text(text)
 else:
@@ -97,6 +99,7 @@ def write_fake_compiler(compiler: Path, behaviour: str) -> Path:
       output      write to the -o path
       auto-named  ignore -o and write the auto-named file into the working
                   directory, as hipcc sometimes does under --cuda-device-only
+      silent      exit 0 without writing anything
     """
     compiler.write_text(
         f"#!{sys.executable}\n"
@@ -109,11 +112,17 @@ def write_fake_compiler(compiler: Path, behaviour: str) -> Path:
 
 def install_fake_compiler(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, behaviour: str
-) -> None:
-    """Make compiler discovery return a fake compiler; see write_fake_compiler."""
-    compiler = write_fake_compiler(tmp_path / "fake-hipcc", behaviour)
-    monkeypatch.setattr(regen, "find_hip_compiler", lambda: compiler)
-    monkeypatch.setattr(regen, "rocm_path", lambda: tmp_path / "rocm")
+) -> regen.Toolchain:
+    """
+    Make the selected toolchain a fake compiler with a scratch SDK root; see
+    write_fake_compiler. Returns that toolchain.
+    """
+    toolchain = regen.Toolchain(
+        root=tmp_path / "rocm",
+        compiler=write_fake_compiler(tmp_path / "fake-hipcc", behaviour),
+    )
+    monkeypatch.setattr(regen, "select_toolchain", lambda: toolchain)
+    return toolchain
 
 
 @pytest.fixture
@@ -149,10 +158,14 @@ def test_failed_compile_keeps_pinned_file(
     kernel: Path,
     caller_dir: Path,
 ) -> None:
-    install_fake_compiler(monkeypatch, tmp_path, "fail")
+    toolchain = install_fake_compiler(monkeypatch, tmp_path, "fail")
     with pytest.raises(regen.CompileError):
         regen.compile_device_asm(
-            kernel=kernel, target="gfx950", out=pinned, extra_flags=[]
+            kernel=kernel,
+            target="gfx950",
+            out=pinned,
+            extra_flags=[],
+            toolchain=toolchain,
         )
     assert pinned.read_text() == PINNED
     assert [p.name for p in pinned.parent.iterdir()] == [
@@ -170,8 +183,10 @@ def test_successful_compile_replaces_and_normalizes(
     kernel: Path,
     caller_dir: Path,
 ) -> None:
-    install_fake_compiler(monkeypatch, tmp_path, "output")
-    regen.compile_device_asm(kernel=kernel, target="gfx950", out=pinned, extra_flags=[])
+    toolchain = install_fake_compiler(monkeypatch, tmp_path, "output")
+    regen.compile_device_asm(
+        kernel=kernel, target="gfx950", out=pinned, extra_flags=[], toolchain=toolchain
+    )
     text = pinned.read_text()
     assert "s_endpgm" in text
     assert "__hip_cuid_corpus" in text and "__hip_cuid_0123abcd" not in text
@@ -185,8 +200,10 @@ def test_auto_named_output_stays_in_scratch(
     kernel: Path,
     caller_dir: Path,
 ) -> None:
-    install_fake_compiler(monkeypatch, tmp_path, "auto-named")
-    regen.compile_device_asm(kernel=kernel, target="gfx950", out=pinned, extra_flags=[])
+    toolchain = install_fake_compiler(monkeypatch, tmp_path, "auto-named")
+    regen.compile_device_asm(
+        kernel=kernel, target="gfx950", out=pinned, extra_flags=[], toolchain=toolchain
+    )
     assert "s_endpgm" in pinned.read_text()
     # The caller's same-named file is neither consumed nor deleted.
     assert sorted(p.name for p in caller_dir.iterdir()) == [
@@ -197,16 +214,36 @@ def test_auto_named_output_stays_in_scratch(
     ).read_text() == "not ours\n"
 
 
+def test_compile_that_writes_no_listing_is_a_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, pinned: Path, kernel: Path
+) -> None:
+    toolchain = install_fake_compiler(monkeypatch, tmp_path, "silent")
+    with pytest.raises(
+        regen.CompileError, match="kernel.hip .gfx950.: hipcc produced no output"
+    ):
+        regen.compile_device_asm(
+            kernel=kernel,
+            target="gfx950",
+            out=pinned,
+            extra_flags=[],
+            toolchain=toolchain,
+        )
+    assert pinned.read_text() == PINNED
+
+
 def test_missing_header_skips_case_and_keeps_pinned_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, pinned: Path, kernel: Path
 ) -> None:
-    install_fake_compiler(monkeypatch, tmp_path, "fail")  # must not even be invoked
+    toolchain = install_fake_compiler(
+        monkeypatch, tmp_path, "fail"
+    )  # must not even be invoked
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
     result = regen.regenerate(
         corpus=ROCWMMA_INVENTORY,
         targets=["gfx950"],
         extra_flags=[],
         out_root=pinned.parent.parent,
+        toolchain=toolchain,
     )
     assert (result.written, result.failures) == (0, ())
     assert len(result.skipped) == 1 and "rocwmma/rocwmma.hpp" in result.skipped[0]
@@ -216,7 +253,7 @@ def test_missing_header_skips_case_and_keeps_pinned_file(
 def test_declared_header_found_through_include_flag(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, pinned: Path, kernel: Path
 ) -> None:
-    install_fake_compiler(monkeypatch, tmp_path, "output")
+    toolchain = install_fake_compiler(monkeypatch, tmp_path, "output")
     include = tmp_path / "rocwmma-install" / "include"
     (include / "rocwmma").mkdir(parents=True)
     (include / "rocwmma" / "rocwmma.hpp").write_text("")
@@ -226,6 +263,7 @@ def test_declared_header_found_through_include_flag(
         targets=["gfx950"],
         extra_flags=[f"-I{include}"],
         out_root=pinned.parent.parent,
+        toolchain=toolchain,
     )
     assert result == regen.RegenerateResult(written=1, failures=(), skipped=())
     assert "s_endpgm" in pinned.read_text()
@@ -398,7 +436,7 @@ def test_manifest_without_targets_is_rejected(
 def test_portable_case_builds_for_every_corpus_target(
     manifest: Manifest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, kernel: Path
 ) -> None:
-    install_fake_compiler(monkeypatch, tmp_path, "output")
+    toolchain = install_fake_compiler(monkeypatch, tmp_path, "output")
     manifest(
         ["gfx950", "gfx1250"],
         PORTABLE_CASE
@@ -413,6 +451,7 @@ def test_portable_case_builds_for_every_corpus_target(
         targets=regen.targets_for(corpus, []),
         extra_flags=[],
         out_root=out_root,
+        toolchain=toolchain,
     )
     assert result == regen.RegenerateResult(written=3, failures=(), skipped=())
     assert sorted(str(p.relative_to(out_root)) for p in out_root.rglob("*.s")) == [
@@ -450,13 +489,16 @@ def test_environment_include_path_is_not_searched(
     rocwmma_case: None,
     variable: str,
 ) -> None:
-    install_fake_compiler(monkeypatch, tmp_path, "fail")  # must not be invoked
+    toolchain = install_fake_compiler(
+        monkeypatch, tmp_path, "fail"
+    )  # must not be invoked
     monkeypatch.setenv(variable, str(header_dir(tmp_path)))
     result = regen.regenerate(
         corpus=ROCWMMA_INVENTORY,
         targets=["gfx950"],
         extra_flags=[],
         out_root=pinned.parent.parent,
+        toolchain=toolchain,
     )
     assert (result.written, result.failures) == (0, ())
     assert len(result.skipped) == 1 and "--cxxflags" in result.skipped[0]
@@ -789,7 +831,13 @@ def test_relative_rocm_path_compiles_from_the_scratch_directory(
     fake_sdk(caller / "rocm")
     monkeypatch.chdir(caller)
     monkeypatch.setenv("ROCM_PATH", "rocm")
-    regen.compile_device_asm(kernel=kernel, target="gfx950", out=pinned, extra_flags=[])
+    regen.compile_device_asm(
+        kernel=kernel,
+        target="gfx950",
+        out=pinned,
+        extra_flags=[],
+        toolchain=regen.select_toolchain(),
+    )
     assert "s_endpgm" in pinned.read_text()
     (argv,) = [
         line
@@ -812,17 +860,15 @@ def test_clang_is_used_when_the_sdk_has_no_hipcc(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, no_sdk_discovery: None
 ) -> None:
     compiler = fake_sdk(tmp_path / "rocm", layout="llvm/bin/clang++")
-    monkeypatch.setenv("ROCM_PATH", str(tmp_path / "rocm"))
-    assert regen.find_hip_compiler() == compiler
+    assert regen.find_hip_compiler(tmp_path / "rocm") == compiler
 
 
 def test_missing_compiler_error_names_both_candidates(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, no_sdk_discovery: None
 ) -> None:
     (tmp_path / "rocm").mkdir()
-    monkeypatch.setenv("ROCM_PATH", str(tmp_path / "rocm"))
     with pytest.raises(regen.SetupError) as error:
-        regen.find_hip_compiler()
+        regen.find_hip_compiler(tmp_path / "rocm")
     assert "bin/hipcc" in str(error.value) and "llvm/bin/clang++" in str(error.value)
 
 
@@ -943,7 +989,7 @@ def test_help_is_short_and_points_to_the_readme(
 def test_case_without_targets_regenerates_for_every_corpus_target(
     manifest: Manifest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, kernel: Path
 ) -> None:
-    install_fake_compiler(monkeypatch, tmp_path, "output")
+    toolchain = install_fake_compiler(monkeypatch, tmp_path, "output")
     manifest(["gfx950", "gfx1250"], '[[case]]\nid = "portable"\nkernel = "kernel"\n')
     monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
     out_root = tmp_path / "out"
@@ -953,6 +999,7 @@ def test_case_without_targets_regenerates_for_every_corpus_target(
         targets=regen.targets_for(corpus, []),
         extra_flags=[],
         out_root=out_root,
+        toolchain=toolchain,
     )
     assert result == regen.RegenerateResult(written=2, failures=(), skipped=())
     assert sorted(str(p.relative_to(out_root)) for p in out_root.rglob("*.s")) == [
@@ -1011,26 +1058,20 @@ def test_main_reads_the_manifest_once(
 def test_every_include_directory_flag_is_searched_and_made_absolute(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, flag: str
 ) -> None:
-    (tmp_path / "rocm").mkdir()
-    monkeypatch.setenv("ROCM_PATH", str(tmp_path / "rocm"))
-    for name in ("CPATH", "CPLUS_INCLUDE_PATH"):
-        monkeypatch.delenv(name, raising=False)
     base = tmp_path / "caller"
     for flags in ([flag, "inc"], [f"{flag}inc"]):
-        assert regen.include_dirs(flags)[1:] == [Path("inc")]
+        assert regen.include_dirs(flags, root=tmp_path / "rocm")[1:] == [Path("inc")]
         assert str(base / "inc") in "".join(regen.absolute_flags(flags, base))
 
 
 def test_forced_include_file_is_made_absolute_but_not_searched(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    (tmp_path / "rocm").mkdir()
-    monkeypatch.setenv("ROCM_PATH", str(tmp_path / "rocm"))
-    for name in ("CPATH", "CPLUS_INCLUDE_PATH"):
-        monkeypatch.delenv(name, raising=False)
     base = tmp_path / "caller"
     flags = ["-include", "pre.h"]
-    assert regen.include_dirs(flags) == [tmp_path / "rocm" / "include"]
+    assert regen.include_dirs(flags, root=tmp_path / "rocm") == [
+        tmp_path / "rocm" / "include"
+    ]
     assert regen.absolute_flags(flags, base) == ["-include", str(base / "pre.h")]
 
 
@@ -1055,8 +1096,8 @@ def test_baseline_recipe_is_passed_to_either_compiler(
     sdk = tmp_path / "sdk"
     (sdk / sdk_compiler).parent.mkdir(parents=True)
     compiler = write_fake_compiler(sdk / sdk_compiler, "output")
-    monkeypatch.setattr(regen, "rocm_path", lambda: sdk)
-    monkeypatch.setattr(regen, "find_hip_compiler", FIND_HIP_COMPILER)
+    monkeypatch.setenv("ROCM_PATH", str(sdk))
+    monkeypatch.setattr(regen, "select_toolchain", SELECT_TOOLCHAIN)
     assert run() == regen.ExitCode.SUCCESS
     (argv,) = compiler_invocations(compiler.parent, compiler.name)
     assert "-O3" in argv
@@ -1119,7 +1160,6 @@ def test_compile_sees_the_selected_sdk_as_rocm_path(
     run, _ = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     monkeypatch.setenv("ROCM_PATH", str(tmp_path / "another-sdk"))
-    monkeypatch.setattr(regen, "rocm_path", lambda: tmp_path / "rocm")
     assert run() == regen.ExitCode.SUCCESS
     (environment,) = compiler_environments(tmp_path)
     assert environment["ROCM_PATH"] == str(tmp_path / "rocm")
@@ -1704,9 +1744,8 @@ def test_failing_compiler_version_is_reported_rather_than_unknown(
         f"#!{sys.executable}\nimport sys\nprint('cannot start')\nsys.exit(1)\n"
     )
     tool.chmod(0o755)
-    monkeypatch.setattr(regen, "rocm_path", lambda: tmp_path / "rocm")
     with pytest.raises(regen.SetupError, match="--version failed .*cannot start"):
-        regen.compiler_version(tool)
+        regen.compiler_version(regen.Toolchain(root=tmp_path / "rocm", compiler=tool))
 
 
 def test_rocm_path_that_is_not_a_directory_is_reported(
@@ -1763,7 +1802,7 @@ def test_hipcc_on_path_is_not_used_for_an_sdk_without_a_compiler(
 ) -> None:
     install_hipcc_on_path(monkeypatch, tmp_path)
     with pytest.raises(regen.SetupError, match="no HIP compiler in the selected SDK"):
-        regen.find_hip_compiler()
+        regen.find_hip_compiler(sdk_without_a_compiler)
 
 
 def test_recipe_is_not_created_from_a_compiler_on_path(
@@ -1771,7 +1810,7 @@ def test_recipe_is_not_created_from_a_compiler_on_path(
 ) -> None:
     ran = install_hipcc_on_path(monkeypatch, tmp_path)
     with pytest.raises(regen.SetupError, match="no HIP compiler in the selected SDK"):
-        regen.current_recipe([])
+        regen.current_recipe(toolchain=regen.select_toolchain(), extra_flags=[])
     assert not ran.exists()
 
 
@@ -1785,7 +1824,11 @@ def test_compile_does_not_use_a_compiler_on_path(
     ran = install_hipcc_on_path(monkeypatch, tmp_path)
     with pytest.raises(regen.SetupError, match="no HIP compiler in the selected SDK"):
         regen.compile_device_asm(
-            kernel=kernel, target="gfx950", out=pinned, extra_flags=[]
+            kernel=kernel,
+            target="gfx950",
+            out=pinned,
+            extra_flags=[],
+            toolchain=regen.select_toolchain(),
         )
     assert not ran.exists()
     assert pinned.read_text() == PINNED
@@ -1801,8 +1844,7 @@ def test_run_with_a_compiler_only_on_path_compiles_nothing(
 ) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
-    monkeypatch.setattr(regen, "rocm_path", REAL_ROCM_PATH)
-    monkeypatch.setattr(regen, "find_hip_compiler", FIND_HIP_COMPILER)
+    monkeypatch.setattr(regen, "select_toolchain", SELECT_TOOLCHAIN)
     ran = install_hipcc_on_path(monkeypatch, tmp_path)
     assert run() == regen.ExitCode.SETUP_FAILED
     assert "no HIP compiler in the selected SDK" in capsys.readouterr().err
@@ -1822,8 +1864,7 @@ def test_recipe_names_the_sdk_compiler_that_compiles(
     manifest(["gfx950"], PORTABLE_CASE)
     sdk_clang = fake_sdk(tmp_path / "sdk", layout="llvm/bin/clang++")
     monkeypatch.setenv("ROCM_PATH", str(tmp_path / "sdk"))
-    monkeypatch.setattr(regen, "rocm_path", REAL_ROCM_PATH)
-    monkeypatch.setattr(regen, "find_hip_compiler", FIND_HIP_COMPILER)
+    monkeypatch.setattr(regen, "select_toolchain", SELECT_TOOLCHAIN)
     ran = install_hipcc_on_path(monkeypatch, tmp_path)
     assert run() == regen.ExitCode.SUCCESS
     assert not ran.exists()
@@ -1901,3 +1942,43 @@ def test_exit_codes_keep_their_public_numbers() -> None:
         "INCOMPLETE": 3,
         "SETUP_FAILED": 4,
     }
+
+
+# --- The SDK and its compiler are resolved once per run ----------------------------
+#
+# The recipe and every compile use the same SDK and compiler, resolved once when
+# the run starts, rather than each looking them up again.
+
+
+def test_sdk_is_resolved_once_per_run(
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run, _ = corpus_main
+    manifest(
+        ["gfx950", "gfx1250"],
+        PORTABLE_CASE + '[[case]]\nid = "only"\nkernel = "only"\n',
+    )
+    sdk = tmp_path / "sdk"
+    fake_sdk(sdk)
+    calls = tmp_path / "rocm-sdk-calls"
+    bin_dir = tmp_path / "counting-bin"
+    bin_dir.mkdir()
+    tool = bin_dir / "rocm-sdk"
+    tool.write_text(
+        f"#!{sys.executable}\n"
+        "from pathlib import Path\n"
+        f"with Path({str(calls)!r}).open('a') as log:\n"
+        "    log.write('call\\n')\n"
+        f"print({str(sdk)!r})\n"
+    )
+    tool.chmod(0o755)
+    monkeypatch.delenv("ROCM_PATH", raising=False)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr(regen, "select_toolchain", SELECT_TOOLCHAIN)
+    assert run() == regen.ExitCode.SUCCESS
+    # Four compiles, two cases on two targets, and one lookup.
+    assert len(compiler_invocations(sdk / "bin", "hipcc")) == 4
+    assert calls.read_text().splitlines() == ["call"]
