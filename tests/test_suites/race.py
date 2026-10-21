@@ -37,6 +37,10 @@ CONFIGS_ROOT = RACE_SOURCE_DIR / "configs"
 CASE_TIMEOUT_SECONDS = 30
 CASE_TIMEOUT_ENV = "ROCJITSU_RACE_CASE_TIMEOUT"
 TARGET_LAYOUT = {
+    "gfx942": {
+        "binary": "hip_race_tests_gfx942",
+        "fixture": "VmemRaceTest",
+    },
     "gfx950": {
         "binary": "hip_race_tests_gfx950",
         "fixture": "Gfx950RaceTest",
@@ -85,8 +89,16 @@ def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]
         for name in target_config["cases"]:
             if name in target_config.get("skip_compile_tests", []):
                 continue
-            test_filter = f"{layout['fixture']}.{name}"
-            legacy_name = f"RaceTest.{target.target}_{name}"
+            test_filter = (
+                f"VmemRaceTest.{name.removeprefix('vmem_')}"
+                if name.startswith("vmem_")
+                else f"{layout['fixture']}.{name}"
+            )
+            legacy_name = (
+                f"RaceTest.vmem_{target.target}_{name.removeprefix('vmem_')}"
+                if name.startswith("vmem_")
+                else f"RaceTest.{target.target}_{name}"
+            )
             discovered.append(
                 CorpusCase(
                     id=f"race.{target.target}.{name}",

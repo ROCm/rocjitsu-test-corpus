@@ -74,7 +74,7 @@ uses target `gfx1201` and selects the first three; the other suites are opt-in.
 
 ### RocJITsu race-detector integration
 
-`corpus/race/integration/` owns the gfx950 and gfx1151 GoogleTest programs,
+`corpus/race/integration/` owns the gfx942, gfx950 and gfx1151 GoogleTest programs,
 their shared fixture, race-log matcher, CMake build, and case-list configs.
 The opt-in `--suite race` adapter builds these integration programs with the
 corpus HIP toolchain and runs each GoogleTest case separately. It covers this
@@ -95,6 +95,10 @@ The base config must match `--target`. For gfx950 use
 `emulation/rocjitsu/tests/race-detector/race_test_config.json` from rocm-systems:
 its 1-XCD/4-CU topology avoids the memory cost of a full MI350X simulation for
 each parallel test. For gfx1151 use `emulation/rocjitsu/configs/gfx1151.json`.
+For gfx942 use
+`emulation/rocjitsu/tests/race-detector/race_test_gfx942_config.json`, supplied
+by the [systems companion](https://github.com/ROCm/rocm-systems/pull/12583).
+It also uses a 1-XCD/4-CU topology and is used for gfx942 race qualification.
 With `ROCM_SYSTEMS` pointing to that checkout, a gfx950 run is:
 
 ```bash
@@ -107,6 +111,22 @@ pytest tests/test_corpus.py \
 ```
 
 Set `ROCJITSU_RACE_BUILD_ROOT` to keep the CMake build outside the checkout.
+Returning-atomic tests cover compiler-generated and explicit VM-only waits,
+with no-wait and EXP-only controls. FLAT-to-LDS exchanges check both a
+synchronized barrier and a missing-barrier control on all three targets. The
+gfx950 suite also keeps full-wave and lane-zero atomic controls separate.
+The ordering pair issues a returning GLOBAL atomic followed by a GLOBAL load
+into the same VGPR, without an intervening wait; a final `vmcnt(0)` precedes
+checking the loaded value. Replacing that load with a VALU overwrite must report
+a VGPR write race. These cases distinguish same-class writeback ordering from
+result readiness. Numerical checks verify atomic side effects in every atomic
+case and final output values in the safe variants. Raced VGPR values are
+unconstrained; untouched masked lanes retain their exact-value checks.
+Select the ordering pair with
+`--case RaceTest.vmem_gfx942_atomic_global_same_vgpr` and
+`--case RaceTest.vmem_gfx942_atomic_valu_overwrite_race`, substituting gfx950 or
+gfx1151 to test those targets.
+
 Before entering each private case directory, the adapter resolves relative
 launcher paths and plain arguments naming existing files against the corpus
 checkout. This includes interpreter scripts such as `python3 ./wrapper.py`,

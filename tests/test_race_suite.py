@@ -25,7 +25,7 @@ def _isolate_case_timeout(monkeypatch) -> None:
 
 def test_configs_preserve_every_moved_gtest() -> None:
     configs = race.load_target_configs(race.default_config_files())
-    expected_counts = {"gfx950": 63, "gfx1151": 21}
+    expected_counts = {"gfx942": 8, "gfx950": 79, "gfx1151": 29}
 
     for target, expected_count in expected_counts.items():
         cases = race.discover(make_target_spec(target), configs)
@@ -34,7 +34,12 @@ def test_configs_preserve_every_moved_gtest() -> None:
             target
         )
         assert all(
-            f"RaceTest.{target}_{case.metadata['name']}" in case.selector_names
+            (
+                f"RaceTest.vmem_{target}_{case.metadata['name'].removeprefix('vmem_')}"
+                if case.metadata["name"].startswith("vmem_")
+                else f"RaceTest.{target}_{case.metadata['name']}"
+            )
+            in case.selector_names
             for case in cases
         )
 
@@ -284,17 +289,30 @@ def _configs_with_exclusions(tmp_path: Path, target: str, **exclusions) -> list[
 
 def _source_gtests(target: str) -> set[str]:
     layout = race.TARGET_LAYOUT[target]
-    source = race.RACE_SOURCE_DIR / f"hip_race_{target}_test.hip"
+    sources = [
+        race.RACE_SOURCE_DIR / f"hip_race_{target}_test.hip",
+        race.RACE_SOURCE_DIR / "hip_race_vmem_test.hip",
+    ]
     pattern = re.compile(r"^TEST_F\(([^,]+),\s*([^)]+)\)", re.MULTILINE)
     return {
         f"{fixture.strip()}.{name.strip()}"
-        for fixture, name in pattern.findall(source.read_text(encoding="utf-8"))
-        if fixture.strip() == layout["fixture"]
+        for fixture, name in pattern.findall(
+            "\n".join(source.read_text(encoding="utf-8") for source in sources)
+        )
+        if fixture.strip() in (layout["fixture"], "VmemRaceTest")
     }
 
 
 @pytest.mark.parametrize(
-    "target,base_target", [("gfx950", "gfx1151"), ("gfx1151", "gfx950")]
+    "target,base_target",
+    [
+        ("gfx942", "gfx950"),
+        ("gfx942", "gfx1151"),
+        ("gfx950", "gfx942"),
+        ("gfx950", "gfx1151"),
+        ("gfx1151", "gfx942"),
+        ("gfx1151", "gfx950"),
+    ],
 )
 def test_mismatched_simulator_target_fails_before_launch(
     tmp_path: Path, monkeypatch, target: str, base_target: str
@@ -593,6 +611,25 @@ def test_entrypoint_validates_execution_before_build(
     # For build-only runs select an unsupported target: collection is empty,
     # so this exercises option validation without invoking a toolchain.
     target = "gfx950" if error or "--collect-only" in extra else "gfx9999"
+    _run_entrypoint(
+        tmp_path,
+        suites=suites,
+        target=target,
+        wrapper=wrapper,
+        extra=extra,
+        error=error,
+    )
+
+
+def _run_entrypoint(
+    tmp_path: Path,
+    *,
+    suites: str,
+    target: str,
+    wrapper: str | None,
+    extra: list[str],
+    error: str | None,
+) -> None:
     command = [
         sys.executable,
         "-B",
@@ -622,13 +659,13 @@ def test_entrypoint_validates_execution_before_build(
     if error:
         assert result.returncode == 2
         assert error in result.stdout + result.stderr
-        assert "Race test configure failed" not in result.stdout
+        assert "Race test configure failed" not in result.stdout + result.stderr
     else:
         assert result.returncode == 0, result.stdout + result.stderr
 
 
 def _write_base_config(path: Path, target: str, **fields) -> None:
-    version = {"gfx950": 90500, "gfx1151": 110501}[target]
+    version = {"gfx942": 90402, "gfx950": 90500, "gfx1151": 110501}[target]
     path.write_text(
         json.dumps(
             {"vm": {"gpu": {"device": {"gfx_target_version": version}}}, **fields}
@@ -701,33 +738,14 @@ def test_entrypoint_rejects_invalid_timeout_before_build(
     _write_base_config(base, "gfx950")
     monkeypatch.setenv("ROCJITSU_RACE_CONFIG", str(base))
     monkeypatch.setenv(race.CASE_TIMEOUT_ENV, "0")
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-B",
-            "-m",
-            "pytest",
-            "tests/test_corpus.py",
-            "--suite",
-            "race",
-            "--target",
-            "gfx950",
-            "--run-wrapper",
-            "rocjitsu --config {config} --",
-            "-p",
-            "no:cacheprovider",
-            "--basetemp",
-            str(tmp_path / "temp"),
-            "-q",
-        ],
-        cwd=race.REPO_ROOT,
-        env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"),
-        capture_output=True,
-        text=True,
+    _run_entrypoint(
+        tmp_path,
+        suites="race",
+        target="gfx950",
+        wrapper="rocjitsu --config {config} --",
+        extra=[],
+        error=race.CASE_TIMEOUT_ENV,
     )
-    assert result.returncode == 2
-    assert race.CASE_TIMEOUT_ENV in result.stdout + result.stderr
-    assert "Race test configure failed" not in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "abc", "nan", "inf"])
