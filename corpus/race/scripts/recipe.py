@@ -90,14 +90,18 @@ def load(path: Path) -> Recipe | None:
     """
     The recipe at *path*, or None if there is none.
 
-    Raises RecipeError naming every problem, not just the first.
+    Raises RecipeError naming every problem, not just the first. A file that
+    cannot be read, or is not valid TOML, is a RecipeError too, with the
+    underlying error as its cause.
     """
     if not path.is_file():
         return None
     try:
         fields = tomllib.loads(path.read_text())
+    except OSError as error:
+        raise RecipeError([f"cannot be read ({error.strerror})"]) from error
     except tomllib.TOMLDecodeError as error:
-        raise RecipeError([f"not valid TOML ({error})"]) from None
+        raise RecipeError([f"not valid TOML ({error})"]) from error
 
     problems = [f"unknown field {name!r}" for name in sorted(set(fields) - set(FIELDS))]
     for name in TOOLCHAIN_FIELDS:

@@ -3,6 +3,7 @@
 import dataclasses
 import importlib.util
 import sys
+import tomllib
 from pathlib import Path
 from types import ModuleType
 
@@ -162,7 +163,82 @@ def test_unsupported_schema_is_rejected(tmp_path: Path) -> None:
         inventory.load(path)
 
 
+# --- Manifests that cannot be read as an inventory ----------------------------
+#
+# A file that is not valid TOML, or whose [corpus] or cases are not tables, is
+# reported as an InventoryError like any other invalid manifest, not raised as
+# whatever exception reading it happened to hit. The TOML parser's error is kept
+# as the cause.
+
+CORPUS = '[corpus]\nschema = 1\nname = "race"\ntargets = ["gfx950"]\n'
+
+MALFORMED_FILES = {
+    "unterminated table header": (
+        "[corpus\nschema = 1\n",
+        "cases.toml: not valid TOML",
+    ),
+    "corpus not a table": ("corpus = 1\n", "cases.toml: [corpus] must be a table"),
+    "case not a list": (
+        "case = 1\n" + CORPUS,
+        "cases.toml: case must be a list of [[case]] tables",
+    ),
+    "case entry not a table": (
+        'case = ["x"]\n' + CORPUS,
+        "cases.toml: case must be a list of [[case]] tables",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "text, problem", MALFORMED_FILES.values(), ids=MALFORMED_FILES.keys()
+)
+def test_malformed_file_is_an_inventory_error(
+    tmp_path: Path, text: str, problem: str
+) -> None:
+    path = tmp_path / "cases.toml"
+    path.write_text(text)
+    with pytest.raises(inventory.InventoryError) as error:
+        inventory.load(path)
+    assert any(problem in reported for reported in error.value.problems)
+
+
+def test_invalid_toml_keeps_the_parse_error(tmp_path: Path) -> None:
+    path = tmp_path / "cases.toml"
+    path.write_text("[corpus\n")
+    with pytest.raises(inventory.InventoryError) as error:
+        inventory.load(path)
+    assert isinstance(error.value.__cause__, tomllib.TOMLDecodeError)
+    # The parser's own diagnostic, with its line and column, is in the message.
+    assert "line 1" in error.value.problems[0]
+
+
+def test_unreadable_file_is_an_inventory_error(tmp_path: Path) -> None:
+    path = tmp_path / "cases.toml"
+    with pytest.raises(inventory.InventoryError, match="cannot be read") as error:
+        inventory.load(path)
+    assert isinstance(error.value.__cause__, OSError)
+
+
 # --- Both entry points read the same inventory ---------------------------------
+
+
+def report_from_both_scripts(
+    path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> tuple[str, str]:
+    """
+    Run both scripts' main() against the manifest at *path*, asserting each
+    fails the way it documents for an invalid inventory: the checker exits 1,
+    and regeneration exits SETUP_FAILED before compiling anything. Returns what
+    each printed to stderr.
+    """
+    check_cases = load_script("check_cases")
+    regenerate_asm = load_script("regenerate_asm")
+    monkeypatch.setattr(check_cases, "CASES_PATH", path)
+    monkeypatch.setattr(regenerate_asm, "CASES_PATH", path)
+    assert check_cases.main([]) == 1
+    checker = capsys.readouterr().err
+    assert regenerate_asm.main([]) == regenerate_asm.ExitCode.SETUP_FAILED
+    return checker, capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -176,13 +252,30 @@ def test_both_scripts_report_the_same_problem(
     problem: str,
 ) -> None:
     path = write_manifest(tmp_path / "cases.toml", body)
-    check_cases = load_script("check_cases")
-    regenerate_asm = load_script("regenerate_asm")
-    monkeypatch.setattr(check_cases, "CASES_PATH", path)
-    monkeypatch.setattr(regenerate_asm, "CASES_PATH", path)
+    checker, regeneration = report_from_both_scripts(path, monkeypatch, capsys)
+    assert problem in checker and problem in regeneration
 
-    assert check_cases.main([]) == 1
-    assert problem in capsys.readouterr().err
-    with pytest.raises(regenerate_asm.SetupError) as error:
-        regenerate_asm.load_inventory()
-    assert problem in str(error.value)
+
+@pytest.mark.parametrize(
+    "text, problem", MALFORMED_FILES.values(), ids=MALFORMED_FILES.keys()
+)
+def test_both_scripts_report_a_malformed_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    text: str,
+    problem: str,
+) -> None:
+    path = tmp_path / "cases.toml"
+    path.write_text(text)
+    checker, regeneration = report_from_both_scripts(path, monkeypatch, capsys)
+    assert problem in checker and problem in regeneration
+
+
+def test_both_scripts_report_an_unreadable_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    checker, regeneration = report_from_both_scripts(
+        tmp_path / "cases.toml", monkeypatch, capsys
+    )
+    assert "cannot be read" in checker and "cannot be read" in regeneration

@@ -91,26 +91,40 @@ def load(path: Path) -> Inventory:
     Read and validate the manifest at *path*.
 
     Raises InventoryError naming every problem, not just the first, so one run
-    of the checker reports them all.
+    of the checker reports them all. A file that cannot be read, or is not valid
+    TOML, is an InventoryError too, with the underlying error as its cause.
     """
-    manifest = tomllib.loads(path.read_text())
+    manifest = _read(path)
     corpus = manifest.get("corpus", {})
+    if not isinstance(corpus, dict):
+        raise InventoryError([f"{path.name}: [corpus] must be a table"])
     if corpus.get("schema") != SCHEMA:
         raise InventoryError([f"{path.name}: unsupported corpus schema"])
 
     problems: list[str] = []
     targets = _corpus_targets(path, corpus.get("targets"), problems)
+    entries = manifest.get("case", [])
+    if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):
+        problems.append(f"{path.name}: case must be a list of [[case]] tables")
+        entries = []
     cases = tuple(
-        _cases(
-            path=path,
-            entries=manifest.get("case", []),
-            corpus_targets=targets,
-            problems=problems,
-        )
+        _cases(path=path, entries=entries, corpus_targets=targets, problems=problems)
     )
     if problems:
         raise InventoryError(problems)
     return Inventory(targets=targets, cases=cases)
+
+
+def _read(path: Path) -> dict[str, object]:
+    """The TOML at *path*, as a table. Raises InventoryError if it cannot be read."""
+    try:
+        text = path.read_text()
+    except OSError as error:
+        raise InventoryError([f"{path}: cannot be read ({error.strerror})"]) from error
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError as error:
+        raise InventoryError([f"{path.name}: not valid TOML ({error})"]) from error
 
 
 def _corpus_targets(path: Path, value: object, problems: list[str]) -> tuple[str, ...]:

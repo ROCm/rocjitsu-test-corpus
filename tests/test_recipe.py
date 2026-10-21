@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 import dataclasses
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -110,3 +111,14 @@ def test_committed_recipes_load() -> None:
         assert (
             recipe.load(SCRIPTS.parent / "asm" / target / recipe.FILE_NAME) is not None
         )
+
+
+def test_invalid_toml_keeps_the_parse_error(tmp_path: Path) -> None:
+    # As for the inventory: the parser's error is the cause, and its
+    # diagnostic is in the problem.
+    path = tmp_path / recipe.FILE_NAME
+    path.write_text("compiler = \n")
+    with pytest.raises(recipe.RecipeError) as error:
+        recipe.load(path)
+    assert isinstance(error.value.__cause__, tomllib.TOMLDecodeError)
+    assert "line 1" in error.value.problems[0]
