@@ -28,6 +28,8 @@ exercise packed-dot DPP permutations. The shipped smoke has no hardware oracle.
 
 ## RDNA2
 
+Runtime qualification: unqualified. No clean simulator or gfx1030 hardware run has completed.
+
 The gfx1030 variant is an independent wave32 source port of the gfx1100 case,
 audited against the RDNA2 manual and instruction inventory and assembled with
 `-mcpu=gfx1030 -mno-wavefrontsize64`. It keeps the gfx10 ABI: s0:s1 holds the
@@ -46,6 +48,10 @@ probes use the gfx10 `v_dot2c_f32_f16` spelling, while
 encodings. LDS floating compare/store uses `ds_cmpst_*`, and floating
 flat/buffer compare-and-swap uses `*_atomic_fcmpswap`. Compare and replacement
 operands follow the gfx10 layouts.
+
+The inventory has 490 named checkpoints; its name table and per-group output
+stride are checked against the assembly. These structural and build checks
+establish SDK assembler support, not execution on gfx1030 hardware.
 
 Store completion uses `s_waitcnt_vscnt`; VMEM, LDS and scalar observations use
 the applicable VM/LGKM waits. The split VM, LGKM, EXP and dependency waits and

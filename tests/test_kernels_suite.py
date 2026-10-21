@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from support.define_contracts import RunContext, TargetSpec
+from support.define_contracts import BuildResult, CorpusCase, RunContext, TargetSpec
 from support.manage_builds import BuildManager
-from test_suites import kernels
+from test_suites import kernels, kernels_impl
 
 
 @pytest.fixture
@@ -43,7 +43,9 @@ def guitar_hero_cases(target):
     ]
 
 
-@pytest.mark.parametrize("target", ["gfx1100", "gfx1201", "gfx950", "gfx1250"])
+@pytest.mark.parametrize(
+    "target", ["gfx1030", "gfx1100", "gfx1201", "gfx950", "gfx1250"]
+)
 @pytest.mark.parametrize("reverse", [False, True])
 def test_cached_build_preserves_runtime_arguments_and_logs(
     kernel_session, target, reverse
@@ -74,6 +76,78 @@ def test_cached_build_preserves_runtime_arguments_and_logs(
         assert log_path.parent.name == variant
         assert log_path.parent.parent.name == case.path.parent.name
         assert log_path.read_text().endswith(f"--groups {groups}")
+
+
+def test_run_uses_current_variant_metadata_when_build_is_cached(tmp_path, monkeypatch):
+    current_effective_case = {"test_args": ["--groups", 7]}
+    current_target_config = {"skip_run_tests": []}
+    current_kernel_case = object()
+    run_dir = tmp_path / "independent_groups"
+    captured = {}
+
+    monkeypatch.setattr(kernels_impl, "_run_dir", lambda *_args: run_dir)
+    monkeypatch.setattr(kernels_impl, "matches_case_selector", lambda *_args: False)
+    monkeypatch.setattr(
+        kernels_impl,
+        "materialize_inputs",
+        lambda effective_case, path: (effective_case, path),
+    )
+
+    def capture_run(
+        effective_case,
+        target_config,
+        build_dir,
+        executable_path,
+        actual_run_dir,
+        materialized_inputs,
+        *,
+        run_wrapper,
+    ):
+        captured.update(
+            effective_case=effective_case,
+            target_config=target_config,
+            run_dir=actual_run_dir,
+            materialized_inputs=materialized_inputs,
+        )
+
+    monkeypatch.setattr(kernels_impl, "run_executable", capture_run)
+    case = CorpusCase(
+        id="kernels.gfx1030.guitar-hero.guitar_hero_rdna2.independent_groups",
+        suite="kernels",
+        target="gfx1030",
+        collection=None,
+        backend="guitar-hero",
+        path=tmp_path / "case.json",
+        build={"system": "cmake"},
+        run={"kind": "kernel_case", "variant": "independent_groups"},
+        metadata={
+            "effective_case": current_effective_case,
+            "target_config": current_target_config,
+            "kernel_case": current_kernel_case,
+        },
+    )
+    cached_result = BuildResult(
+        build_dir=tmp_path / "build",
+        executable_path=tmp_path / "runner",
+        metadata={
+            "effective_case": {"test_args": ["--groups", 1]},
+            "target_config": {"skip_run_tests": []},
+            "run_dir": tmp_path / "one_group",
+        },
+    )
+
+    kernels.run(
+        case,
+        cached_result,
+        RunContext(tmp_path, tmp_path / "artifacts", False),
+    )
+
+    assert captured == {
+        "effective_case": current_effective_case,
+        "target_config": current_target_config,
+        "run_dir": run_dir,
+        "materialized_inputs": (current_effective_case, run_dir),
+    }
 
 
 def test_cached_build_preserves_runtime_inputs_environment_and_validation(
