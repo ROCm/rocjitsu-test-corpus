@@ -186,7 +186,8 @@ python corpus/race/scripts/check_cases.py
   it with the `.s` files the same regeneration wrote.
 
 This is the check suited to CI. `tests/test_check_cases.py` runs it against the
-committed corpus under pytest.
+committed corpus under pytest. It exits 0 when `cases.toml` agrees with
+`kernels/` and `asm/`, and 1 on any problem, including an invalid `cases.toml`.
 
 It is an inventory check only. It does not check that the assembly is up to date
 with its source: a kernel whose signature or body changed without regenerating
