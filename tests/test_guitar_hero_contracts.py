@@ -80,7 +80,7 @@ def test_rdna2_ds_cmpst_compare_and_replacement_operands():
         assert "v_xor_b32 v40, 0x00400000, v8" in body
         assert "v_and_b32 v41, 1, v0\nv_xor_b32 v41, v41, v8" in body
         assert "v_and_b32 v36, 1, v0\nv_xor_b32 v34, v36, v8" in body
-    for checkpoint in (473, 474, 475, 476):
+    for checkpoint in (474, 475, 476, 477):
         body = assembly.split(f"; Checkpoint {checkpoint}:", 1)[1]
         body = body.split(f"checkpoint {checkpoint}", 1)[0]
         assert "v_and_b32 v44, 1, v0\nv_xor_b32 v42, v44, v8" in body
@@ -135,6 +135,21 @@ def test_rdna2_low_half_dpp8_coverage():
     conversion = dpp8.split("; Checkpoint 92: vop1_dpp8_01", 1)[1]
     conversion = conversion.split("checkpoint 92", 1)[0]
     assert "s_mov_b32 exec_lo, 0xa5a55a5a\ns_mov_b32 exec_lo, -1" not in conversion
+
+
+def test_rdna2_legacy_accumulators():
+    assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
+    e32 = assembly.split(
+        "; Checkpoint 456: rdna2_legacy_accumulators_e32_plain", 1
+    )[1].split("checkpoint 456", 1)[0]
+    assert "v_dot2c_f32_f16 v16, v8, v9" in e32
+    assert "v_fmac_legacy_f32 v17, v4, v5" in e32
+
+    e64 = assembly.split(
+        "; Checkpoint 459: rdna2_legacy_accumulators_e64_plain", 1
+    )[1].split("checkpoint 459", 1)[0]
+    assert "v_fmac_legacy_f32_e64 v17, v4, v5" in e64
+    assert "v_dot2c_f32_f16_e64" not in e64
 
 
 def test_cdna5_scheduling_contract():

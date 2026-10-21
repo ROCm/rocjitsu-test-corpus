@@ -41,9 +41,11 @@ hashes, bounded EXEC regions, dumps and checkpoint stopping are unchanged.
 RDNA3-only WMMA, VOPD, BF16-dot and global-addtid sections are removed. The port
 retains F16 and integer packed dots, DPP8/DPP16, DS addtid, scalar/vector ALU,
 memory, atomics and divergent control flow. The RDNA3 `v_dot2acc_f32_f16`
-probes use the gfx10 `v_dot2c_f32_f16` spelling; LDS floating compare/store uses
-`ds_cmpst_*`, and floating flat/buffer compare-and-swap uses
-`*_atomic_fcmpswap`. Compare and replacement operands follow the gfx10 layouts.
+probes use the gfx10 `v_dot2c_f32_f16` spelling, while
+`v_fmac_dx9_zero_f32` uses `v_fmac_legacy_f32` in compact and extended
+encodings. LDS floating compare/store uses `ds_cmpst_*`, and floating
+flat/buffer compare-and-swap uses `*_atomic_fcmpswap`. Compare and replacement
+operands follow the gfx10 layouts.
 
 Store completion uses `s_waitcnt_vscnt`; VMEM, LDS and scalar observations use
 the applicable VM/LGKM waits. The split VM, LGKM, EXP and dependency waits and
