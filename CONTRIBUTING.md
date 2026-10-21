@@ -119,7 +119,8 @@ HIP headers use gfx950; the RDNA4 wave64 helper adds `-mwavefrontsize64`.
 These are compile checks and do not require a GPU. They check self-containment;
 they cannot detect direct dependencies supplied by another included header.
 
-Provide a ROCm SDK supporting those targets and a GoogleTest include directory.
+Provide a ROCm SDK supporting the selected HIP targets. Headers that include
+GoogleTest, directly or through local helpers, also need its include directory.
 For a GoogleTest source checkout, use its `googletest/include` directory. The
 runtime CTS payload helper also needs the generated `payload_kernel.inc` from
 a gfx1250 runtime CTS build:
@@ -136,8 +137,18 @@ python3 scripts/check_helper_headers.py \
   --runtime-kernel-dir "$BUILD_DIR/runtime/kernels/gfx1250"
 ```
 
-Use `--header corpus/semantics/gfx1250/include/test_support.hpp` to check one
-header, or repeat `--header` for several. `--host-cxx` and `--hip-cxx` select
+Use `--header` to check one header, or repeat it for several. Only the selected
+headers' dependencies and compilers are required; unused input paths are ignored.
+For example, the semantics helper needs neither GoogleTest nor a runtime payload:
+
+```bash
+python3 scripts/check_helper_headers.py \
+  --rocm-path "$ROCM_PATH" \
+  --header corpus/semantics/gfx1250/include/test_support.hpp
+```
+
+Runtime CTS headers need only the host compiler, plus `--runtime-kernel-dir`
+when they include the payload helper. `--host-cxx` and `--hip-cxx` select
 explicit compilers. If the SDK needs additional HIP headers, pass each directory
 with `--hip-include`; these become `-idirafter` paths. The script reports every
 failure with its command and diagnostics and exits unsuccessfully if any check
