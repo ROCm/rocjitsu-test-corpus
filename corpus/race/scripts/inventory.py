@@ -16,11 +16,10 @@ is ``check_cases.py``'s job.
 
 import tomllib
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 SCHEMA = 1
-CASE_FIELDS = frozenset({"id", "kernel", "targets", "headers"})
 
 
 class InventoryError(ValueError):
@@ -53,6 +52,10 @@ class Case:
     def builds_for(self, target: str) -> bool:
         """Whether the case builds for *target*, a corpus target."""
         return not self.targets or target in self.targets
+
+
+# The fields a [[case]] table may have: those of Case.
+CASE_FIELDS = frozenset(field.name for field in fields(Case))
 
 
 @dataclass(frozen=True)

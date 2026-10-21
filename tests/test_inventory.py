@@ -46,6 +46,15 @@ def test_records_are_frozen_dataclasses(
     assert not issubclass(record, tuple)
 
 
+def test_case_fields_are_the_fields_of_case() -> None:
+    # A field added to Case is accepted in cases.toml without a second list to
+    # update, as recipe.FIELDS is derived from Recipe.
+    assert inventory.CASE_FIELDS == {
+        field.name for field in dataclasses.fields(inventory.Case)
+    }
+    assert inventory.CASE_FIELDS == {"id", "kernel", "targets", "headers"}
+
+
 def test_case_fields_cannot_be_reassigned() -> None:
     case = inventory.Case(id="a", kernel="a", targets=(), headers=())
     with pytest.raises(dataclasses.FrozenInstanceError):
