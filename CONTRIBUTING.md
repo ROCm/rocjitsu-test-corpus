@@ -107,6 +107,9 @@ Contributors are expected to:
 
 #### Helper-header isolation
 
+First-party source files and headers should directly include the headers that
+declare the names they use, rather than relying on transitive includes.
+
 `scripts/check_helper_headers.py` compiles each first-party `.h` and `.hpp`
 under `corpus/cts`, `corpus/runtime-cts`, `corpus/race`, and `corpus/semantics`
 as the only include in a translation unit. It checks host C++17 runtime CTS
