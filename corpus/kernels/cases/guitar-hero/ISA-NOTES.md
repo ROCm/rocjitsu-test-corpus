@@ -58,21 +58,46 @@ the applicable VM/LGKM waits. The split VM, LGKM, EXP and dependency waits and
 `buffer_gl0_inv`, `buffer_gl1_inv` and `s_gl1_inv` cache operations are retained
 and followed by a checked load.
 
-* The unmodified test does not run successfully in the simulator, it fails before kernel launch.
-* A modified version ran only after bypassing unsupported instructions.
-* It has not been run on gfx1030 hardware.
+The original execution audit tested corpus revision
+`cc46b7aa9e2e2a47f4d450b50349aa9302310bb3` with RocJITsu revision
+`b6fc339bc3b6e63db65192c1130f0c3ea942338f` and `configs/gfx1030.json`. The
+unmodified host program failed before Guitar Hero launched: the HIP memset
+helper used `v_mad_u64_u32` with the gfx10 null scalar-destination encoding.
+That helper failure is separate from the kernel probes. Omitting the pre-launch
+memsets exposed the kernel audit, which required temporary bypasses for:
 
-https://github.com/ROCm/rocjitsu-test-corpus/pull/75 contains a record of unsupported
-instruction or modes, which is summarized below.
+* decoder rejection of `v_movrels_b32_e64`;
+* all 82 flat load, store and atomic operations after unmapped-address failures;
+* all 66 scratch operations after an unmapped `0x100000000` address;
+* all nine regular and D16 `buffer_store_format` variants after operand
+  rejections; and
+* decoder rejection of `v_movrelsd_b32_e64`, with the adjacent
+  `v_movrelsd_2_b32_e64` probe bypassed as well.
 
-* `v_mad_u64_u32` with the gfx10 null scalar destination encoding
-* `v_movrels_b32_e64`
-* Flat addressing
-* Scratch/private-memory remains unsupported by the simulator. With the gfx10
-  flat-scratch ABI setup present, RocJITsu reports `HW_REG_FLAT_SCR_LO/HI` as
-  read-only and still rejects the resulting `0x100000000` address.
-* All nine regular and D16 `buffer_store_format` variants were bypassed after failures in `buffer_store_format_d16_x`, `buffer_store_format_d16_xy` and `buffer_store_format_x`
-* `v_movrelsd_b32_e64` is rejected by the decoder; the adjacent `v_movrelsd_2_b32_e64` probe was also bypassed.
+Only after those width-preserving bypasses did all 489 checkpoints in that
+revision pass for three seeds in both one- and seven-group modes. The kernel's
+own `v_mad_u64_u32` and all `v_alignbit_b32` probes were enabled in that run and
+passed; the null-destination failure belonged only to the HIP helper. This was
+not a clean pass and does not qualify the bypassed operations.
+
+The original scratch result also predated the required gfx10 flat-scratch ABI
+setup. A follow-up at corpus revision
+`8477cbd6480a3525271ac3b9fbc85f8409baf0d1` with RocJITsu revision
+`739e9d6ead8ea5cb9ddb2daa52c852ce9c63463c` and the same config included the
+corrected prologue, but that simulator revision treated
+`HW_REG_FLAT_SCR_LO/HI` as read-only and still rejected the resulting
+`0x100000000` address.
+
+Neither audit covers the subsequent compare/store correction, restored
+low-half DPP8 and legacy-FMAC probes, populated VOP3 checkpoint, or restored
+packed conversions in the current 490-checkpoint stream. A clean rerun of both
+registered cases from the current tree with RocJITsu
+`b6fc339bc3b6e63db65192c1130f0c3ea942338f` and `configs/gfx1030.json` still
+aborted before kernel launch with `Unsupported encoding value for scalar write:
+125`; no current Guitar Hero probe executed. No clean simulator run of the
+current instruction stream and no gfx1030 hardware run has completed.
+[Pull request 75](https://github.com/ROCm/rocjitsu-test-corpus/pull/75) retains
+the detailed audit history.
 
 
 ## RDNA3
