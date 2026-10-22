@@ -2169,8 +2169,10 @@ v_mov_b32 v20, 0xa5a5a5a5
 v_ceil_f32 v20, v8
 sweep_inputs int
 v_mov_b32 v22, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs int
 v_mov_b32 v24, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs half
 v_mov_b32 v26, 0xa5a5a5a5
 v_cos_f16 v26, v8
@@ -2179,6 +2181,7 @@ v_mov_b32 v28, 0xa5a5a5a5
 v_cos_f32 v28, v8
 sweep_inputs int
 v_mov_b32 v30, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 masked_end 73
 checkpoint 73
 
@@ -2187,8 +2190,10 @@ clear_results
 masked_begin 74
 sweep_inputs int
 v_mov_b32 v16, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs int
 v_mov_b32 v18, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs float
 v_mov_b32 v20, 0xa5a5a5a5
 v_cvt_f16_f32 v20, v8
@@ -2245,8 +2250,10 @@ clear_results
 masked_begin 76
 sweep_inputs int
 v_mov_b32 v16, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs float
 v_mov_b32 v18, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs half
 v_mov_b32 v20, 0xa5a5a5a5
 v_cvt_norm_i16_f16 v20, v8
@@ -2273,6 +2280,7 @@ clear_results
 masked_begin 77
 sweep_inputs int
 v_mov_b32 v16, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs half
 v_mov_b32 v18, 0xa5a5a5a5
 v_exp_f16 v18, v8
@@ -2347,6 +2355,7 @@ v_mov_b32 v24, 0xa5a5a5a5
 v_movrelsd_b32 v24, v8
 sweep_inputs int
 v_mov_b32 v26, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs int
 v_mov_b32 v28, 0xa5a5a5a5
 v_not_b32 v28, v8
@@ -2426,10 +2435,12 @@ v_ceil_f32 v20, v8 row_shr:1 row_mask:0x3 bank_mask:0xd bound_ctrl:1 fi:0
 s_mov_b32 exec_lo, -1
 sweep_inputs int
 v_mov_b32 v22, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, -1
 s_mov_b32 exec_lo, -1
 sweep_inputs int
 v_mov_b32 v24, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, -1
 s_mov_b32 exec_lo, -1
 sweep_inputs half
@@ -2444,6 +2455,7 @@ v_cos_f32 v28, v8 row_shr:1 row_mask:0x3 bank_mask:0xd bound_ctrl:1 fi:0
 s_mov_b32 exec_lo, -1
 sweep_inputs int
 v_mov_b32 v30, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, -1
 s_mov_b32 exec_lo, -1
 checkpoint 82
@@ -2452,10 +2464,12 @@ checkpoint 82
 clear_results
 sweep_inputs int
 v_mov_b32 v16, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, -1
 s_mov_b32 exec_lo, -1
 sweep_inputs int
 v_mov_b32 v18, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, -1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
@@ -2538,10 +2552,12 @@ checkpoint 84
 clear_results
 sweep_inputs int
 v_mov_b32 v16, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, -1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v18, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, -1
 s_mov_b32 exec_lo, -1
 sweep_inputs half
@@ -2580,6 +2596,7 @@ checkpoint 85
 clear_results
 sweep_inputs int
 v_mov_b32 v16, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, -1
 s_mov_b32 exec_lo, -1
 sweep_inputs half
@@ -2692,6 +2709,7 @@ v_movrelsd_b32 v24, v8 row_shr:1 row_mask:0x3 bank_mask:0xd bound_ctrl:1 fi:0
 s_mov_b32 exec_lo, -1
 sweep_inputs int
 v_mov_b32 v26, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, -1
 s_mov_b32 exec_lo, -1
 sweep_inputs int
@@ -2798,10 +2816,12 @@ v_ceil_f32 v20, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs int
 v_mov_b32 v22, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, 0xa5a55a5a
 s_mov_b32 exec_lo, -1
 sweep_inputs int
 v_mov_b32 v24, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, 0xa5a55a5a
 s_mov_b32 exec_lo, -1
 sweep_inputs half
@@ -2816,6 +2836,7 @@ v_cos_f32 v28, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs int
 v_mov_b32 v30, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, 0xa5a55a5a
 s_mov_b32 exec_lo, -1
 checkpoint 91
@@ -2902,10 +2923,12 @@ checkpoint 93
 clear_results
 sweep_inputs int
 v_mov_b32 v16, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, 0xa5a55a5a
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v18, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, 0xa5a55a5a
 s_mov_b32 exec_lo, -1
 sweep_inputs half
@@ -2944,6 +2967,7 @@ checkpoint 94
 clear_results
 sweep_inputs int
 v_mov_b32 v16, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, 0xa5a55a5a
 s_mov_b32 exec_lo, -1
 sweep_inputs half
@@ -3056,6 +3080,7 @@ v_movrelsd_b32 v24, v8 dpp8:[7,6,5,4,3,2,1,0] fi:1
 s_mov_b32 exec_lo, -1
 sweep_inputs int
 v_mov_b32 v26, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, 0xa5a55a5a
 s_mov_b32 exec_lo, -1
 sweep_inputs int
@@ -3768,6 +3793,7 @@ clear_results
 masked_begin 116
 sweep_inputs int
 v_mov_b32 v16, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs int
 v_mov_b32 v18, 0xa5a5a5a5
 v_and_or_b32_e64 v18, v8, v9, v10
@@ -3797,6 +3823,7 @@ clear_results
 masked_begin 117
 sweep_inputs int
 v_mov_b32 v16, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs float
 v_mov_b32 v18, 0xa5a5a5a5
 v_cubeid_f32_e64 v18, v8, v9, v10
@@ -3811,10 +3838,13 @@ v_mov_b32 v24, 0xa5a5a5a5
 v_cubetc_f32_e64 v24, v8, v9, v10
 sweep_inputs int
 v_mov_b32 v26, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs int
 v_mov_b32 v28, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs float
 v_mov_b32 v30, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 masked_end 117
 checkpoint 117
 
@@ -3826,14 +3856,19 @@ v_mov_b32 v16, 0xa5a5a5a5
 v_cvt_pk_i16_i32_e64 v16, v8, v9
 sweep_inputs half
 v_mov_b32 v18, 0xa5a5a5a5
+v_cvt_pknorm_i16_f16 v18, v8, v9
 sweep_inputs float
 v_mov_b32 v20, 0xa5a5a5a5
+v_cvt_pknorm_i16_f32 v20, v8, v9
 sweep_inputs half
 v_mov_b32 v22, 0xa5a5a5a5
+v_cvt_pknorm_u16_f16 v22, v8, v9
 sweep_inputs float
 v_mov_b32 v24, 0xa5a5a5a5
+v_cvt_pknorm_u16_f32 v24, v8, v9
 sweep_inputs float
 v_mov_b32 v26, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs int
 v_mov_b32 v28, 0xa5a5a5a5
 v_cvt_pk_u16_u32_e64 v28, v8, v9
@@ -3857,10 +3892,13 @@ v_mov_b32 v20, 0xa5a5a5a5
 v_div_fixup_f16_e64 v20, v8, v9, v10
 sweep_inputs int
 v_mov_b32 v22, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs half
 v_mov_b32 v24, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs int
 v_mov_b32 v26, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs half
 v_mov_b32 v28, 0xa5a5a5a5
 v_fma_f16_e64 v28, v8, v9, v10
@@ -3948,12 +3986,16 @@ v_mov_b32 v22, 0xa5a5a5a5
 v_max_u16_e64 v22, v8, v9
 sweep_inputs half
 v_mov_b32 v24, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs float
 v_mov_b32 v26, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs int
 v_mov_b32 v28, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs int
 v_mov_b32 v30, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 masked_end 122
 checkpoint 122
 
@@ -3962,16 +4004,22 @@ clear_results
 masked_begin 123
 sweep_inputs half
 v_mov_b32 v16, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs float
 v_mov_b32 v18, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs half
 v_mov_b32 v20, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs float
 v_mov_b32 v22, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs half
 v_mov_b32 v24, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs float
 v_mov_b32 v26, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs int
 v_mov_b32 v28, 0xa5a5a5a5
 v_mbcnt_hi_u32_b32_e64 v28, v8, v9
@@ -4058,6 +4106,7 @@ v_mov_b32 v22, 0xa5a5a5a5
 v_or3_b32_e64 v22, v8, v9, v10
 sweep_inputs int
 v_mov_b32 v24, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs half
 v_mov_b32 v26, 0xa5a5a5a5
 v_pack_b32_f16_e64 v26, v8, v9
@@ -4113,6 +4162,7 @@ v_mov_b32 v18, 0xa5a5a5a5
 v_xor3_b32_e64 v18, v8, v9, v10
 sweep_inputs int
 v_mov_b32 v20, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 masked_end 129
 checkpoint 129
 
@@ -4162,8 +4212,10 @@ v_mov_b32 v20, 0xa5a5a5a5
 v_ceil_f32_e64 v20, v8
 sweep_inputs int
 v_mov_b32 v22, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs int
 v_mov_b32 v24, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs half
 v_mov_b32 v26, 0xa5a5a5a5
 v_cos_f16_e64 v26, v8
@@ -4172,6 +4224,7 @@ v_mov_b32 v28, 0xa5a5a5a5
 v_cos_f32_e64 v28, v8
 sweep_inputs int
 v_mov_b32 v30, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 masked_end 130
 checkpoint 130
 
@@ -4192,8 +4245,10 @@ v_mov_b32 v22, 0xa5a5a5a5
 v_cvt_f32_f16_e64 v22, v8
 sweep_inputs int
 v_mov_b32 v24, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs int
 v_mov_b32 v26, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs float
 v_mov_b32 v28, 0xa5a5a5a5
 v_cvt_f32_i32_e64 v28, v8
@@ -4220,6 +4275,7 @@ v_mov_b32 v22, 0xa5a5a5a5
 v_cvt_f32_ubyte3_e64 v22, v8
 sweep_inputs float
 v_mov_b32 v24, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs float
 v_mov_b32 v26, 0xa5a5a5a5
 v_cvt_flr_i32_f32_e64 v26, v8
@@ -4237,8 +4293,10 @@ clear_results
 masked_begin 133
 sweep_inputs int
 v_mov_b32 v16, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs float
 v_mov_b32 v18, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs half
 v_mov_b32 v20, 0xa5a5a5a5
 v_cvt_norm_i16_f16_e64 v20, v8
@@ -4265,6 +4323,7 @@ clear_results
 masked_begin 134
 sweep_inputs int
 v_mov_b32 v16, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs half
 v_mov_b32 v18, 0xa5a5a5a5
 v_exp_f16_e64 v18, v8
@@ -4330,6 +4389,7 @@ v_mov_b32 v18, 0xa5a5a5a5
 v_movrels_b32_e64 v18, v8
 sweep_inputs int
 v_mov_b32 v20, 0xa5a5a5a5
+; Intentional RDNA2 omission: v_not_b16 has no gfx1030 form.
 sweep_inputs int
 v_mov_b32 v22, 0xa5a5a5a5
 v_not_b32_e64 v22, v8
@@ -4435,6 +4495,7 @@ v_mov_b32 v28, 0xa5a5a5a5
 v_cndmask_b32_e64 v28, v8, v9, s23
 sweep_inputs float
 v_mov_b32 v30, 0xa5a5a5a5
+v_cvt_pkrtz_f16_f32_e64 v30, v8, v9
 masked_end 139
 checkpoint 139
 
@@ -5965,12 +6026,16 @@ v_mov_b32 v16, 0xa5a5a5a5
 v_dot2_f32_f16 v16, v8, v9, v10
 sweep_inputs int
 v_mov_b32 v18, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs int
 v_mov_b32 v20, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs int
 v_mov_b32 v22, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs int
 v_mov_b32 v24, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 sweep_inputs float
 v_mov_b32 v26, 0xa5a5a5a5
 v_fma_mix_f32 v26, v8, v9, v10
@@ -15730,10 +15795,12 @@ checkpoint 451
 clear_results
 sweep_inputs int
 v_mov_b32 v16, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, -1
 s_mov_b32 exec_lo, -1
 sweep_inputs int
 v_mov_b32 v18, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, 0xa5a55a5a
 s_mov_b32 exec_lo, -1
 sweep_inputs half
@@ -15743,18 +15810,22 @@ v_dot2c_f32_f16 v20, v8, v9 row_shr:1 row_mask:0x3 bank_mask:0xd bound_ctrl:1 fi
 s_mov_b32 exec_lo, -1
 sweep_inputs int
 v_mov_b32 v22, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, -1
 s_mov_b32 exec_lo, -1
 sweep_inputs int
 v_mov_b32 v24, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, -1
 s_mov_b32 exec_lo, -1
 sweep_inputs int
 v_mov_b32 v26, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, -1
 s_mov_b32 exec_lo, -1
 sweep_inputs int
 v_mov_b32 v28, 0xa5a5a5a5
+; Intentional RDNA2 omission: no gfx1030 probe is assigned to this slot.
 s_mov_b32 exec_lo, -1
 s_mov_b32 exec_lo, -1
 sweep_inputs half
