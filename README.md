@@ -17,6 +17,7 @@ corpus/
   runtime-cts/ Direct-KFD aql/ and capability-gated pm4/ suites.
   race/       Race-detector integration programs and standalone mutation kernels.
   tensile/    gfx1250 TensileLite configs and generated artifacts.
+  race/       Race-detection kernels and their pinned per-target assembly.
   benchmarks/ Parameterized Triton benchmarks and reused upstream kernels.
 
 tests/
@@ -67,6 +68,9 @@ CI orchestration and simulator configurations remain in rocm-systems.
 - `corpus/tensile/`: gfx1250 TensileLite YAML configs, manifests, numeric smoke
   lists, and generated HSACO/code-object artifacts. This corpus is run by the
   Tensile scripts, not by `tests/test_corpus.py`.
+- `corpus/race/`: small HIP kernels for scoring race and data-hazard detectors,
+  with their device assembly pinned per gfx target and an inventory in
+  `cases.toml`. See the [regeneration and check workflow](corpus/race/README.md).
 
 `tests/test_corpus.py` discovers and runs the `iree`, `kernels`, `cts`, `dbt`,
 `semantics`, `llama`, `vulkan`, `race`, `aql`, and `pm4` suites. By default it
