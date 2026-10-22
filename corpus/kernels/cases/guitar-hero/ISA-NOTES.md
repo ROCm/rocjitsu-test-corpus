@@ -26,6 +26,81 @@ Development-time manual captures on R9700 covered 1, 7 and 256 groups, including
 manual qualification, not committed automated tests. Checkpoints 639–640
 exercise packed-dot DPP permutations. The shipped smoke has no hardware oracle.
 
+## RDNA2
+
+Runtime qualification: unqualified. No clean simulator or gfx1030 hardware run has completed.
+
+The gfx1030 variant is an independent wave32 source port of the gfx1100 case,
+audited against the RDNA2 manual and instruction inventory and assembled with
+`-mcpu=gfx1030 -mno-wavefrontsize64`. It keeps the gfx10 ABI: s0:s1 holds the
+kernarg pointer, s2:s3 supplies the flat-scratch initializer, s4 is the
+workgroup ID and s5 is the private-segment wavefront offset. The prologue adds
+the offset to the initializer, writes `HW_REG_FLAT_SCR_LO/HI` and preserves the
+workgroup ID in s48. Each 64-item group contains two waves and owns 4 KiB of
+LDS/workspace. The 40-byte kernarg, 64-byte private segment per lane, rolling
+hashes, bounded EXEC regions, dumps and checkpoint stopping are unchanged.
+
+RDNA3-only WMMA, VOPD, BF16-dot and global-addtid sections are removed. The port
+retains F16 and integer packed dots, DPP8/DPP16, DS addtid, scalar/vector ALU,
+memory, atomics and divergent control flow. The RDNA3 `v_dot2acc_f32_f16`
+probes use the gfx10 `v_dot2c_f32_f16` spelling, while
+`v_fmac_dx9_zero_f32` uses `v_fmac_legacy_f32` in compact and extended
+encodings. LDS floating compare/store uses `ds_cmpst_*`, and floating
+flat/buffer compare-and-swap uses `*_atomic_fcmpswap`. Compare and replacement
+operands follow the gfx10 layouts.
+
+The inventory has 490 named checkpoints; its name table and per-group output
+stride are checked against the assembly. These structural and build checks
+establish SDK assembler support, not execution on gfx1030 hardware.
+
+Store completion uses `s_waitcnt_vscnt`; VMEM, LDS and scalar observations use
+the applicable VM/LGKM waits. The split VM, LGKM, EXP and dependency waits and
+`buffer_gl0_inv`, `buffer_gl1_inv` and `s_gl1_inv` cache operations are retained
+and followed by a checked load.
+
+The original execution audit tested corpus revision
+`cc46b7aa9e2e2a47f4d450b50349aa9302310bb3` with RocJITsu revision
+`b6fc339bc3b6e63db65192c1130f0c3ea942338f` and `configs/gfx1030.json`. The
+unmodified host program failed before Guitar Hero launched: the HIP memset
+helper used `v_mad_u64_u32` with the gfx10 null scalar-destination encoding.
+That helper failure is separate from the kernel probes. Omitting the pre-launch
+memsets exposed the kernel audit, which required temporary bypasses for:
+
+* decoder rejection of `v_movrels_b32_e64`;
+* all 82 flat load, store and atomic operations after unmapped-address failures;
+* all 66 scratch operations after an unmapped `0x100000000` address;
+* all nine regular and D16 `buffer_store_format` variants after operand
+  rejections; and
+* decoder rejection of `v_movrelsd_b32_e64`, with the adjacent
+  `v_movrelsd_2_b32_e64` probe bypassed as well.
+
+Only after those width-preserving bypasses did all 489 checkpoints in that
+revision pass for three seeds in both one- and seven-group modes. The kernel's
+own `v_mad_u64_u32` and all `v_alignbit_b32` probes were enabled in that run and
+passed; the null-destination failure belonged only to the HIP helper. This was
+not a clean pass and does not qualify the bypassed operations.
+
+The original scratch result also predated the required gfx10 flat-scratch ABI
+setup. A follow-up at corpus revision
+`8477cbd6480a3525271ac3b9fbc85f8409baf0d1` with RocJITsu revision
+`739e9d6ead8ea5cb9ddb2daa52c852ce9c63463c` and the same config included the
+corrected prologue, but that simulator revision treated
+`HW_REG_FLAT_SCR_LO/HI` as read-only and still rejected the resulting
+`0x100000000` address.
+
+Neither audit covers the subsequent compare/store correction, restored
+low-half DPP8 and legacy-FMAC probes, populated VOP3 checkpoint, or restored
+packed conversions in the current 490-checkpoint stream. A clean rerun of both
+registered cases from corpus revision
+`aaac2c7924033ca3dfac2023dffe5bba5809ff5d` with RocJITsu revision
+`b6fc339bc3b6e63db65192c1130f0c3ea942338f` and `configs/gfx1030.json` still
+aborted before kernel launch with `Unsupported encoding value for scalar write:
+125`; no current Guitar Hero probe executed. No clean simulator run of the
+current instruction stream and no gfx1030 hardware run has completed.
+[Pull request 75](https://github.com/ROCm/rocjitsu-test-corpus/pull/75) retains
+the detailed audit history.
+
+
 ## RDNA3
 
 The gfx1100 wave32 port was exercised on W7900 during development. Its audit
