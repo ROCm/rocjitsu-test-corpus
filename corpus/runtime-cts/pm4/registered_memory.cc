@@ -15,12 +15,15 @@
 // Progress waits have a separate 10-second deadline.
 // Inspiration: independent direct-KFD adaptation of public workload patterns.
 // https://gitlab.freedesktop.org/drm/igt-gpu-tools/-/blob/26513be3e0f711ed835ec50d5cdcb723ef224105/tests/amdgpu/amd_basic.c
+#include <cstdint>
 #include <cstring>
 #include <vector>
 
 #include "pm4.h"
 #include "support/aql_payload.h"
+#include "support/kfd.h"
 #include "support/sdma.h"
+#include "test.h"
 using namespace cts;
 int main(int argc, char** argv) {
   Start(argc, argv, "registered_memory", true);

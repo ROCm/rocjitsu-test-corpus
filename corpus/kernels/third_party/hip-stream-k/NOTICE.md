@@ -20,3 +20,7 @@ The extracted Stream-K kernels were adapted to remove the upstream cooperative
 rocWMMA dependency. `include/streamk/utils/mfma.hpp` provides the small fragment
 and layout surface these runners need and calls clang's AMDGCN MFMA builtins
 directly.
+
+The corpus adds direct standard-library and HIP includes for the declarations used by
+these sources and headers, including platform-specific code. These local
+include edits leave the extracted implementations unchanged.

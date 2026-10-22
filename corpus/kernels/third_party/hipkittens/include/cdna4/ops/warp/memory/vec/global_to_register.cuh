@@ -7,6 +7,9 @@
 
 #include "../../../../common/common.cuh"
 #include "../../../../types/types.cuh"
+#include <bit>
+#include <cstdint>
+#include <type_traits>
 
 namespace kittens {
 

@@ -1,5 +1,6 @@
 #include "pad.cuh"
 
+#include <cstddef>
 #include <stdint.h>
 
 __device__ __forceinline__ int64_t wrap_around(int64_t coord, int64_t size) {

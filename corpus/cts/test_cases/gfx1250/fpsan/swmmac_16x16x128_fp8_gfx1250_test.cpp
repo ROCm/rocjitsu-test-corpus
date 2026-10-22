@@ -19,6 +19,7 @@
 //
 // AMD naming: 'fp8' = OCP E4M3FN, 'bf8' = OCP E5M2. Requires a gfx1250
 // hardware; built only under the gfx1250 test tier.
+#include "fpsan/amdgcn_matrix.hpp"
 #include "fpsan/amdgcn_swmmac_gfx1250.hpp"
 #include "fpsan/fpsan.hpp"
 
@@ -31,6 +32,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <random>
 #include <vector>
 
 using fpsan::Conversions;

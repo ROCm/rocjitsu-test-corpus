@@ -2,6 +2,12 @@
 #include "cp-async.cuh"
 #include "mma.cuh"
 #include "fattn-common.cuh"
+#include <algorithm>
+#include <cfloat>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <type_traits>
 
 using namespace ggml_cuda_mma;
 

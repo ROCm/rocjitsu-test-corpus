@@ -1,6 +1,8 @@
 #include "test_support.hpp"
 #include "wmma_m32_fp4_differential.hpp"
 
+#include <hip/hip_runtime.h>
+
 using f32x16 = float __attribute__((ext_vector_type(16)));
 using i32x8 = int __attribute__((ext_vector_type(8)));
 using i32x16 = int __attribute__((ext_vector_type(16)));

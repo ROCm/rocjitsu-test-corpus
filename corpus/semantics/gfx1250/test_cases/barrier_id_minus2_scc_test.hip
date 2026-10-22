@@ -1,5 +1,10 @@
 #include "test_support.hpp"
 
+#include <hip/hip_runtime.h>
+
+#include <algorithm>
+#include <vector>
+
 // The s_get_barrier_state instruction itself does not modify SCC.
 extern "C" __global__ void check_barrier_id_minus2_scc(unsigned *out,
                                                        unsigned initial_scc) {

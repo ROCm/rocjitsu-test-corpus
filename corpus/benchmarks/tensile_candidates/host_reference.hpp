@@ -4,7 +4,9 @@
 
 #include <Tensile/DataTypes.hpp>
 #include <mxDataGenerator/PreSwizzle.hpp>
+
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>

@@ -6,6 +6,10 @@
 #include "fattn-common.cuh"
 #include "fattn-wmma-f16.cuh"
 
+#include <cfloat>
+#include <cstdint>
+#include <cstring>
+#include <type_traits>
 #ifdef GGML_USE_WMMA_FATTN
 #if !defined(GGML_USE_HIP)
 #include <mma.h>

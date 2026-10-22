@@ -6,6 +6,7 @@
 #include <intrin.h>
 #endif
 
+#include <cstdio>
 #include <cstring>
 #include <vector>
 #include <bitset>

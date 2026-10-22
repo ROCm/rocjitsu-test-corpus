@@ -9,6 +9,10 @@
 #include <cooperative_groups/reduce.h>
 #endif // GGML_USE_HIP
 
+#include <cassert>
+#include <cstddef>
+#include <cstring>
+#include <type_traits>
 #include <cstdint>
 #include <utility>
 

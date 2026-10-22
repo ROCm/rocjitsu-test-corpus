@@ -1,4 +1,6 @@
 #include "scale.cuh"
+#include <cstdint>
+#include <cstring>
 
 #define MAX_GRIDDIM_X 0x7FFFFFFF
 

@@ -1,6 +1,9 @@
 #include "test_support.hpp"
 
+#include <hip/hip_runtime.h>
+
 #include <cstdint>
+#include <vector>
 
 extern "C" __global__ void hard_clause_loads(float *out, const float *in) {
   const int tid = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);

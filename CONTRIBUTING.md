@@ -105,6 +105,66 @@ Contributors are expected to:
 - Include test coverage for new functionality when applicable.
 - Document any known limitations or test exclusions.
 
+#### Helper-header isolation
+
+First-party source files and headers should directly include the headers that
+declare the names they use, rather than relying on transitive includes.
+
+`scripts/check_helper_headers.py` compiles each first-party `.h` and `.hpp`
+under `corpus/cts`, `corpus/runtime-cts`, `corpus/race`, and `corpus/semantics`
+as the only include in a translation unit. It checks host C++17 runtime CTS
+headers with the gfx1250 platform definitions, HIP GNU C++17 CTS headers,
+HIP GNU C++20 race headers, and HIP C++20 semantics headers. It also checks
+the host-used CTS helpers `fpsan_generic.hpp`, `fpsan_semantics.hpp`,
+`parity_ops.hpp`, `test_random.hpp`, and `test_utils.hpp` in plain C++17
+and race's `race_log_expectation.hpp` in plain C++20, without HIP's
+implicit runtime includes. Each suite uses its own include roots:
+CTS support and vendored hip-fpsan, race's owning directory, or semantics'
+include directory. HIP headers use their
+target family (`gfx942`, `gfx950`, `gfx1151`, `gfx1201`, or `gfx1250`). Generic
+HIP headers use gfx950; the RDNA4 wave64 helper adds `-mwavefrontsize64`.
+Additional wave64 configurations check `wmma_gfx11_parts.hpp` on gfx1151 and
+`wmma_gfx12_parts.hpp`, `matrix_test_parts.hpp`, and `wave_test_harness.hpp`
+on gfx1201, using the owning targets' wave64 definitions and
+`-mwavefrontsize64`.
+These are compile checks and do not require a GPU. They check self-containment;
+they cannot detect direct dependencies supplied by another included header.
+
+Provide a ROCm SDK supporting the selected HIP targets. Headers that include
+GoogleTest, directly or through local helpers, also need its include directory.
+For a GoogleTest source checkout, use its `googletest/include` directory. The
+runtime CTS payload helper also needs the generated `payload_kernel.inc` from
+a gfx1250 runtime CTS build:
+
+```bash
+cmake -S corpus/runtime-cts -B "$BUILD_DIR/runtime" -G Ninja \
+  -DCMAKE_CXX_COMPILER=clang++ \
+  -DAMDGPU_LLVM_BIN="$ROCM_PATH/lib/llvm/bin" \
+  -DCTS_ARCHS=gfx1250 -DCTS_SUITES=pm4
+cmake --build "$BUILD_DIR/runtime" --parallel 4 --target kernel_payload_gfx1250
+python3 scripts/check_helper_headers.py \
+  --rocm-path "$ROCM_PATH" \
+  --gtest-include "$GTEST_INCLUDE" \
+  --runtime-kernel-dir "$BUILD_DIR/runtime/kernels/gfx1250"
+```
+
+Use `--header` to check one header, or repeat it for several. Only the selected
+headers' dependencies and compilers are required; unused input paths are ignored.
+For example, the semantics helper needs neither GoogleTest nor a runtime payload:
+
+```bash
+python3 scripts/check_helper_headers.py \
+  --rocm-path "$ROCM_PATH" \
+  --header corpus/semantics/gfx1250/include/test_support.hpp
+```
+
+Runtime CTS headers need only the host compiler, plus `--runtime-kernel-dir`
+when they include the payload helper. `--host-cxx` and `--hip-cxx` select
+explicit compilers. If the SDK needs additional HIP headers, pass each directory
+with `--hip-include`; these become `-idirafter` paths. The script reports every
+failure with its command and diagnostics and exits unsuccessfully if any check
+fails. It creates no source-tree build files.
+
 ### Documentation
 
 Changes that impact functionality, configuration, APIs, or user workflows should include corresponding documentation updates.

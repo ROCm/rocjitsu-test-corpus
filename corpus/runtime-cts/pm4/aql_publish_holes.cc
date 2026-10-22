@@ -15,11 +15,15 @@
 // Progress waits have a separate 10-second deadline.
 // Inspiration: independent direct-KFD adaptation of public workload patterns.
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/rocrtst/suites/stress/queue_write_index_concurrent_tests.cc
+#include <cstdint>
 #include <cstring>
 #include <thread>
+#include <vector>
 
 #include "pm4.h"
 #include "support/aql.h"
+#include "support/kfd.h"
+#include "test.h"
 #include "work_kernel.inc"
 using namespace cts;
 int main(int argc, char** argv) {

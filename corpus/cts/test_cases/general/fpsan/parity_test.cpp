@@ -14,16 +14,20 @@
 //   * HIP      : additionally executes the body on the device and asserts
 //                device == host for every observable.
 // ----------------------------------------------------------------------------
+#include "fpsan/fpsan.hpp"
 #include "parity_ops.hpp"
 
 #include "test_random.hpp"
 
 #include <gtest/gtest.h>
 
+#include <random>
 #include <vector>
 
 #if defined(__HIP__)
 #include "hip_test_utils.hpp"
+
+#include <hip/hip_runtime.h>
 #endif
 
 using fpsan::Conversions;

@@ -7,6 +7,8 @@
 // No queue ownership, scheduling, allocation policy, or automatic signal reuse.
 #ifndef CTS_AQL_PAYLOAD_H_
 #define CTS_AQL_PAYLOAD_H_
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 
 #include "payload_kernel.inc"

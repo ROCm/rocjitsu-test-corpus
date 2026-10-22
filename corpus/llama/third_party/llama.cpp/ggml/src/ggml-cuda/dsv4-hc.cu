@@ -1,5 +1,7 @@
 #include "common.cuh"
 #include "dsv4-hc.cuh"
+#include <cstddef>
+#include <cstdint>
 
 
 static constexpr int DSV4_HC = 4;

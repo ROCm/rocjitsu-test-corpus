@@ -1,8 +1,11 @@
 #include "test_support.hpp"
 
+#include <hip/hip_runtime.h>
+
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <vector>
 
 // Isolated v_cvt_f32_fp8 CLAMP=1 coverage with every byte-select variant in
 // one independently runnable object.

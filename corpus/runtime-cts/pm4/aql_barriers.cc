@@ -17,10 +17,14 @@
 // Inspiration: independent native-KFD adaptation of these public test patterns.
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/rocrtst/suites/functional/signal_wait_multi.cc
 // https://github.com/KhronosGroup/VK-GL-CTS/blob/3905c821f43ded89284713187ffb3c7a1072afdb/external/vulkancts/modules/vulkan/synchronization/vktSynchronizationTimelineSemaphoreTests.cpp
+#include <cstddef>
+#include <cstdint>
 #include <thread>
 
 #include "pm4.h"
 #include "support/aql_payload.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 
 // AMD AQL barrier packets use five handles to firmware-visible 64-byte signals.

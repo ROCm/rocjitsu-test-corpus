@@ -1,6 +1,9 @@
 #include "test_support.hpp"
 
+#include <hip/hip_runtime.h>
+
 #include <cstdint>
+#include <vector>
 
 constexpr int kLanes = 32;
 constexpr unsigned kLdsBase = 64 * 1024;

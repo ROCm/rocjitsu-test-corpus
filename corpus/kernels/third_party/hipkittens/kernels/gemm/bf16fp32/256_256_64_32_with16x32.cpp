@@ -1,4 +1,7 @@
 #include "kittens.cuh"
+#include <hip/hip_runtime.h>
+#include <cstddef>
+#include <cstdint>
 #ifndef KERNEL_CORPUS_HIPKITTENS_STANDALONE
 #include "pyutils/pyutils.cuh"
 #endif

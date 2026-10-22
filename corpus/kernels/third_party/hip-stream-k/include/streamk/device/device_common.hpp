@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <cmath>
+#include <cstdint>
 #include <streamk/utils/math.hpp>
 #include <streamk/utils/mfma.hpp>
 

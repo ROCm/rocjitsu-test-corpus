@@ -21,6 +21,7 @@
 #endif
 
 #include <assert.h>
+#include <stddef.h>
 #include <errno.h>
 #include <time.h>
 #include <math.h>

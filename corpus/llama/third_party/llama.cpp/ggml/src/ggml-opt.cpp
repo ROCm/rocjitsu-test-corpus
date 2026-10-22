@@ -7,8 +7,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cinttypes>
+#include <cstdio>
+#include <cstring>
+#include <inttypes.h>
 #include <map>
 #include <random>
 #include <vector>

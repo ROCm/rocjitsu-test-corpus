@@ -1,4 +1,5 @@
 #include "pad_reflect_1d.cuh"
+#include <cstdint>
 
 static __global__ __launch_bounds__(CUDA_PAD_REFLECT_1D_BLOCK_SIZE, 1) void
     pad_reflect_1d_kernel_f32(

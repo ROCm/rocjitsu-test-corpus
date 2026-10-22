@@ -3,6 +3,8 @@
 // ggml-backend internal header
 
 #include "ggml-backend.h"
+#include <stddef.h>
+#include <stdint.h>
 
 #ifdef  __cplusplus
 extern "C" {

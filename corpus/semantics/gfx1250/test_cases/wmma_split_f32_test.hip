@@ -1,5 +1,11 @@
 #include "test_support.hpp"
 
+#include <hip/hip_runtime.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <vector>
+
 using f32x8 = float __attribute__((ext_vector_type(8)));
 using i32x16 = int __attribute__((ext_vector_type(16)));
 

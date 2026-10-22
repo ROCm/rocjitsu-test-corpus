@@ -1,8 +1,16 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
+#include "fpsan_semantics.hpp"
 #include "hip_test_utils.hpp"
 #include "swmmac_gfx12_parts.hpp"
+
+#include <hip/hip_runtime.h>
+
+#include <gtest/gtest.h>
+
+#include <cstdint>
+#include <vector>
 
 TEST(SwmmacGfx12, F32_F16_LayoutMatchesHardware) {
   DeviceAllocations device_allocations;

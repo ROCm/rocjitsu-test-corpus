@@ -21,7 +21,9 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <vector>

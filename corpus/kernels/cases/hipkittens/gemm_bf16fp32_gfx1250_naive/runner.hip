@@ -16,6 +16,10 @@
 
 #include "../../../third_party/hipkittens/kernels/gemm/bf16fp32/gfx1250/common.h"
 
+#include <hip/hip_runtime.h>
+
+#include <cstddef>
+
 using namespace kittens;
 using namespace gfx1250_gemm;
 

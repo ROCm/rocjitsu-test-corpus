@@ -12,6 +12,10 @@
 // Inspiration: independent direct-KFD adaptation of public workload patterns.
 // https://github.com/tinygrad/tinygrad/blob/c509335eaa34f60718a121a8ca1c1953777731b7/test/external/external_test_amd.py
 #include "pm4.h"
+#include "support/kfd.h"
+#include "test.h"
+
+#include <cstdint>
 using namespace cts;
 int main(int argc, char** argv) {
   Start(argc, argv, "pm4_doorbell_rollover");

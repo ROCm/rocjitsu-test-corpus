@@ -18,16 +18,24 @@
 #include <poll.h>
 #include <signal.h>
 #include <spawn.h>
+#include <stdlib.h>
 #include <sys/prctl.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <thread>
+#include <vector>
 
 #include "pm4.h"
+#include "support/aql.h"
 #include "support/aql_payload.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 extern char** environ;
 static int Worker(int argc, char** argv) {

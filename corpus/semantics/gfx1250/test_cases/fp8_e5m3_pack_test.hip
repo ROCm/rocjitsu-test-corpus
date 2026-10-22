@@ -1,9 +1,12 @@
 #include "test_support.hpp"
 
+#include <hip/hip_runtime.h>
+
 #include <bit>
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <vector>
 
 // Packed CLAMP=1 forms with low/high placement, stochastic rounding, and
 // source modifiers in one independently runnable object.

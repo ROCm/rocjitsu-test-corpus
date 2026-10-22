@@ -17,12 +17,16 @@
 // Progress waits have a separate 10-second deadline.
 // Inspiration: independent direct-KFD adaptation of public workload patterns.
 // https://github.com/KhronosGroup/VK-GL-CTS/blob/3905c821f43ded89284713187ffb3c7a1072afdb/external/vulkancts/modules/vulkan/synchronization/vktSynchronizationSignalOrderTests.cpp
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <thread>
+#include <vector>
 
 #include "support/aql.h"
+#include "support/kfd.h"
 #include "support/sdma.h"
+#include "test.h"
 #include "work_kernel.inc"
 using namespace cts;
 int main(int argc, char** argv) {

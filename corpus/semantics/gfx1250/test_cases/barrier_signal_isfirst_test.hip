@@ -1,5 +1,9 @@
 #include "test_support.hpp"
 
+#include <hip/hip_runtime.h>
+
+#include <vector>
+
 // Two waves stage independent halves of a block and then consume the other
 // half, like a block-local feature mixing pass. The SCC "is first" result is
 // intentionally irrelevant; only the barrier arrival semantics matter.

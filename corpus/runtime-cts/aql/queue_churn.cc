@@ -22,12 +22,16 @@
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/libhsakmt/tests/kfdtest/src/KFDQMTest.cpp
 // https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/libamdf/cts/gpu/user_queue_memory.cc
 // https://github.com/ROCm/rocm-systems/issues/8818
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <memory>
 #include <set>
+#include <vector>
 
 #include "support/aql.h"
+#include "support/kfd.h"
+#include "test.h"
 #include "work_kernel.inc"
 
 using namespace cts;

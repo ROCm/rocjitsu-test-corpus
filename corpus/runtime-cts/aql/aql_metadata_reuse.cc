@@ -31,9 +31,12 @@
 // https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/rocrtst/suites/functional/metadata_prefetch.cc
 // https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa_ext_amd.h
 // https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_aql_queue.cpp
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <vector>
 
 namespace preload0 {
 #include "metadata_0_kernel.inc"
@@ -54,6 +57,8 @@ namespace preload30 {
 #include "metadata_30_kernel.inc"
 }
 #include "support/aql.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 struct PreloadArgs {
   uint32_t values[32];

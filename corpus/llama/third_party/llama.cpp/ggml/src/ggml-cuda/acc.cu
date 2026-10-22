@@ -1,4 +1,5 @@
 #include "acc.cuh"
+#include <cstdint>
 
 static __global__ void acc_f32(const float * x, const float * y, float * dst, const int64_t ne,
         const int64_t ne10, const int64_t ne11, const int64_t ne12, const int64_t ne13,

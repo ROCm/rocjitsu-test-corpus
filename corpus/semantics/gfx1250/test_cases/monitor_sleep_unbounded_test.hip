@@ -1,5 +1,9 @@
 #include "test_support.hpp"
 
+#include <hip/hip_runtime.h>
+
+#include <vector>
+
 // This kernel is compiled but never launched because an unbounded sleep may
 // never receive a wake-up and could hang the system. Keeping the instruction
 // in the code object tests translation behavior that depends on the immediate.

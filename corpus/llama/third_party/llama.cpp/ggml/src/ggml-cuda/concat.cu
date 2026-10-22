@@ -1,6 +1,8 @@
 #include "concat.cuh"
 
+#include <cstddef>
 #include <stdint.h>
+#include <type_traits>
 
 // contiguous kernels
 template <typename T, int dim>

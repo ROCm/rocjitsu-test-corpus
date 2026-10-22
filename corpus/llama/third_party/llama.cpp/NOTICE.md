@@ -13,8 +13,11 @@ the shared GGML core, `ggml-cpu` for the reference implementation, and
 `ggml-cuda`/`ggml-hip` for the device implementation under test. The remaining
 upstream backends are omitted because the suite never enables them.
 
-The extracted sources retain their upstream file contents and copyright
+The extracted sources retain their upstream implementations and copyright
 notices. The MIT license allows use, copy, modification, merge, publication,
 distribution, sublicensing, and sale of copies, provided the copyright notice
 and permission notice are included in all copies or substantial portions of the
 software.
+
+The corpus adds direct standard-library, HIP, and POSIX includes for the declarations
+used by these sources and headers, preserving their C/C++ and platform guards.

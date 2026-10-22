@@ -1,7 +1,12 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
+#include "fpsan/fpsan.hpp"
 #include "swmmac_gfx12_parts.hpp"
+
+#include <gtest/gtest.h>
+
+#include <cstdint>
 
 TEST(SwmmacGfx12, F32_BF8_FP8_LayoutAndFpsan) {
   auto wf = [](auto av, auto bv, auto cv, std::uint16_t i) {

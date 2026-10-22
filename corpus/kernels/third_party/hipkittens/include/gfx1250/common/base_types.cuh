@@ -16,8 +16,10 @@
 #include <hip/hip_fp4.h>
 #include <hip/amd_detail/amd_hip_ocp_types.h>
 #include <hip/hip_runtime.h>
+#include <cstdint>
 #include <string>
 #include <bit>
+#include <type_traits>
 
 typedef uint32_t __amd_fp8x4_storage_t;
 

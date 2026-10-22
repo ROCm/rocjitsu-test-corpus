@@ -19,10 +19,14 @@
 // Inspiration: independent native-KFD adaptation of these public test patterns.
 // https://github.com/tinygrad/tinygrad/blob/c509335eaa34f60718a121a8ca1c1953777731b7/test/external/external_test_hcq.py
 // https://github.com/KhronosGroup/OpenCL-CTS/blob/9feccbb8fcb8eefeebf86a48036173a8155f9d21/test_conformance/extensions/cl_khr_command_buffer/command_buffer_pipelined_enqueue.cpp
+#include <cstdint>
 #include <cstring>
 #include <memory>
+#include <vector>
 
 #include "pm4.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 
 int main(int argc, char** argv) {

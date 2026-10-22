@@ -27,6 +27,7 @@
 #include "fpsan/amdgcn_matrix.hpp" // for detail::wave_lane + detail::wave_shfl
 #include "fpsan/math.hpp"          // for fpsan::min / fpsan::max
 #include "fpsan/value.hpp"
+#include <cstdint>
 
 #if !defined(__HIP__) && !defined(__CUDACC__)
 #error "fpsan/amdgcn_wave.hpp is GPU-only; compile as HIP (or CUDA)."

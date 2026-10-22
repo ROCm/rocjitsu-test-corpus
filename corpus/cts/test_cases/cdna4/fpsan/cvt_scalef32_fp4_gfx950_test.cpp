@@ -29,7 +29,10 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <ios>
 #include <limits>
+#include <random>
+#include <type_traits>
 #include <vector>
 
 using fpsan::Conversions;

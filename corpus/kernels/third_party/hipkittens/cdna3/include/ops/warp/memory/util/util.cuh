@@ -4,6 +4,8 @@
  */
 #pragma once
 
+#include <cstdint>
+#include <type_traits>
 #include <hip/hip_runtime.h>
 #include <hip/amd_detail/amd_hip_runtime.h>
 #include <hip/amd_detail/hip_ldg.h>

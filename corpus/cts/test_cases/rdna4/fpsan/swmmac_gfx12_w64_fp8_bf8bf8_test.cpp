@@ -3,4 +3,6 @@
 
 #include "swmmac_gfx12_w64_parts.hpp"
 
+#include <gtest/gtest.h>
+
 TEST(SwmmacGfx12W64, F32_BF8_BF8_LayoutAndFpsan) { run_fp8_case<SwBf8Bf8>(0x8000); }

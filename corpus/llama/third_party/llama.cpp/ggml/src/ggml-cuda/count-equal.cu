@@ -1,6 +1,7 @@
 #include "common.cuh"
 #include "count-equal.cuh"
 
+#include <algorithm>
 #include <cstdint>
 
 template <typename T>

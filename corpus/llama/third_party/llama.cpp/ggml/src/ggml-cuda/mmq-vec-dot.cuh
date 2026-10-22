@@ -2,6 +2,7 @@
 
 #include "vecdotq.cuh"
 #include "mma.cuh"
+#include <cstdint>
 
 using namespace ggml_cuda_mma;
 
