@@ -23,9 +23,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <random>
 #include <stdexcept>
 #include <string>
-#include <random>
 #include <vector>
 
 static constexpr fpsan::Conversions kCC = fpsan::Conversions::Explicit;

@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
-#include "hip_test_utils.hpp"
 #include "fpsan_semantics.hpp"
+#include "hip_test_utils.hpp"
 #include "swmmac_gfx12_parts.hpp"
 
 #include <hip/hip_runtime.h>
