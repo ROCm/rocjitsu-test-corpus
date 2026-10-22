@@ -53,8 +53,8 @@ TEST(SwmmacGfx12, F16_F16_FpsanMatchesScalarReference) {
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     std::vector<std::uint64_t> ref = sw_reference_fpsan_h<S, _Float16, _Float16, _Float16>(d);
-    DeviceAllocations device_allocations;
-    std::uint16_t *dD = device_allocations.allocate<std::uint16_t>(kSwM * kSwN);
+    DeviceAllocations iteration_allocations;
+    std::uint16_t *dD = iteration_allocations.allocate<std::uint16_t>(kSwM * kSwN);
     k_swmmac_f16h_fpsan<S><<<1, WAVE>>>(dA, dB, dC, dp0, dp1, dI, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint16_t> got(kSwM * kSwN);

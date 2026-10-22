@@ -246,8 +246,8 @@ void widen_all_codes(Kern kern, const fpsan::detail::FpFormat &fmt, const char *
     unsigned packed[6];
     pack6(codes, 32, packed, 6);
     std::vector<unsigned> hp(packed, packed + 6);
-    DeviceAllocations device_allocations;
-    unsigned *dIn = device_allocations.to_dev(hp);
+    DeviceAllocations iteration_allocations;
+    unsigned *dIn = iteration_allocations.to_dev(hp);
     kern<<<1, 1>>>(dIn, dO, 1.0f);
     HIP_CHECK(hipDeviceSynchronize());
     auto got = from_dev(dO, 32);

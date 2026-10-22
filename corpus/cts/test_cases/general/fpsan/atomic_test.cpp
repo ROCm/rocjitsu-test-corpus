@@ -142,8 +142,8 @@ TEST(Atomic, FaddFpsanMatchesScalarRingSum) {
   float *dIn = device_allocations.to_dev(in);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     using V = Value<float, decltype(sem)::value, kCC>;
-    DeviceAllocations device_allocations;
-    V *dSlot = device_allocations.allocate<V>(1);
+    DeviceAllocations iteration_allocations;
+    V *dSlot = iteration_allocations.allocate<V>(1);
     V init{0.f};
     HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
     k_atomic_fadd<decltype(sem)::value><<<1, LANES>>>(dSlot, dIn);
@@ -206,8 +206,8 @@ TEST(Atomic, FminFpsanMatchesScalarMin) {
   float *dIn = device_allocations.to_dev(in);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     using V = Value<float, decltype(sem)::value, kCC>;
-    DeviceAllocations device_allocations;
-    V *dSlot = device_allocations.allocate<V>(1);
+    DeviceAllocations iteration_allocations;
+    V *dSlot = iteration_allocations.allocate<V>(1);
     V init{1e30f};
     HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
     k_atomic_fmin<decltype(sem)::value><<<1, LANES>>>(dSlot, dIn);
@@ -324,8 +324,8 @@ TEST(Atomic, FmaxFpsanMatchesScalarMax) {
   float *dIn = device_allocations.to_dev(in);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     using V = Value<float, decltype(sem)::value, kCC>;
-    DeviceAllocations device_allocations;
-    V *dSlot = device_allocations.allocate<V>(1);
+    DeviceAllocations iteration_allocations;
+    V *dSlot = iteration_allocations.allocate<V>(1);
     V init{-1e30f};
     HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
     k_atomic_fmax<decltype(sem)::value><<<1, LANES>>>(dSlot, dIn);
@@ -373,8 +373,8 @@ TEST(Atomic, Fadd64FpsanMatchesScalarRingSum) {
   double *dIn = device_allocations.to_dev(in);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     using V = Value<double, decltype(sem)::value, kCC>;
-    DeviceAllocations device_allocations;
-    V *dSlot = device_allocations.allocate<V>(1);
+    DeviceAllocations iteration_allocations;
+    V *dSlot = iteration_allocations.allocate<V>(1);
     V init{0.0};
     HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
     k_atomic_fadd64<decltype(sem)::value><<<1, LANES>>>(dSlot, dIn);
@@ -495,8 +495,8 @@ TEST(Atomic, Fmin64FpsanMatchesScalarMin) {
   double *dIn = device_allocations.to_dev(in);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     using V = Value<double, decltype(sem)::value, kCC>;
-    DeviceAllocations device_allocations;
-    V *dSlot = device_allocations.allocate<V>(1);
+    DeviceAllocations iteration_allocations;
+    V *dSlot = iteration_allocations.allocate<V>(1);
     V init{1e300};
     HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
     k_atomic_fmin64<decltype(sem)::value><<<1, LANES>>>(dSlot, dIn);
@@ -519,8 +519,8 @@ TEST(Atomic, Fmax64FpsanMatchesScalarMax) {
   double *dIn = device_allocations.to_dev(in);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     using V = Value<double, decltype(sem)::value, kCC>;
-    DeviceAllocations device_allocations;
-    V *dSlot = device_allocations.allocate<V>(1);
+    DeviceAllocations iteration_allocations;
+    V *dSlot = iteration_allocations.allocate<V>(1);
     V init{-1e300};
     HIP_CHECK(hipMemcpy(dSlot, &init, sizeof(V), hipMemcpyHostToDevice));
     k_atomic_fmax64<decltype(sem)::value><<<1, LANES>>>(dSlot, dIn);

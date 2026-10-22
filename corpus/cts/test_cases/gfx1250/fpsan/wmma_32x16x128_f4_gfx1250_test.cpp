@@ -263,8 +263,8 @@ TEST(WmmaF4_32x16x128, WrapperFloatAndFPSan) {
         pref[m * N + n] = acc.fpsan_payload();
       }
 
-    DeviceAllocations device_allocations;
-    std::uint32_t *dDp = device_allocations.allocate<std::uint32_t>(M * N);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dDp = iteration_allocations.allocate<std::uint32_t>(M * N);
     k_wrap_fpsan<S><<<1, 32>>>(dA, dB, dC, dDp);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> gotp(M * N);
@@ -391,8 +391,8 @@ template <int Cmod> static void run_modifier_f4() {
         pref[m * N + n] = acc.fpsan_payload();
       }
 
-    DeviceAllocations device_allocations;
-    std::uint32_t *dDp = device_allocations.allocate<std::uint32_t>(M * N);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dDp = iteration_allocations.allocate<std::uint32_t>(M * N);
     k_f4_mod_fpsan<Cmod, S><<<1, 32>>>(dA, dB, dC, dDp);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> gotp(M * N);
@@ -608,16 +608,16 @@ template <bool SCALE16, int SFMT> static void run_scale(const char *tag) {
         w |= (unsigned(eB[n * 4 + by]) & 0xFF) << (8 * by);
       SB[n] = w;
     }
-    DeviceAllocations device_allocations;
-    unsigned *dSA = device_allocations.to_dev(SA);
-    unsigned *dSB = device_allocations.to_dev(SB);
+    DeviceAllocations branch_allocations;
+    unsigned *dSA = branch_allocations.to_dev(SA);
+    unsigned *dSB = branch_allocations.to_dev(SB);
     k_scale_float<SFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDf);
     HIP_CHECK(hipDeviceSynchronize());
     fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
       constexpr Semantics S = decltype(sem)::value;
       std::vector<std::uint32_t> pref = make_pref(sem);
-      DeviceAllocations device_allocations;
-      std::uint32_t *dDp = device_allocations.allocate<std::uint32_t>(M * N);
+      DeviceAllocations iteration_allocations;
+      std::uint32_t *dDp = iteration_allocations.allocate<std::uint32_t>(M * N);
       k_scale_fpsan<SFMT, S><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDp);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<std::uint32_t> gotp(M * N);
@@ -642,16 +642,16 @@ template <bool SCALE16, int SFMT> static void run_scale(const char *tag) {
         w |= static_cast<unsigned long long>(eB[n * 8 + by] & 0xFF) << (8 * by);
       SB[n] = w;
     }
-    DeviceAllocations device_allocations;
-    unsigned long long *dSA = device_allocations.to_dev(SA);
-    unsigned long long *dSB = device_allocations.to_dev(SB);
+    DeviceAllocations branch_allocations;
+    unsigned long long *dSA = branch_allocations.to_dev(SA);
+    unsigned long long *dSB = branch_allocations.to_dev(SB);
     k_scale16_float<SFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDf);
     HIP_CHECK(hipDeviceSynchronize());
     fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
       constexpr Semantics S = decltype(sem)::value;
       std::vector<std::uint32_t> pref = make_pref(sem);
-      DeviceAllocations device_allocations;
-      std::uint32_t *dDp = device_allocations.allocate<std::uint32_t>(M * N);
+      DeviceAllocations iteration_allocations;
+      std::uint32_t *dDp = iteration_allocations.allocate<std::uint32_t>(M * N);
       k_scale16_fpsan<SFMT, S><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDp);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<std::uint32_t> gotp(M * N);
@@ -788,8 +788,8 @@ static void onehot_sweep(int srcLane) {
   for (int s = 0; s < 128; ++s) {
     std::vector<std::uint32_t> Apack(32 * 16, 0u);
     pack_nibble(&Apack[srcLane * 16], s, one);
-    DeviceAllocations device_allocations;
-    std::uint32_t *dA = device_allocations.to_dev(Apack);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dA = iteration_allocations.to_dev(Apack);
     k_raw<<<1, 32>>>(dA, dB, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<float> draw(512);
@@ -850,8 +850,8 @@ static void kprobe_row0(int srcLane) {
   for (int sa = 0; sa < 64; ++sa) {
     std::vector<std::uint32_t> Apack(32 * 16, 0u);
     pack_nibble(&Apack[srcLane * 16], sa, one);
-    DeviceAllocations device_allocations;
-    std::uint32_t *dA = device_allocations.to_dev(Apack);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dA = iteration_allocations.to_dev(Apack);
     int kk = 0;
     for (int b = 0; b < 7; ++b) {
       k_raw<<<1, 32>>>(dA, dBbit[b], dD);
@@ -921,8 +921,8 @@ static void scale_probe() {
   for (int L = 0; L < 32; ++L) {
     std::vector<unsigned> SA(32, 0x7f7f7f7fu);
     SA[L] = 0x80808080u;
-    DeviceAllocations device_allocations;
-    unsigned *dSA = device_allocations.to_dev(SA);
+    DeviceAllocations iteration_allocations;
+    unsigned *dSA = iteration_allocations.to_dev(SA);
     k_raw_scale<<<1, 32>>>(dA, dB, dSA, dSB, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<float> draw(512);
@@ -955,14 +955,14 @@ static void scale_byte_probe(int scaleLane) {
   for (int k0 = 0; k0 < K; ++k0) {
     std::vector<std::uint32_t> Apack(32 * 16, 0u);
     pack_nibble(&Apack[a_lane(0, k0) * 16], a_slot(0, k0), one);
-    DeviceAllocations device_allocations;
-    std::uint32_t *dA = device_allocations.to_dev(Apack);
+    DeviceAllocations k_iteration_allocations;
+    std::uint32_t *dA = k_iteration_allocations.to_dev(Apack);
     int byte = -1;
     for (int b = 0; b < 4; ++b) {
       std::vector<unsigned> SA(32, 0x7f7f7f7fu);
       SA[scaleLane] = (0x7f7f7f7fu & ~(0xFFu << (8 * b))) | (0x80u << (8 * b));
-      DeviceAllocations device_allocations;
-      unsigned *dSA = device_allocations.to_dev(SA);
+      DeviceAllocations iteration_allocations;
+      unsigned *dSA = iteration_allocations.to_dev(SA);
       k_raw_scale<<<1, 32>>>(dA, dB, dSA, dSB, dD);
       HIP_CHECK(hipDeviceSynchronize());
       float v = 0;
@@ -1002,8 +1002,8 @@ static void scaleB_probe(int n0) {
   for (int L = 0; L < 32; ++L) {
     std::vector<unsigned> SB(32, 0x7f7f7f7fu);
     SB[L] = 0x80808080u;
-    DeviceAllocations device_allocations;
-    unsigned *dSB = device_allocations.to_dev(SB);
+    DeviceAllocations iteration_allocations;
+    unsigned *dSB = iteration_allocations.to_dev(SB);
     k_raw_scale<<<1, 32>>>(dA, dB, dSA, dSB, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<float> draw(512);

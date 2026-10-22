@@ -299,8 +299,8 @@ template <class FP8, class SrcElem> void run_b(const fpsan::detail::FpFormat &fm
 
   // ---- Float: byte `l&3` == host encode(SrcElem(x)/scale), others preserved.
   {
-    DeviceAllocations device_allocations;
-    int *dO = device_allocations.allocate<int>(N);
+    DeviceAllocations iteration_allocations;
+    int *dO = iteration_allocations.allocate<int>(N);
     k_b<Semantics::Native, FP8, SrcElem, int><<<1, N>>>(old, dV, 0xABCDu, scale, dO);
     HIP_CHECK(hipDeviceSynchronize());
     auto g = from_dev(dO, N);
@@ -320,8 +320,8 @@ template <class FP8, class SrcElem> void run_b(const fpsan::detail::FpFormat &fm
     constexpr Semantics S = decltype(sem)::value;
     using VF = Value<float, S, kCC>;
     using VS = Value<SrcElem, S, kCC>;
-    DeviceAllocations device_allocations;
-    unsigned *dO = device_allocations.allocate<unsigned>(N);
+    DeviceAllocations iteration_allocations;
+    unsigned *dO = iteration_allocations.allocate<unsigned>(N);
     // A different seed must give the same answer (opaque).
     k_b<S, FP8, SrcElem, unsigned><<<1, N>>>(old, dV, 0x12345u, scale, dO);
     HIP_CHECK(hipDeviceSynchronize());

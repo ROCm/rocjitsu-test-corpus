@@ -459,8 +459,8 @@ template <int AFMT> static void run_probe(const char *tag) {
   for (int k0 = 0; k0 < K; ++k0) {
     std::vector<std::uint32_t> B1(32 * 16, 0u);
     put(&B1[ab_lane(0, k0) * 16], ab_slot(k0), f32_to_narrow(1.f, fmt_of(AFMT)));
-    DeviceAllocations device_allocations;
-    std::uint32_t *dB1 = device_allocations.to_dev(B1);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dB1 = iteration_allocations.to_dev(B1);
     k_probe2<AFMT><<<1, 32>>>(dA, dB1, dSA, dSB, dD);
     HIP_CHECK(hipDeviceSynchronize());
     float d00 = 0;
@@ -532,8 +532,8 @@ template <int AFMT> static void run_probe16(const char *tag) {
   for (int k0 = 0; k0 < K; ++k0) {
     std::vector<std::uint32_t> B1(32 * 16, 0u);
     put(&B1[ab_lane(0, k0) * 16], ab_slot(k0), f32_to_narrow(1.f, fmt_of(AFMT)));
-    DeviceAllocations device_allocations;
-    std::uint32_t *dB1 = device_allocations.to_dev(B1);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dB1 = iteration_allocations.to_dev(B1);
     k_probe16<AFMT><<<1, 32>>>(dA, dB1, dSA, dSB, dD);
     HIP_CHECK(hipDeviceSynchronize());
     float d00 = 0;

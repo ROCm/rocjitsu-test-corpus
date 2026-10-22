@@ -234,8 +234,8 @@ TEST(MfmaF64_16x16x4, FpsanMatchesScalarReference) {
           acc = acc + VD(m.A[i * F64_K + k]) * VD(m.B[k * F64_N + j]);
         ref[i * F64_N + j] = acc.fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint64_t *dD = device_allocations.allocate<std::uint64_t>(F64_M * F64_N);
+    DeviceAllocations iteration_allocations;
+    std::uint64_t *dD = iteration_allocations.allocate<std::uint64_t>(F64_M * F64_N);
     k_mfma_f64_16x16x4<S, std::uint64_t><<<1, WAVE>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint64_t> got(F64_M * F64_N);
@@ -295,8 +295,8 @@ TEST(MfmaF64_16x16x4_NEG5, FpsanMatchesScalarReference) {
                           host_neg_if(VD(m.B[k * F64_N + j]), (NEG & 2) != 0);
         ref[i * F64_N + j] = acc.fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint64_t *dD = device_allocations.allocate<std::uint64_t>(F64_M * F64_N);
+    DeviceAllocations iteration_allocations;
+    std::uint64_t *dD = iteration_allocations.allocate<std::uint64_t>(F64_M * F64_N);
     k_mfma_f64_16x16x4<S, std::uint64_t, 0, 0, NEG><<<1, WAVE>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint64_t> got(F64_M * F64_N);
@@ -382,8 +382,8 @@ TEST(MfmaF64_4x4x4, FpsanMatchesScalarReference) {
         acc = acc + VD(A[16 * k + 4 * b + i]) * VD(B[16 * k + 4 * b + j]);
       ref[L] = acc.fpsan_payload();
     }
-    DeviceAllocations device_allocations;
-    std::uint64_t *dD = device_allocations.allocate<std::uint64_t>(WAVE);
+    DeviceAllocations iteration_allocations;
+    std::uint64_t *dD = iteration_allocations.allocate<std::uint64_t>(WAVE);
     k_mfma_f64_4x4x4<S, std::uint64_t><<<1, WAVE>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint64_t> got(WAVE);
@@ -443,8 +443,8 @@ TEST(MfmaF64_4x4x4_NEG5, FpsanMatchesScalarReference) {
       }
       ref[L] = acc.fpsan_payload();
     }
-    DeviceAllocations device_allocations;
-    std::uint64_t *dD = device_allocations.allocate<std::uint64_t>(WAVE);
+    DeviceAllocations iteration_allocations;
+    std::uint64_t *dD = iteration_allocations.allocate<std::uint64_t>(WAVE);
     k_mfma_f64_4x4x4<S, std::uint64_t, 0, 0, NEG><<<1, WAVE>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint64_t> got(WAVE);
@@ -635,8 +635,8 @@ template <class T> void run_legf32_fpsan() {
                             VF(host_legf32_b_value<T>(m.B, b, k, j));
           ref[(b * T::M + i) * T::N + j] = acc.fpsan_payload();
         }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(total);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(total);
     k_legf32_p<T, S><<<1, WAVE>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(total);
@@ -868,8 +868,8 @@ template <class T> void run_legf16_fpsan() {
                     fpsan::cast<float>(Value<AE, S, kCC>(AE(host_legf16_b_value<T>(m.B, b, k, j))));
           ref[(b * T::M + i) * T::N + j] = acc.fpsan_payload();
         }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(total);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(total);
     k_legf16_p<T, S><<<1, WAVE>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(total);

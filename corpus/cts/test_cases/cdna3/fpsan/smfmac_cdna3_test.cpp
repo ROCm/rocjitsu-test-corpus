@@ -286,8 +286,8 @@ template <class E> static void run_smf_fpsan(int m, int n, int k) {
         ref[i * n + j] = acc.fpsan_payload();
       }
 
-    DeviceAllocations device_allocations;
-    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(ref.size());
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(ref.size());
     if (m == 16)
       k_smf_16x16x32<E, S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dD);
     else
@@ -481,8 +481,8 @@ template <class AE, class BE> static void run_smf_fp8(int m, int k) {
         refp[i * n + j] = accp.fpsan_payload();
       }
 
-    DeviceAllocations device_allocations;
-    std::uint32_t *dDp = device_allocations.allocate<std::uint32_t>(refp.size());
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dDp = iteration_allocations.allocate<std::uint32_t>(refp.size());
     if (m == 16)
       k_smf_fp8_16x16x64<AE, BE, S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dDp);
     else

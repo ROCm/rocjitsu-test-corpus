@@ -226,8 +226,8 @@ template <int CBSZ, int ABID> void run_smf64_f16_fpsan() {
         }
         ref[i * QN + j] = acc.fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(QM * QN);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(QM * QN);
     k_smf64<CBSZ, ABID, S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(QM * QN);
@@ -419,8 +419,8 @@ TEST(SmfmacF16_32x32x32, FpsanMatchesScalarReference) {
         }
         ref[i * TN + j] = acc.fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(TM * TN);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(TM * TN);
     k_smf32<S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(TM * TN);
@@ -525,8 +525,8 @@ TEST(SmfmacBf16_16x16x64, FpsanMatchesScalarReference) {
         }
         ref[i * QN + j] = acc.fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(QM * QN);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(QM * QN);
     k_smf64_bf16<S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(QM * QN);
@@ -631,8 +631,8 @@ TEST(SmfmacBf16_32x32x32, FpsanMatchesScalarReference) {
         }
         ref[i * TN + j] = acc.fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(TM * TN);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(TM * TN);
     k_smf32_bf16<S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(TM * TN);
@@ -827,8 +827,8 @@ template <class E> static void cdna3_fpsan_test(int Mm, int Nn, int Kk) {
         }
         ref[i * Nn + j] = acc.fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(Mm * Nn);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(Mm * Nn);
     if (Mm == 16)
       k_smf1632<E, S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dD);
     else
@@ -1040,8 +1040,8 @@ template <class AE, class BE> static void fp8_smf_test(int Mm, int Kk) {
         }
         refp[i * Nn + j] = accp.fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dDp = device_allocations.allocate<std::uint32_t>(Mm * Nn);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dDp = iteration_allocations.allocate<std::uint32_t>(Mm * Nn);
     if (Mm == 16)
       k_smf_fp8_1664<AE, BE, S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dDp);
     else
@@ -1256,8 +1256,8 @@ template <class AE, class BE> static void fp8big_smf_test(int Mm, int Kk) {
         }
         refp[i * Nn + j] = accp.fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dDp = device_allocations.allocate<std::uint32_t>(Mm * Nn);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dDp = iteration_allocations.allocate<std::uint32_t>(Mm * Nn);
     if (Mm == 16)
       k_smf_fp8big_16128<AE, BE, S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dI, dDp);
     else

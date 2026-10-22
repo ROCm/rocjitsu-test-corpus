@@ -186,8 +186,8 @@ template <class FP8> void run_pk_roundtrip() {
     x = static_cast<_Float16>(fpsan_test::pick_int_valued<float>(rng, -4, 4)); // exact in fp8
   _Float16 *dIn = device_allocations.to_dev(in);
   {
-    DeviceAllocations device_allocations;
-    _Float16 *dO = device_allocations.allocate<_Float16>(2 * LANES);
+    DeviceAllocations iteration_allocations;
+    _Float16 *dO = iteration_allocations.allocate<_Float16>(2 * LANES);
     k_pk_roundtrip<Semantics::Native, FP8, _Float16><<<1, LANES>>>(dIn, dO);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<_Float16> got(2 * LANES);
@@ -202,8 +202,8 @@ template <class FP8> void run_pk_roundtrip() {
     for (int i = 0; i < 2 * LANES; ++i)
       ref[i] = static_cast<std::uint16_t>(
           fpsan::cast<_Float16>(fpsan::cast<FP8>(VH(in[i]))).fpsan_payload());
-    DeviceAllocations device_allocations;
-    std::uint16_t *dO = device_allocations.allocate<std::uint16_t>(2 * LANES);
+    DeviceAllocations iteration_allocations;
+    std::uint16_t *dO = iteration_allocations.allocate<std::uint16_t>(2 * LANES);
     k_pk_roundtrip<S, FP8, std::uint16_t><<<1, LANES>>>(dIn, dO);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint16_t> got(2 * LANES);
@@ -297,8 +297,8 @@ template <class FP8> void run_sr_roundtrip() {
     x = static_cast<_Float16>(fpsan_test::pick_int_valued<float>(rng, -4, 4));
   _Float16 *dIn = device_allocations.to_dev(in);
   {
-    DeviceAllocations device_allocations;
-    _Float16 *dO = device_allocations.allocate<_Float16>(LANES);
+    DeviceAllocations iteration_allocations;
+    _Float16 *dO = iteration_allocations.allocate<_Float16>(LANES);
     k_sr_roundtrip<Semantics::Native, FP8, _Float16><<<1, LANES>>>(dIn, dO);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<_Float16> got(LANES);
@@ -313,8 +313,8 @@ template <class FP8> void run_sr_roundtrip() {
     for (int i = 0; i < LANES; ++i)
       ref[i] = static_cast<std::uint16_t>(
           fpsan::cast<_Float16>(fpsan::cast<FP8>(VH(in[i]))).fpsan_payload());
-    DeviceAllocations device_allocations;
-    std::uint16_t *dO = device_allocations.allocate<std::uint16_t>(LANES);
+    DeviceAllocations iteration_allocations;
+    std::uint16_t *dO = iteration_allocations.allocate<std::uint16_t>(LANES);
     k_sr_roundtrip<S, FP8, std::uint16_t><<<1, LANES>>>(dIn, dO);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint16_t> got(LANES);

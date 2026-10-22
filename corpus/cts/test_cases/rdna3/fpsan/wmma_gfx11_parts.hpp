@@ -321,8 +321,8 @@ template <class Traits> void run_fpsan_matches_scalar_reference() {
         ref[mm * N + nn] = acc.fpsan_payload();
       }
 
-    DeviceAllocations device_allocations;
-    CBits *dD = device_allocations.allocate<CBits>(M * N);
+    DeviceAllocations iteration_allocations;
+    CBits *dD = iteration_allocations.allocate<CBits>(M * N);
     k_fpsan<Traits, S><<<1, Traits::wave_size>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<CBits> got(M * N);
@@ -360,8 +360,8 @@ template <class Traits> void run_tied_preserves_unselected() {
 
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
-    DeviceAllocations device_allocations;
-    CBits *dFpsan = device_allocations.allocate<CBits>(count);
+    DeviceAllocations iteration_allocations;
+    CBits *dFpsan = iteration_allocations.allocate<CBits>(count);
     k_tied_preserve_fpsan<Traits, S><<<1, Traits::wave_size>>>(dFpsan);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<CBits> got_fpsan(count);

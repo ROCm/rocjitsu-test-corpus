@@ -63,8 +63,8 @@ TEST(AmdgcnLdexp, F32) {
     const int n = kExps[e];
     // Float: bit-exact vs host std::ldexp.
     {
-      DeviceAllocations device_allocations;
-      float *dO = device_allocations.allocate<float>(N);
+      DeviceAllocations iteration_allocations;
+      float *dO = iteration_allocations.allocate<float>(N);
       k_ldexpf<Semantics::Native, float><<<1, N>>>(dIn, dO, n);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<float> got(N);
@@ -79,8 +79,8 @@ TEST(AmdgcnLdexp, F32) {
       std::vector<std::uint32_t> ref(N);
       for (int i = 0; i < N; ++i)
         ref[i] = (VF(in[i]) * VF(std::ldexp(1.0f, n))).fpsan_payload();
-      DeviceAllocations device_allocations;
-      std::uint32_t *dO = device_allocations.allocate<std::uint32_t>(N);
+      DeviceAllocations iteration_allocations;
+      std::uint32_t *dO = iteration_allocations.allocate<std::uint32_t>(N);
       k_ldexpf<S, std::uint32_t><<<1, N>>>(dIn, dO, n);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<std::uint32_t> got(N);
@@ -114,8 +114,8 @@ TEST(AmdgcnLdexp, F64) {
   for (int e = 0; e < kNExp; ++e) {
     const int n = kExps[e];
     {
-      DeviceAllocations device_allocations;
-      double *dO = device_allocations.allocate<double>(N);
+      DeviceAllocations iteration_allocations;
+      double *dO = iteration_allocations.allocate<double>(N);
       k_ldexp<Semantics::Native, double><<<1, N>>>(dIn, dO, n);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<double> got(N);
@@ -129,8 +129,8 @@ TEST(AmdgcnLdexp, F64) {
       std::vector<std::uint64_t> ref(N);
       for (int i = 0; i < N; ++i)
         ref[i] = (VD(in[i]) * VD(std::ldexp(1.0, n))).fpsan_payload();
-      DeviceAllocations device_allocations;
-      std::uint64_t *dO = device_allocations.allocate<std::uint64_t>(N);
+      DeviceAllocations iteration_allocations;
+      std::uint64_t *dO = iteration_allocations.allocate<std::uint64_t>(N);
       k_ldexp<S, std::uint64_t><<<1, N>>>(dIn, dO, n);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<std::uint64_t> got(N);
@@ -164,8 +164,8 @@ TEST(AmdgcnLdexp, F16) {
   for (int e = 0; e < kNExp; ++e) {
     const int n = kExps[e];
     {
-      DeviceAllocations device_allocations;
-      float *dO = device_allocations.allocate<float>(N);
+      DeviceAllocations iteration_allocations;
+      float *dO = iteration_allocations.allocate<float>(N);
       k_ldexph<Semantics::Native, float><<<1, N>>>(dIn, dO, n);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<float> got(N);
@@ -183,8 +183,8 @@ TEST(AmdgcnLdexp, F16) {
       for (int i = 0; i < N; ++i)
         ref[i] = (VH(static_cast<_Float16>(in[i])) * VH(static_cast<_Float16>(std::ldexp(1.0f, n))))
                      .fpsan_payload();
-      DeviceAllocations device_allocations;
-      std::uint32_t *dO = device_allocations.allocate<std::uint32_t>(N);
+      DeviceAllocations iteration_allocations;
+      std::uint32_t *dO = iteration_allocations.allocate<std::uint32_t>(N);
       k_ldexph<S, std::uint32_t><<<1, N>>>(dIn, dO, n);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<std::uint32_t> got(N);

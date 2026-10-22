@@ -216,8 +216,8 @@ template <class FP8, class SrcVEC, class SrcElem> void run_roundtrip() {
   float *dIn = device_allocations.to_dev(in);
   // Float: round-trip recovers the input exactly for exact-in-fp8 values.
   {
-    DeviceAllocations device_allocations;
-    float *dO = device_allocations.allocate<float>(2 * LANES);
+    DeviceAllocations iteration_allocations;
+    float *dO = iteration_allocations.allocate<float>(2 * LANES);
     k_roundtrip<Semantics::Native, FP8, SrcVEC, SrcElem, float><<<1, LANES>>>(dIn, dO, scale);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<float> got(2 * LANES);
@@ -237,8 +237,8 @@ template <class FP8, class SrcVEC, class SrcElem> void run_roundtrip() {
       auto packed = fpsan::cast<FP8>(fpsan::cast<float>(src) / VF(scale));
       ref[i] = (fpsan::cast<float>(packed) * VF(scale)).fpsan_payload();
     }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dO = device_allocations.allocate<std::uint32_t>(2 * LANES);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dO = iteration_allocations.allocate<std::uint32_t>(2 * LANES);
     k_roundtrip<S, FP8, SrcVEC, SrcElem, std::uint32_t><<<1, LANES>>>(dIn, dO, scale);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(2 * LANES);

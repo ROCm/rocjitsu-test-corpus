@@ -382,8 +382,8 @@ void run_fp8_layout_and_fpsan(std::uint32_t seed, WrapFloatFn wf, MakeFpsanFn ma
     constexpr Semantics S = decltype(sem)::value;
     auto wp = make_wp(sem);
     std::vector<std::uint32_t> ref_p = sw_reference_fp8_fpsan<S, AScalar, BScalar>(d);
-    DeviceAllocations device_allocations;
-    std::uint32_t *dDp = device_allocations.allocate<std::uint32_t>(kSwM * kSwN);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dDp = iteration_allocations.allocate<std::uint32_t>(kSwM * kSwN);
     k_swmmac_fp8_kernel<S, AScalar, BScalar, std::uint32_t>
         <<<1, WAVE>>>(dA, dB, dC, dp0, dp1, dI, dDp, wp);
     HIP_CHECK(hipDeviceSynchronize());

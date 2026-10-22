@@ -192,8 +192,8 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale16_fpsan()
                           fpsan::cast<float>(VB(BElem(m.B[k * SN + j])));
         ref[i * SN + j] = (VF(m.C[i * SN + j]) + dot * vsa * vsb).fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(SM * SN);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(SM * SN);
     k_scale16<S, std::uint32_t, AElem, BElem, CBSZ, BLGP><<<1, WAVE>>>(dA, dB, dC, dD, sa, sb);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(SM * SN);
@@ -340,8 +340,8 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale32_fpsan()
                           fpsan::cast<float>(VB(BElem(m.B[k * S2N + j])));
         ref[i * S2N + j] = (VF(m.C[i * S2N + j]) + dot * vsa * vsb).fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(S2M * S2N);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(S2M * S2N);
     k_scale32<S, std::uint32_t, AElem, BElem, CBSZ, BLGP><<<1, WAVE>>>(dA, dB, dC, dD, sa, sb);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(S2M * S2N);
@@ -547,8 +547,8 @@ template <int CBSZ, int BLGP> void run_scale_sub16_fpsan() {
                           sub_canonical_value<BLGP, S>(static_cast<unsigned>(Bp[k * SN + j]));
         ref[i * SN + j] = (VF(Cm[i * SN + j]) + dot * vsa * vsb).fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(SM * SN);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(SM * SN);
     k_scale_sub16<S, CBSZ, BLGP, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dD, sa, sb);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(SM * SN);
@@ -691,8 +691,8 @@ template <int CBSZ, int BLGP> void run_scale_sub32_fpsan() {
                           sub_canonical_value<BLGP, S>(static_cast<unsigned>(Bp[k * S2N + j]));
         ref[i * S2N + j] = (VF(Cm[i * S2N + j]) + dot * vsa * vsb).fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(S2M * S2N);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(S2M * S2N);
     k_scale_sub32<S, CBSZ, BLGP, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dD, sa, sb);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(S2M * S2N);
@@ -816,8 +816,8 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale16_perbloc
         }
         ref[i * SN + j] = static_cast<float>(acc);
       }
-    DeviceAllocations device_allocations;
-    float *dD = device_allocations.allocate<float>(SM * SN);
+    DeviceAllocations iteration_allocations;
+    float *dD = iteration_allocations.allocate<float>(SM * SN);
     k_scale16_pb<Semantics::Native, float, AElem, BElem, CBSZ, BLGP>
         <<<1, WAVE>>>(dA, dB, dC, dD, dSA, dSB);
     HIP_CHECK(hipDeviceSynchronize());
@@ -845,8 +845,8 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale16_perbloc
         }
         ref[i * SN + j] = acc.fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(SM * SN);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(SM * SN);
     k_scale16_pb<S, std::uint32_t, AElem, BElem, CBSZ, BLGP><<<1, WAVE>>>(dA, dB, dC, dD, dSA, dSB);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(SM * SN);
@@ -932,8 +932,8 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale32_perbloc
         }
         ref[i * S2N + j] = static_cast<float>(acc);
       }
-    DeviceAllocations device_allocations;
-    float *dD = device_allocations.allocate<float>(S2M * S2N);
+    DeviceAllocations iteration_allocations;
+    float *dD = iteration_allocations.allocate<float>(S2M * S2N);
     k_scale32_pb<Semantics::Native, float, AElem, BElem, CBSZ, BLGP>
         <<<1, WAVE>>>(dA, dB, dC, dD, dSA, dSB);
     HIP_CHECK(hipDeviceSynchronize());
@@ -960,8 +960,8 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale32_perbloc
         }
         ref[i * S2N + j] = acc.fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(S2M * S2N);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(S2M * S2N);
     k_scale32_pb<S, std::uint32_t, AElem, BElem, CBSZ, BLGP><<<1, WAVE>>>(dA, dB, dC, dD, dSA, dSB);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(S2M * S2N);
@@ -1055,8 +1055,8 @@ template <int CBSZ, int BLGP> void run_scale_sub16_perblock_fpsan() {
         }
         ref[i * SN + j] = acc.fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(SM * SN);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(SM * SN);
     k_scale_sub16_pb<S, CBSZ, BLGP, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dD, dSA, dSB);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(SM * SN);
@@ -1294,8 +1294,8 @@ template <bool AIsSub, class Fp8Elem, int CBSZ, int BLGP> void run_scale16_mixed
           dot = dot + Av(i, k) * Bv(k, j);
         ref[i * SN + j] = (VF(Cm[i * SN + j]) + dot * vsa * vsb).fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(SM * SN);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(SM * SN);
     if constexpr (AIsSub)
       k_scale16_mix_b8<S, std::uint32_t, Fp8Elem, CBSZ, BLGP>
           <<<1, WAVE>>>(dSub, dF, dC, dD, sa, sb);
@@ -1517,8 +1517,8 @@ template <bool AIsSub, class Fp8Elem, int CBSZ, int BLGP> void run_scale32_mixed
           dot = dot + Av(i, k) * Bv(k, j);
         ref[i * S2N + j] = (VF(Cm[i * S2N + j]) + dot * vsa * vsb).fpsan_payload();
       }
-    DeviceAllocations device_allocations;
-    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(S2M * S2N);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(S2M * S2N);
     if constexpr (AIsSub)
       k_scale32_mix_b8<S, std::uint32_t, Fp8Elem, CBSZ, BLGP>
           <<<1, WAVE>>>(dSub, dF, dC, dD, sa, sb);

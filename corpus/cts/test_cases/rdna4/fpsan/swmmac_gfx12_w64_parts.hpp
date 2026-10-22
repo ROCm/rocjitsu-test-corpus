@@ -431,8 +431,8 @@ template <class Traits> void run_h_case(std::uint32_t seed) {
     constexpr Semantics S = decltype(sem)::value;
     std::vector<std::uint64_t> ref_p =
         sw_reference_fpsan_h<typename Traits::AScalar, typename Traits::BScalar, Out, S>(d);
-    DeviceAllocations device_allocations;
-    Payload *dP = device_allocations.allocate<Payload>(M * N);
+    DeviceAllocations iteration_allocations;
+    Payload *dP = iteration_allocations.allocate<Payload>(M * N);
     k_swmmac_h<Traits, S><<<1, WAVE>>>(dA, dB, dC, dp0, dp1, dI, dP);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<Payload> got_p(M * N);
@@ -467,8 +467,8 @@ template <class Traits> void run_fp8_case(std::uint32_t seed) {
     constexpr Semantics S = decltype(sem)::value;
     std::vector<std::uint32_t> ref_p =
         sw_reference_fp8_fpsan<typename Traits::AScalar, typename Traits::BScalar, S>(d);
-    DeviceAllocations device_allocations;
-    std::uint32_t *dP = device_allocations.allocate<std::uint32_t>(M * N);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dP = iteration_allocations.allocate<std::uint32_t>(M * N);
     k_swmmac_fp8<Traits, S><<<1, WAVE>>>(dA, dB, dC, dp0, dp1, dI, dP);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got_p(M * N);
