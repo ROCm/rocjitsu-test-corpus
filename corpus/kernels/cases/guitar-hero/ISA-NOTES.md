@@ -91,7 +91,8 @@ corrected prologue, but that simulator revision treated
 Neither audit covers the subsequent compare/store correction, restored
 low-half DPP8 and legacy-FMAC probes, populated VOP3 checkpoint, or restored
 packed conversions in the current 490-checkpoint stream. A clean rerun of both
-registered cases from the current tree with RocJITsu
+registered cases from corpus revision
+`aaac2c7924033ca3dfac2023dffe5bba5809ff5d` with RocJITsu revision
 `b6fc339bc3b6e63db65192c1130f0c3ea942338f` and `configs/gfx1030.json` still
 aborted before kernel launch with `Unsupported encoding value for scalar write:
 125`; no current Guitar Hero probe executed. No clean simulator run of the
