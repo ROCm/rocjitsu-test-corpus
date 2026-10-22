@@ -50,6 +50,7 @@ template <Semantics S, class Out> __global__ void k_ldexpf(const float *in, Out 
 }
 
 TEST(AmdgcnLdexp, F32) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const int N = 64;
@@ -57,20 +58,19 @@ TEST(AmdgcnLdexp, F32) {
   std::mt19937 rng = fpsan_test::make_rng();
   for (auto &x : in)
     x = fpsan_test::pick_int_valued<float>(rng, -8, 8); // exact mantissa
-  float *dIn = to_dev(in);
+  float *dIn = device_allocations.to_dev(in);
   for (int e = 0; e < kNExp; ++e) {
     const int n = kExps[e];
     // Float: bit-exact vs host std::ldexp.
     {
-      float *dO;
-      HIP_CHECK(hipMalloc(&dO, N * sizeof(float)));
+      DeviceAllocations iteration_allocations;
+      float *dO = iteration_allocations.allocate<float>(N);
       k_ldexpf<Semantics::Native, float><<<1, N>>>(dIn, dO, n);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<float> got(N);
       HIP_CHECK(hipMemcpy(got.data(), dO, N * sizeof(float), hipMemcpyDeviceToHost));
       for (int i = 0; i < N; ++i)
         EXPECT_EQ(got[i], std::ldexp(in[i], n)) << "n=" << n << " i=" << i;
-      (void)hipFree(dO);
     }
     // FPSan: payload == (v * 2^n) in the ring, for every algebraic model.
     fpsan_test::for_each_fpsan_semantics([&](auto sem) {
@@ -79,18 +79,16 @@ TEST(AmdgcnLdexp, F32) {
       std::vector<std::uint32_t> ref(N);
       for (int i = 0; i < N; ++i)
         ref[i] = (VF(in[i]) * VF(std::ldexp(1.0f, n))).fpsan_payload();
-      std::uint32_t *dO;
-      HIP_CHECK(hipMalloc(&dO, N * sizeof(std::uint32_t)));
+      DeviceAllocations iteration_allocations;
+      std::uint32_t *dO = iteration_allocations.allocate<std::uint32_t>(N);
       k_ldexpf<S, std::uint32_t><<<1, N>>>(dIn, dO, n);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<std::uint32_t> got(N);
       HIP_CHECK(hipMemcpy(got.data(), dO, N * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
       for (int i = 0; i < N; ++i)
         EXPECT_EQ(got[i], ref[i]) << "FPSan n=" << n << " i=" << i;
-      (void)hipFree(dO);
     });
   }
-  (void)hipFree(dIn);
 }
 
 template <Semantics S, class Out> __global__ void k_ldexp(const double *in, Out *out, int n) {
@@ -104,6 +102,7 @@ template <Semantics S, class Out> __global__ void k_ldexp(const double *in, Out 
 }
 
 TEST(AmdgcnLdexp, F64) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const int N = 64;
@@ -111,19 +110,18 @@ TEST(AmdgcnLdexp, F64) {
   std::mt19937 rng = fpsan_test::make_rng();
   for (auto &x : in)
     x = fpsan_test::pick_int_valued<double>(rng, -8, 8);
-  double *dIn = to_dev(in);
+  double *dIn = device_allocations.to_dev(in);
   for (int e = 0; e < kNExp; ++e) {
     const int n = kExps[e];
     {
-      double *dO;
-      HIP_CHECK(hipMalloc(&dO, N * sizeof(double)));
+      DeviceAllocations iteration_allocations;
+      double *dO = iteration_allocations.allocate<double>(N);
       k_ldexp<Semantics::Native, double><<<1, N>>>(dIn, dO, n);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<double> got(N);
       HIP_CHECK(hipMemcpy(got.data(), dO, N * sizeof(double), hipMemcpyDeviceToHost));
       for (int i = 0; i < N; ++i)
         EXPECT_EQ(got[i], std::ldexp(in[i], n)) << "n=" << n << " i=" << i;
-      (void)hipFree(dO);
     }
     fpsan_test::for_each_fpsan_semantics([&](auto sem) {
       constexpr Semantics S = decltype(sem)::value;
@@ -131,18 +129,16 @@ TEST(AmdgcnLdexp, F64) {
       std::vector<std::uint64_t> ref(N);
       for (int i = 0; i < N; ++i)
         ref[i] = (VD(in[i]) * VD(std::ldexp(1.0, n))).fpsan_payload();
-      std::uint64_t *dO;
-      HIP_CHECK(hipMalloc(&dO, N * sizeof(std::uint64_t)));
+      DeviceAllocations iteration_allocations;
+      std::uint64_t *dO = iteration_allocations.allocate<std::uint64_t>(N);
       k_ldexp<S, std::uint64_t><<<1, N>>>(dIn, dO, n);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<std::uint64_t> got(N);
       HIP_CHECK(hipMemcpy(got.data(), dO, N * sizeof(std::uint64_t), hipMemcpyDeviceToHost));
       for (int i = 0; i < N; ++i)
         EXPECT_EQ(got[i], ref[i]) << "FPSan n=" << n << " i=" << i;
-      (void)hipFree(dO);
     });
   }
-  (void)hipFree(dIn);
 }
 
 template <Semantics S, class Out> __global__ void k_ldexph(const float *in, Out *out, int n) {
@@ -156,6 +152,7 @@ template <Semantics S, class Out> __global__ void k_ldexph(const float *in, Out 
 }
 
 TEST(AmdgcnLdexp, F16) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const int N = 64;
@@ -163,12 +160,12 @@ TEST(AmdgcnLdexp, F16) {
   std::mt19937 rng = fpsan_test::make_rng();
   for (auto &x : in)
     x = fpsan_test::pick_int_valued<float>(rng, -8, 8);
-  float *dIn = to_dev(in);
+  float *dIn = device_allocations.to_dev(in);
   for (int e = 0; e < kNExp; ++e) {
     const int n = kExps[e];
     {
-      float *dO;
-      HIP_CHECK(hipMalloc(&dO, N * sizeof(float)));
+      DeviceAllocations iteration_allocations;
+      float *dO = iteration_allocations.allocate<float>(N);
       k_ldexph<Semantics::Native, float><<<1, N>>>(dIn, dO, n);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<float> got(N);
@@ -178,7 +175,6 @@ TEST(AmdgcnLdexp, F16) {
             static_cast<_Float16>(std::ldexp(static_cast<float>(static_cast<_Float16>(in[i])), n));
         EXPECT_EQ(got[i], static_cast<float>(ref)) << "n=" << n << " i=" << i;
       }
-      (void)hipFree(dO);
     }
     fpsan_test::for_each_fpsan_semantics([&](auto sem) {
       constexpr Semantics S = decltype(sem)::value;
@@ -187,16 +183,14 @@ TEST(AmdgcnLdexp, F16) {
       for (int i = 0; i < N; ++i)
         ref[i] = (VH(static_cast<_Float16>(in[i])) * VH(static_cast<_Float16>(std::ldexp(1.0f, n))))
                      .fpsan_payload();
-      std::uint32_t *dO;
-      HIP_CHECK(hipMalloc(&dO, N * sizeof(std::uint32_t)));
+      DeviceAllocations iteration_allocations;
+      std::uint32_t *dO = iteration_allocations.allocate<std::uint32_t>(N);
       k_ldexph<S, std::uint32_t><<<1, N>>>(dIn, dO, n);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<std::uint32_t> got(N);
       HIP_CHECK(hipMemcpy(got.data(), dO, N * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
       for (int i = 0; i < N; ++i)
         EXPECT_EQ(got[i], ref[i]) << "FPSan n=" << n << " i=" << i;
-      (void)hipFree(dO);
     });
   }
-  (void)hipFree(dIn);
 }

@@ -67,14 +67,14 @@ __global__ void k_e5m3_decode_all(const int *packed, float *out) {
 }
 
 TEST(CvtFp8E5M3, DecodeAllBytes) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::vector<int> packed(256);
   for (int b = 0; b < 256; ++b)
     packed[b] = b;
-  int *dIn = to_dev(packed);
-  float *dO;
-  HIP_CHECK(hipMalloc(&dO, 256 * sizeof(float)));
+  int *dIn = device_allocations.to_dev(packed);
+  float *dO = device_allocations.allocate<float>(256);
   k_e5m3_decode_all<<<1, 256>>>(dIn, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 256);
@@ -85,8 +85,6 @@ TEST(CvtFp8E5M3, DecodeAllBytes) {
     else
       EXPECT_EQ(got[b], ref) << "byte 0x" << std::hex << b;
   }
-  (void)hipFree(dIn);
-  (void)hipFree(dO);
 }
 
 // Byte-select decode: place a finite E5M3 byte at byte ByteIdx, decode<ByteIdx>.
@@ -96,22 +94,20 @@ template <int ByteIdx> __global__ void k_e5m3_decode_bytesel(const int *packed, 
 }
 
 template <int ByteIdx> void run_decode_bytesel() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::vector<int> packed(255);
   for (int b = 0; b < 255; ++b) // 0x00..0xFE finite
     packed[b] = static_cast<int>(static_cast<std::uint32_t>(b) << (ByteIdx * 8));
-  int *dIn = to_dev(packed);
-  float *dO;
-  HIP_CHECK(hipMalloc(&dO, 255 * sizeof(float)));
+  int *dIn = device_allocations.to_dev(packed);
+  float *dO = device_allocations.allocate<float>(255);
   k_e5m3_decode_bytesel<ByteIdx><<<1, 255>>>(dIn, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 255);
   for (int b = 0; b < 255; ++b)
     EXPECT_EQ(got[b], narrow_to_f32(static_cast<std::uint32_t>(b), kFp8E5M3))
         << "byteIdx " << ByteIdx << " byte 0x" << std::hex << b;
-  (void)hipFree(dIn);
-  (void)hipFree(dO);
 }
 
 TEST(CvtFp8E5M3, DecodeByteSel) {
@@ -131,11 +127,11 @@ template <bool DstLo> __global__ void k_e5m3_pack(int old, float a, float b, int
 }
 
 template <bool DstLo> void run_pack() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const int old = static_cast<int>(0xA5A5A5A5u);
-  int *dO;
-  HIP_CHECK(hipMalloc(&dO, sizeof(int)));
+  int *dO = device_allocations.allocate<int>(1);
   // A representative spread of finite E5M3 bytes (denormals, normals, max).
   const int bytes[] = {0x00, 0x01, 0x07, 0x08, 0x40, 0x78, 0x80, 0xC0, 0xFE};
   for (int ca : bytes)
@@ -157,7 +153,6 @@ template <bool DstLo> void run_pack() {
       }
       EXPECT_EQ(got, want) << "DstLo=" << DstLo << " ca=0x" << std::hex << ca << " cb=0x" << cb;
     }
-  (void)hipFree(dO);
 }
 
 TEST(CvtFp8E5M3, PackLowHalf) { run_pack<true>(); }
@@ -173,22 +168,20 @@ __global__ void k_e5m3_roundtrip(const int *bytes, float *out) {
 }
 
 TEST(CvtFp8E5M3, PackDecodeRoundTrip) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::vector<int> bytes(255);
   for (int b = 0; b < 255; ++b)
     bytes[b] = b;
-  int *dIn = to_dev(bytes);
-  float *dO;
-  HIP_CHECK(hipMalloc(&dO, 255 * sizeof(float)));
+  int *dIn = device_allocations.to_dev(bytes);
+  float *dO = device_allocations.allocate<float>(255);
   k_e5m3_roundtrip<<<1, 255>>>(dIn, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 255);
   for (int b = 0; b < 255; ++b)
     EXPECT_EQ(got[b], narrow_to_f32(static_cast<std::uint32_t>(b), kFp8E5M3))
         << "round-trip byte 0x" << std::hex << b;
-  (void)hipFree(dIn);
-  (void)hipFree(dO);
 }
 
 // ===========================================================================
@@ -201,11 +194,11 @@ template <int ByteIdx> __global__ void k_e5m3_sr(int old, float v, unsigned seed
 }
 
 TEST(CvtFp8E5M3, SrPackExact) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const int old = static_cast<int>(0xDEADBEEFu);
-  int *dO;
-  HIP_CHECK(hipMalloc(&dO, sizeof(int)));
+  int *dO = device_allocations.allocate<int>(1);
   for (int b = 0; b < 255; ++b) {
     float v = narrow_to_f32(static_cast<std::uint32_t>(b), kFp8E5M3);
     k_e5m3_sr<2><<<1, 1>>>(old, v, 0x1234u + b, dO);
@@ -215,7 +208,6 @@ TEST(CvtFp8E5M3, SrPackExact) {
     std::uint32_t want = (static_cast<std::uint32_t>(old) & ~(0xFFu << 16)) | (enc << 16);
     EXPECT_EQ(got, want) << "byte 0x" << std::hex << b;
   }
-  (void)hipFree(dO);
 }
 
 // ===========================================================================
@@ -229,14 +221,14 @@ template <Semantics S> __global__ void k_e5m3_fpsan_decode(const int *packed, un
 }
 
 TEST(CvtFp8E5M3, FpsanDecodeWiden8) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::vector<int> packed(256);
   for (int b = 0; b < 256; ++b)
     packed[b] = b;
-  int *dIn = to_dev(packed);
-  unsigned *dO;
-  HIP_CHECK(hipMalloc(&dO, 256 * sizeof(unsigned)));
+  int *dIn = device_allocations.to_dev(packed);
+  unsigned *dO = device_allocations.allocate<unsigned>(256);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     k_e5m3_fpsan_decode<S><<<1, 256>>>(dIn, dO);
@@ -248,8 +240,6 @@ TEST(CvtFp8E5M3, FpsanDecodeWiden8) {
       EXPECT_EQ(got[b], static_cast<unsigned>(want)) << "byte 0x" << std::hex << b;
     }
   });
-  (void)hipFree(dIn);
-  (void)hipFree(dO);
 }
 
 template <Semantics S> __global__ void k_e5m3_fpsan_pack(int old, float a, float b, int *out) {
@@ -258,12 +248,12 @@ template <Semantics S> __global__ void k_e5m3_fpsan_pack(int old, float a, float
 }
 
 TEST(CvtFp8E5M3, FpsanPackLow8) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const int old = static_cast<int>(0x12345678u);
   std::mt19937 rng = std::mt19937(0xc0ffeeu);
-  int *dO;
-  HIP_CHECK(hipMalloc(&dO, sizeof(int)));
+  int *dO = device_allocations.allocate<int>(1);
   std::uniform_int_distribution<int> dist(-200, 200);
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
@@ -280,7 +270,6 @@ TEST(CvtFp8E5M3, FpsanPackLow8) {
       EXPECT_EQ(got, want) << "a=" << a << " b=" << b;
     }
   });
-  (void)hipFree(dO);
 }
 
 #endif // has builtin

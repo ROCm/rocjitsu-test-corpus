@@ -84,10 +84,10 @@ __global__ void k_f32_unpack_bf6(const unsigned *in6, float *out, float scale) {
 
 template <class Kern>
 void float_unpack_all(Kern kern, const fpsan::detail::FpFormat &fmt, const char *name) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
-  float *dO;
-  HIP_CHECK(hipMalloc(&dO, 32 * sizeof(float)));
+  float *dO = device_allocations.allocate<float>(32);
   for (int base = 0; base < 64; base += 32) {
     std::uint8_t codes[32];
     for (int i = 0; i < 32; ++i)
@@ -95,16 +95,15 @@ void float_unpack_all(Kern kern, const fpsan::detail::FpFormat &fmt, const char 
     unsigned packed[6];
     host_pack6(codes, 32, packed);
     std::vector<unsigned> hp(packed, packed + 6);
-    unsigned *dIn = to_dev(hp);
+    DeviceAllocations iteration_allocations;
+    unsigned *dIn = iteration_allocations.to_dev(hp);
     kern<<<1, 1>>>(dIn, dO, 1.0f);
     HIP_CHECK(hipDeviceSynchronize());
     auto got = from_dev(dO, 32);
     for (int i = 0; i < 32; ++i)
       EXPECT_EQ(got[i], narrow_to_f32(unsigned(codes[i]), fmt))
           << name << " code " << int(codes[i]);
-    (void)hipFree(dIn);
   }
-  (void)hipFree(dO);
 }
 
 TEST(CvtScalef32Fp6Wrap, FloatUnpackFp6AllCodes) {
@@ -129,14 +128,14 @@ __global__ void k_f32_pack_fp6(const float *in, unsigned *out, float scale) {
 }
 
 TEST(CvtScalef32Fp6Wrap, FloatPack2xpk16ExactBits) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::vector<float> in(32);
   for (int c = 0; c < 32; ++c)
     in[c] = narrow_to_f32(unsigned(c), kFp6E2M3);
-  float *dIn = to_dev(in);
-  unsigned *dO;
-  HIP_CHECK(hipMalloc(&dO, 6 * sizeof(unsigned)));
+  float *dIn = device_allocations.to_dev(in);
+  unsigned *dO = device_allocations.allocate<unsigned>(6);
   k_f32_pack_fp6<<<1, 1>>>(dIn, dO, 1.0f);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 6);
@@ -150,8 +149,6 @@ TEST(CvtScalef32Fp6Wrap, FloatPack2xpk16ExactBits) {
   host_pack6(inter, 32, expect);
   for (int i = 0; i < 6; ++i)
     EXPECT_EQ(got[i], expect[i]) << "word " << i;
-  (void)hipFree(dIn);
-  (void)hipFree(dO);
 }
 
 // ============================ FPSan mode ====================================
@@ -173,6 +170,7 @@ TEST(CvtScalef32Fp6Wrap, FloatPack2xpk16ExactBits) {
     }                                                                                              \
   }                                                                                                \
   template <Semantics S> void CASE##_run() {                                                       \
+    DeviceAllocations device_allocations;                                                          \
     if (!have_device())                                                                            \
       GTEST_SKIP() << "no HIP device";                                                             \
     const std::uint8_t codes[32] = {0x00u, 0x01u, 0x1Fu, 0x20u, 0x21u, 0x2Au, 0x30u, 0x3Fu,        \
@@ -182,9 +180,8 @@ TEST(CvtScalef32Fp6Wrap, FloatPack2xpk16ExactBits) {
     constexpr float scale = 2.0f;                                                                  \
     unsigned packed[6];                                                                            \
     host_pack6(codes, 32, packed);                                                                 \
-    unsigned *dIn = to_dev(std::vector<unsigned>(packed, packed + 6));                             \
-    unsigned *dO;                                                                                  \
-    HIP_CHECK(hipMalloc(&dO, 64 * sizeof(unsigned)));                                              \
+    unsigned *dIn = device_allocations.to_dev(std::vector<unsigned>(packed, packed + 6));          \
+    unsigned *dO = device_allocations.allocate<unsigned>(64);                                      \
     CASE##_kernel<S><<<1, 1>>>(dIn, scale, dO);                                                    \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     auto got = from_dev(dO, 64);                                                                   \
@@ -199,8 +196,6 @@ TEST(CvtScalef32Fp6Wrap, FloatPack2xpk16ExactBits) {
           << LABEL << " follow-on add elem " << i << " code=0x" << std::hex << unsigned(codes[i]); \
       (void)sizeof(Out);                                                                           \
     }                                                                                              \
-    (void)hipFree(dIn);                                                                            \
-    (void)hipFree(dO);                                                                             \
   }                                                                                                \
   TEST(CvtScalef32Fp6Wrap, CASE) { FPSAN_RUN_FPSAN_SEMANTICS(CASE##_run); }
 
@@ -250,9 +245,9 @@ TEST(CvtScalef32Fp6Wrap, FpsanPackDivideInterleave) {
     in[19] = std::numeric_limits<float>::quiet_NaN();
     in[23] = -std::numeric_limits<float>::infinity();
     const float scale = 2.0f;
-    float *dIn = to_dev(in);
-    unsigned *dO;
-    HIP_CHECK(hipMalloc(&dO, 6 * sizeof(unsigned)));
+    DeviceAllocations device_allocations;
+    float *dIn = device_allocations.to_dev(in);
+    unsigned *dO = device_allocations.allocate<unsigned>(6);
     k_fpsan_pack<S><<<1, 1>>>(dIn, dO, scale);
     HIP_CHECK(hipDeviceSynchronize());
     auto got = from_dev(dO, 6);
@@ -262,8 +257,6 @@ TEST(CvtScalef32Fp6Wrap, FpsanPackDivideInterleave) {
       EXPECT_EQ(host_extract6(got.data(), 2 * k), refLo) << "lo " << k;
       EXPECT_EQ(host_extract6(got.data(), 2 * k + 1), refHi) << "hi " << k;
     }
-    (void)hipFree(dIn);
-    (void)hipFree(dO);
   });
 }
 

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
+#include "hip_test_utils.hpp"
 #include "mfma_gfx950_parts.hpp"
 
 #define MFMA_TESTS(Name)                                                                           \
@@ -189,6 +190,7 @@ template <class T> T host_neg_if(T v, bool neg) { return neg ? -v : v; }
 } // namespace
 
 TEST(MfmaF64_16x16x4, LayoutMatchesHardware) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -201,8 +203,9 @@ TEST(MfmaF64_16x16x4, LayoutMatchesHardware) {
         acc += m.A[i * F64_K + k] * m.B[k * F64_N + j];
       ref[i * F64_N + j] = acc;
     }
-  double *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C), *dD;
-  HIP_CHECK(hipMalloc(&dD, F64_M * F64_N * sizeof(double)));
+  double *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+         *dC = device_allocations.to_dev(m.C);
+  double *dD = device_allocations.allocate<double>(F64_M * F64_N);
   k_mfma_f64_16x16x4<Semantics::Native, double><<<1, WAVE>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<double> got(F64_M * F64_N);
@@ -210,18 +213,16 @@ TEST(MfmaF64_16x16x4, LayoutMatchesHardware) {
   for (int i = 0; i < F64_M * F64_N; ++i)
     EXPECT_EQ(bits_of(got[i]), bits_of(ref[i]))
         << "layout mismatch at " << (i / F64_N) << "," << (i % F64_N);
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 TEST(MfmaF64_16x16x4, FpsanMatchesScalarReference) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
   F64Mats m = make_f64_inputs();
-  double *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C);
+  double *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+         *dC = device_allocations.to_dev(m.C);
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     using VD = Value<double, S, kCC>;
@@ -233,8 +234,8 @@ TEST(MfmaF64_16x16x4, FpsanMatchesScalarReference) {
           acc = acc + VD(m.A[i * F64_K + k]) * VD(m.B[k * F64_N + j]);
         ref[i * F64_N + j] = acc.fpsan_payload();
       }
-    std::uint64_t *dD;
-    HIP_CHECK(hipMalloc(&dD, F64_M * F64_N * sizeof(std::uint64_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint64_t *dD = iteration_allocations.allocate<std::uint64_t>(F64_M * F64_N);
     k_mfma_f64_16x16x4<S, std::uint64_t><<<1, WAVE>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint64_t> got(F64_M * F64_N);
@@ -242,14 +243,11 @@ TEST(MfmaF64_16x16x4, FpsanMatchesScalarReference) {
         hipMemcpy(got.data(), dD, F64_M * F64_N * sizeof(std::uint64_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < F64_M * F64_N; ++i)
       EXPECT_EQ(got[i], ref[i]) << "payload mismatch at " << (i / F64_N) << "," << (i % F64_N);
-    (void)hipFree(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
 }
 
 TEST(MfmaF64_16x16x4_NEG5, LayoutMatchesHardware) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -264,8 +262,9 @@ TEST(MfmaF64_16x16x4_NEG5, LayoutMatchesHardware) {
                host_neg_if(m.B[k * F64_N + j], (NEG & 2) != 0);
       ref[i * F64_N + j] = acc;
     }
-  double *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C), *dD;
-  HIP_CHECK(hipMalloc(&dD, F64_M * F64_N * sizeof(double)));
+  double *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+         *dC = device_allocations.to_dev(m.C);
+  double *dD = device_allocations.allocate<double>(F64_M * F64_N);
   k_mfma_f64_16x16x4<Semantics::Native, double, 0, 0, NEG><<<1, WAVE>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<double> got(F64_M * F64_N);
@@ -273,19 +272,17 @@ TEST(MfmaF64_16x16x4_NEG5, LayoutMatchesHardware) {
   for (int i = 0; i < F64_M * F64_N; ++i)
     EXPECT_EQ(bits_of(got[i]), bits_of(ref[i]))
         << "NEG mismatch at " << (i / F64_N) << "," << (i % F64_N);
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 TEST(MfmaF64_16x16x4_NEG5, FpsanMatchesScalarReference) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
   constexpr int NEG = 5;
   F64Mats m = make_f64_inputs();
-  double *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C);
+  double *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+         *dC = device_allocations.to_dev(m.C);
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     using VD = Value<double, S, kCC>;
@@ -298,8 +295,8 @@ TEST(MfmaF64_16x16x4_NEG5, FpsanMatchesScalarReference) {
                           host_neg_if(VD(m.B[k * F64_N + j]), (NEG & 2) != 0);
         ref[i * F64_N + j] = acc.fpsan_payload();
       }
-    std::uint64_t *dD;
-    HIP_CHECK(hipMalloc(&dD, F64_M * F64_N * sizeof(std::uint64_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint64_t *dD = iteration_allocations.allocate<std::uint64_t>(F64_M * F64_N);
     k_mfma_f64_16x16x4<S, std::uint64_t, 0, 0, NEG><<<1, WAVE>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint64_t> got(F64_M * F64_N);
@@ -307,11 +304,7 @@ TEST(MfmaF64_16x16x4_NEG5, FpsanMatchesScalarReference) {
         hipMemcpy(got.data(), dD, F64_M * F64_N * sizeof(std::uint64_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < F64_M * F64_N; ++i)
       EXPECT_EQ(got[i], ref[i]) << "payload mismatch at " << (i / F64_N) << "," << (i % F64_N);
-    (void)hipFree(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +339,7 @@ std::vector<double> make_f64_4x4x4_vec(int seed) {
 } // namespace
 
 TEST(MfmaF64_4x4x4, LayoutMatchesHardware) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -358,26 +352,25 @@ TEST(MfmaF64_4x4x4, LayoutMatchesHardware) {
       acc += A[16 * k + 4 * b + i] * B[16 * k + 4 * b + j];
     ref[L] = acc;
   }
-  double *dA = to_dev(A), *dB = to_dev(B), *dC = to_dev(C), *dD;
-  HIP_CHECK(hipMalloc(&dD, WAVE * sizeof(double)));
+  double *dA = device_allocations.to_dev(A), *dB = device_allocations.to_dev(B),
+         *dC = device_allocations.to_dev(C);
+  double *dD = device_allocations.allocate<double>(WAVE);
   k_mfma_f64_4x4x4<Semantics::Native, double><<<1, WAVE>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<double> got(WAVE);
   HIP_CHECK(hipMemcpy(got.data(), dD, WAVE * sizeof(double), hipMemcpyDeviceToHost));
   for (int L = 0; L < WAVE; ++L)
     EXPECT_EQ(bits_of(got[L]), bits_of(ref[L])) << "lane " << L;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 TEST(MfmaF64_4x4x4, FpsanMatchesScalarReference) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
   auto A = make_f64_4x4x4_vec(0), B = make_f64_4x4x4_vec(1), C = make_f64_4x4x4_vec(2);
-  double *dA = to_dev(A), *dB = to_dev(B), *dC = to_dev(C);
+  double *dA = device_allocations.to_dev(A), *dB = device_allocations.to_dev(B),
+         *dC = device_allocations.to_dev(C);
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     using VD = Value<double, S, kCC>;
@@ -389,22 +382,19 @@ TEST(MfmaF64_4x4x4, FpsanMatchesScalarReference) {
         acc = acc + VD(A[16 * k + 4 * b + i]) * VD(B[16 * k + 4 * b + j]);
       ref[L] = acc.fpsan_payload();
     }
-    std::uint64_t *dD;
-    HIP_CHECK(hipMalloc(&dD, WAVE * sizeof(std::uint64_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint64_t *dD = iteration_allocations.allocate<std::uint64_t>(WAVE);
     k_mfma_f64_4x4x4<S, std::uint64_t><<<1, WAVE>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint64_t> got(WAVE);
     HIP_CHECK(hipMemcpy(got.data(), dD, WAVE * sizeof(std::uint64_t), hipMemcpyDeviceToHost));
     for (int L = 0; L < WAVE; ++L)
       EXPECT_EQ(got[L], ref[L]) << "lane " << L;
-    (void)hipFree(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
 }
 
 TEST(MfmaF64_4x4x4_NEG5, LayoutMatchesHardware) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -420,27 +410,26 @@ TEST(MfmaF64_4x4x4_NEG5, LayoutMatchesHardware) {
     }
     ref[L] = acc;
   }
-  double *dA = to_dev(A), *dB = to_dev(B), *dC = to_dev(C), *dD;
-  HIP_CHECK(hipMalloc(&dD, WAVE * sizeof(double)));
+  double *dA = device_allocations.to_dev(A), *dB = device_allocations.to_dev(B),
+         *dC = device_allocations.to_dev(C);
+  double *dD = device_allocations.allocate<double>(WAVE);
   k_mfma_f64_4x4x4<Semantics::Native, double, 0, 0, NEG><<<1, WAVE>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<double> got(WAVE);
   HIP_CHECK(hipMemcpy(got.data(), dD, WAVE * sizeof(double), hipMemcpyDeviceToHost));
   for (int L = 0; L < WAVE; ++L)
     EXPECT_EQ(bits_of(got[L]), bits_of(ref[L])) << "lane " << L;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 TEST(MfmaF64_4x4x4_NEG5, FpsanMatchesScalarReference) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
   constexpr int NEG = 5;
   auto A = make_f64_4x4x4_vec(0), B = make_f64_4x4x4_vec(1), C = make_f64_4x4x4_vec(2);
-  double *dA = to_dev(A), *dB = to_dev(B), *dC = to_dev(C);
+  double *dA = device_allocations.to_dev(A), *dB = device_allocations.to_dev(B),
+         *dC = device_allocations.to_dev(C);
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     using VD = Value<double, S, kCC>;
@@ -454,19 +443,15 @@ TEST(MfmaF64_4x4x4_NEG5, FpsanMatchesScalarReference) {
       }
       ref[L] = acc.fpsan_payload();
     }
-    std::uint64_t *dD;
-    HIP_CHECK(hipMalloc(&dD, WAVE * sizeof(std::uint64_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint64_t *dD = iteration_allocations.allocate<std::uint64_t>(WAVE);
     k_mfma_f64_4x4x4<S, std::uint64_t, 0, 0, NEG><<<1, WAVE>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint64_t> got(WAVE);
     HIP_CHECK(hipMemcpy(got.data(), dD, WAVE * sizeof(std::uint64_t), hipMemcpyDeviceToHost));
     for (int L = 0; L < WAVE; ++L)
       EXPECT_EQ(got[L], ref[L]) << "lane " << L;
-    (void)hipFree(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
 }
 
 // ---------------------------------------------------------------------------
@@ -601,6 +586,7 @@ template <class T> float host_legf32_b_value(const std::vector<float> &B, int b,
 }
 
 template <class T> void run_legf32_layout() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -615,27 +601,26 @@ template <class T> void run_legf32_layout() {
                  static_cast<double>(host_legf32_b_value<T>(m.B, b, k, j));
         ref[(b * T::M + i) * T::N + j] = static_cast<float>(acc);
       }
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C), *dD;
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C);
   const int total = T::Bk * T::M * T::N;
-  HIP_CHECK(hipMalloc(&dD, total * sizeof(float)));
+  float *dD = device_allocations.allocate<float>(total);
   k_legf32<T><<<1, WAVE>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> got(total);
   HIP_CHECK(hipMemcpy(got.data(), dD, total * sizeof(float), hipMemcpyDeviceToHost));
   for (int t = 0; t < total; ++t)
     EXPECT_EQ(bits_of(got[t]), bits_of(ref[t])) << "elem " << t;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 template <class T> void run_legf32_fpsan() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
   LegF32Data<T> m = make_legf32<T>();
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C);
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C);
   const int total = T::Bk * T::M * T::N;
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
@@ -650,19 +635,15 @@ template <class T> void run_legf32_fpsan() {
                             VF(host_legf32_b_value<T>(m.B, b, k, j));
           ref[(b * T::M + i) * T::N + j] = acc.fpsan_payload();
         }
-    std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, total * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(total);
     k_legf32_p<T, S><<<1, WAVE>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(total);
     HIP_CHECK(hipMemcpy(got.data(), dD, total * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int t = 0; t < total; ++t)
       EXPECT_EQ(got[t], ref[t]) << "elem " << t;
-    (void)hipFree(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
 }
 
 #define LEGF32_TRAITS(Name, M_, N_, K_, B_, CV, WRAP)                                              \
@@ -835,6 +816,7 @@ template <class T> float host_legf16_b_value(const std::vector<float> &B, int b,
 }
 
 template <class T> void run_legf16_layout() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -849,28 +831,27 @@ template <class T> void run_legf16_layout() {
                  static_cast<double>(host_legf16_b_value<T>(m.B, b, k, j));
         ref[(b * T::M + i) * T::N + j] = static_cast<float>(acc);
       }
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C), *dD;
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C);
   const int total = T::Bk * T::M * T::N;
-  HIP_CHECK(hipMalloc(&dD, total * sizeof(float)));
+  float *dD = device_allocations.allocate<float>(total);
   k_legf16<T><<<1, WAVE>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> got(total);
   HIP_CHECK(hipMemcpy(got.data(), dD, total * sizeof(float), hipMemcpyDeviceToHost));
   for (int t = 0; t < total; ++t)
     EXPECT_EQ(bits_of(got[t]), bits_of(ref[t])) << "elem " << t;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 template <class T> void run_legf16_fpsan() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
   LegF32Data<T> m = make_legf32<T>();
   using AE = typename T::AElem;
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C);
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C);
   const int total = T::Bk * T::M * T::N;
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
@@ -887,19 +868,15 @@ template <class T> void run_legf16_fpsan() {
                     fpsan::cast<float>(Value<AE, S, kCC>(AE(host_legf16_b_value<T>(m.B, b, k, j))));
           ref[(b * T::M + i) * T::N + j] = acc.fpsan_payload();
         }
-    std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, total * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(total);
     k_legf16_p<T, S><<<1, WAVE>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(total);
     HIP_CHECK(hipMemcpy(got.data(), dD, total * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int t = 0; t < total; ++t)
       EXPECT_EQ(got[t], ref[t]) << "elem " << t;
-    (void)hipFree(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
 }
 
 #define LEGF16_TRAITS(Name, M_, N_, K_, B_, AV, AE, CV, WRAP)                                      \
