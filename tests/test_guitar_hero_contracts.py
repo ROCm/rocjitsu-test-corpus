@@ -46,13 +46,16 @@ def test_checkpoint_layout(manifest):
         assert ".amdhsa_user_sgpr_flat_scratch_init 1" in assembly
         assert ".amdhsa_system_sgpr_private_segment_wavefront_offset 1" in assembly
         assert ".amdhsa_reserve_flat_scratch 1" in assembly
-        assert """guitar_hero_rdna2:
-s_add_u32 s2, s2, s5
-s_addc_u32 s3, s3, 0
-s_setreg_b32 hwreg(HW_REG_FLAT_SCR_LO), s2
-s_setreg_b32 hwreg(HW_REG_FLAT_SCR_HI), s3
-s_mov_b32 s48, s4
-""" in assembly
+        lines = [line.split(";", 1)[0].strip() for line in assembly.splitlines()]
+        lines = [line for line in lines if line]
+        entry = lines.index("guitar_hero_rdna2:")
+        assert lines[entry + 1:entry + 6] == [
+            "s_add_u32 s2, s2, s5",
+            "s_addc_u32 s3, s3, 0",
+            "s_setreg_b32 hwreg(HW_REG_FLAT_SCR_LO), s2",
+            "s_setreg_b32 hwreg(HW_REG_FLAT_SCR_HI), s3",
+            "s_mov_b32 s48, s4",
+        ]
     elif name == "guitar_hero_cdna5":
         assert ".wavefront_size: 32" in assembly
         assert ".private_segment_fixed_size: 64" in assembly
@@ -135,6 +138,29 @@ def test_rdna2_low_half_dpp8_coverage():
     conversion = dpp8.split("; Checkpoint 92: vop1_dpp8_01", 1)[1]
     conversion = conversion.split("checkpoint 92", 1)[0]
     assert "s_mov_b32 exec_lo, 0xa5a55a5a\ns_mov_b32 exec_lo, -1" not in conversion
+
+
+def test_rdna2_packed_conversion_coverage():
+    assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
+    checkpoint_118 = assembly.split("; Checkpoint 118: vop3_plain_03", 1)[1]
+    checkpoint_118 = checkpoint_118.split("checkpoint 118", 1)[0]
+    for instruction in [
+        "v_cvt_pknorm_i16_f16 v18, v8, v9",
+        "v_cvt_pknorm_i16_f32 v20, v8, v9",
+        "v_cvt_pknorm_u16_f16 v22, v8, v9",
+        "v_cvt_pknorm_u16_f32 v24, v8, v9",
+    ]:
+        assert instruction in checkpoint_118
+
+    checkpoint_139 = assembly.split(
+        "; Checkpoint 139: vop3_from_vop2_plain_00", 1
+    )[1].split("checkpoint 139", 1)[0]
+    assert "v_cvt_pkrtz_f16_f32_e64 v30, v8, v9" in checkpoint_139
+
+    checkpoint_136 = assembly.split(
+        "; Checkpoint 136: vop3_from_vop1_plain_06", 1
+    )[1].split("checkpoint 136", 1)[0]
+    assert "Intentional RDNA2 omission: v_not_b16 has no gfx1030 form." in checkpoint_136
 
 
 def test_rdna2_legacy_accumulators():
