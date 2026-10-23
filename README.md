@@ -91,6 +91,14 @@ fixed configuration rather than per-case substitution. Collection with
 `--collect-only` and build-only use with `--skip-all-runs` do not require a
 launcher or base simulator config and may select multiple suites.
 
+The race plugin reports LDS races, which each GoogleTest case checks in its
+report. Register hazards, such as reading or overwriting a VGPR before the
+memory result that writes it arrives, come from the simulator core's
+memory-wait diagnostics instead. A case's `memory_wait` entry in its target
+config gives the access kind (`read` or `overwrite`) and register class
+(`VGPR`, `SGPR` or `TTMP`) that every diagnostic must match; cases without an
+entry must produce none. The base config must leave `wait_checking` enabled.
+
 The base config must match `--target`. For gfx950 use
 `emulation/rocjitsu/tests/race-detector/race_test_config.json` from rocm-systems:
 its 1-XCD/4-CU topology avoids the memory cost of a full MI350X simulation for
@@ -117,11 +125,12 @@ synchronized barrier and a missing-barrier control on all three targets. The
 gfx950 suite also keeps full-wave and lane-zero atomic controls separate.
 The ordering pair issues a returning GLOBAL atomic followed by a GLOBAL load
 into the same VGPR, without an intervening wait; a final `vmcnt(0)` precedes
-checking the loaded value. Replacing that load with a VALU overwrite must report
-a VGPR write race. These cases distinguish same-class writeback ordering from
-result readiness. Numerical checks verify atomic side effects in every atomic
-case and final output values in the safe variants. Raced VGPR values are
-unconstrained; untouched masked lanes retain their exact-value checks.
+checking the loaded value. Replacing that load with a VALU overwrite must
+produce a memory-wait diagnostic for the VGPR overwrite. These cases distinguish
+same-class writeback ordering from result readiness. Numerical checks verify
+atomic side effects in every atomic case and final output values in the safe
+variants. Raced VGPR values are unconstrained; untouched masked lanes retain
+their exact-value checks.
 Select the ordering pair with
 `--case RaceTest.vmem_gfx942_atomic_global_same_vgpr` and
 `--case RaceTest.vmem_gfx942_atomic_valu_overwrite_race`, substituting gfx950 or

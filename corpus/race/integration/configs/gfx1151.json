@@ -42,6 +42,9 @@
     "mixed_lgkmcnt_below_capacity_race": {"access": "read", "register": "VGPR"},
     "wide_scalar_lgkmcnt_below_capacity_race": {"access": "read", "register": "VGPR"},
     "d16_global_load_missing_waitcnt_race": {"access": "read", "register": "VGPR"},
-    "waw_global_load_then_wmma": {"access": "overwrite", "register": "VGPR"}
+    "waw_global_load_then_wmma": {"access": "overwrite", "register": "VGPR"},
+    "vmem_atomic_valu_overwrite_race": {"access": "overwrite", "register": "VGPR"},
+    "vmem_no_wait_race": {"access": "read", "register": "VGPR"},
+    "vmem_expcnt_only_race": {"access": "read", "register": "VGPR"}
   }
 }

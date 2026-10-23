@@ -129,16 +129,6 @@ template <bool VmWait, bool ExpWait, bool Masked> void check_global_atomic_value
   RACE_HIP_CHECK(hipFree(values));
 }
 
-static constexpr RaceExpectation kGlobalAtomicWaitRaceExpectation{
-    .kernel = "global_atomic_wait_kernel",
-    .type = "VGPR",
-    .access = "read",
-    .wave = 0,
-    .lane = 0,
-    .producer = "global_atomic_add",
-    .consumer = "v_mov_b32",
-};
-
 TEST_F(Gfx950RaceTest, global_atomic_vmcnt) {
   ASSERT_NO_FATAL_FAILURE((check_global_atomic_values<true, false, false>()));
   ExpectNoRace();
@@ -151,12 +141,12 @@ TEST_F(Gfx950RaceTest, global_atomic_both_waits) {
 
 TEST_F(Gfx950RaceTest, global_atomic_no_wait_race) {
   ASSERT_NO_FATAL_FAILURE((check_global_atomic_values<false, false, false>()));
-  ExpectRace(kGlobalAtomicWaitRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 TEST_F(Gfx950RaceTest, global_atomic_expcnt_only_race) {
   ASSERT_NO_FATAL_FAILURE((check_global_atomic_values<false, true, false>()));
-  ExpectRace(kGlobalAtomicWaitRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 // Each EXEC mask gets its own process and report assertion: a finding from
@@ -173,12 +163,12 @@ TEST_F(Gfx950RaceTest, global_atomic_masked_both_waits) {
 
 TEST_F(Gfx950RaceTest, global_atomic_masked_no_wait_race) {
   ASSERT_NO_FATAL_FAILURE((check_global_atomic_values<false, false, true>()));
-  ExpectRace(kGlobalAtomicWaitRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 TEST_F(Gfx950RaceTest, global_atomic_masked_expcnt_only_race) {
   ASSERT_NO_FATAL_FAILURE((check_global_atomic_values<false, true, true>()));
-  ExpectRace(kGlobalAtomicWaitRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 // --- Generic FLAT result waits ---

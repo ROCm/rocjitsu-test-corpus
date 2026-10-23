@@ -84,6 +84,10 @@
   ],
   "memory_wait": {
     "vgpr_waitcnt_race": {"access": "read", "register": "VGPR"},
+    "global_atomic_no_wait_race": {"access": "read", "register": "VGPR"},
+    "global_atomic_expcnt_only_race": {"access": "read", "register": "VGPR"},
+    "global_atomic_masked_no_wait_race": {"access": "read", "register": "VGPR"},
+    "global_atomic_masked_expcnt_only_race": {"access": "read", "register": "VGPR"},
     "flat_global_lgkmcnt_only_race": {"access": "read", "register": "VGPR"},
     "flat_lds_vmcnt_only_race": {"access": "read", "register": "VGPR"},
     "flat_global_copy_missing_vmcnt_race": {"access": "read", "register": "VGPR"},
@@ -108,6 +112,9 @@
     "waw_global_load_then_alu": {"access": "overwrite", "register": "VGPR"},
     "waw_global_load_then_mfma": {"access": "overwrite", "register": "VGPR"},
     "f64_vgpr_race": {"access": "read", "register": "VGPR"},
-    "f64_vgpr_waw": {"access": "overwrite", "register": "VGPR"}
+    "f64_vgpr_waw": {"access": "overwrite", "register": "VGPR"},
+    "vmem_atomic_valu_overwrite_race": {"access": "overwrite", "register": "VGPR"},
+    "vmem_no_wait_race": {"access": "read", "register": "VGPR"},
+    "vmem_expcnt_only_race": {"access": "read", "register": "VGPR"}
   }
 }

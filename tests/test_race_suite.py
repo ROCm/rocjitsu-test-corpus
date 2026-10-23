@@ -46,7 +46,7 @@ def test_configs_preserve_every_moved_gtest() -> None:
 
 def test_register_cases_expect_core_memory_wait() -> None:
     configs = race.load_target_configs(race.default_config_files())
-    expected_counts = {"gfx950": 26, "gfx1151": 10}
+    expected_counts = {"gfx942": 3, "gfx950": 33, "gfx1151": 13}
 
     for target, expected_count in expected_counts.items():
         cases = race.discover(make_target_spec(target), configs)
@@ -324,15 +324,22 @@ def _source_gtests(target: str) -> set[str]:
 
 def _source_gtest_bodies(target: str) -> dict[str, str]:
     layout = race.TARGET_LAYOUT[target]
-    source = race.RACE_SOURCE_DIR / f"hip_race_{target}_test.hip"
+    sources = [
+        race.RACE_SOURCE_DIR / f"hip_race_{target}_test.hip",
+        race.RACE_SOURCE_DIR / "hip_race_vmem_test.hip",
+    ]
     pattern = re.compile(
         r"^TEST_F\(([^,]+),\s*([^)]+)\) \{\n(.*?)^\}", re.MULTILINE | re.DOTALL
     )
-    return {
-        name.strip(): body
-        for fixture, name, body in pattern.findall(source.read_text(encoding="utf-8"))
-        if fixture.strip() == layout["fixture"]
-    }
+    bodies = {}
+    text = "\n".join(source.read_text(encoding="utf-8") for source in sources)
+    for fixture, name, body in pattern.findall(text):
+        fixture, name = fixture.strip(), name.strip()
+        if fixture == "VmemRaceTest":
+            bodies[f"vmem_{name}"] = body
+        elif fixture == layout["fixture"]:
+            bodies[name] = body
+    return bodies
 
 
 @pytest.mark.parametrize(
