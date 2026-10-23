@@ -40,12 +40,13 @@ CASE_TIMEOUT_SECONDS = 30
 CASE_TIMEOUT_ENV = "ROCJITSU_RACE_CASE_TIMEOUT"
 MEMORY_WAIT_ACCESSES = ("read", "overwrite")
 MEMORY_WAIT_REGISTERS = ("VGPR", "SGPR", "TTMP")
+MEMORY_WAIT_COUNTERS = ("vmcnt", "vscnt", "lgkmcnt", "expcnt")
 # For example: "[rj warn] memory-wait: soc.xcd0.se0.cu0 wg=0 wave=0 pc=0x...:
 # read of v8 before memory result from pc=0x... is known ready (vmcnt). ..."
 _MEMORY_WAIT_DIAGNOSTIC = re.compile(r"\bmemory-wait: (.*)")
 _MEMORY_WAIT_HAZARD = re.compile(
     r"\S+ wg=\S+ wave=\S+ pc=0x[0-9a-fA-F]+: (read|overwrite) of ([a-z_]+)\d* "
-    r"before memory result "
+    r"before memory result from pc=0x[0-9a-fA-F]+ is known ready \((\w+)\)"
 )
 _MEMORY_WAIT_SUPPRESSED = "further diagnostics on this CU are suppressed"
 _REGISTER_CLASSES = {"v": "VGPR", "s": "SGPR", "ttmp": "TTMP"}
@@ -105,14 +106,20 @@ def _validate_memory_wait_expectations(config: dict) -> None:
             )
         if (
             not isinstance(expected, dict)
-            or set(expected) != {"access", "register"}
+            or set(expected) != {"access", "register", "counter", "count"}
             or expected["access"] not in MEMORY_WAIT_ACCESSES
             or expected["register"] not in MEMORY_WAIT_REGISTERS
+            or expected["counter"] not in MEMORY_WAIT_COUNTERS
+            or not (
+                expected["count"] == "capped"
+                or (type(expected["count"]) is int and expected["count"] > 0)
+            )
         ):
             raise ValueError(
                 f"{config['_path']} field 'memory_wait' entry {name!r} must have an "
-                f"'access' in {MEMORY_WAIT_ACCESSES} and a 'register' in "
-                f"{MEMORY_WAIT_REGISTERS}"
+                f"'access' in {MEMORY_WAIT_ACCESSES}, a 'register' in "
+                f"{MEMORY_WAIT_REGISTERS}, a 'counter' in {MEMORY_WAIT_COUNTERS}, "
+                "and a 'count' that is a positive integer or 'capped'"
             )
 
 
@@ -325,22 +332,26 @@ def _validate_kernel_dispatch(path: Path) -> None:
     raise RuntimeError(f"Race test did not dispatch a test kernel: {path}")
 
 
-def _memory_wait_findings(stderr: str) -> list[tuple[str, tuple[str, str] | None]]:
-    """Return each memory-wait finding line with its (access, register class).
+def _memory_wait_findings(stderr: str) -> list[tuple[str, tuple | str | None]]:
+    """Return each memory-wait line with its (access, register class, counter).
 
-    The class is None for a line this parser does not recognize, so a changed
-    diagnostic format fails every case instead of passing the no-finding cases.
+    A per-CU suppression notice keeps its text as the kind, so only capped
+    expectations accept it. The kind is None for a line this parser does not
+    recognize, so a changed diagnostic format fails every case instead of
+    passing the no-finding cases.
     """
     findings = []
     for line in stderr.splitlines():
         diagnostic = _MEMORY_WAIT_DIAGNOSTIC.search(line)
-        if diagnostic is None or diagnostic.group(1) == _MEMORY_WAIT_SUPPRESSED:
+        if diagnostic is None:
             continue
         hazard = _MEMORY_WAIT_HAZARD.match(diagnostic.group(1))
         kind = None
-        if hazard:
-            access, register = hazard.groups()
-            kind = (access, _REGISTER_CLASSES.get(register, register.upper()))
+        if diagnostic.group(1) == _MEMORY_WAIT_SUPPRESSED:
+            kind = _MEMORY_WAIT_SUPPRESSED
+        elif hazard:
+            access, register, counter = hazard.groups()
+            kind = (access, _REGISTER_CLASSES.get(register), counter)
         findings.append((line, kind))
     return findings
 
@@ -348,18 +359,36 @@ def _memory_wait_findings(stderr: str) -> list[tuple[str, tuple[str, str] | None
 def _validate_memory_wait(
     stderr: str, expected: dict | None, test_filter: str, log_path: Path
 ) -> None:
-    # Every finding must be the expected hazard; cases without an expectation
-    # must have none, which also guards against core false positives.
+    # Every finding must be the expected hazard, and the case must print the
+    # expected number of them. Capped cases instead reach the core's per-CU limit
+    # by design, so their totals and suppression notices are not checked. Cases
+    # without an expectation must have none, which also guards against core
+    # false positives.
     findings = _memory_wait_findings(stderr)
     if expected is None:
         if not findings:
             return
         problem = "expected no memory-wait diagnostics"
     else:
-        kind = (expected["access"], expected["register"])
-        if findings and all(found == kind for _, found in findings):
+        kind = (expected["access"], expected["register"], expected["counter"])
+        capped = expected["count"] == "capped"
+        kinds = [
+            found
+            for _, found in findings
+            if not (capped and found == _MEMORY_WAIT_SUPPRESSED)
+        ]
+        if (
+            kinds
+            and all(found == kind for found in kinds)
+            and (capped or len(kinds) == expected["count"])
+        ):
             return
-        problem = f"expected memory-wait diagnostics only for {kind[0]} of {kind[1]}"
+        problem = (
+            f"expected memory-wait diagnostics only for {kind[0]} of {kind[1]} "
+            f"({kind[2]})"
+        )
+        if not capped:
+            problem += f", {expected['count']} in total"
     raise RuntimeError(
         "\n".join(
             [

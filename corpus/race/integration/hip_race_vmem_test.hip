@@ -11,7 +11,8 @@
 
 namespace {
 
-// Cases ending in _race must report a race; all other cases must remain clean.
+// Cases ending in _race must report an LDS race or a memory-wait diagnostic;
+// all other cases must remain clean.
 using VmemRaceTest = rocjitsu::test::RaceTestBase;
 
 __global__ void compiler_atomic_kernel(unsigned *values, unsigned *output) {

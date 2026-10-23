@@ -62,8 +62,7 @@ template <int YoungerWrites> __global__ void lgkmcnt_capacity_kernel(int *dst) {
                ".endr\n"
                "v_mov_b32 %[result], %[producer]\n"
                : [producer] "=&v"(producer), [result] "=&v"(result)
-               : [address] "v"(tid * 4), [value] "v"(tid + 1),
-                 [younger_writes] "n"(YoungerWrites)
+               : [address] "v"(tid * 4), [value] "v"(tid + 1), [younger_writes] "n"(YoungerWrites)
                : "memory");
   dst[tid] = result;
 }
@@ -80,17 +79,17 @@ __global__ void mixed_lgkmcnt_capacity_kernel(const int *scalar_src, int *dst) {
   __syncthreads();
 
   int producer, scalar_result, result;
-  asm volatile("ds_read_b32 %[producer], %[lds_address]\n"
-               ".rept %c[younger_writes]\n"
-               "ds_write_b32 %[lds_address], %[value]\n"
-               ".endr\n"
-               "s_load_dword %[scalar_result], %[scalar_address], 0x0\n"
-               "v_mov_b32 %[result], %[producer]\n"
-               : [producer] "=&v"(producer), [scalar_result] "=s"(scalar_result),
-                 [result] "=&v"(result)
-               : [lds_address] "v"(tid * 4), [value] "v"(tid + 1),
-                 [scalar_address] "s"(scalar_src), [younger_writes] "n"(YoungerWrites)
-               : "memory");
+  asm volatile(
+      "ds_read_b32 %[producer], %[lds_address]\n"
+      ".rept %c[younger_writes]\n"
+      "ds_write_b32 %[lds_address], %[value]\n"
+      ".endr\n"
+      "s_load_dword %[scalar_result], %[scalar_address], 0x0\n"
+      "v_mov_b32 %[result], %[producer]\n"
+      : [producer] "=&v"(producer), [scalar_result] "=s"(scalar_result), [result] "=&v"(result)
+      : [lds_address] "v"(tid * 4), [value] "v"(tid + 1), [scalar_address] "s"(scalar_src),
+        [younger_writes] "n"(YoungerWrites)
+      : "memory");
   dst[tid] = result;
 }
 
@@ -106,17 +105,17 @@ __global__ void wide_scalar_lgkmcnt_capacity_kernel(const uint64_t *scalar_src, 
 
   int producer, result;
   uint64_t scalar_result;
-  asm volatile("ds_read_b32 %[producer], %[lds_address]\n"
-               ".rept %c[younger_writes]\n"
-               "ds_write_b32 %[lds_address], %[value]\n"
-               ".endr\n"
-               "s_load_dwordx2 %[scalar_result], %[scalar_address], 0x0\n"
-               "v_mov_b32 %[result], %[producer]\n"
-               : [producer] "=&v"(producer), [scalar_result] "=s"(scalar_result),
-                 [result] "=&v"(result)
-               : [lds_address] "v"(tid * 4), [value] "v"(tid + 1),
-                 [scalar_address] "s"(scalar_src), [younger_writes] "n"(YoungerWrites)
-               : "memory");
+  asm volatile(
+      "ds_read_b32 %[producer], %[lds_address]\n"
+      ".rept %c[younger_writes]\n"
+      "ds_write_b32 %[lds_address], %[value]\n"
+      ".endr\n"
+      "s_load_dwordx2 %[scalar_result], %[scalar_address], 0x0\n"
+      "v_mov_b32 %[result], %[producer]\n"
+      : [producer] "=&v"(producer), [scalar_result] "=s"(scalar_result), [result] "=&v"(result)
+      : [lds_address] "v"(tid * 4), [value] "v"(tid + 1), [scalar_address] "s"(scalar_src),
+        [younger_writes] "n"(YoungerWrites)
+      : "memory");
   dst[tid] = result;
 }
 

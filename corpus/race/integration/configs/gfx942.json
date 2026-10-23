@@ -12,8 +12,8 @@
     "vmem_flat_lds_exchange_race"
   ],
   "memory_wait": {
-    "vmem_atomic_valu_overwrite_race": {"access": "overwrite", "register": "VGPR"},
-    "vmem_no_wait_race": {"access": "read", "register": "VGPR"},
-    "vmem_expcnt_only_race": {"access": "read", "register": "VGPR"}
+    "vmem_atomic_valu_overwrite_race": {"access": "overwrite", "register": "VGPR", "counter": "vmcnt", "count": 1},
+    "vmem_no_wait_race": {"access": "read", "register": "VGPR", "counter": "vmcnt", "count": 1},
+    "vmem_expcnt_only_race": {"access": "read", "register": "VGPR", "counter": "vmcnt", "count": 1}
   }
 }

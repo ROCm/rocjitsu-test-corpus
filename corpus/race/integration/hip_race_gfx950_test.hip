@@ -5,8 +5,10 @@
 //
 // Each test launches one or more kernels through the rocjitsu emulator
 // with the race detector selected in the test config. After hipDeviceSynchronize(),
-// the test parses the structured race log to verify that races were
-// (or were not) detected.
+// the test parses the structured race log to verify that LDS races were
+// (or were not) detected. For register-hazard cases, which call
+// ExpectNoLdsRace(), the pytest adapter checks the simulator core's memory-wait
+// diagnostics instead.
 //
 // The pytest race adapter runs each TEST_F in its own process (via --gtest_filter)
 // and private working directory. The plugin writes to the config's sinks.dir;
@@ -14,7 +16,9 @@
 // ./plugins/race.log. The adapter sets both paths; see README.md for direct runs.
 //
 // Naming convention:
-//   _race suffix = expects race, no suffix = expects no race.
+//   _race suffix = expects race, no suffix = expects no race, except
+//   f64_vgpr_waw, waw_global_load_then_alu and waw_global_load_then_mfma,
+//   which expect a memory-wait diagnostic.
 //   Paired tests share a base name (e.g. vgpr_waitcnt / vgpr_waitcnt_race).
 //
 #include <gtest/gtest.h>
@@ -1467,7 +1471,7 @@ __global__ void scratch_vmcnt_safe_kernel(const float *src, float *dst) {
 __global__ void scratch_vmcnt_race_kernel(const float *src, float *dst) {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
   // Keep this kernel's scratch provisioning identical to the safe case so the
-  // only difference observed by the race detector is the wait threshold below.
+  // only difference observed by the wait checker is the wait threshold below.
   volatile unsigned char scratch_anchor[4];
   scratch_anchor[tid & 3] = static_cast<unsigned char>(tid);
   asm volatile("s_waitcnt vmcnt(0)" ::: "memory");

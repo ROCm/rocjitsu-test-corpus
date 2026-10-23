@@ -32,7 +32,7 @@ def test_configs_preserve_every_moved_gtest() -> None:
         assert len(cases) == expected_count
         assert {case.metadata["test_filter"] for case in cases} == _source_gtests(
             target
-        )
+        ).keys()
         assert all(
             (
                 f"RaceTest.vmem_{target}_{case.metadata['name'].removeprefix('vmem_')}"
@@ -51,12 +51,14 @@ def test_register_cases_expect_core_memory_wait() -> None:
     for target, expected_count in expected_counts.items():
         cases = race.discover(make_target_spec(target), configs)
         expected = {
-            case.metadata["name"] for case in cases if case.metadata["memory_wait"]
+            case.metadata["test_filter"]
+            for case in cases
+            if case.metadata["memory_wait"]
         }
         assert len(expected) == expected_count
         assert expected == {
-            name
-            for name, body in _source_gtest_bodies(target).items()
+            test_filter
+            for test_filter, body in _source_gtests(target).items()
             if "ExpectNoLdsRace();" in body
         }
 
@@ -78,9 +80,7 @@ def test_discover_honors_compile_exclusions(tmp_path: Path, target: str) -> None
 
 @pytest.mark.parametrize("target", ["gfx950", "gfx1151"])
 def test_run_honors_run_exclusions(tmp_path: Path, monkeypatch, target: str) -> None:
-    configs = _target_configs(
-        tmp_path, target, skip_run_tests=["vgpr_waitcnt"]
-    )
+    configs = _target_configs(tmp_path, target, skip_run_tests=["vgpr_waitcnt"])
     excluded, control = race.discover(make_target_spec(target), configs)
     base = tmp_path / "base.json"
     _write_base_config(base, target)
@@ -306,23 +306,7 @@ def _target_configs(tmp_path: Path, target: str, **fields) -> list[dict]:
     return race.load_target_configs([str(path)])
 
 
-def _source_gtests(target: str) -> set[str]:
-    layout = race.TARGET_LAYOUT[target]
-    sources = [
-        race.RACE_SOURCE_DIR / f"hip_race_{target}_test.hip",
-        race.RACE_SOURCE_DIR / "hip_race_vmem_test.hip",
-    ]
-    pattern = re.compile(r"^TEST_F\(([^,]+),\s*([^)]+)\)", re.MULTILINE)
-    return {
-        f"{fixture.strip()}.{name.strip()}"
-        for fixture, name in pattern.findall(
-            "\n".join(source.read_text(encoding="utf-8") for source in sources)
-        )
-        if fixture.strip() in (layout["fixture"], "VmemRaceTest")
-    }
-
-
-def _source_gtest_bodies(target: str) -> dict[str, str]:
+def _source_gtests(target: str) -> dict[str, str]:
     layout = race.TARGET_LAYOUT[target]
     sources = [
         race.RACE_SOURCE_DIR / f"hip_race_{target}_test.hip",
@@ -331,15 +315,13 @@ def _source_gtest_bodies(target: str) -> dict[str, str]:
     pattern = re.compile(
         r"^TEST_F\(([^,]+),\s*([^)]+)\) \{\n(.*?)^\}", re.MULTILINE | re.DOTALL
     )
-    bodies = {}
-    text = "\n".join(source.read_text(encoding="utf-8") for source in sources)
-    for fixture, name, body in pattern.findall(text):
-        fixture, name = fixture.strip(), name.strip()
-        if fixture == "VmemRaceTest":
-            bodies[f"vmem_{name}"] = body
-        elif fixture == layout["fixture"]:
-            bodies[name] = body
-    return bodies
+    return {
+        f"{fixture.strip()}.{name.strip()}": body
+        for fixture, name, body in pattern.findall(
+            "\n".join(source.read_text(encoding="utf-8") for source in sources)
+        )
+        if fixture.strip() in (layout["fixture"], "VmemRaceTest")
+    }
 
 
 @pytest.mark.parametrize(
@@ -405,58 +387,80 @@ def test_copy_dispatch_alone_cannot_pass(
             race._validate_kernel_dispatch(report)
 
 
-def _memory_wait_line(access: str, register: str) -> str:
+_SUPPRESSED_LINE = (
+    "[rj warn] memory-wait: further diagnostics on this CU are suppressed"
+)
+_READ_VGPR = {"access": "read", "register": "VGPR", "counter": "vmcnt", "count": 1}
+
+
+def _memory_wait_line(access: str, register: str, counter: str = "vmcnt") -> str:
     return (
         "[rj warn] memory-wait: soc.xcd0.se0.cu1 wg=3 wave=1 pc=0x7f0000000010: "
         f"{access} of {register} before memory result from pc=0x7f0000000008 is "
-        "known ready (vmcnt). A wait threshold <= 0 is required; set top-level "
+        f"known ready ({counter}). A wait threshold <= 0 is required; set top-level "
         'wait_checking to "off" (rocjitsu --wait-checking=off) to disable wait checking.'
     )
 
 
-def test_memory_wait_findings_classify_access_and_register() -> None:
+def test_memory_wait_findings_classify_access_register_and_counter() -> None:
     lines = [
         _memory_wait_line("read", "v8"),
-        _memory_wait_line("overwrite", "s12"),
+        _memory_wait_line("overwrite", "s12", "lgkmcnt"),
         _memory_wait_line("read", "ttmp3"),
         _memory_wait_line("overwrite", "exec"),
-        "[rj warn] memory-wait: further diagnostics on this CU are suppressed",
+        _SUPPRESSED_LINE,
         "[rj warn] xcnt-wait: soc.xcd0.se0.cu0 wg=0 wave=0 pc=0x10: overwrite of v1",
         "[rj warn] memory-wait: a format this parser does not know",
         '[rocjitsu] Kernel dispatch: "test_kernel" symbol="test_kernel"',
     ]
 
     assert race._memory_wait_findings("\n".join(lines)) == [
-        (lines[0], ("read", "VGPR")),
-        (lines[1], ("overwrite", "SGPR")),
-        (lines[2], ("read", "TTMP")),
-        (lines[3], ("overwrite", "EXEC")),
+        (lines[0], ("read", "VGPR", "vmcnt")),
+        (lines[1], ("overwrite", "SGPR", "lgkmcnt")),
+        (lines[2], ("read", "TTMP", "vmcnt")),
+        (lines[3], ("overwrite", None, "vmcnt")),
+        (lines[4], race._MEMORY_WAIT_SUPPRESSED),
         (lines[6], None),
     ]
 
 
 @pytest.mark.parametrize(
-    "expected,registers,passes",
+    "expected,lines,passes",
     [
         (None, [], True),
-        (None, [("read", "v8")], False),
-        ({"access": "read", "register": "VGPR"}, [("read", "v8"), ("read", "v9")], True),
-        ({"access": "read", "register": "VGPR"}, [], False),
-        ({"access": "read", "register": "VGPR"}, [("read", "s8")], False),
+        (None, [_memory_wait_line("read", "v8")], False),
+        (_READ_VGPR, [_memory_wait_line("read", "v8")], True),
+        (_READ_VGPR, [], False),
+        (_READ_VGPR, [_memory_wait_line("read", "s8")], False),
+        (_READ_VGPR, [_memory_wait_line("overwrite", "v8")], False),
+        (_READ_VGPR, [_memory_wait_line("read", "v8", "lgkmcnt")], False),
+        (_READ_VGPR, [_memory_wait_line("read", "v8")] * 2, False),
+        ({**_READ_VGPR, "count": 2}, [_memory_wait_line("read", "v8")] * 2, True),
         (
-            {"access": "read", "register": "VGPR"},
-            [("read", "v8"), ("overwrite", "v8")],
+            {**_READ_VGPR, "count": 16},
+            [_memory_wait_line("read", "v8")] * 16 + [_SUPPRESSED_LINE],
             False,
         ),
-        ({"access": "overwrite", "register": "SGPR"}, [("overwrite", "s4")], True),
+        (
+            {**_READ_VGPR, "count": "capped"},
+            [_memory_wait_line("read", "v8")] * 16 + [_SUPPRESSED_LINE],
+            True,
+        ),
+        ({**_READ_VGPR, "count": "capped"}, [_memory_wait_line("read", "v8")], True),
+        ({**_READ_VGPR, "count": "capped"}, [_SUPPRESSED_LINE], False),
+        (
+            {**_READ_VGPR, "count": "capped"},
+            [
+                _memory_wait_line("read", "v8"),
+                _memory_wait_line("read", "v8", "lgkmcnt"),
+            ],
+            False,
+        ),
     ],
 )
-def test_memory_wait_findings_must_all_match_the_expectation(
-    tmp_path: Path, expected: dict | None, registers: list, passes: bool
+def test_memory_wait_diagnostics_must_match_the_expectation(
+    tmp_path: Path, expected: dict | None, lines: list[str], passes: bool
 ) -> None:
-    lines = [_memory_wait_line(access, register) for access, register in registers]
-    # Suppression notices are not findings and must not satisfy an expectation.
-    lines.append("[rj warn] memory-wait: further diagnostics on this CU are suppressed")
     log = tmp_path / "run.log"
     if passes:
         race._validate_memory_wait("\n".join(lines), expected, "Fixture.case", log)
@@ -464,22 +468,23 @@ def test_memory_wait_findings_must_all_match_the_expectation(
     with pytest.raises(RuntimeError, match="Race test Fixture.case expected") as error:
         race._validate_memory_wait("\n".join(lines), expected, "Fixture.case", log)
     assert str(log) in str(error.value)
-    assert all(line in str(error.value) for line in lines[:-1])
+    assert all(line in str(error.value) for line in lines)
 
 
 @pytest.mark.parametrize(
     "memory_wait,error",
     [
         ([], "must map case names"),
-        ({"unlisted": {"access": "read", "register": "VGPR"}}, "unknown case"),
+        ({"unlisted": _READ_VGPR}, "unknown case"),
         ({"vgpr_waitcnt_race": "read VGPR"}, "must have an 'access'"),
-        ({"vgpr_waitcnt_race": {"access": "write", "register": "VGPR"}}, "'access'"),
-        ({"vgpr_waitcnt_race": {"access": "read", "register": "v8"}}, "'access'"),
-        ({"vgpr_waitcnt_race": {"access": "read"}}, "'access'"),
-        (
-            {"vgpr_waitcnt_race": {"access": "read", "register": "VGPR", "pc": 16}},
-            "'access'",
-        ),
+        ({"vgpr_waitcnt_race": {**_READ_VGPR, "access": "write"}}, "'access'"),
+        ({"vgpr_waitcnt_race": {**_READ_VGPR, "register": "v8"}}, "'access'"),
+        ({"vgpr_waitcnt_race": {**_READ_VGPR, "counter": "lgkm"}}, "'access'"),
+        ({"vgpr_waitcnt_race": {**_READ_VGPR, "count": 0}}, "'access'"),
+        ({"vgpr_waitcnt_race": {**_READ_VGPR, "count": True}}, "'access'"),
+        ({"vgpr_waitcnt_race": {**_READ_VGPR, "count": "all"}}, "'access'"),
+        ({"vgpr_waitcnt_race": {"access": "read", "register": "VGPR"}}, "'access'"),
+        ({"vgpr_waitcnt_race": {**_READ_VGPR, "pc": 16}}, "'access'"),
     ],
 )
 def test_memory_wait_expectations_are_validated(
@@ -543,7 +548,9 @@ def test_run_checks_core_memory_wait_findings(
 
 
 @pytest.mark.parametrize("wait_checking", ["off", "on", "all"])
-def test_base_config_must_keep_wait_checking(tmp_path: Path, wait_checking: str) -> None:
+def test_base_config_must_keep_wait_checking(
+    tmp_path: Path, wait_checking: str
+) -> None:
     base = tmp_path / "base.json"
     _write_base_config(base, "gfx950", wait_checking=wait_checking)
     if wait_checking == "off":
