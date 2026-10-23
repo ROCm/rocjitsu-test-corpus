@@ -1,6 +1,8 @@
 find_package(hip REQUIRED CONFIG)
 find_package(rocblas REQUIRED CONFIG)
 
+# Prefer an installed GoogleTest package. Offline runs can provide a local
+# checkout for the fallback with -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=<path>.
 find_package(GTest QUIET)
 if(NOT TARGET GTest::gtest)
     include(FetchContent)

@@ -105,14 +105,14 @@ template <class FP8, class DstFT> __global__ void k_unpack_all(const int *packed
 }
 
 template <class FP8, class DstFT> void run_unpack_all() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::vector<int> packed(256);
   for (int b = 0; b < 256; ++b)
     packed[b] = b; // fp8 byte b in byte0 (word0 element0)
-  int *dIn = to_dev(packed);
-  float *dO;
-  HIP_CHECK(hipMalloc(&dO, 256 * sizeof(float)));
+  int *dIn = device_allocations.to_dev(packed);
+  float *dO = device_allocations.allocate<float>(256);
   k_unpack_all<FP8, DstFT><<<1, 256>>>(dIn, dO);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> got(256);
@@ -127,8 +127,6 @@ template <class FP8, class DstFT> void run_unpack_all() {
     else
       EXPECT_EQ(got[b], ref) << "byte 0x" << std::hex << b;
   }
-  (void)hipFree(dIn);
-  (void)hipFree(dO);
 }
 
 TEST(CvtScalef32Fp8Vec, UnpackAll_F32_Fp8) { run_unpack_all<fpsan::fp8_e4m3, float>(); }
@@ -207,6 +205,7 @@ __global__ void k_roundtrip(const float *in, Out *out, float scale) {
 }
 
 template <class FP8, class SrcVEC, class SrcElem> void run_roundtrip() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const float scale = 2.0f;
@@ -214,18 +213,17 @@ template <class FP8, class SrcVEC, class SrcElem> void run_roundtrip() {
   std::mt19937 rng = fpsan_test::make_rng();
   for (auto &x : in)
     x = fpsan_test::pick_int_valued<float>(rng, -4, 4); // x/2 exact in fp8
-  float *dIn = to_dev(in);
+  float *dIn = device_allocations.to_dev(in);
   // Float: round-trip recovers the input exactly for exact-in-fp8 values.
   {
-    float *dO;
-    HIP_CHECK(hipMalloc(&dO, 2 * LANES * sizeof(float)));
+    DeviceAllocations iteration_allocations;
+    float *dO = iteration_allocations.allocate<float>(2 * LANES);
     k_roundtrip<Semantics::Native, FP8, SrcVEC, SrcElem, float><<<1, LANES>>>(dIn, dO, scale);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<float> got(2 * LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, 2 * LANES * sizeof(float), hipMemcpyDeviceToHost));
     for (int i = 0; i < 2 * LANES; ++i)
       EXPECT_EQ(got[i], in[i]) << "Float round-trip at " << i;
-    (void)hipFree(dO);
   }
   // FPSan: payload must equal the payload-ring reference. Pack divides, unpack
   // multiplies: cast<float>(cast<FP8>(cast<SrcElem>(x) / scale)) * scale.
@@ -239,17 +237,15 @@ template <class FP8, class SrcVEC, class SrcElem> void run_roundtrip() {
       auto packed = fpsan::cast<FP8>(fpsan::cast<float>(src) / VF(scale));
       ref[i] = (fpsan::cast<float>(packed) * VF(scale)).fpsan_payload();
     }
-    std::uint32_t *dO;
-    HIP_CHECK(hipMalloc(&dO, 2 * LANES * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dO = iteration_allocations.allocate<std::uint32_t>(2 * LANES);
     k_roundtrip<S, FP8, SrcVEC, SrcElem, std::uint32_t><<<1, LANES>>>(dIn, dO, scale);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(2 * LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, 2 * LANES * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < 2 * LANES; ++i)
       EXPECT_EQ(got[i], ref[i]) << "FPSan payload at " << i;
-    (void)hipFree(dO);
   });
-  (void)hipFree(dIn);
 }
 
 TEST(CvtScalef32Fp8Vec, RoundTrip_Fp8_F16) {

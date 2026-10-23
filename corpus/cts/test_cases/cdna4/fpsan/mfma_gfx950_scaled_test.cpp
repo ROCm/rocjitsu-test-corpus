@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
+#include "hip_test_utils.hpp"
 #include "mfma_gfx950_parts.hpp"
 #include "subbyte_oracle.hpp"
 
@@ -35,47 +36,37 @@ __global__ void k_scale_32x32x64(const fpsan::v32e4m3_native *A, const fpsan::v3
 }
 
 TEST(ScaledMfma, F8F6F4_16x16x128_FloatLaunches) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
-  fpsan::v32e4m3_native *dA, *dB;
-  v4f_native *dC, *dD;
-  HIP_CHECK(hipMalloc(&dA, sizeof(*dA)));
-  HIP_CHECK(hipMalloc(&dB, sizeof(*dB)));
-  HIP_CHECK(hipMalloc(&dC, sizeof(*dC)));
-  HIP_CHECK(hipMalloc(&dD, sizeof(*dD)));
+  fpsan::v32e4m3_native *dA = device_allocations.allocate<fpsan::v32e4m3_native>(1);
+  fpsan::v32e4m3_native *dB = device_allocations.allocate<fpsan::v32e4m3_native>(1);
+  v4f_native *dC = device_allocations.allocate<v4f_native>(1);
+  v4f_native *dD = device_allocations.allocate<v4f_native>(1);
   HIP_CHECK(hipMemset(dA, 0, sizeof(*dA)));
   HIP_CHECK(hipMemset(dB, 0, sizeof(*dB)));
   HIP_CHECK(hipMemset(dC, 0, sizeof(*dC)));
   k_scale_16x16x128<Semantics::Native><<<1, WAVE>>>(dA, dB, dC, dD, 0x7F, 0x7F);
   HIP_CHECK(hipDeviceSynchronize());
   HIP_CHECK(hipGetLastError());
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 TEST(ScaledMfma, F8F6F4_32x32x64_FloatLaunches) {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
-  fpsan::v32e4m3_native *dA, *dB;
-  v16f_native *dC, *dD;
-  HIP_CHECK(hipMalloc(&dA, sizeof(*dA)));
-  HIP_CHECK(hipMalloc(&dB, sizeof(*dB)));
-  HIP_CHECK(hipMalloc(&dC, sizeof(*dC)));
-  HIP_CHECK(hipMalloc(&dD, sizeof(*dD)));
+  fpsan::v32e4m3_native *dA = device_allocations.allocate<fpsan::v32e4m3_native>(1);
+  fpsan::v32e4m3_native *dB = device_allocations.allocate<fpsan::v32e4m3_native>(1);
+  v16f_native *dC = device_allocations.allocate<v16f_native>(1);
+  v16f_native *dD = device_allocations.allocate<v16f_native>(1);
   HIP_CHECK(hipMemset(dA, 0, sizeof(*dA)));
   HIP_CHECK(hipMemset(dB, 0, sizeof(*dB)));
   HIP_CHECK(hipMemset(dC, 0, sizeof(*dC)));
   k_scale_32x32x64<Semantics::Native><<<1, WAVE>>>(dA, dB, dC, dD, 0x7F, 0x7F);
   HIP_CHECK(hipDeviceSynchronize());
   HIP_CHECK(hipGetLastError());
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +139,7 @@ ScaleMats make_scale_mats() {
 // Float dataflow (== builtin) with both scales nonzero. Small-int inputs are
 // exact in both e4m3 and e5m2, so the reference matmul is format-independent.
 template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale16_layout() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -163,8 +155,9 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale16_layout(
       ref[i * SN + j] = static_cast<float>(static_cast<double>(m.C[i * SN + j]) +
                                            dot * static_cast<double>(fa) * static_cast<double>(fb));
     }
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C), *dD;
-  HIP_CHECK(hipMalloc(&dD, SM * SN * sizeof(float)));
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C);
+  float *dD = device_allocations.allocate<float>(SM * SN);
   k_scale16<Semantics::Native, float, AElem, BElem, CBSZ, BLGP>
       <<<1, WAVE>>>(dA, dB, dC, dD, sa, sb);
   HIP_CHECK(hipDeviceSynchronize());
@@ -172,19 +165,17 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale16_layout(
   HIP_CHECK(hipMemcpy(got.data(), dD, SM * SN * sizeof(float), hipMemcpyDeviceToHost));
   for (int i = 0; i < SM * SN; ++i)
     EXPECT_EQ(bits_of(got[i]), bits_of(ref[i])) << "at " << i;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale16_fpsan() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
   ScaleMats m = make_scale_mats();
   const int sa = 128, sb = 130; // both scales nonzero
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C);
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C);
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     using VF = Value<float, S, kCC>;
@@ -201,19 +192,15 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale16_fpsan()
                           fpsan::cast<float>(VB(BElem(m.B[k * SN + j])));
         ref[i * SN + j] = (VF(m.C[i * SN + j]) + dot * vsa * vsb).fpsan_payload();
       }
-    std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, SM * SN * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(SM * SN);
     k_scale16<S, std::uint32_t, AElem, BElem, CBSZ, BLGP><<<1, WAVE>>>(dA, dB, dC, dD, sa, sb);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(SM * SN);
     HIP_CHECK(hipMemcpy(got.data(), dD, SM * SN * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < SM * SN; ++i)
       EXPECT_EQ(got[i], ref[i]) << "at " << i;
-    (void)hipFree(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
 }
 
 using fpsan::fp8_e4m3;
@@ -300,6 +287,7 @@ ScaleMats make_scale_mats32() {
 } // namespace
 
 template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale32_layout() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -316,8 +304,9 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale32_layout(
           static_cast<float>(static_cast<double>(m.C[i * S2N + j]) +
                              dot * static_cast<double>(fa) * static_cast<double>(fb));
     }
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C), *dD;
-  HIP_CHECK(hipMalloc(&dD, S2M * S2N * sizeof(float)));
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C);
+  float *dD = device_allocations.allocate<float>(S2M * S2N);
   k_scale32<Semantics::Native, float, AElem, BElem, CBSZ, BLGP>
       <<<1, WAVE>>>(dA, dB, dC, dD, sa, sb);
   HIP_CHECK(hipDeviceSynchronize());
@@ -325,19 +314,17 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale32_layout(
   HIP_CHECK(hipMemcpy(got.data(), dD, S2M * S2N * sizeof(float), hipMemcpyDeviceToHost));
   for (int i = 0; i < S2M * S2N; ++i)
     EXPECT_EQ(bits_of(got[i]), bits_of(ref[i])) << "at " << i;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale32_fpsan() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
   ScaleMats m = make_scale_mats32();
   const int sa = 128, sb = 130;
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C);
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C);
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     using VF = Value<float, S, kCC>;
@@ -353,19 +340,15 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale32_fpsan()
                           fpsan::cast<float>(VB(BElem(m.B[k * S2N + j])));
         ref[i * S2N + j] = (VF(m.C[i * S2N + j]) + dot * vsa * vsb).fpsan_payload();
       }
-    std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, S2M * S2N * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(S2M * S2N);
     k_scale32<S, std::uint32_t, AElem, BElem, CBSZ, BLGP><<<1, WAVE>>>(dA, dB, dC, dD, sa, sb);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(S2M * S2N);
     HIP_CHECK(hipMemcpy(got.data(), dD, S2M * S2N * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < S2M * S2N; ++i)
       EXPECT_EQ(got[i], ref[i]) << "at " << i;
-    (void)hipFree(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
 }
 
 TEST(ScaledMfma32x32x64_E4M3, LayoutMatchesHardware) {
@@ -464,6 +447,7 @@ __global__ void k_scale_sub16(const fpsan::v8i32_native *A, const fpsan::v8i32_n
 }
 
 template <int CBSZ, int BLGP> void run_scale_sub16_layout() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -500,12 +484,10 @@ template <int CBSZ, int BLGP> void run_scale_sub16_layout() {
       ref[i * SN + j] = static_cast<float>(static_cast<double>(Cm[i * SN + j]) +
                                            dot * static_cast<double>(fa) * static_cast<double>(fb));
     }
-  fpsan::v8i32_native *dA, *dB;
-  float *dC, *dD;
-  HIP_CHECK(hipMalloc(&dA, WAVE * sizeof(fpsan::v8i32_native)));
-  HIP_CHECK(hipMalloc(&dB, WAVE * sizeof(fpsan::v8i32_native)));
-  HIP_CHECK(hipMalloc(&dC, SM * SN * sizeof(float)));
-  HIP_CHECK(hipMalloc(&dD, SM * SN * sizeof(float)));
+  fpsan::v8i32_native *dA = device_allocations.allocate<fpsan::v8i32_native>(WAVE);
+  fpsan::v8i32_native *dB = device_allocations.allocate<fpsan::v8i32_native>(WAVE);
+  float *dC = device_allocations.allocate<float>(SM * SN);
+  float *dD = device_allocations.allocate<float>(SM * SN);
   HIP_CHECK(hipMemcpy(dA, A.data(), WAVE * sizeof(fpsan::v8i32_native), hipMemcpyHostToDevice));
   HIP_CHECK(hipMemcpy(dB, B.data(), WAVE * sizeof(fpsan::v8i32_native), hipMemcpyHostToDevice));
   HIP_CHECK(hipMemcpy(dC, Cm.data(), SM * SN * sizeof(float), hipMemcpyHostToDevice));
@@ -515,13 +497,10 @@ template <int CBSZ, int BLGP> void run_scale_sub16_layout() {
   HIP_CHECK(hipMemcpy(got.data(), dD, SM * SN * sizeof(float), hipMemcpyDeviceToHost));
   for (int i = 0; i < SM * SN; ++i)
     EXPECT_EQ(bits_of(got[i]), bits_of(ref[i])) << "at " << i;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 template <int CBSZ, int BLGP> void run_scale_sub16_fpsan() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -549,11 +528,9 @@ template <int CBSZ, int BLGP> void run_scale_sub16_fpsan() {
       int lane = 16 * ((k % 64) / 16) + j, s = (k / 64) * 16 + (k % 16);
       set_field(B[lane], wb * s, static_cast<unsigned>(Bp[k * SN + j]), wb);
     }
-  fpsan::v8i32_native *dA, *dB;
-  float *dC;
-  HIP_CHECK(hipMalloc(&dA, WAVE * sizeof(fpsan::v8i32_native)));
-  HIP_CHECK(hipMalloc(&dB, WAVE * sizeof(fpsan::v8i32_native)));
-  HIP_CHECK(hipMalloc(&dC, SM * SN * sizeof(float)));
+  fpsan::v8i32_native *dA = device_allocations.allocate<fpsan::v8i32_native>(WAVE);
+  fpsan::v8i32_native *dB = device_allocations.allocate<fpsan::v8i32_native>(WAVE);
+  float *dC = device_allocations.allocate<float>(SM * SN);
   HIP_CHECK(hipMemcpy(dA, A.data(), WAVE * sizeof(fpsan::v8i32_native), hipMemcpyHostToDevice));
   HIP_CHECK(hipMemcpy(dB, B.data(), WAVE * sizeof(fpsan::v8i32_native), hipMemcpyHostToDevice));
   HIP_CHECK(hipMemcpy(dC, Cm.data(), SM * SN * sizeof(float), hipMemcpyHostToDevice));
@@ -570,19 +547,15 @@ template <int CBSZ, int BLGP> void run_scale_sub16_fpsan() {
                           sub_canonical_value<BLGP, S>(static_cast<unsigned>(Bp[k * SN + j]));
         ref[i * SN + j] = (VF(Cm[i * SN + j]) + dot * vsa * vsb).fpsan_payload();
       }
-    std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, SM * SN * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(SM * SN);
     k_scale_sub16<S, CBSZ, BLGP, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dD, sa, sb);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(SM * SN);
     HIP_CHECK(hipMemcpy(got.data(), dD, SM * SN * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < SM * SN; ++i)
       EXPECT_EQ(got[i], ref[i]) << "at " << i;
-    (void)hipFree(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
 }
 
 TEST(ScaledMfma16x16x128_FP6, LayoutMatchesHardware) { run_scale_sub16_layout<2, 2>(); }
@@ -638,6 +611,7 @@ void pack_sub32(std::vector<fpsan::v8i32_native> &A, std::vector<fpsan::v8i32_na
 }
 
 template <int CBSZ, int BLGP> void run_scale_sub32_layout() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -665,12 +639,10 @@ template <int CBSZ, int BLGP> void run_scale_sub32_layout() {
           static_cast<float>(static_cast<double>(Cm[i * S2N + j]) +
                              dot * static_cast<double>(fa) * static_cast<double>(fb));
     }
-  fpsan::v8i32_native *dA, *dB;
-  float *dC, *dD;
-  HIP_CHECK(hipMalloc(&dA, WAVE * sizeof(fpsan::v8i32_native)));
-  HIP_CHECK(hipMalloc(&dB, WAVE * sizeof(fpsan::v8i32_native)));
-  HIP_CHECK(hipMalloc(&dC, S2M * S2N * sizeof(float)));
-  HIP_CHECK(hipMalloc(&dD, S2M * S2N * sizeof(float)));
+  fpsan::v8i32_native *dA = device_allocations.allocate<fpsan::v8i32_native>(WAVE);
+  fpsan::v8i32_native *dB = device_allocations.allocate<fpsan::v8i32_native>(WAVE);
+  float *dC = device_allocations.allocate<float>(S2M * S2N);
+  float *dD = device_allocations.allocate<float>(S2M * S2N);
   HIP_CHECK(hipMemcpy(dA, A.data(), WAVE * sizeof(fpsan::v8i32_native), hipMemcpyHostToDevice));
   HIP_CHECK(hipMemcpy(dB, B.data(), WAVE * sizeof(fpsan::v8i32_native), hipMemcpyHostToDevice));
   HIP_CHECK(hipMemcpy(dC, Cm.data(), S2M * S2N * sizeof(float), hipMemcpyHostToDevice));
@@ -680,13 +652,10 @@ template <int CBSZ, int BLGP> void run_scale_sub32_layout() {
   HIP_CHECK(hipMemcpy(got.data(), dD, S2M * S2N * sizeof(float), hipMemcpyDeviceToHost));
   for (int i = 0; i < S2M * S2N; ++i)
     EXPECT_EQ(bits_of(got[i]), bits_of(ref[i])) << "at " << i;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 template <int CBSZ, int BLGP> void run_scale_sub32_fpsan() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -703,11 +672,9 @@ template <int CBSZ, int BLGP> void run_scale_sub32_fpsan() {
     x = fpsan_test::pick_int_valued<float>(rng, -8, 8);
   std::vector<fpsan::v8i32_native> A(WAVE, fpsan::v8i32_native{}), B(WAVE, fpsan::v8i32_native{});
   pack_sub32<CBSZ, BLGP>(A, B, Ap, Bp);
-  fpsan::v8i32_native *dA, *dB;
-  float *dC;
-  HIP_CHECK(hipMalloc(&dA, WAVE * sizeof(fpsan::v8i32_native)));
-  HIP_CHECK(hipMalloc(&dB, WAVE * sizeof(fpsan::v8i32_native)));
-  HIP_CHECK(hipMalloc(&dC, S2M * S2N * sizeof(float)));
+  fpsan::v8i32_native *dA = device_allocations.allocate<fpsan::v8i32_native>(WAVE);
+  fpsan::v8i32_native *dB = device_allocations.allocate<fpsan::v8i32_native>(WAVE);
+  float *dC = device_allocations.allocate<float>(S2M * S2N);
   HIP_CHECK(hipMemcpy(dA, A.data(), WAVE * sizeof(fpsan::v8i32_native), hipMemcpyHostToDevice));
   HIP_CHECK(hipMemcpy(dB, B.data(), WAVE * sizeof(fpsan::v8i32_native), hipMemcpyHostToDevice));
   HIP_CHECK(hipMemcpy(dC, Cm.data(), S2M * S2N * sizeof(float), hipMemcpyHostToDevice));
@@ -724,19 +691,15 @@ template <int CBSZ, int BLGP> void run_scale_sub32_fpsan() {
                           sub_canonical_value<BLGP, S>(static_cast<unsigned>(Bp[k * S2N + j]));
         ref[i * S2N + j] = (VF(Cm[i * S2N + j]) + dot * vsa * vsb).fpsan_payload();
       }
-    std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, S2M * S2N * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(S2M * S2N);
     k_scale_sub32<S, CBSZ, BLGP, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dD, sa, sb);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(S2M * S2N);
     HIP_CHECK(hipMemcpy(got.data(), dD, S2M * S2N * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < S2M * S2N; ++i)
       EXPECT_EQ(got[i], ref[i]) << "at " << i;
-    (void)hipFree(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
 }
 
 TEST(ScaledMfma32x32x64_FP6, LayoutMatchesHardware) { run_scale_sub32_layout<2, 2>(); }
@@ -818,6 +781,7 @@ __global__ void k_scale16_pb(const float *A, const float *B, const float *C, Out
 }
 
 template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale16_perblock() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -834,8 +798,9 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale16_perbloc
     for (int j = 0; j < SN; ++j)
       SB[16 * kb + j] = eB[j * NB + kb];
   auto e8 = [](int b) { return fpsan::detail::e8m0_to_float(static_cast<unsigned>(b)); };
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C);
-  int *dSA = to_dev(SA), *dSB = to_dev(SB);
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C);
+  int *dSA = device_allocations.to_dev(SA), *dSB = device_allocations.to_dev(SB);
   // ---- Float vs host reference (pins the hardware per-block scale model) ----
   {
     std::vector<float> ref(SM * SN);
@@ -851,8 +816,8 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale16_perbloc
         }
         ref[i * SN + j] = static_cast<float>(acc);
       }
-    float *dD;
-    HIP_CHECK(hipMalloc(&dD, SM * SN * sizeof(float)));
+    DeviceAllocations iteration_allocations;
+    float *dD = iteration_allocations.allocate<float>(SM * SN);
     k_scale16_pb<Semantics::Native, float, AElem, BElem, CBSZ, BLGP>
         <<<1, WAVE>>>(dA, dB, dC, dD, dSA, dSB);
     HIP_CHECK(hipDeviceSynchronize());
@@ -860,7 +825,6 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale16_perbloc
     HIP_CHECK(hipMemcpy(got.data(), dD, SM * SN * sizeof(float), hipMemcpyDeviceToHost));
     for (int i = 0; i < SM * SN; ++i)
       EXPECT_EQ(bits_of(got[i]), bits_of(ref[i])) << "Float at " << i;
-    (void)hipFree(dD);
   }
   // ---- FPSan-family semantics vs payload-ring reference ---------------------
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
@@ -881,21 +845,15 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale16_perbloc
         }
         ref[i * SN + j] = acc.fpsan_payload();
       }
-    std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, SM * SN * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(SM * SN);
     k_scale16_pb<S, std::uint32_t, AElem, BElem, CBSZ, BLGP><<<1, WAVE>>>(dA, dB, dC, dD, dSA, dSB);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(SM * SN);
     HIP_CHECK(hipMemcpy(got.data(), dD, SM * SN * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < SM * SN; ++i)
       EXPECT_EQ(got[i], ref[i]) << "FPSan at " << i;
-    (void)hipFree(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dSA);
-  (void)hipFree(dSB);
 }
 
 TEST(ScaledMfma16x16x128_PerBlockScale, E4M3) { run_scale16_perblock<fp8_e4m3, fp8_e4m3, 0, 0>(); }
@@ -941,6 +899,7 @@ __global__ void k_scale32_pb(const float *A, const float *B, const float *C, Out
 }
 
 template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale32_perblock() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -956,8 +915,9 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale32_perbloc
     for (int n = 0; n < S2N; ++n)
       SB[32 * kb + n] = eB[n * NB + kb];
   auto e8 = [](int b) { return fpsan::detail::e8m0_to_float(static_cast<unsigned>(b)); };
-  float *dA = to_dev(m.A), *dB = to_dev(m.B), *dC = to_dev(m.C);
-  int *dSA = to_dev(SA), *dSB = to_dev(SB);
+  float *dA = device_allocations.to_dev(m.A), *dB = device_allocations.to_dev(m.B),
+        *dC = device_allocations.to_dev(m.C);
+  int *dSA = device_allocations.to_dev(SA), *dSB = device_allocations.to_dev(SB);
   {
     std::vector<float> ref(S2M * S2N);
     for (int i = 0; i < S2M; ++i)
@@ -972,8 +932,8 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale32_perbloc
         }
         ref[i * S2N + j] = static_cast<float>(acc);
       }
-    float *dD;
-    HIP_CHECK(hipMalloc(&dD, S2M * S2N * sizeof(float)));
+    DeviceAllocations iteration_allocations;
+    float *dD = iteration_allocations.allocate<float>(S2M * S2N);
     k_scale32_pb<Semantics::Native, float, AElem, BElem, CBSZ, BLGP>
         <<<1, WAVE>>>(dA, dB, dC, dD, dSA, dSB);
     HIP_CHECK(hipDeviceSynchronize());
@@ -981,7 +941,6 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale32_perbloc
     HIP_CHECK(hipMemcpy(got.data(), dD, S2M * S2N * sizeof(float), hipMemcpyDeviceToHost));
     for (int i = 0; i < S2M * S2N; ++i)
       EXPECT_EQ(bits_of(got[i]), bits_of(ref[i])) << "Float at " << i;
-    (void)hipFree(dD);
   }
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
@@ -1001,21 +960,15 @@ template <class AElem, class BElem, int CBSZ, int BLGP> void run_scale32_perbloc
         }
         ref[i * S2N + j] = acc.fpsan_payload();
       }
-    std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, S2M * S2N * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(S2M * S2N);
     k_scale32_pb<S, std::uint32_t, AElem, BElem, CBSZ, BLGP><<<1, WAVE>>>(dA, dB, dC, dD, dSA, dSB);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(S2M * S2N);
     HIP_CHECK(hipMemcpy(got.data(), dD, S2M * S2N * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < S2M * S2N; ++i)
       EXPECT_EQ(got[i], ref[i]) << "FPSan at " << i;
-    (void)hipFree(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dSA);
-  (void)hipFree(dSB);
 }
 
 TEST(ScaledMfma32x32x64_PerBlockScale, E4M3) { run_scale32_perblock<fp8_e4m3, fp8_e4m3, 0, 0>(); }
@@ -1045,6 +998,7 @@ __global__ void k_scale_sub16_pb(const fpsan::v8i32_native *A, const fpsan::v8i3
 }
 
 template <int CBSZ, int BLGP> void run_scale_sub16_perblock_fpsan() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -1078,15 +1032,13 @@ template <int CBSZ, int BLGP> void run_scale_sub16_perblock_fpsan() {
       set_field(B[lane], wb * s, static_cast<unsigned>(Bp[k * SN + j]), wb);
     }
   auto e8 = [](int b) { return fpsan::detail::e8m0_to_float(static_cast<unsigned>(b)); };
-  fpsan::v8i32_native *dA, *dB;
-  float *dC;
-  HIP_CHECK(hipMalloc(&dA, WAVE * sizeof(fpsan::v8i32_native)));
-  HIP_CHECK(hipMalloc(&dB, WAVE * sizeof(fpsan::v8i32_native)));
-  HIP_CHECK(hipMalloc(&dC, SM * SN * sizeof(float)));
+  fpsan::v8i32_native *dA = device_allocations.allocate<fpsan::v8i32_native>(WAVE);
+  fpsan::v8i32_native *dB = device_allocations.allocate<fpsan::v8i32_native>(WAVE);
+  float *dC = device_allocations.allocate<float>(SM * SN);
   HIP_CHECK(hipMemcpy(dA, A.data(), WAVE * sizeof(fpsan::v8i32_native), hipMemcpyHostToDevice));
   HIP_CHECK(hipMemcpy(dB, B.data(), WAVE * sizeof(fpsan::v8i32_native), hipMemcpyHostToDevice));
   HIP_CHECK(hipMemcpy(dC, Cm.data(), SM * SN * sizeof(float), hipMemcpyHostToDevice));
-  int *dSA = to_dev(SA), *dSB = to_dev(SB);
+  int *dSA = device_allocations.to_dev(SA), *dSB = device_allocations.to_dev(SB);
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     using VF = Value<float, S, kCC>;
@@ -1103,21 +1055,15 @@ template <int CBSZ, int BLGP> void run_scale_sub16_perblock_fpsan() {
         }
         ref[i * SN + j] = acc.fpsan_payload();
       }
-    std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, SM * SN * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(SM * SN);
     k_scale_sub16_pb<S, CBSZ, BLGP, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dD, dSA, dSB);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(SM * SN);
     HIP_CHECK(hipMemcpy(got.data(), dD, SM * SN * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < SM * SN; ++i)
       EXPECT_EQ(got[i], ref[i]) << "at " << i;
-    (void)hipFree(dD);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dSA);
-  (void)hipFree(dSB);
 }
 
 TEST(ScaledMfma16x16x128_PerBlockScale, FP4Sub) { run_scale_sub16_perblock_fpsan<4, 4>(); }
@@ -1209,6 +1155,7 @@ __global__ void k_scale16_mix_b8(const fpsan::v8i32_native *A, const float *B, c
 
 // AIsSub=false: A fp8, B sub. AIsSub=true: A sub, B fp8.
 template <bool AIsSub, class Fp8Elem, int CBSZ, int BLGP> void run_scale16_mixed() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -1266,11 +1213,10 @@ template <bool AIsSub, class Fp8Elem, int CBSZ, int BLGP> void run_scale16_mixed
         dot += Aval(i, k) * Bval(k, j);
       ref[i * SN + j] = static_cast<float>(static_cast<double>(Cm[i * SN + j]) + dot * fa * fb);
     }
-  float *dF = to_dev(fp8mat), *dC = to_dev(Cm), *dD;
-  fpsan::v8i32_native *dSub;
-  HIP_CHECK(hipMalloc(&dSub, WAVE * sizeof(fpsan::v8i32_native)));
+  float *dF = device_allocations.to_dev(fp8mat), *dC = device_allocations.to_dev(Cm);
+  fpsan::v8i32_native *dSub = device_allocations.allocate<fpsan::v8i32_native>(WAVE);
   HIP_CHECK(hipMemcpy(dSub, sub.data(), WAVE * sizeof(fpsan::v8i32_native), hipMemcpyHostToDevice));
-  HIP_CHECK(hipMalloc(&dD, SM * SN * sizeof(float)));
+  float *dD = device_allocations.allocate<float>(SM * SN);
   if constexpr (AIsSub)
     k_scale16_mix_b8<Semantics::Native, float, Fp8Elem, CBSZ, BLGP>
         <<<1, WAVE>>>(dSub, dF, dC, dD, sa, sb);
@@ -1282,10 +1228,6 @@ template <bool AIsSub, class Fp8Elem, int CBSZ, int BLGP> void run_scale16_mixed
   HIP_CHECK(hipMemcpy(got.data(), dD, SM * SN * sizeof(float), hipMemcpyDeviceToHost));
   for (int i = 0; i < SM * SN; ++i)
     EXPECT_EQ(bits_of(got[i]), bits_of(ref[i])) << "at " << i;
-  (void)hipFree(dF);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
-  (void)hipFree(dSub);
 }
 
 TEST(ScaledMfma16x16x128_Mixed8xSub, FP8xFP4_Layout) { run_scale16_mixed<false, fp8_e4m3, 0, 4>(); }
@@ -1297,6 +1239,7 @@ TEST(ScaledMfma16x16x128_Mixed8xSub, FP6xFP8_Layout) { run_scale16_mixed<true, f
 // FPSan-mode mixed 8 x sub: fp8 operand carries real fp8 values (cast widening);
 // sub operand carries finite Width-bit subbyte codes (canonical widening).
 template <bool AIsSub, class Fp8Elem, int CBSZ, int BLGP> void run_scale16_mixed_fpsan() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -1327,9 +1270,8 @@ template <bool AIsSub, class Fp8Elem, int CBSZ, int BLGP> void run_scale16_mixed
         sub_mix_loc16(k, j, lane, slot);
         set_field(sub[lane], w * slot, static_cast<unsigned>(subpay[k * SN + j]), w);
       }
-  float *dF = to_dev(fp8mat), *dC = to_dev(Cm);
-  fpsan::v8i32_native *dSub;
-  HIP_CHECK(hipMalloc(&dSub, WAVE * sizeof(fpsan::v8i32_native)));
+  float *dF = device_allocations.to_dev(fp8mat), *dC = device_allocations.to_dev(Cm);
+  fpsan::v8i32_native *dSub = device_allocations.allocate<fpsan::v8i32_native>(WAVE);
   HIP_CHECK(hipMemcpy(dSub, sub.data(), WAVE * sizeof(fpsan::v8i32_native), hipMemcpyHostToDevice));
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
@@ -1352,8 +1294,8 @@ template <bool AIsSub, class Fp8Elem, int CBSZ, int BLGP> void run_scale16_mixed
           dot = dot + Av(i, k) * Bv(k, j);
         ref[i * SN + j] = (VF(Cm[i * SN + j]) + dot * vsa * vsb).fpsan_payload();
       }
-    std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, SM * SN * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(SM * SN);
     if constexpr (AIsSub)
       k_scale16_mix_b8<S, std::uint32_t, Fp8Elem, CBSZ, BLGP>
           <<<1, WAVE>>>(dSub, dF, dC, dD, sa, sb);
@@ -1365,11 +1307,7 @@ template <bool AIsSub, class Fp8Elem, int CBSZ, int BLGP> void run_scale16_mixed
     HIP_CHECK(hipMemcpy(got.data(), dD, SM * SN * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < SM * SN; ++i)
       EXPECT_EQ(got[i], ref[i]) << "at " << i;
-    (void)hipFree(dD);
   });
-  (void)hipFree(dF);
-  (void)hipFree(dC);
-  (void)hipFree(dSub);
 }
 
 TEST(ScaledMfma16x16x128_Mixed8xSub, FP8xFP4_Fpsan) {
@@ -1457,6 +1395,7 @@ __global__ void k_scale32_mix_b8(const fpsan::v8i32_native *A, const float *B, c
 }
 
 template <bool AIsSub, class Fp8Elem, int CBSZ, int BLGP> void run_scale32_mixed() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -1505,11 +1444,10 @@ template <bool AIsSub, class Fp8Elem, int CBSZ, int BLGP> void run_scale32_mixed
         dot += Aval(i, k) * Bval(k, j);
       ref[i * S2N + j] = static_cast<float>(static_cast<double>(Cm[i * S2N + j]) + dot * fa * fb);
     }
-  float *dF = to_dev(fp8mat), *dC = to_dev(Cm), *dD;
-  fpsan::v8i32_native *dSub;
-  HIP_CHECK(hipMalloc(&dSub, WAVE * sizeof(fpsan::v8i32_native)));
+  float *dF = device_allocations.to_dev(fp8mat), *dC = device_allocations.to_dev(Cm);
+  fpsan::v8i32_native *dSub = device_allocations.allocate<fpsan::v8i32_native>(WAVE);
   HIP_CHECK(hipMemcpy(dSub, sub.data(), WAVE * sizeof(fpsan::v8i32_native), hipMemcpyHostToDevice));
-  HIP_CHECK(hipMalloc(&dD, S2M * S2N * sizeof(float)));
+  float *dD = device_allocations.allocate<float>(S2M * S2N);
   if constexpr (AIsSub)
     k_scale32_mix_b8<Semantics::Native, float, Fp8Elem, CBSZ, BLGP>
         <<<1, WAVE>>>(dSub, dF, dC, dD, sa, sb);
@@ -1521,13 +1459,10 @@ template <bool AIsSub, class Fp8Elem, int CBSZ, int BLGP> void run_scale32_mixed
   HIP_CHECK(hipMemcpy(got.data(), dD, S2M * S2N * sizeof(float), hipMemcpyDeviceToHost));
   for (int i = 0; i < S2M * S2N; ++i)
     EXPECT_EQ(bits_of(got[i]), bits_of(ref[i])) << "at " << i;
-  (void)hipFree(dF);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
-  (void)hipFree(dSub);
 }
 
 template <bool AIsSub, class Fp8Elem, int CBSZ, int BLGP> void run_scale32_mixed_fpsan() {
+  DeviceAllocations device_allocations;
   int ndev = 0;
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
@@ -1558,9 +1493,8 @@ template <bool AIsSub, class Fp8Elem, int CBSZ, int BLGP> void run_scale32_mixed
         sub_mix_loc32(k, j, lane, slot);
         set_field(sub[lane], w * slot, static_cast<unsigned>(subpay[k * S2N + j]), w);
       }
-  float *dF = to_dev(fp8mat), *dC = to_dev(Cm);
-  fpsan::v8i32_native *dSub;
-  HIP_CHECK(hipMalloc(&dSub, WAVE * sizeof(fpsan::v8i32_native)));
+  float *dF = device_allocations.to_dev(fp8mat), *dC = device_allocations.to_dev(Cm);
+  fpsan::v8i32_native *dSub = device_allocations.allocate<fpsan::v8i32_native>(WAVE);
   HIP_CHECK(hipMemcpy(dSub, sub.data(), WAVE * sizeof(fpsan::v8i32_native), hipMemcpyHostToDevice));
   fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
@@ -1583,8 +1517,8 @@ template <bool AIsSub, class Fp8Elem, int CBSZ, int BLGP> void run_scale32_mixed
           dot = dot + Av(i, k) * Bv(k, j);
         ref[i * S2N + j] = (VF(Cm[i * S2N + j]) + dot * vsa * vsb).fpsan_payload();
       }
-    std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, S2M * S2N * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dD = iteration_allocations.allocate<std::uint32_t>(S2M * S2N);
     if constexpr (AIsSub)
       k_scale32_mix_b8<S, std::uint32_t, Fp8Elem, CBSZ, BLGP>
           <<<1, WAVE>>>(dSub, dF, dC, dD, sa, sb);
@@ -1596,11 +1530,7 @@ template <bool AIsSub, class Fp8Elem, int CBSZ, int BLGP> void run_scale32_mixed
     HIP_CHECK(hipMemcpy(got.data(), dD, S2M * S2N * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < S2M * S2N; ++i)
       EXPECT_EQ(got[i], ref[i]) << "at " << i;
-    (void)hipFree(dD);
   });
-  (void)hipFree(dF);
-  (void)hipFree(dC);
-  (void)hipFree(dSub);
 }
 
 TEST(ScaledMfma32x32x64_Mixed8xSub, FP8xFP4_Layout) { run_scale32_mixed<false, fp8_e4m3, 0, 4>(); }

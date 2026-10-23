@@ -3,6 +3,7 @@
   "target": "gfx950",
   "cmake": {
     "cache_variables": {
+      "KERNEL_CORPUS_ENABLE_GUITAR_HERO": "ON",
       "KERNEL_CORPUS_ENABLE_HIP_MATMUL": "ON",
       "KERNEL_CORPUS_ENABLE_HIPKITTENS": "ON",
       "KERNEL_CORPUS_ENABLE_ROCBLAS": "ON"

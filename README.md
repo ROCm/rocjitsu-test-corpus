@@ -15,6 +15,7 @@ corpus/
   llama/      llama.cpp test-backend-ops cases and vendored GGML sources.
   vulkan/     Pinned Vulkan compute and texel-buffer CTS selections.
   runtime-cts/ Direct-KFD aql/ and capability-gated pm4/ suites.
+  race/       Race-detector integration programs and standalone mutation kernels.
   tensile/    gfx1250 TensileLite configs and generated artifacts.
   benchmarks/ Parameterized Triton benchmarks and reused upstream kernels.
 
@@ -68,8 +69,134 @@ CI orchestration and simulator configurations remain in rocm-systems.
   Tensile scripts, not by `tests/test_corpus.py`.
 
 `tests/test_corpus.py` discovers and runs the `iree`, `kernels`, `cts`, `dbt`,
-`semantics`, `llama`, and `vulkan` suites. By default it uses target `gfx1201` and
-selects the first three; `dbt`, `semantics`, `llama`, and `vulkan` are opt-in.
+`semantics`, `llama`, `vulkan`, `race`, `aql`, and `pm4` suites. By default it
+uses target `gfx1201` and selects the first three; the other suites are opt-in.
+
+### RocJITsu race-detector integration
+
+`corpus/race/integration/` owns the gfx942, gfx950 and gfx1151 GoogleTest programs,
+their shared fixture, race-log matcher, CMake build, and case-list configs.
+The opt-in `--suite race` adapter builds these integration programs with the
+corpus HIP toolchain and runs each GoogleTest case separately. It covers this
+integration collection only. `corpus/race/kernels/` contains the separate
+standalone kernels used for baseline/mutant comparisons by the mutation tooling;
+they are not collected by this pytest adapter. Assembly snapshots, inventory,
+and regeneration scripts for that collection also belong under `corpus/race/`.
+
+The caller supplies a plugin-free base simulator config through
+`ROCJITSU_RACE_CONFIG` and a run wrapper containing one standalone `{config}`
+token. The suite derives a private race-plugin config and report directory for
+every case. Run execution separately from other suites, whose wrappers use a
+fixed configuration rather than per-case substitution. Collection with
+`--collect-only` and build-only use with `--skip-all-runs` do not require a
+launcher or base simulator config and may select multiple suites.
+
+The base config must match `--target`. For gfx950 use
+`emulation/rocjitsu/tests/race-detector/race_test_config.json` from rocm-systems:
+its 1-XCD/4-CU topology avoids the memory cost of a full MI350X simulation for
+each parallel test. For gfx1151 use `emulation/rocjitsu/configs/gfx1151.json`.
+For gfx942 use
+`emulation/rocjitsu/tests/race-detector/race_test_gfx942_config.json`, supplied
+by the [systems companion](https://github.com/ROCm/rocm-systems/pull/12583).
+It also uses a 1-XCD/4-CU topology and is used for gfx942 race qualification.
+With `ROCM_SYSTEMS` pointing to that checkout, a gfx950 run is:
+
+```bash
+ROCM_PATH=/path/to/rocm-sdk \
+ROCJITSU_RACE_CONFIG="$ROCM_SYSTEMS/emulation/rocjitsu/tests/race-detector/race_test_config.json" \
+pytest tests/test_corpus.py \
+  --target gfx950 \
+  --suite race \
+  --run-wrapper "rocjitsu --config {config} --"
+```
+
+Set `ROCJITSU_RACE_BUILD_ROOT` to keep the CMake build outside the checkout.
+Returning-atomic tests cover compiler-generated and explicit VM-only waits,
+with no-wait and EXP-only controls. FLAT-to-LDS exchanges check both a
+synchronized barrier and a missing-barrier control on all three targets. The
+gfx950 suite also keeps full-wave and lane-zero atomic controls separate.
+The ordering pair issues a returning GLOBAL atomic followed by a GLOBAL load
+into the same VGPR, without an intervening wait; a final `vmcnt(0)` precedes
+checking the loaded value. Replacing that load with a VALU overwrite must report
+a VGPR write race. These cases distinguish same-class writeback ordering from
+result readiness. Numerical checks verify atomic side effects in every atomic
+case and final output values in the safe variants. Raced VGPR values are
+unconstrained; untouched masked lanes retain their exact-value checks.
+Select the ordering pair with
+`--case RaceTest.vmem_gfx942_atomic_global_same_vgpr` and
+`--case RaceTest.vmem_gfx942_atomic_valu_overwrite_race`, substituting gfx950 or
+gfx1151 to test those targets.
+
+Before entering each private case directory, the adapter resolves relative
+launcher paths and plain arguments naming existing files against the corpus
+checkout. This includes interpreter scripts such as `python3 ./wrapper.py`,
+regardless of executable permission. Options (`--key=value`), environment
+assignments (`KEY=value`), directories, and nonexistent paths are passed through;
+relative paths in those arguments refer to the private case directory. Use
+absolute paths for those operands when they must refer elsewhere.
+Parallel workers share one successful build and matcher result per target for
+the current pytest invocation; a new
+invocation reruns the incremental build. Set `CMAKE_BUILD_PARALLEL_LEVEL` to
+control compiler concurrency (otherwise the pytest worker count is used).
+The HIP programs retain their functional and race-report assertions and reject
+allocation, copy, launch, and synchronization errors, including in deliberately
+racy tests. The same build runs the host-only race-log parser and matcher
+tests, plus GPU-free fixture tests that inject HIP failures.
+Each invocation records a GoogleTest XML report and requires the selected case
+to complete successfully; empty selections and skipped cases fail the corpus test.
+The race log must also contain a test-kernel dispatch; a runtime copy dispatch
+alone cannot establish that the integration kernel executed.
+Each case retains the original 30-second execution timeout by default. Set
+`ROCJITSU_RACE_CASE_TIMEOUT=<seconds>` to choose a different deadline, for
+example when a retrying run wrapper has a longer overall limit. The value must
+be a positive, finite number of seconds and is validated before building
+execution cases. The adapter stops the launched process tree on expiry and
+reports the case's `run.log`, including
+captured output. This includes nested sessions created by CI supervisors.
+Wrappers must remain alive while supervising those sessions, so their children
+stay discoverable through Linux procfs. Configure and build are not subject to
+this case timeout.
+
+For a direct run of a built HIP program, use a fresh working directory for each
+GoogleTest case. The plugin writes to `sinks.dir` in its simulator config;
+`RJ_SINK_DIR` does not configure the plugin. The matcher requires `RJ_SINK_DIR`
+to equal the absolute `plugins` directory under the current working directory
+and reads `./plugins/race.log`. Both paths must therefore name that directory.
+For example, after building the gfx950 program (with `ROCM_SYSTEMS` and
+`ROCJITSU_RACE_BUILD_ROOT` set to absolute paths):
+
+```bash
+race_case_dir=$(mktemp -d)
+mkdir "$race_case_dir/plugins"
+jq --arg sink "$race_case_dir/plugins" \
+  '. + {require_all_plugins: true, plugins: {race: {}}, sinks: {types: ["file"], dir: $sink}}' \
+  "$ROCM_SYSTEMS/emulation/rocjitsu/tests/race-detector/race_test_config.json" \
+  > "$race_case_dir/config.json"
+(
+  cd "$race_case_dir"
+  RJ_SINK_DIR="$PWD/plugins" ROCJITSU_RUNTIME_DIR=runtime \
+    rocjitsu --config "$PWD/config.json" -- \
+    "$ROCJITSU_RACE_BUILD_ROOT/gfx950/build/hip_race_tests_gfx950" \
+    --gtest_filter=Gfx950RaceTest.global_to_lds_buffer
+)
+```
+
+The pytest adapter sets up this contract and verifies GoogleTest completion and
+test-kernel dispatch automatically; the direct command is useful for debugging
+one case. The same layout applies to gfx1151 with its matching config and binary.
+
+The target configs in `corpus/race/integration/configs/` accept `skip_compile_tests` to omit
+cases from discovery and `skip_run_tests` to build without launching those cases.
+Both lists use bare case names such as `vgpr_waitcnt`. The HIP program is shared
+by all cases for an architecture, so discovery exclusions do not remove test
+bodies from that program's compilation.
+
+CI orchestration remains in rocm-systems. Its
+`.github/workflows/rocjitsu-corpus-tests.yml` runs this suite in the Release
+lane and selects the corpus revision through both the `corpus_ref` dispatch
+default and `ROCJITSU_DBT_CORPUS_REF`. Changes here reach that CI only after
+both pins move to a merged corpus revision that contains them; update the two
+pins together and validate the corpus/emulator pair in CI.
 
 ### gfx1250 memory CTS
 
@@ -204,7 +331,7 @@ Useful selectors:
 
 - `--target <gfx target>`: target to run, for example `gfx942`, `gfx950`,
   `gfx1201`, or `gfx1250`.
-- `--suite <iree|kernels|cts|dbt|semantics|llama|vulkan|aql|pm4>`: include a suite. Repeat or
+- `--suite <iree|kernels|cts|dbt|semantics|llama|vulkan|race|aql|pm4>`: include a suite. Repeat or
   pass comma-separated values.
 - `--exclude-suite <suite>`: exclude a suite.
 - `--backend <backend>`: include a kernel backend such as `hipkittens`.

@@ -10,7 +10,7 @@ source:
 
 ```text
 cases/
-  <project>/<case>/      runner, metadata, and optional overrides/helpers
+  <project>/[<architecture>/]<case>/  runner, metadata, and optional overrides/helpers
 
 third_party/
   <project>/             vendored or extracted upstream sources
@@ -18,6 +18,8 @@ third_party/
 
 Collected kernel cases:
 
+- [guitar-hero](cases/guitar-hero/README.md): assembly instruction, divergence
+  and checkpoint smokes for independent compute workgroups.
 - `hip-stream-k/`:
   - `simple_streamk`
   - `two_tile_streamk`
@@ -35,6 +37,11 @@ Collected kernel cases:
 
 | Case | Target Arch | Check |
 | --- | --- | --- |
+| `guitar-hero/guitar_hero_rdna4/guitar_hero_wave32` | `gfx1201`, wave32 | Launch and workgroup-consistency smoke |
+| `guitar-hero/guitar_hero_rdna4/guitar_hero_wave64` | `gfx1201`, wave64 | Launch and workgroup-consistency smoke |
+| `guitar-hero/guitar_hero_rdna3` | `gfx1100`, wave32 | Launch and workgroup-consistency smoke |
+| `guitar-hero/guitar_hero_cdna4` | `gfx950`, wave64 | Launch and workgroup-consistency smoke |
+| `guitar-hero/guitar_hero_cdna5` | `gfx1250`, wave32 | Launch and workgroup-consistency smoke |
 | `hip-stream-k/simple_streamk` | CDNA3 | Pass |
 | `hip-stream-k/two_tile_streamk` | CDNA3 | Pass |
 | `hip-matmul/matmul` | CDNA3 | Bug |
@@ -81,9 +88,28 @@ To build only selected backends, add enable flags under `cacheVariables`:
 "KERNEL_CORPUS_ENABLE_HIP_STREAMK": "ON"
 ```
 
-`ROCM_PATH` must point at a ROCm SDK root with
-`lib/cmake/hip/hip-config.cmake`. If `ROCM_PATH` is unset, CMake attempts to
-discover it with `$ROCM_VENV/bin/rocm-sdk path --root` or `rocm-sdk path --root`.
+`ROCM_PATH` is a CMake cache setting that must point at a ROCm SDK root with
+`lib/cmake/hip/hip-config.cmake`. Set it in the user preset's `cacheVariables`
+above or with `-DROCM_PATH=<root>`. If the cache entry is empty, CMake uses the
+`ROCM_PATH` environment variable or, if that is unset or empty, runs
+`rocm-sdk path --root` using the executable on `PATH`; activating a TheRock/ROCm
+Python virtual environment makes that environment's SDK discoverable.
+
+Both discovery sources populate the cache entry, so later configures reuse it
+without checking the environment or running `rocm-sdk`. If an initial configure
+fails the SDK-root check before enabling HIP, recover with
+`-DROCM_PATH=<valid root>` or configure afresh. After a successful configure,
+switching SDKs requires a fresh build directory or
+`cmake --preset local-hip --fresh` with the new root set in the user preset or
+via `-DROCM_PATH=<new root>`.
+Updating `ROCM_PATH` alone retains cached HIP compiler and package paths from
+the original SDK.
+
+<a id="offline-googletest-setup"></a>
+
+The rocBLAS runners prefer an installed GoogleTest package and otherwise fetch
+the pinned release. For an offline standalone CMake build, supply a local
+GoogleTest checkout with `-DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=<path>`.
 
 Then configure and build with the local preset:
 
@@ -108,8 +134,9 @@ source tree in `third_party/hipkittens`. See
 
 ## Corpus Layout
 
-Runnable reproducer cases live under `cases/`. A case owns its runner, metadata,
-and any local source overrides or helper CMake files:
+Runnable reproducer cases live under `cases/`, with optional architecture
+subdirectories. Discovery searches recursively for `case.json`. A case owns its
+runner, metadata, and any local source overrides or helper CMake files:
 
 ```text
 cases/
@@ -158,12 +185,15 @@ corpus: HIP runtime, rocPRIM/rocThrust, rocBLAS, and hipBLAS.
 `OFF` when configuring a smaller build and enable individual backends with the
 options below.
 
+`KERNEL_CORPUS_ENABLE_GUITAR_HERO=ON` needs `hip` and the SDK assembler and `ld.lld`.
 `KERNEL_CORPUS_ENABLE_HIP_STREAMK=ON` needs `hip`, `rocThrust`/`rocPRIM`, and
 `rocBLAS` for validation.
 `KERNEL_CORPUS_ENABLE_HIP_MATMUL=ON` needs `hip`.
 `KERNEL_CORPUS_ENABLE_HIPKITTENS=ON` needs `hip` and an OpenMP-capable host compiler
 runtime.
-`KERNEL_CORPUS_ENABLE_ROCBLAS=ON` needs `hip` and `rocBLAS`.
+`KERNEL_CORPUS_ENABLE_ROCBLAS=ON` needs `hip`, `rocBLAS`, and GoogleTest; see the
+[offline GoogleTest setup note](#offline-googletest-setup) for installed-package
+and local-checkout options.
 
 The Stream-K runner is intended for CDNA / gfx9-family targets and is not expected
 to work on RDNA targets. Its extracted hip-stream-k kernels use a local fragment

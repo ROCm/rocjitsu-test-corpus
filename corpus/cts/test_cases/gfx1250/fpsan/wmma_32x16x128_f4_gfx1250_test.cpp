@@ -108,6 +108,7 @@ static const float kGrid[] = {0.f,   0.5f, 1.f,   1.5f, 2.f,  3.f,  4.f, 6.f,
 // D/C accumulator is m = reg + 16*(lane>>4), n = lane&15. Asserts bit-exact vs an
 // independent host matmul on the exact fp4 grid.
 TEST(WmmaF4_32x16x128, LayoutMatchesHardware) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::mt19937 rng = fpsan_test::make_rng();
@@ -137,11 +138,10 @@ TEST(WmmaF4_32x16x128, LayoutMatchesHardware) {
       ref[m * N + n] = acc;
     }
 
-  std::uint32_t *dA = to_dev(Apack);
-  std::uint32_t *dB = to_dev(Bpack);
-  float *dC = to_dev(C);
-  float *dD = nullptr;
-  HIP_CHECK(hipMalloc(&dD, M * N * sizeof(float)));
+  std::uint32_t *dA = device_allocations.to_dev(Apack);
+  std::uint32_t *dB = device_allocations.to_dev(Bpack);
+  float *dC = device_allocations.to_dev(C);
+  float *dD = device_allocations.allocate<float>(M * N);
   k_f4<0, 0><<<1, 32>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> got(M * N);
@@ -155,10 +155,6 @@ TEST(WmmaF4_32x16x128, LayoutMatchesHardware) {
       ++mism;
     }
   EXPECT_EQ(mism, 0) << mism << " / " << (M * N) << " elements mismatched";
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 // ===================== wrapper: Float + FPSan =====================
@@ -209,6 +205,7 @@ __global__ void k_wrap_fpsan(const std::uint32_t *Apack, const std::uint32_t *Bp
 }
 
 TEST(WmmaF4_32x16x128, WrapperFloatAndFPSan) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::mt19937 rng = fpsan_test::make_rng();
@@ -237,11 +234,10 @@ TEST(WmmaF4_32x16x128, WrapperFloatAndFPSan) {
         acc += A[m * K + k] * B[k * N + n];
       fref[m * N + n] = acc;
     }
-  std::uint32_t *dA = to_dev(Apack);
-  std::uint32_t *dB = to_dev(Bpack);
-  float *dC = to_dev(C);
-  float *dDf = nullptr;
-  HIP_CHECK(hipMalloc(&dDf, M * N * sizeof(float)));
+  std::uint32_t *dA = device_allocations.to_dev(Apack);
+  std::uint32_t *dB = device_allocations.to_dev(Bpack);
+  float *dC = device_allocations.to_dev(C);
+  float *dDf = device_allocations.allocate<float>(M * N);
   k_wrap_float<<<1, 32>>>(dA, dB, dC, dDf);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> gotf(M * N);
@@ -267,8 +263,8 @@ TEST(WmmaF4_32x16x128, WrapperFloatAndFPSan) {
         pref[m * N + n] = acc.fpsan_payload();
       }
 
-    std::uint32_t *dDp = nullptr;
-    HIP_CHECK(hipMalloc(&dDp, M * N * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dDp = iteration_allocations.allocate<std::uint32_t>(M * N);
     k_wrap_fpsan<S><<<1, 32>>>(dA, dB, dC, dDp);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> gotp(M * N);
@@ -278,12 +274,7 @@ TEST(WmmaF4_32x16x128, WrapperFloatAndFPSan) {
       if (gotp[i] != pref[i] && np++ < 4)
         ADD_FAILURE() << "payload at " << i << " got=" << gotp[i] << " ref=" << pref[i];
     EXPECT_EQ(np, 0) << np << " payload mismatches";
-    (void)hipFree(dDp);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dDf);
 }
 
 // ===================== C-accumulator modifier (gfx1250) =====================
@@ -338,6 +329,7 @@ __global__ void k_f4_mod_fpsan(const std::uint32_t *Apack, const std::uint32_t *
 }
 
 template <int Cmod> static void run_modifier_f4() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::mt19937 rng = fpsan_test::make_rng();
@@ -366,11 +358,10 @@ template <int Cmod> static void run_modifier_f4() {
         acc += A[m * K + k] * B[k * N + n];
       fref[m * N + n] = acc;
     }
-  std::uint32_t *dA = to_dev(Apack);
-  std::uint32_t *dB = to_dev(Bpack);
-  float *dC = to_dev(C);
-  float *dDf = nullptr;
-  HIP_CHECK(hipMalloc(&dDf, M * N * sizeof(float)));
+  std::uint32_t *dA = device_allocations.to_dev(Apack);
+  std::uint32_t *dB = device_allocations.to_dev(Bpack);
+  float *dC = device_allocations.to_dev(C);
+  float *dDf = device_allocations.allocate<float>(M * N);
   k_f4_mod_float<Cmod><<<1, 32>>>(dA, dB, dC, dDf);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> gotf(M * N);
@@ -400,8 +391,8 @@ template <int Cmod> static void run_modifier_f4() {
         pref[m * N + n] = acc.fpsan_payload();
       }
 
-    std::uint32_t *dDp = nullptr;
-    HIP_CHECK(hipMalloc(&dDp, M * N * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dDp = iteration_allocations.allocate<std::uint32_t>(M * N);
     k_f4_mod_fpsan<Cmod, S><<<1, 32>>>(dA, dB, dC, dDp);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> gotp(M * N);
@@ -411,12 +402,7 @@ template <int Cmod> static void run_modifier_f4() {
       if (gotp[i] != pref[i] && np++ < 4)
         ADD_FAILURE() << "Cmod=" << Cmod << " payload at " << i;
     EXPECT_EQ(np, 0) << np << " payload mismatches";
-    (void)hipFree(dDp);
   });
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dDf);
 }
 
 TEST(WmmaF4_32x16x128, ModifierNegC) { run_modifier_f4<1>(); }
@@ -528,6 +514,7 @@ static float scale_dec(unsigned byte, int sfmt) {
 // f4xf4 scale formats). The scale bytes are
 // generated and decoded in that format; the byte->k map is format-independent.
 template <bool SCALE16, int SFMT> static void run_scale(const char *tag) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const int NBY = SCALE16 ? 8 : 4;
@@ -602,11 +589,10 @@ template <bool SCALE16, int SFMT> static void run_scale(const char *tag) {
   };
 
   // Stage per-lane scale operands: A row m -> lane scale_lane_a(m); B col n -> lane n.
-  std::uint32_t *dA = to_dev(Apack);
-  std::uint32_t *dB = to_dev(Bpack);
-  float *dC = to_dev(C);
-  float *dDf = nullptr;
-  HIP_CHECK(hipMalloc(&dDf, M * N * sizeof(float)));
+  std::uint32_t *dA = device_allocations.to_dev(Apack);
+  std::uint32_t *dB = device_allocations.to_dev(Bpack);
+  float *dC = device_allocations.to_dev(C);
+  float *dDf = device_allocations.allocate<float>(M * N);
   int nf = 0;
   if constexpr (!SCALE16) {
     std::vector<unsigned> SA(32, 0u), SB(32, 0u);
@@ -622,15 +608,16 @@ template <bool SCALE16, int SFMT> static void run_scale(const char *tag) {
         w |= (unsigned(eB[n * 4 + by]) & 0xFF) << (8 * by);
       SB[n] = w;
     }
-    unsigned *dSA = to_dev(SA);
-    unsigned *dSB = to_dev(SB);
+    DeviceAllocations branch_allocations;
+    unsigned *dSA = branch_allocations.to_dev(SA);
+    unsigned *dSB = branch_allocations.to_dev(SB);
     k_scale_float<SFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDf);
     HIP_CHECK(hipDeviceSynchronize());
     fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
       constexpr Semantics S = decltype(sem)::value;
       std::vector<std::uint32_t> pref = make_pref(sem);
-      std::uint32_t *dDp = nullptr;
-      HIP_CHECK(hipMalloc(&dDp, M * N * sizeof(std::uint32_t)));
+      DeviceAllocations iteration_allocations;
+      std::uint32_t *dDp = iteration_allocations.allocate<std::uint32_t>(M * N);
       k_scale_fpsan<SFMT, S><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDp);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<std::uint32_t> gotp(M * N);
@@ -640,10 +627,7 @@ template <bool SCALE16, int SFMT> static void run_scale(const char *tag) {
         if (gotp[i] != pref[i] && np++ < 4)
           ADD_FAILURE() << tag << " payload at " << i << " got=" << gotp[i] << " ref=" << pref[i];
       EXPECT_EQ(np, 0) << np << " payload mismatches";
-      (void)hipFree(dDp);
     });
-    (void)hipFree(dSA);
-    (void)hipFree(dSB);
   } else {
     std::vector<unsigned long long> SA(32, 0ull), SB(32, 0ull);
     for (int m = 0; m < M; ++m) {
@@ -658,15 +642,16 @@ template <bool SCALE16, int SFMT> static void run_scale(const char *tag) {
         w |= static_cast<unsigned long long>(eB[n * 8 + by] & 0xFF) << (8 * by);
       SB[n] = w;
     }
-    unsigned long long *dSA = to_dev(SA);
-    unsigned long long *dSB = to_dev(SB);
+    DeviceAllocations branch_allocations;
+    unsigned long long *dSA = branch_allocations.to_dev(SA);
+    unsigned long long *dSB = branch_allocations.to_dev(SB);
     k_scale16_float<SFMT><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDf);
     HIP_CHECK(hipDeviceSynchronize());
     fpsan_test::for_matrix_fpsan_semantics([&](auto sem) {
       constexpr Semantics S = decltype(sem)::value;
       std::vector<std::uint32_t> pref = make_pref(sem);
-      std::uint32_t *dDp = nullptr;
-      HIP_CHECK(hipMalloc(&dDp, M * N * sizeof(std::uint32_t)));
+      DeviceAllocations iteration_allocations;
+      std::uint32_t *dDp = iteration_allocations.allocate<std::uint32_t>(M * N);
       k_scale16_fpsan<SFMT, S><<<1, 32>>>(dA, dB, dC, dSA, dSB, dDp);
       HIP_CHECK(hipDeviceSynchronize());
       std::vector<std::uint32_t> gotp(M * N);
@@ -676,10 +661,7 @@ template <bool SCALE16, int SFMT> static void run_scale(const char *tag) {
         if (gotp[i] != pref[i] && np++ < 4)
           ADD_FAILURE() << tag << " payload at " << i << " got=" << gotp[i] << " ref=" << pref[i];
       EXPECT_EQ(np, 0) << np << " payload mismatches";
-      (void)hipFree(dDp);
     });
-    (void)hipFree(dSA);
-    (void)hipFree(dSB);
   }
   std::vector<float> gotf(M * N);
   HIP_CHECK(hipMemcpy(gotf.data(), dDf, M * N * sizeof(float), hipMemcpyDeviceToHost));
@@ -688,10 +670,6 @@ template <bool SCALE16, int SFMT> static void run_scale(const char *tag) {
       ADD_FAILURE() << tag << " float at m=" << i / N << " n=" << i % N << " got=" << gotf[i]
                     << " ref=" << fref[i];
   EXPECT_EQ(nf, 0) << nf << " float mismatches";
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dDf);
 }
 
 TEST(WmmaF4_32x16x128, ScaleFloatAndFPSan) { run_scale<false, 0>("scale"); }
@@ -728,6 +706,7 @@ __global__ void k_raw(const std::uint32_t *Apack, const std::uint32_t *Bpack, fl
 // landing at output (lane,reg): value == m. Clean integers 0..31 (each x16)
 // confirm A lane==m and reveal (lane,reg)->m.
 TEST(WmmaF4_32x16x128, DISABLED_ProbeArowDmap) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const std::uint32_t one = f32_to_narrow(1.f, kFp4E2M1) & 0xF;
@@ -739,10 +718,9 @@ TEST(WmmaF4_32x16x128, DISABLED_ProbeArowDmap) {
     for (int s = 0; s < 64; ++s)
       pack_nibble(&Bpack[lane * 8], s, one);
 
-  std::uint32_t *dA = to_dev(Apack);
-  std::uint32_t *dB = to_dev(Bpack);
-  float *dD = nullptr;
-  HIP_CHECK(hipMalloc(&dD, 512 * sizeof(float)));
+  std::uint32_t *dA = device_allocations.to_dev(Apack);
+  std::uint32_t *dB = device_allocations.to_dev(Bpack);
+  float *dD = device_allocations.allocate<float>(512);
   k_raw<<<1, 32>>>(dA, dB, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> draw(512);
@@ -754,15 +732,13 @@ TEST(WmmaF4_32x16x128, DISABLED_ProbeArowDmap) {
       printf(" %3d", static_cast<int>(draw[lane * 16 + r]));
     printf("\n");
   }
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dD);
 }
 
 // Probe 2: pin B (lane,slot) and the D-col map. Stage B so column n holds (n+1)
 // ones via the hypothesized B layout; A = all ones. Output value == n+1 reveals
 // (lane,reg)->n and confirms the B layout if clean integers 1..16 (each x32).
 TEST(WmmaF4_32x16x128, DISABLED_ProbeBcolDmap) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const std::uint32_t one = f32_to_narrow(1.f, kFp4E2M1) & 0xF;
@@ -774,10 +750,9 @@ TEST(WmmaF4_32x16x128, DISABLED_ProbeBcolDmap) {
     for (int k = 0; k <= n; ++k) // n+1 ones in column n
       pack_nibble(&Bpack[b_lane(n, k) * 8], b_slot(k), one);
 
-  std::uint32_t *dA = to_dev(Apack);
-  std::uint32_t *dB = to_dev(Bpack);
-  float *dD = nullptr;
-  HIP_CHECK(hipMalloc(&dD, 512 * sizeof(float)));
+  std::uint32_t *dA = device_allocations.to_dev(Apack);
+  std::uint32_t *dB = device_allocations.to_dev(Bpack);
+  float *dD = device_allocations.allocate<float>(512);
   k_raw<<<1, 32>>>(dA, dB, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> draw(512);
@@ -789,9 +764,6 @@ TEST(WmmaF4_32x16x128, DISABLED_ProbeBcolDmap) {
       printf(" %3d", static_cast<int>(draw[lane * 16 + r]));
     printf("\n");
   }
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dD);
 }
 
 // Probe 3: true single-nibble one-hot A sweep over a physical lane. For each
@@ -800,6 +772,7 @@ TEST(WmmaF4_32x16x128, DISABLED_ProbeBcolDmap) {
 // (= a D row-class) and prints, per class, its output positions and the source
 // A slots -> reveals D (lane,reg)->(m,n) structure and A (lane,slot)->(m,k).
 static void onehot_sweep(int srcLane) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const std::uint32_t one = f32_to_narrow(1.f, kFp4E2M1) & 0xF;
@@ -807,16 +780,16 @@ static void onehot_sweep(int srcLane) {
   for (int lane = 0; lane < 32; ++lane)
     for (int s = 0; s < 64; ++s)
       pack_nibble(&Bpack[lane * 8], s, one);
-  std::uint32_t *dB = to_dev(Bpack);
-  float *dD = nullptr;
-  HIP_CHECK(hipMalloc(&dD, 512 * sizeof(float)));
+  std::uint32_t *dB = device_allocations.to_dev(Bpack);
+  float *dD = device_allocations.allocate<float>(512);
 
   std::vector<std::vector<int>> classes;    // each: sorted lit output indices
   std::vector<std::vector<int>> classSlots; // src slots feeding each class
   for (int s = 0; s < 128; ++s) {
     std::vector<std::uint32_t> Apack(32 * 16, 0u);
     pack_nibble(&Apack[srcLane * 16], s, one);
-    std::uint32_t *dA = to_dev(Apack);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dA = iteration_allocations.to_dev(Apack);
     k_raw<<<1, 32>>>(dA, dB, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<float> draw(512);
@@ -837,7 +810,6 @@ static void onehot_sweep(int srcLane) {
       classSlots.emplace_back();
     }
     classSlots[ci].push_back(s);
-    (void)hipFree(dA);
   }
   printf("one-hot A lane=%d: %d row-classes\n", srcLane, static_cast<int>(classes.size()));
   for (int c = 0; c < static_cast<int>(classes.size()); ++c) {
@@ -849,8 +821,6 @@ static void onehot_sweep(int srcLane) {
       printf("%d ", s);
     printf("}\n");
   }
-  (void)hipFree(dB);
-  (void)hipFree(dD);
 }
 
 TEST(WmmaF4_32x16x128, DISABLED_ProbeOneHotLane0) { onehot_sweep(0); }
@@ -862,11 +832,11 @@ TEST(WmmaF4_32x16x128, DISABLED_ProbeOneHotLane16) { onehot_sweep(16); }
 // recover k. Reveals A's k ordering relative to B's, so the two stage
 // consistently.
 static void kprobe_row0(int srcLane) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const std::uint32_t one = f32_to_narrow(1.f, kFp4E2M1) & 0xF;
-  float *dD = nullptr;
-  HIP_CHECK(hipMalloc(&dD, 512 * sizeof(float)));
+  float *dD = device_allocations.allocate<float>(512);
   // Pre-build 7 B buffers (bit b of k in column 0).
   std::vector<std::uint32_t *> dBbit(7, nullptr);
   for (int b = 0; b < 7; ++b) {
@@ -874,13 +844,14 @@ static void kprobe_row0(int srcLane) {
     for (int k = 0; k < K; ++k)
       if ((k >> b) & 1)
         pack_nibble(&Bpack[b_lane(0, k) * 8], b_slot(k), one);
-    dBbit[b] = to_dev(Bpack);
+    dBbit[b] = device_allocations.to_dev(Bpack);
   }
   int kof[64];
   for (int sa = 0; sa < 64; ++sa) {
     std::vector<std::uint32_t> Apack(32 * 16, 0u);
     pack_nibble(&Apack[srcLane * 16], sa, one);
-    std::uint32_t *dA = to_dev(Apack);
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dA = iteration_allocations.to_dev(Apack);
     int kk = 0;
     for (int b = 0; b < 7; ++b) {
       k_raw<<<1, 32>>>(dA, dBbit[b], dD);
@@ -891,14 +862,10 @@ static void kprobe_row0(int srcLane) {
         kk |= 1 << b;
     }
     kof[sa] = kk;
-    (void)hipFree(dA);
   }
   printf("A-slot -> k (row0, srcLane=%d):\n", srcLane);
   for (int sa = 0; sa < 64; ++sa)
     printf("s=%2d k=%3d%s", sa, kof[sa], (sa % 8 == 7) ? "\n" : "  ");
-  for (int b = 0; b < 7; ++b)
-    (void)hipFree(dBbit[b]);
-  (void)hipFree(dD);
 }
 
 TEST(WmmaF4_32x16x128, DISABLED_ProbeKrow0Lane0) { kprobe_row0(0); }
@@ -934,6 +901,7 @@ __global__ void k_raw_scale(const std::uint32_t *Apack, const std::uint32_t *Bpa
 // operand lane L word to all factor-2 (0x80808080); any row m fed by lane L
 // reads D[m][n]=256 (=2*128). Reveals scale-lane -> rows.
 static void scale_probe() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const std::uint32_t one = f32_to_narrow(1.f, kFp4E2M1) & 0xF;
@@ -944,17 +912,17 @@ static void scale_probe() {
   for (int n = 0; n < N; ++n)
     for (int k = 0; k < K; ++k)
       pack_nibble(&Bpack[b_lane(n, k) * 8], b_slot(k), one);
-  std::uint32_t *dA = to_dev(Apack);
-  std::uint32_t *dB = to_dev(Bpack);
+  std::uint32_t *dA = device_allocations.to_dev(Apack);
+  std::uint32_t *dB = device_allocations.to_dev(Bpack);
   std::vector<unsigned> SB(32, 0x7f7f7f7fu);
-  unsigned *dSB = to_dev(SB);
-  float *dD = nullptr;
-  HIP_CHECK(hipMalloc(&dD, 512 * sizeof(float)));
+  unsigned *dSB = device_allocations.to_dev(SB);
+  float *dD = device_allocations.allocate<float>(512);
   printf("scale-lane -> rows (D doubled to 256):\n");
   for (int L = 0; L < 32; ++L) {
     std::vector<unsigned> SA(32, 0x7f7f7f7fu);
     SA[L] = 0x80808080u;
-    unsigned *dSA = to_dev(SA);
+    DeviceAllocations iteration_allocations;
+    unsigned *dSA = iteration_allocations.to_dev(SA);
     k_raw_scale<<<1, 32>>>(dA, dB, dSA, dSB, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<float> draw(512);
@@ -964,18 +932,14 @@ static void scale_probe() {
       if (draw[i] == 256.f)
         printf("%d ", (i % 16) + 16 * ((i / 16) >> 4)); // m
     printf("}\n");
-    (void)hipFree(dSA);
   }
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dD);
-  (void)hipFree(dSB);
 }
 
 // byte->k probe for the A-scale of row 0. A one-hot decoded at (0,k0); B all
 // ones; C=0; scaleB=1; scaleA lane = scaleLane (row 0's, from pass 1) with byte
 // b doubled. raw[0]=(lane0,reg0)=(m0,n0); ==2 iff k0 is in byte b -> byte(k0).
 static void scale_byte_probe(int scaleLane) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const std::uint32_t one = f32_to_narrow(1.f, kFp4E2M1) & 0xF;
@@ -983,44 +947,41 @@ static void scale_byte_probe(int scaleLane) {
   for (int n = 0; n < N; ++n)
     for (int k = 0; k < K; ++k)
       pack_nibble(&Bpack[b_lane(n, k) * 8], b_slot(k), one);
-  std::uint32_t *dB = to_dev(Bpack);
+  std::uint32_t *dB = device_allocations.to_dev(Bpack);
   std::vector<unsigned> SB(32, 0x7f7f7f7fu);
-  unsigned *dSB = to_dev(SB);
-  float *dD = nullptr;
-  HIP_CHECK(hipMalloc(&dD, 512 * sizeof(float)));
+  unsigned *dSB = device_allocations.to_dev(SB);
+  float *dD = device_allocations.allocate<float>(512);
   int kbyte[128];
   for (int k0 = 0; k0 < K; ++k0) {
     std::vector<std::uint32_t> Apack(32 * 16, 0u);
     pack_nibble(&Apack[a_lane(0, k0) * 16], a_slot(0, k0), one);
-    std::uint32_t *dA = to_dev(Apack);
+    DeviceAllocations k_iteration_allocations;
+    std::uint32_t *dA = k_iteration_allocations.to_dev(Apack);
     int byte = -1;
     for (int b = 0; b < 4; ++b) {
       std::vector<unsigned> SA(32, 0x7f7f7f7fu);
       SA[scaleLane] = (0x7f7f7f7fu & ~(0xFFu << (8 * b))) | (0x80u << (8 * b));
-      unsigned *dSA = to_dev(SA);
+      DeviceAllocations iteration_allocations;
+      unsigned *dSA = iteration_allocations.to_dev(SA);
       k_raw_scale<<<1, 32>>>(dA, dB, dSA, dSB, dD);
       HIP_CHECK(hipDeviceSynchronize());
       float v = 0;
       HIP_CHECK(hipMemcpy(&v, dD, sizeof(float), hipMemcpyDeviceToHost));
       if (v == 2.f)
         byte = b;
-      (void)hipFree(dSA);
     }
     kbyte[k0] = byte;
-    (void)hipFree(dA);
   }
   printf("k -> A-scale byte (row0, scaleLane=%d):\n", scaleLane);
   for (int k0 = 0; k0 < K; ++k0)
     printf("k=%3d byte=%d%s", k0, kbyte[k0], (k0 % 8 == 7) ? "\n" : "  ");
-  (void)hipFree(dB);
-  (void)hipFree(dD);
-  (void)hipFree(dSB);
 }
 
 // Pass 1b: scaleB-lane -> col. B nonzero only in column n0 (decoded 1.0); A all
 // ones; scaleA=1. For each lane L set scaleB[L]=all-2; whichever L doubles
 // D[*][n0] is column n0's scale lane. Also reports the byte->#k for that lane.
 static void scaleB_probe(int n0) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const std::uint32_t one = f32_to_narrow(1.f, kFp4E2M1) & 0xF;
@@ -1030,31 +991,26 @@ static void scaleB_probe(int n0) {
       pack_nibble(&Apack[a_lane(m, k) * 16], a_slot(m, k), one);
   for (int k = 0; k < K; ++k)
     pack_nibble(&Bpack[b_lane(n0, k) * 8], b_slot(k), one); // only column n0
-  std::uint32_t *dA = to_dev(Apack);
-  std::uint32_t *dB = to_dev(Bpack);
+  std::uint32_t *dA = device_allocations.to_dev(Apack);
+  std::uint32_t *dB = device_allocations.to_dev(Bpack);
   std::vector<unsigned> SA(32, 0x7f7f7f7fu);
-  unsigned *dSA = to_dev(SA);
-  float *dD = nullptr;
-  HIP_CHECK(hipMalloc(&dD, 512 * sizeof(float)));
+  unsigned *dSA = device_allocations.to_dev(SA);
+  float *dD = device_allocations.allocate<float>(512);
   // raw index of D[0][n0] = lane n0 (m=0 -> lane=n0, reg0)
   const int idx = n0 * 16 + 0;
   printf("scaleB col n0=%d:\n", n0);
   for (int L = 0; L < 32; ++L) {
     std::vector<unsigned> SB(32, 0x7f7f7f7fu);
     SB[L] = 0x80808080u;
-    unsigned *dSB = to_dev(SB);
+    DeviceAllocations iteration_allocations;
+    unsigned *dSB = iteration_allocations.to_dev(SB);
     k_raw_scale<<<1, 32>>>(dA, dB, dSA, dSB, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<float> draw(512);
     HIP_CHECK(hipMemcpy(draw.data(), dD, 512 * sizeof(float), hipMemcpyDeviceToHost));
     if (draw[idx] != 128.f)
       printf("  lane L=%2d -> D[0][%d]=%g\n", L, n0, draw[idx]);
-    (void)hipFree(dSB);
   }
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dD);
-  (void)hipFree(dSA);
 }
 
 TEST(WmmaF4_32x16x128, DISABLED_ProbeScaleLane) { scale_probe(); }
