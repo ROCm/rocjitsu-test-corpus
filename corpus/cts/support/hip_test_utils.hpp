@@ -3,9 +3,9 @@
 //
 // tests/hip_test_utils.hpp
 // ----------------------------------------------------------------------------
-// HIP-side test helpers shared by the GPU test files: the HIP_CHECK assertion
-// macro, a device-availability probe, and host<->device vector copies. Kept in
-// the global namespace so the existing unqualified call sites need no change.
+// HIP-side test helpers shared by the GPU test files: HIP error-checking
+// macros, device-availability probes, scoped device allocations, and
+// host<->device vector copies.
 // Include only from tests compiled as HIP.
 // ----------------------------------------------------------------------------
 #ifndef FPSAN_TESTS_HIP_TEST_UTILS_HPP
@@ -17,8 +17,12 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstddef>
+#include <memory>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 // Assert a HIP call succeeded (prints the HIP error string on failure).
@@ -26,6 +30,15 @@
   do {                                                                                             \
     hipError_t e_ = (e);                                                                           \
     ASSERT_EQ(e_, hipSuccess) << hipGetErrorString(e_);                                            \
+  } while (0)
+
+// Throw on failure, including in helpers that return a value.
+#define HIP_CHECK_EXC(expr)                                                                        \
+  do {                                                                                             \
+    hipError_t hip_status_ = (expr);                                                               \
+    if (hip_status_ != hipSuccess)                                                                 \
+      throw std::runtime_error(std::string(#expr) + " failed at " + __FILE__ + ":" +               \
+                               std::to_string(__LINE__) + ": " + hipGetErrorString(hip_status_));  \
   } while (0)
 
 // True when at least one HIP device is present (tests GTEST_SKIP otherwise).
@@ -73,18 +86,46 @@ inline bool device_is_gfx950() {
   return std::string(prop.gcnArchName).compare(0, 6, "gfx950") == 0;
 }
 
-// Allocate device memory and copy a host vector into it. Caller hipFree()s.
-template <class T> T *to_dev(const std::vector<T> &h) {
-  T *d = nullptr;
-  (void)hipMalloc(&d, h.size() * sizeof(T));
-  (void)hipMemcpy(d, h.data(), h.size() * sizeof(T), hipMemcpyHostToDevice);
-  return d;
-}
+// Own a caller's device allocations so later transfer failures and fatal
+// assertions release everything acquired in that scope.
+class DeviceAllocations {
+  struct Deleter {
+    void operator()(void *device) const noexcept {
+      // Cleanup must not replace an allocation, copy, or assertion failure.
+      (void)hipFree(device);
+    }
+  };
+  std::vector<std::unique_ptr<void, Deleter>> allocations_;
+
+public:
+  template <class T> T *allocate(std::size_t count) {
+    T *pointer = nullptr;
+    HIP_CHECK_EXC(hipMalloc(&pointer, count * sizeof(T)));
+    std::unique_ptr<void, Deleter> allocation(pointer);
+    allocations_.push_back(std::move(allocation));
+    return pointer;
+  }
+
+  template <class T> T *to_dev(const std::vector<T> &host) {
+    T *device = allocate<T>(host.size());
+    HIP_CHECK_EXC(hipMemcpy(device, host.data(), host.size() * sizeof(T), hipMemcpyHostToDevice));
+    return device;
+  }
+
+  // Release an owned allocation early; ignore pointers this guard does not own.
+  void free(void *device) {
+    const auto allocation =
+        std::find_if(allocations_.begin(), allocations_.end(),
+                     [device](const auto &owned) { return owned.get() == device; });
+    if (allocation != allocations_.end())
+      allocations_.erase(allocation);
+  }
+};
 
 // Copy n elements back from device memory into a host vector.
 template <class T> std::vector<T> from_dev(const T *d, std::size_t n) {
   std::vector<T> h(n);
-  (void)hipMemcpy(h.data(), d, n * sizeof(T), hipMemcpyDeviceToHost);
+  HIP_CHECK_EXC(hipMemcpy(h.data(), d, n * sizeof(T), hipMemcpyDeviceToHost));
   return h;
 }
 

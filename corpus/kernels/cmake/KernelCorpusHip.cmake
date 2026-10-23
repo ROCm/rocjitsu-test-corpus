@@ -1,3 +1,11 @@
+# HIP toolchain detection for corpus tests:
+#   1. Use a nonempty ROCM_PATH CMake cache setting, including user presets.
+#   2. Otherwise cache $ROCM_PATH or the result of `rocm-sdk path --root` on
+#      PATH, including an activated TheRock/ROCm Python virtual environment.
+#      Later configures reuse the cache. After a successful configure, switching
+#      SDKs requires a fresh build directory or --fresh with the new ROCM_PATH
+#      so HIP compiler and package paths are redetected.
+#   3. Require the selected root to contain hip-config.cmake before enabling HIP.
 set(ROCM_PATH "" CACHE PATH "ROCm SDK root")
 
 macro(kernel_corpus_enable_hip)
@@ -28,7 +36,9 @@ macro(kernel_corpus_enable_hip)
     if(NOT ROCM_PATH OR NOT EXISTS "${ROCM_PATH}/lib/cmake/hip/hip-config.cmake")
         message(FATAL_ERROR
             "HIP cases require ROCM_PATH to point at a ROCm SDK root containing "
-            "lib/cmake/hip/hip-config.cmake. Set ROCM_PATH or provide rocm-sdk in PATH.")
+            "lib/cmake/hip/hip-config.cmake. Set -DROCM_PATH=<valid root> to "
+            "override the cached root, or configure afresh with ROCM_PATH set "
+            "or rocm-sdk on PATH.")
     endif()
 
     set(ENV{ROCM_PATH} "${ROCM_PATH}")

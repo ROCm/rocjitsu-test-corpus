@@ -88,9 +88,28 @@ To build only selected backends, add enable flags under `cacheVariables`:
 "KERNEL_CORPUS_ENABLE_HIP_STREAMK": "ON"
 ```
 
-`ROCM_PATH` must point at a ROCm SDK root with
-`lib/cmake/hip/hip-config.cmake`. If `ROCM_PATH` is unset, CMake attempts to
-discover it with `$ROCM_VENV/bin/rocm-sdk path --root` or `rocm-sdk path --root`.
+`ROCM_PATH` is a CMake cache setting that must point at a ROCm SDK root with
+`lib/cmake/hip/hip-config.cmake`. Set it in the user preset's `cacheVariables`
+above or with `-DROCM_PATH=<root>`. If the cache entry is empty, CMake uses the
+`ROCM_PATH` environment variable or, if that is unset or empty, runs
+`rocm-sdk path --root` using the executable on `PATH`; activating a TheRock/ROCm
+Python virtual environment makes that environment's SDK discoverable.
+
+Both discovery sources populate the cache entry, so later configures reuse it
+without checking the environment or running `rocm-sdk`. If an initial configure
+fails the SDK-root check before enabling HIP, recover with
+`-DROCM_PATH=<valid root>` or configure afresh. After a successful configure,
+switching SDKs requires a fresh build directory or
+`cmake --preset local-hip --fresh` with the new root set in the user preset or
+via `-DROCM_PATH=<new root>`.
+Updating `ROCM_PATH` alone retains cached HIP compiler and package paths from
+the original SDK.
+
+<a id="offline-googletest-setup"></a>
+
+The rocBLAS runners prefer an installed GoogleTest package and otherwise fetch
+the pinned release. For an offline standalone CMake build, supply a local
+GoogleTest checkout with `-DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=<path>`.
 
 Then configure and build with the local preset:
 
@@ -172,7 +191,9 @@ options below.
 `KERNEL_CORPUS_ENABLE_HIP_MATMUL=ON` needs `hip`.
 `KERNEL_CORPUS_ENABLE_HIPKITTENS=ON` needs `hip` and an OpenMP-capable host compiler
 runtime.
-`KERNEL_CORPUS_ENABLE_ROCBLAS=ON` needs `hip` and `rocBLAS`.
+`KERNEL_CORPUS_ENABLE_ROCBLAS=ON` needs `hip`, `rocBLAS`, and GoogleTest; see the
+[offline GoogleTest setup note](#offline-googletest-setup) for installed-package
+and local-checkout options.
 
 The Stream-K runner is intended for CDNA / gfx9-family targets and is not expected
 to work on RDNA targets. Its extracted hip-stream-k kernels use a local fragment

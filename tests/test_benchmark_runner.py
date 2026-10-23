@@ -352,8 +352,30 @@ def test_raw_problem_preserves_nested_parameter_keys(runner_context):
 
 def test_success_writes_compact_artifacts(runner_context) -> None:
     matrix = harness.matrix(runner_context, "triton.rmsnorm_bf16")
-    output, result = harness.run_harness(runner_context, matrix, "success", samples=3)
-    assert set(result) == {"execution_summary", "benchmark_results", "provenance"}
+
+    def ordered_samples(argv, **kwargs):
+        completed = harness.successful_process(runner_context, argv, **kwargs)
+        path = Path(argv[argv.index("--output") + 1])
+        payload = json.loads(path.read_text())
+        payload["timings_ns"] = [3, 1, 2]
+        path.write_text(json.dumps(payload))
+        return completed
+
+    output, result = harness.run_harness(
+        runner_context, matrix, "success", samples=3, process=ordered_samples,
+    )
+    assert set(result) == {
+        "schema_version", "publication", "execution_summary", "benchmark_results", "provenance",
+    }
+    assert result["schema_version"] == 1
+    assert result["publication"] == {
+        "id": None,
+        "source": {"branch": None, "message": None, "base": None, "pull_request": None},
+        "trigger": None,
+        "machine_label": None,
+        "workflow_commit_sha": None,
+        "tensile_commit_sha": None,
+    }
     summary = result["execution_summary"]
     assert summary == {
         "warmups": 0, "samples": 3, "timeout_seconds": 300,
@@ -388,9 +410,10 @@ def test_success_writes_compact_artifacts(runner_context) -> None:
         "name": "BF16 RMSNorm", "target": "gfx950",
         "operation": "RMSNorm", "thread_policy": "default",
         "problem": {"dtype": "bf16", "rows": 128, "columns": 4096, "epsilon": 1e-5},
-        "timing_results_s": [1e-9, 2e-9, 3e-9],
+        "timing_results_s": [3e-9, 1e-9, 2e-9],
         "status": "completed", "exit_code": 0, "error": None,
     }
+    assert json.loads(harness.artifact(output, test, "workload.json").read_text())["timings_ns"] == [3, 1, 2]
     assert (output / "run.json").is_file()
     assert json.loads((output / "run.json").read_text(encoding="utf-8")) == result
     assert (
@@ -453,7 +476,7 @@ def test_initial_checkpoint_is_a_running_raw_run(runner_context) -> None:
         observed = json.loads((workload.parents[4] / "run.json").read_text())
         return harness.successful_process(runner_context, argv, **kwargs)
 
-    harness.run_harness(
+    _, result = harness.run_harness(
         runner_context,
         harness.matrix(runner_context, "triton.rmsnorm_bf16"),
         "running-checkpoint",
@@ -461,10 +484,40 @@ def test_initial_checkpoint_is_a_running_raw_run(runner_context) -> None:
         samples=1,
     )
     assert observed is not None
-    assert set(observed) == {"execution_summary", "benchmark_results", "provenance"}
+    assert set(observed) == {
+        "schema_version", "publication", "execution_summary", "benchmark_results", "provenance",
+    }
+    assert observed["schema_version"] == result["schema_version"] == 1
+    assert observed["publication"] == result["publication"]
+    assert observed["publication"]["workflow_commit_sha"] is None
+    assert observed["publication"]["tensile_commit_sha"] is None
     assert observed["execution_summary"]["finished_at"] is None
     assert len(observed["benchmark_results"]) == 1
     assert observed["benchmark_results"][0]["status"] == "failed"
+
+
+def test_publication_metadata_is_fresh_per_run(runner_context) -> None:
+    matrix = harness.matrix(runner_context, "triton.rmsnorm_bf16")
+    output, first = harness.run_harness(runner_context, matrix, "first-publication")
+    first["publication"]["id"] = "harness-publication"
+    first["publication"]["source"]["base"] = {"branch": "develop", "commit": "b" * 40}
+    first["publication"]["source"]["pull_request"] = {
+        "number": 42, "url": "https://example.invalid/pull/42",
+    }
+    first["publication"].update(
+        trigger="manual", machine_label="harness-machine",
+        workflow_commit_sha="c" * 40, tensile_commit_sha="d" * 40,
+    )
+    runner._write_run(output, first)
+    assert json.loads((output / "run.json").read_text()) == first
+    _, second = harness.run_harness(runner_context, matrix, "second-publication")
+    assert second["publication"] == {
+        "id": None,
+        "source": {"branch": None, "message": None, "base": None, "pull_request": None},
+        "trigger": None, "machine_label": None,
+        "workflow_commit_sha": None, "tensile_commit_sha": None,
+    }
+    assert first["publication"]["source"] is not second["publication"]["source"]
 
 
 def test_first_partial_run_preserved_and_failed_case_can_later_succeed(
@@ -655,6 +708,30 @@ def test_target_configuration_rejects_invalid_fields(runner_context) -> None:
         runner_context.configs, {"gfx950": configuration}, clear=True
     ), pytest.raises(runner.RunnerError, match="cannot read"):
         runner._load_target_configuration(runner_context.configs["gfx950"])
+
+
+def test_publication_source_stays_null_with_known_revision(runner_context) -> None:
+    source = runner_context.source
+
+    def git(*args):
+        return subprocess.check_output(
+            ["git", *args], cwd=source, text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+
+    git("init", "--initial-branch=measured-branch")
+    git("-c", "user.name=Harness", "-c", "user.email=harness@example.invalid",
+        "commit", "--allow-empty", "-m", "Measured subject", "-m", "Measured body")
+    revision = git("rev-parse", "HEAD")
+    output, run = harness.run_harness(
+        runner_context, harness.matrix(runner_context), "known-publication",
+        source_info=runner._source_info,
+    )
+    assert run["publication"]["source"] == {
+        "branch": None, "message": None, "base": None, "pull_request": None,
+    }
+    assert run["provenance"]["rocjitsu"]["rocjitsu_commit_sha"] == revision
+    assert run["provenance"]["rocjitsu"]["rocjitsu_commit_timestamp"] is not None
+    assert json.loads((output / "run.json").read_text()) == run
 
 
 def test_commit_timestamp_is_normalized_to_utc(runner_context) -> None:
@@ -894,12 +971,7 @@ def test_interrupt_survives_failure_to_drain_output(runner_context) -> None:
 def test_interruption_retains_completed_and_unrun_matrix_cells(
     runner_context, artifacts_written
 ) -> None:
-    matrix = harness.matrix(
-        runner_context,
-        "triton.rmsnorm_bf16",
-        "triton.gemm_bf16_aligned",
-        "triton.gpt_oss_attention_bf16",
-    )
+    matrix = runner.select_matrix(runner_context.suite)
     calls = 0
 
     def interrupt_after_first(argv, **kwargs):
@@ -923,8 +995,25 @@ def test_interruption_retains_completed_and_unrun_matrix_cells(
     output = runner_context.root / "interrupted-partial"
     raw = json.loads((output / "run.json").read_text())
     assert calls == 2
-    assert [test["status"] for test in raw["benchmark_results"]] == ["completed", "failed", "failed"]
+    assert [test["status"] for test in raw["benchmark_results"]] == [
+        "completed", *(["failed"] * (len(matrix) - 1)),
+    ]
+    assert [
+        (item["id"], item["target"], item["thread_policy"])
+        for item in raw["benchmark_results"]
+    ] == [
+        (cell.case, cell.target, cell.thread_policy) for cell in matrix
+    ]
+    for item, cell in zip(raw["benchmark_results"][2:], matrix[2:]):
+        assert item["problem"] == cell.definition.params
+        assert item["timing_results_s"] == []
+        assert item["exit_code"] is None
+        assert item["error"] == "run interrupted before completion"
     assert raw["execution_summary"]["finished_at"] is not None
+    assert raw["schema_version"] == 1
+    assert raw["publication"]["source"] == {
+        "branch": None, "message": None, "base": None, "pull_request": None,
+    }
     assert raw["benchmark_results"][0]["timing_results_s"]
     assert (
         harness.artifact(output, raw["benchmark_results"][0], "stdout.txt").read_text()

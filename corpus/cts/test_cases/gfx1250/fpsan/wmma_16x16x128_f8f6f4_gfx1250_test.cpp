@@ -175,6 +175,7 @@ static const float kGrid[] = {0.f,   0.5f, 1.f,   1.5f, 2.f,  3.f,  4.f, 6.f,
                               -0.5f, -1.f, -1.5f, -2.f, -3.f, -4.f, -6.f};
 
 template <int AFMT, int BFMT, bool MIXED = false> static void run_layout(const char *tag) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::mt19937 rng = fpsan_test::make_rng();
@@ -202,11 +203,10 @@ template <int AFMT, int BFMT, bool MIXED = false> static void run_layout(const c
       ref[m * N + n] = acc;
     }
 
-  std::uint32_t *dA = to_dev(Apack);
-  std::uint32_t *dB = to_dev(Bpack);
-  float *dC = to_dev(C);
-  float *dD = nullptr;
-  HIP_CHECK(hipMalloc(&dD, M * N * sizeof(float)));
+  std::uint32_t *dA = device_allocations.to_dev(Apack);
+  std::uint32_t *dB = device_allocations.to_dev(Bpack);
+  float *dC = device_allocations.to_dev(C);
+  float *dD = device_allocations.allocate<float>(M * N);
   k_f8f6f4<AFMT, BFMT><<<1, 32>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> got(M * N);
@@ -215,10 +215,6 @@ template <int AFMT, int BFMT, bool MIXED = false> static void run_layout(const c
     EXPECT_EQ(bits_of(got[i]), bits_of(ref[i]))
         << tag << " mismatch at " << (i / N) << "," << (i % N) << " got=" << got[i]
         << " ref=" << ref[i];
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 TEST(WmmaF8f6f4_128, Fp8Fp8) { run_layout<0, 0>("fp8_fp8"); }
@@ -283,6 +279,7 @@ __global__ void k_f8f6f4_fpsan(const std::uint32_t *Apack, const std::uint32_t *
 
 template <Semantics S, int AFMT, int BFMT, bool MIXED = false>
 static void run_fpsan(const char *tag) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::mt19937 rng = fpsan_test::make_rng();
@@ -316,21 +313,16 @@ static void run_fpsan(const char *tag) {
       ref[m * N + n] = acc.fpsan_payload();
     }
 
-  std::uint32_t *dA = to_dev(Apack);
-  std::uint32_t *dB = to_dev(Bpack);
-  float *dC = to_dev(C);
-  std::uint32_t *dD = nullptr;
-  HIP_CHECK(hipMalloc(&dD, M * N * sizeof(std::uint32_t)));
+  std::uint32_t *dA = device_allocations.to_dev(Apack);
+  std::uint32_t *dB = device_allocations.to_dev(Bpack);
+  float *dC = device_allocations.to_dev(C);
+  std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(M * N);
   k_f8f6f4_fpsan<S, AFMT, BFMT, MIXED><<<1, 32>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<std::uint32_t> got(M * N);
   HIP_CHECK(hipMemcpy(got.data(), dD, M * N * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
   for (int i = 0; i < M * N; ++i)
     EXPECT_EQ(got[i], ref[i]) << tag << " payload mismatch at " << (i / N) << "," << (i % N);
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 template <int AFMT, int BFMT, bool MIXED = false> static void run_fpsan_all(const char *tag) {

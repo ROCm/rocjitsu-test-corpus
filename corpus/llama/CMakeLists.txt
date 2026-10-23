@@ -8,10 +8,13 @@ if(NOT CMAKE_HIP_ARCHITECTURES)
 endif()
 
 # HIP toolchain detection for corpus tests:
-#   1. Respect an explicit -DROCM_PATH or inherited $ROCM_PATH.
-#   2. Otherwise ask the ROCm Python SDK (`rocm-sdk path --root`), which is how
-#      TheRock/venv-based ROCm artifacts are exposed in this corpus workflow.
-#   3. Require the discovered root to contain hip-config.cmake before enabling HIP.
+#   1. Use a nonempty ROCM_PATH CMake cache setting, including user presets.
+#   2. Otherwise cache $ROCM_PATH or the result of `rocm-sdk path --root` on
+#      PATH, including an activated TheRock/ROCm Python virtual environment.
+#      Later configures reuse the cache. After a successful configure, switching
+#      SDKs requires a fresh build directory or --fresh with the new ROCM_PATH
+#      so HIP compiler and package paths are redetected.
+#   3. Require the selected root to contain hip-config.cmake before enabling HIP.
 set(ROCM_PATH "" CACHE PATH "ROCm SDK root")
 if(NOT ROCM_PATH AND DEFINED ENV{ROCM_PATH})
     set(ROCM_PATH "$ENV{ROCM_PATH}" CACHE PATH "ROCm SDK root" FORCE)
