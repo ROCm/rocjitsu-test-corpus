@@ -23,5 +23,17 @@
     "lds_wave32_cross_wave",
     "lds_wave32_cross_wave_race",
     "waw_global_load_then_wmma"
-  ]
+  ],
+  "memory_wait": {
+    "vgpr_waitcnt_race": {"access": "read", "register": "VGPR"},
+    "standalone_vmcnt_does_not_wait_for_lds": {"access": "read", "register": "VGPR"},
+    "standalone_lgkmcnt_does_not_wait_for_vmem": {"access": "read", "register": "VGPR"},
+    "vmcnt_below_capacity_race": {"access": "read", "register": "VGPR"},
+    "vscnt_pressure_does_not_advance_vmcnt": {"access": "read", "register": "VGPR"},
+    "lgkmcnt_below_capacity_race": {"access": "read", "register": "VGPR"},
+    "mixed_lgkmcnt_below_capacity_race": {"access": "read", "register": "VGPR"},
+    "wide_scalar_lgkmcnt_below_capacity_race": {"access": "read", "register": "VGPR"},
+    "d16_global_load_missing_waitcnt_race": {"access": "read", "register": "VGPR"},
+    "waw_global_load_then_wmma": {"access": "overwrite", "register": "VGPR"}
+  }
 }

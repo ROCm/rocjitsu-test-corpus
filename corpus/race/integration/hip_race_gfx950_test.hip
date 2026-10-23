@@ -52,16 +52,6 @@ __global__ void vgpr_no_race_kernel(const float *src, float *dst) {
   dst[tid] = val;
 }
 
-static constexpr RaceExpectation kVgprWaitcntRaceExpectation{
-    .kernel = "vgpr_race_kernel",
-    .type = "VGPR",
-    .access = "read",
-    .wave = 0,
-    .lane = 0,
-    .producer = "global_load_dword",
-    .consumer = "global_store_dword",
-};
-
 __global__ void vgpr_race_kernel(const float *src, float *dst) {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
   float val;
@@ -87,7 +77,7 @@ TEST_F(Gfx950RaceTest, vgpr_waitcnt_race) {
   vgpr_race_kernel<<<1, 64>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kVgprWaitcntRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 // --- Generic FLAT result waits ---
@@ -128,13 +118,6 @@ template <int Vmcnt, int Lgkmcnt> __global__ void flat_lds_wait_kernel(int *dst)
   dst[tid] = value;
 }
 
-static constexpr RaceExpectation kFlatPartialWaitRaceExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .producer = "flat_load_dword",
-    .consumer = "global_store_dword",
-};
-
 TEST_F(Gfx950RaceTest, flat_global_wait_both) {
   auto *src = allocWithData<float>(64), *dst = alloc<float>(64);
   flat_global_wait_kernel<0, 0><<<1, 64>>>(src, dst);
@@ -156,7 +139,7 @@ TEST_F(Gfx950RaceTest, flat_global_lgkmcnt_only_race) {
   flat_global_wait_kernel<kFlatVmcntNoWait, 0><<<1, 64>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kFlatPartialWaitRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 TEST_F(Gfx950RaceTest, flat_lds_wait_both) {
@@ -170,7 +153,7 @@ TEST_F(Gfx950RaceTest, flat_lds_vmcnt_only_race) {
   flat_lds_wait_kernel<0, kFlatLgkmcntNoWait><<<1, 64>>>(alloc<int>(64));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kFlatPartialWaitRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 TEST_F(Gfx950RaceTest, flat_lds_lgkmcnt_only) {
@@ -215,19 +198,11 @@ TEST_F(Gfx950RaceTest, flat_global_copy_missing_vmcnt_race) {
   flat_global_copy_kernel<kFlatVmcntNoWait><<<1, 64>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
   ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
-  ExpectRace({.findings = FindingCount::OneOrMore,
-              .kernel = "flat_global_copy_kernel",
-              .type = "VGPR",
-              .access = "read",
-              .producer = "flat_load_dword",
-              .consumer = "flat_store_dword"});
+  ExpectNoLdsRace();
 }
 
 // TODO(newling): Add mixed LDS/global HIP cases once functional routing is fixed
-// (https://github.com/ROCm/rocm-systems/issues/11456). The active C++ regression
-// FlatLoadReadyLanesKnownFalsePositives records the remaining ready-lane false
-// reports in https://github.com/ROCm/rocm-systems/issues/12237 without relying on
-// the broken mixed-space transfers.
+// (https://github.com/ROCm/rocm-systems/issues/11456).
 
 // --- All-ones wait operands ---
 
@@ -247,19 +222,12 @@ __global__ void vmcnt_no_wait_race_kernel(const float *src, float *dst) {
   dst[tid] = val;
 }
 
-static constexpr RaceExpectation kVmcntNoWaitRaceExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .producer = "global_load_dword",
-    .consumer = "global_store_dword",
-};
-
 TEST_F(Gfx950RaceTest, vmcnt_no_wait_race) {
   auto *src = allocWithData<float>(64), *dst = alloc<float>(64);
   vmcnt_no_wait_race_kernel<<<1, 64>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kVmcntNoWaitRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 __global__ void lgkmcnt_no_wait_race_kernel(int *dst) {
@@ -276,13 +244,6 @@ __global__ void lgkmcnt_no_wait_race_kernel(int *dst) {
   dst[tid] = val;
 }
 
-static constexpr RaceExpectation kLgkmcntNoWaitRaceExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .producer = "ds_read_b32",
-    .consumer = "global_store_dword",
-};
-
 TEST_F(Gfx950RaceTest, lgkmcnt_no_wait_race) {
   auto *dst = alloc<int>(64);
   // The assembly reads 64 dwords from LDS offset zero. It has no C++ LDS
@@ -290,20 +251,13 @@ TEST_F(Gfx950RaceTest, lgkmcnt_no_wait_race) {
   lgkmcnt_no_wait_race_kernel<<<1, 64, 64 * sizeof(int)>>>(dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kLgkmcntNoWaitRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 // --- Counter-capacity backpressure ---
 
 // The shared kernels consume the oldest result after a configurable number of
 // younger operations. At capacity it is safe; one operation below still races.
-
-static constexpr RaceExpectation kLgkmcntBelowCapacityRaceExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .producer = "ds_read_b32",
-    .consumer = "v_mov_b32",
-};
 
 TEST_F(Gfx950RaceTest, lgkmcnt_capacity_boundary) {
   lgkmcnt_capacity_kernel<kCdnaLgkmcntCapacity><<<1, 64>>>(alloc<int>(64));
@@ -316,7 +270,7 @@ TEST_F(Gfx950RaceTest, lgkmcnt_below_capacity_race) {
   lgkmcnt_capacity_kernel<kCdnaLgkmcntCapacity - 1><<<1, 64>>>(alloc<int>(64));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kLgkmcntBelowCapacityRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 TEST_F(Gfx950RaceTest, mixed_lgkmcnt_capacity_boundary) {
@@ -332,7 +286,7 @@ TEST_F(Gfx950RaceTest, mixed_lgkmcnt_below_capacity_race) {
       <<<1, 64>>>(allocWithData<int>(1), alloc<int>(64));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kLgkmcntBelowCapacityRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 TEST_F(Gfx950RaceTest, wide_scalar_lgkmcnt_capacity_boundary) {
@@ -348,15 +302,8 @@ TEST_F(Gfx950RaceTest, wide_scalar_lgkmcnt_below_capacity_race) {
       <<<1, 64>>>(allocWithData<uint64_t>(1), alloc<int>(64));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kLgkmcntBelowCapacityRaceExpectation);
+  ExpectNoLdsRace();
 }
-
-static constexpr RaceExpectation kVmcntBelowCapacityRaceExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .producer = "global_load_dword",
-    .consumer = "v_mov_b32",
-};
 
 TEST_F(Gfx950RaceTest, vmcnt_capacity_boundary) {
   auto *src = allocWithData<float>(64), *dst = alloc<float>(64);
@@ -371,7 +318,7 @@ TEST_F(Gfx950RaceTest, vmcnt_below_capacity_race) {
   vmcnt_capacity_kernel<kCdnaVmcntCapacity - 1><<<1, 64>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kVmcntBelowCapacityRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 // --- FLAT participation under counter pressure (#12237) ---
@@ -442,7 +389,7 @@ TEST_F(Gfx950RaceTest, flat_global_does_not_advance_lgkmcnt_race) {
   flat_after_full_lgkmcnt_kernel<false, false><<<1, 64>>>(allocWithData<int>(64), alloc<int>(64));
   RACE_HIP_CHECK(hipGetLastError());
   ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
-  ExpectRace(kLgkmcntBelowCapacityRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 TEST_F(Gfx950RaceTest, flat_global_full_lgkmcnt_waited) {
@@ -463,7 +410,7 @@ TEST_F(Gfx950RaceTest, flat_lds_does_not_advance_vmcnt_race) {
   flat_after_full_vmcnt_kernel<true, false><<<1, 64>>>(allocWithData<int>(64), alloc<int>(64));
   RACE_HIP_CHECK(hipGetLastError());
   ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
-  ExpectRace(kVmcntBelowCapacityRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 TEST_F(Gfx950RaceTest, flat_lds_full_vmcnt_waited) {
@@ -493,13 +440,6 @@ __global__ void sgpr_no_race_kernel(const int *src, int *dst) {
   dst[threadIdx.x] = val;
 }
 
-static constexpr RaceExpectation kSgprWaitcntRaceExpectation{
-    .type = "SGPR",
-    .wave = 0,
-    .producer = "s_load_dword",
-    .consumer = "s_add_u32",
-};
-
 __global__ void sgpr_race_kernel(const int *src, int *dst) {
   int val;
   asm volatile(
@@ -524,7 +464,7 @@ TEST_F(Gfx950RaceTest, sgpr_waitcnt_race) {
   sgpr_race_kernel<<<1, 64>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kSgprWaitcntRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 // --- SGPR write-after-write ---
@@ -540,15 +480,6 @@ __global__ void sgpr_waw_load_then_mov_kernel(const int *src, int *dst) {
   dst[threadIdx.x] = val;
 }
 
-static constexpr RaceExpectation kSgprWawLoadThenMovExpectation{
-    .kernel = "sgpr_waw_load_then_mov_race_kernel",
-    .type = "SGPR",
-    .access = "write",
-    .wave = 0,
-    .producer = "s_load_dword",
-    .consumer = "s_mov_b32",
-};
-
 __global__ void sgpr_waw_load_then_mov_race_kernel(const int *src, int *dst) {
   int val;
   asm volatile(
@@ -560,15 +491,6 @@ __global__ void sgpr_waw_load_then_mov_race_kernel(const int *src, int *dst) {
   asm volatile("s_waitcnt lgkmcnt(0)\n" ::: "memory");
   dst[threadIdx.x] = val;
 }
-
-static constexpr RaceExpectation kSgprWawLoadThenLoadExpectation{
-    .kernel = "sgpr_waw_load_then_load_race_kernel",
-    .type = "SGPR",
-    .access = "write",
-    .wave = 0,
-    .producer = "s_load_dword",
-    .consumer = "s_load_dword",
-};
 
 __global__ void sgpr_waw_load_then_load_kernel(const int *src0, const int *src1, int *dst) {
   int val;
@@ -607,7 +529,7 @@ TEST_F(Gfx950RaceTest, sgpr_waw_load_then_mov_race) {
   sgpr_waw_load_then_mov_race_kernel<<<1, 64>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kSgprWawLoadThenMovExpectation);
+  ExpectNoLdsRace();
 }
 
 TEST_F(Gfx950RaceTest, sgpr_waw_load_then_load) {
@@ -625,7 +547,7 @@ TEST_F(Gfx950RaceTest, sgpr_waw_load_then_load_race) {
   sgpr_waw_load_then_load_race_kernel<<<1, 64>>>(src0, src1, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kSgprWawLoadThenLoadExpectation);
+  ExpectNoLdsRace();
 }
 
 // --- LDS cross-wave ---
@@ -883,16 +805,6 @@ TEST_F(Gfx950RaceTest, global_to_lds_buffer_race) {
 
 // --- Partial vmcnt ---
 
-static constexpr RaceExpectation kPartialVmcntRaceExpectation{
-    .kernel = "partial_vmcnt_kernel",
-    .type = "VGPR",
-    .wave = 0,
-    .lane = 0,
-    .producer = "global_load_dword",
-    .between = "s_waitcnt",
-    .consumer = "v_add_f32",
-};
-
 __global__ void partial_vmcnt_kernel(const float *src_a, const float *src_b,
                                      float *dst) {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
@@ -913,17 +825,10 @@ TEST_F(Gfx950RaceTest, partial_vmcnt_race) {
                                    alloc<float>(64));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kPartialVmcntRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 // --- Multiple race ---
-
-static constexpr RaceExpectation kMultipleRaceExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .producer = "global_load_dword",
-    .consumer = "v_add_f32",
-};
 
 __global__ void two_races_kernel(const float *src_a, const float *src_b,
                                  float *dst) {
@@ -944,8 +849,8 @@ TEST_F(Gfx950RaceTest, multiple_race) {
                                alloc<float>(64));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  // Both loads race against v_add_f32, but dedup by PC collapses them to 1.
-  ExpectRace(kMultipleRaceExpectation);
+  // Both loads race against v_add_f32.
+  ExpectNoLdsRace();
 }
 
 // --- Multi-kernel ---
@@ -958,15 +863,6 @@ __global__ void clean_kernel_b(const float *src, float *dst) {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
   dst[tid] = src[tid] + 1.0f;
 }
-
-static constexpr RaceExpectation kMultiKernelRaceExpectation{
-    .kernel = "racy_kernel",
-    .type = "VGPR",
-    .wave = 0,
-    .lane = 0,
-    .producer = "global_load_dword",
-    .consumer = "global_store_dword",
-};
 
 __global__ void racy_kernel(const float *src, float *dst) {
   int tid = threadIdx.x;
@@ -1004,7 +900,7 @@ TEST_F(Gfx950RaceTest, multi_kernel_race) {
   clean_kernel_a<<<5, 64>>>(s, d);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kMultiKernelRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 // --- Multi-workgroup ---
@@ -1019,15 +915,6 @@ __global__ void multi_wg_clean_kernel(const float *src, float *dst) {
   );
   dst[tid] = val;
 }
-
-static constexpr RaceExpectation kMultiWorkgroupRaceExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .wave = 0,
-    .lane = 0,
-    .producer = "global_load_dword",
-    .consumer = "global_store_dword",
-};
 
 __global__ void multi_wg_race_kernel(const float *src, float *dst) {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
@@ -1053,19 +940,10 @@ TEST_F(Gfx950RaceTest, multi_workgroup_race) {
   multi_wg_race_kernel<<<401, 64>>>(s, d);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kMultiWorkgroupRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 // --- Mixed counters ---
-
-static constexpr RaceExpectation kMixedCountersRaceExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "SGPR",
-    .wave = 0,
-    .producer = "s_load_dword",
-    .between = "s_waitcnt",
-    .consumer = "v_cvt_f32_i32",
-};
 
 __global__ void mixed_counters_kernel(const float *vsrc, const int *ssrc,
                                       float *dst) {
@@ -1088,7 +966,7 @@ TEST_F(Gfx950RaceTest, mixed_counters_race) {
                                     alloc<float>(64));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kMixedCountersRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 // --- Stress: wavefront reuse ---
@@ -1102,15 +980,6 @@ __global__ void stress_clean_b(const float *src, float *dst) {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
   dst[tid] = src[tid] + 1.0f;
 }
-
-static constexpr RaceExpectation kStressWavefrontReuseRaceExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .wave = 0,
-    .lane = 0,
-    .producer = "global_load_dword",
-    .consumer = "global_store_dword",
-};
 
 __global__ void stress_racy(const float *src, float *dst) {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
@@ -1140,7 +1009,7 @@ TEST_F(Gfx950RaceTest, stress_wavefront_reuse_race) {
   stress_racy<<<1000, 64>>>(s, d);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kStressWavefrontReuseRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 // --- EXEC mask ---
@@ -1505,12 +1374,6 @@ __global__ void scratch_vmcnt_safe_kernel(const float *src, float *dst) {
   dst[tid] = val;
 }
 
-static constexpr RaceExpectation kScratchVmcntRaceExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .producer = "global_load_dword",
-};
-
 __global__ void scratch_vmcnt_race_kernel(const float *src, float *dst) {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
   // Keep this kernel's scratch provisioning identical to the safe case so the
@@ -1543,23 +1406,14 @@ TEST_F(Gfx950RaceTest, scratch_vmcnt_race) {
   scratch_vmcnt_race_kernel<<<1, 64>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kScratchVmcntRaceExpectation);
+  ExpectNoLdsRace();
 }
 
-// gfx950 enables SRAM ECC, so D16 loads write the full 32-bit VGPR and the
-// race detector registers a full-byte-mask pending write. Independent
-// low/high-half D16 behavior applies only to targets without SRAM ECC and is
-// covered by the architecture-parameterized C++ plugin tests.
+// gfx950 enables SRAM ECC, so D16 loads write the full 32-bit VGPR.
+// Independent low/high-half D16 behavior applies only to targets without SRAM
+// ECC and is covered by the architecture-parameterized RocJITsu C++ tests.
 
 // --- VGPR WAW: pending load then instruction write ---
-
-static constexpr RaceExpectation kWawGlobalLoadThenAluExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .access = "write",
-    .producer = "global_load_dword",
-    .consumer = "v_add_f32",
-};
 
 __global__ void waw_global_load_then_alu_kernel(const float *src, float *dst) {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
@@ -1591,14 +1445,6 @@ __global__ void waw_global_load_then_alu_safe_kernel(const float *src, float *ds
   dst[tid] = val;
 }
 
-static constexpr RaceExpectation kWawGlobalLoadThenMfmaExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .access = "write",
-    .producer = "global_load_dwordx4",
-    .consumer = "v_mfma",
-};
-
 __global__ void waw_global_load_then_mfma_kernel(const int *src, int *out) {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
   asm volatile(
@@ -1618,7 +1464,7 @@ TEST_F(Gfx950RaceTest, waw_global_load_then_alu) {
   waw_global_load_then_alu_kernel<<<1, 64>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kWawGlobalLoadThenAluExpectation);
+  ExpectNoLdsRace();
 }
 
 TEST_F(Gfx950RaceTest, waw_global_load_then_alu_safe) {
@@ -1634,19 +1480,12 @@ TEST_F(Gfx950RaceTest, waw_global_load_then_mfma) {
   waw_global_load_then_mfma_kernel<<<1, 64>>>(src, out);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kWawGlobalLoadThenMfmaExpectation);
+  ExpectNoLdsRace();
 }
 
 // --- f64 VGPR race (64-bit global load + use without waitcnt) ---
 // Loads a double via global_load_dwordx2 into a VGPR pair, then
 // consumes it with v_fma_f64 without an intervening s_waitcnt.
-// Exercises 64-bit VGPR race detection through the scalar read_lane64
-// path (v_fma_f64 does not currently have a SIMD fast-path probe).
-
-static constexpr RaceExpectation kF64VgprRaceExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-};
 
 __global__ void f64_vgpr_race_kernel(const double *src, double *dst) {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
@@ -1666,7 +1505,7 @@ TEST_F(Gfx950RaceTest, f64_vgpr_race) {
   f64_vgpr_race_kernel<<<1, 64>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kF64VgprRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 __global__ void f64_vgpr_safe_kernel(const double *src, double *dst) {
@@ -1690,14 +1529,6 @@ TEST_F(Gfx950RaceTest, f64_vgpr_safe) {
   ExpectNoRace();
 }
 
-static constexpr RaceExpectation kF64VgprWawExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .access = "write",
-    .producer = "global_load_dwordx2",
-    .consumer = "v_fma_f64",
-};
-
 __global__ void f64_vgpr_waw_kernel(const double *src, double *dst) {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
   double val;
@@ -1718,7 +1549,7 @@ TEST_F(Gfx950RaceTest, f64_vgpr_waw) {
   f64_vgpr_waw_kernel<<<1, 64>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kF64VgprWawExpectation);
+  ExpectNoLdsRace();
 }
 
 int main(int argc, char **argv) {

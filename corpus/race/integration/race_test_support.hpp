@@ -45,45 +45,50 @@ template <int YoungerLoads> __global__ void vmcnt_capacity_kernel(const float *s
   dst[tid] = result;
 }
 
-template <int YoungerReads> __global__ void lgkmcnt_capacity_kernel(int *dst) {
+/// The younger LGKMCNT operations are LDS writes of the value already stored.
+/// They complete in order with the producer read, but unlike repeated loads
+/// into one VGPR they leave no destination overwrite hazards of their own.
+template <int YoungerWrites> __global__ void lgkmcnt_capacity_kernel(int *dst) {
   __shared__ int lds[64];
   int tid = threadIdx.x;
   lds[tid] = tid + 1;
   __syncthreads();
 
-  int producer, younger, result;
+  int producer, result;
   asm volatile("ds_read_b32 %[producer], %[address]\n"
-               ".rept %c[younger_reads]\n"
-               "ds_read_b32 %[younger], %[address]\n"
+               ".rept %c[younger_writes]\n"
+               "ds_write_b32 %[address], %[value]\n"
                ".endr\n"
                "v_mov_b32 %[result], %[producer]\n"
-               : [producer] "=&v"(producer), [younger] "=&v"(younger), [result] "=&v"(result)
-               : [address] "v"(tid * 4), [younger_reads] "n"(YoungerReads)
+               : [producer] "=&v"(producer), [result] "=&v"(result)
+               : [address] "v"(tid * 4), [value] "v"(tid + 1),
+                 [younger_writes] "n"(YoungerWrites)
                : "memory");
   dst[tid] = result;
 }
 
-/// Fill LGKMCNT with ordered LDS reads, then issue an unordered scalar load.
-/// At capacity, the scalar issue proves that the oldest LDS read completed;
-/// one token below capacity, consuming that LDS result must still race.
-template <int YoungerReads>
+/// Fill LGKMCNT with ordered LDS operations, then issue an unordered scalar
+/// load. At capacity, the scalar issue proves that the oldest LDS read
+/// completed; one token below capacity, consuming that LDS result must still
+/// race.
+template <int YoungerWrites>
 __global__ void mixed_lgkmcnt_capacity_kernel(const int *scalar_src, int *dst) {
   __shared__ int lds[64];
   int tid = threadIdx.x;
   lds[tid] = tid + 1;
   __syncthreads();
 
-  int producer, younger, scalar_result, result;
+  int producer, scalar_result, result;
   asm volatile("ds_read_b32 %[producer], %[lds_address]\n"
-               ".rept %c[younger_reads]\n"
-               "ds_read_b32 %[younger], %[lds_address]\n"
+               ".rept %c[younger_writes]\n"
+               "ds_write_b32 %[lds_address], %[value]\n"
                ".endr\n"
                "s_load_dword %[scalar_result], %[scalar_address], 0x0\n"
                "v_mov_b32 %[result], %[producer]\n"
-               : [producer] "=&v"(producer), [younger] "=&v"(younger),
-                 [scalar_result] "=s"(scalar_result), [result] "=&v"(result)
-               : [lds_address] "v"(tid * 4), [scalar_address] "s"(scalar_src),
-                 [younger_reads] "n"(YoungerReads)
+               : [producer] "=&v"(producer), [scalar_result] "=s"(scalar_result),
+                 [result] "=&v"(result)
+               : [lds_address] "v"(tid * 4), [value] "v"(tid + 1),
+                 [scalar_address] "s"(scalar_src), [younger_writes] "n"(YoungerWrites)
                : "memory");
   dst[tid] = result;
 }
@@ -91,25 +96,25 @@ __global__ void mixed_lgkmcnt_capacity_kernel(const int *scalar_src, int *dst) {
 /// Exercise the decoded two-token count for a wide scalar load. With one
 /// fewer LDS token than the one-DWORD case, the wide issue still forces the
 /// oldest ordered LDS read to complete.
-template <int YoungerReads>
+template <int YoungerWrites>
 __global__ void wide_scalar_lgkmcnt_capacity_kernel(const uint64_t *scalar_src, int *dst) {
   __shared__ int lds[64];
   int tid = threadIdx.x;
   lds[tid] = tid + 1;
   __syncthreads();
 
-  int producer, younger, result;
+  int producer, result;
   uint64_t scalar_result;
   asm volatile("ds_read_b32 %[producer], %[lds_address]\n"
-               ".rept %c[younger_reads]\n"
-               "ds_read_b32 %[younger], %[lds_address]\n"
+               ".rept %c[younger_writes]\n"
+               "ds_write_b32 %[lds_address], %[value]\n"
                ".endr\n"
                "s_load_dwordx2 %[scalar_result], %[scalar_address], 0x0\n"
                "v_mov_b32 %[result], %[producer]\n"
-               : [producer] "=&v"(producer), [younger] "=&v"(younger),
-                 [scalar_result] "=s"(scalar_result), [result] "=&v"(result)
-               : [lds_address] "v"(tid * 4), [scalar_address] "s"(scalar_src),
-                 [younger_reads] "n"(YoungerReads)
+               : [producer] "=&v"(producer), [scalar_result] "=s"(scalar_result),
+                 [result] "=&v"(result)
+               : [lds_address] "v"(tid * 4), [value] "v"(tid + 1),
+                 [scalar_address] "s"(scalar_src), [younger_writes] "n"(YoungerWrites)
                : "memory");
   dst[tid] = result;
 }
@@ -152,6 +157,16 @@ protected:
     ASSERT_TRUE(parsed.ok()) << parsed.error;
     const RaceExpectationMatchResult matched = matchRaceExpectation(parsed.records, expected);
     EXPECT_TRUE(matched.ok()) << matched.message();
+  }
+
+  /// For register-hazard cases, which the corpus adapter checks through the
+  /// core's memory-wait diagnostics. Older race plugins also report these
+  /// hazards as register records, so only LDS records are rejected here.
+  void ExpectNoLdsRace() {
+    const RaceLogParseResult parsed = parseRaceLogFromEnvironment();
+    ASSERT_TRUE(parsed.ok()) << parsed.error;
+    for (const auto &record : parsed.records)
+      EXPECT_NE(record.type, "LDS") << record.message;
   }
 };
 

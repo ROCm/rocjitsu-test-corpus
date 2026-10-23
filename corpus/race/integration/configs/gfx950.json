@@ -65,5 +65,33 @@
     "f64_vgpr_race",
     "f64_vgpr_safe",
     "f64_vgpr_waw"
-  ]
+  ],
+  "memory_wait": {
+    "vgpr_waitcnt_race": {"access": "read", "register": "VGPR"},
+    "flat_global_lgkmcnt_only_race": {"access": "read", "register": "VGPR"},
+    "flat_lds_vmcnt_only_race": {"access": "read", "register": "VGPR"},
+    "flat_global_copy_missing_vmcnt_race": {"access": "read", "register": "VGPR"},
+    "flat_global_does_not_advance_lgkmcnt_race": {"access": "read", "register": "VGPR"},
+    "flat_lds_does_not_advance_vmcnt_race": {"access": "read", "register": "VGPR"},
+    "vmcnt_no_wait_race": {"access": "read", "register": "VGPR"},
+    "lgkmcnt_no_wait_race": {"access": "read", "register": "VGPR"},
+    "lgkmcnt_below_capacity_race": {"access": "read", "register": "VGPR"},
+    "mixed_lgkmcnt_below_capacity_race": {"access": "read", "register": "VGPR"},
+    "wide_scalar_lgkmcnt_below_capacity_race": {"access": "read", "register": "VGPR"},
+    "vmcnt_below_capacity_race": {"access": "read", "register": "VGPR"},
+    "sgpr_waitcnt_race": {"access": "read", "register": "SGPR"},
+    "sgpr_waw_load_then_mov_race": {"access": "overwrite", "register": "SGPR"},
+    "sgpr_waw_load_then_load_race": {"access": "overwrite", "register": "SGPR"},
+    "partial_vmcnt_race": {"access": "read", "register": "VGPR"},
+    "multiple_race": {"access": "read", "register": "VGPR"},
+    "multi_kernel_race": {"access": "read", "register": "VGPR"},
+    "multi_workgroup_race": {"access": "read", "register": "VGPR"},
+    "mixed_counters_race": {"access": "read", "register": "SGPR"},
+    "stress_wavefront_reuse_race": {"access": "read", "register": "VGPR"},
+    "scratch_vmcnt_race": {"access": "read", "register": "VGPR"},
+    "waw_global_load_then_alu": {"access": "overwrite", "register": "VGPR"},
+    "waw_global_load_then_mfma": {"access": "overwrite", "register": "VGPR"},
+    "f64_vgpr_race": {"access": "read", "register": "VGPR"},
+    "f64_vgpr_waw": {"access": "overwrite", "register": "VGPR"}
+  }
 }

@@ -64,20 +64,13 @@ __global__ void vgpr_race_kernel(const float *src, float *dst) {
   dst[tid] = val;
 }
 
-static constexpr RaceExpectation kVgprWaitcntRaceExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .producer = "global_load_b32",
-    .consumer = "global_store_b32",
-};
-
 TEST_F(Gfx1151RaceTest, vgpr_waitcnt_race) {
   auto *src = allocWithData<float>(32);
   auto *dst = alloc<float>(32);
   vgpr_race_kernel<<<1, 32>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kVgprWaitcntRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 // --- GFX11.5 standalone wait-counter instructions ---
@@ -118,20 +111,13 @@ __global__ void standalone_vmcnt_does_not_wait_for_lds_kernel(int *dst) {
   dst[tid] = val;
 }
 
-static constexpr RaceExpectation kStandaloneVmcntDoesNotWaitForLdsExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .producer = "ds_load_b32",
-    .consumer = "global_store_b32",
-};
-
 TEST_F(Gfx1151RaceTest, standalone_vmcnt_does_not_wait_for_lds) {
   // The assembly reads 32 dwords from LDS offset zero. It has no C++ LDS
   // accesses, so the launch must reserve the backing storage.
   standalone_vmcnt_does_not_wait_for_lds_kernel<<<1, 32, 32 * sizeof(int)>>>(alloc<int>(32));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kStandaloneVmcntDoesNotWaitForLdsExpectation);
+  ExpectNoLdsRace();
 }
 
 __global__ void standalone_lgkmcnt_waits_for_lds_kernel(int *dst) {
@@ -166,20 +152,13 @@ __global__ void standalone_lgkmcnt_does_not_wait_for_vmem_kernel(const float *sr
   dst[tid] = val;
 }
 
-static constexpr RaceExpectation kStandaloneLgkmcntDoesNotWaitForVmemExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .producer = "global_load_b32",
-    .consumer = "global_store_b32",
-};
-
 TEST_F(Gfx1151RaceTest, standalone_lgkmcnt_does_not_wait_for_vmem) {
   auto *src = allocWithData<float>(32);
   auto *dst = alloc<float>(32);
   standalone_lgkmcnt_does_not_wait_for_vmem_kernel<<<1, 32>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kStandaloneLgkmcntDoesNotWaitForVmemExpectation);
+  ExpectNoLdsRace();
 }
 
 // --- GFX11 counter-capacity backpressure ---
@@ -188,13 +167,6 @@ static constexpr int kGfx11CounterCapacity = 63;
 
 // The shared kernels consume the oldest result after a configurable number of
 // younger operations. At capacity it is safe; one operation below still races.
-static constexpr RaceExpectation kVmcntBelowCapacityRaceExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .producer = "global_load_b32",
-    .consumer = "v_mov_b32",
-};
-
 TEST_F(Gfx1151RaceTest, vmcnt_capacity_boundary) {
   auto *src = allocWithData<float>(32);
   auto *dst = alloc<float>(32);
@@ -210,7 +182,7 @@ TEST_F(Gfx1151RaceTest, vmcnt_below_capacity_race) {
   vmcnt_capacity_kernel<kGfx11CounterCapacity - 1><<<1, 32>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kVmcntBelowCapacityRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 __global__ void vscnt_pressure_does_not_advance_vmcnt_kernel(const float *src, float *scratch,
@@ -230,13 +202,6 @@ __global__ void vscnt_pressure_does_not_advance_vmcnt_kernel(const float *src, f
   dst[tid] = result;
 }
 
-static constexpr RaceExpectation kVscntPressureDoesNotAdvanceVmcntExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .producer = "global_load_b32",
-    .consumer = "v_mov_b32",
-};
-
 TEST_F(Gfx1151RaceTest, vscnt_pressure_does_not_advance_vmcnt) {
   auto *src = allocWithData<float>(32);
   auto *scratch = alloc<float>(32);
@@ -244,15 +209,8 @@ TEST_F(Gfx1151RaceTest, vscnt_pressure_does_not_advance_vmcnt) {
   vscnt_pressure_does_not_advance_vmcnt_kernel<<<1, 32>>>(src, scratch, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kVscntPressureDoesNotAdvanceVmcntExpectation);
+  ExpectNoLdsRace();
 }
-
-static constexpr RaceExpectation kLgkmcntBelowCapacityRaceExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .producer = "ds_load_b32",
-    .consumer = "v_mov_b32",
-};
 
 TEST_F(Gfx1151RaceTest, lgkmcnt_capacity_boundary) {
   lgkmcnt_capacity_kernel<kGfx11CounterCapacity><<<1, 32>>>(alloc<int>(32));
@@ -265,7 +223,7 @@ TEST_F(Gfx1151RaceTest, lgkmcnt_below_capacity_race) {
   lgkmcnt_capacity_kernel<kGfx11CounterCapacity - 1><<<1, 32>>>(alloc<int>(32));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kLgkmcntBelowCapacityRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 TEST_F(Gfx1151RaceTest, mixed_lgkmcnt_capacity_boundary) {
@@ -281,7 +239,7 @@ TEST_F(Gfx1151RaceTest, mixed_lgkmcnt_below_capacity_race) {
       <<<1, 32>>>(allocWithData<int>(1), alloc<int>(32));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kLgkmcntBelowCapacityRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 TEST_F(Gfx1151RaceTest, wide_scalar_lgkmcnt_capacity_boundary) {
@@ -297,7 +255,7 @@ TEST_F(Gfx1151RaceTest, wide_scalar_lgkmcnt_below_capacity_race) {
       <<<1, 32>>>(allocWithData<uint64_t>(1), alloc<int>(32));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kLgkmcntBelowCapacityRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 // D16 loads write only one half of the destination dword on RDNA. This kernel
@@ -331,14 +289,7 @@ __global__ void d16_global_load_hi_merge_kernel(const uint8_t *src, uint32_t *ds
 
 // Same D16 load shape as d16_global_load_merge_kernel, but this intentionally
 // omits s_waitcnt before storing the VGPR. The store consumes the load
-// destination while the low-half load is still outstanding, so the race detector
-// should report a real VGPR race after the memory-completion self-race is fixed.
-static constexpr RaceExpectation kD16GlobalLoadMissingWaitcntRaceExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .producer = "global_load_d16_u8",
-};
-
+// destination while the low-half load is still outstanding.
 __global__ void d16_global_load_missing_waitcnt_kernel(const uint8_t *src, uint32_t *dst) {
   int tid = threadIdx.x;
   uint32_t val = 0xABCD0000u;
@@ -349,14 +300,6 @@ __global__ void d16_global_load_missing_waitcnt_kernel(const uint8_t *src, uint3
                : "memory");
   dst[tid] = val;
 }
-
-static constexpr RaceExpectation kWawGlobalLoadThenWmmaExpectation{
-    .findings = FindingCount::OneOrMore,
-    .type = "VGPR",
-    .access = "write",
-    .producer = "global_load",
-    .consumer = "v_wmma",
-};
 
 __global__ void waw_global_load_then_wmma_kernel(const int *src, int *out) {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
@@ -430,7 +373,7 @@ TEST_F(Gfx1151RaceTest, d16_global_load_missing_waitcnt_race) {
   RACE_HIP_CHECK(hipGetLastError());
   sync();
 
-  ExpectRace(kD16GlobalLoadMissingWaitcntRaceExpectation);
+  ExpectNoLdsRace();
 }
 
 TEST_F(Gfx1151RaceTest, lds_wave32_cross_wave) {
@@ -453,7 +396,7 @@ TEST_F(Gfx1151RaceTest, waw_global_load_then_wmma) {
   waw_global_load_then_wmma_kernel<<<1, 32>>>(src, out);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kWawGlobalLoadThenWmmaExpectation);
+  ExpectNoLdsRace();
 }
 
 } // namespace
