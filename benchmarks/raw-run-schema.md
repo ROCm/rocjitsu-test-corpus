@@ -74,7 +74,9 @@ numbers, not strings.
 ```
 
 `provenance.rocjitsu.rocm_sdk_version` records the `rocm-sdk-devel` package
-version in the workload's Python environment; it doesn't describe rocjitsu's
+version in the Python environment running `benchmarks.runner`, which also
+supplies the interpreter used to launch workloads. SDK discovery and version
+recording happen in the runner process; this field doesn't describe rocjitsu's
 build toolchain.
 
 ## Reading the results

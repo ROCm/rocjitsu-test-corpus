@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from benchmark_adapter_cases import CASES
+from support.benchmark_adapter_cases import CASES
 
 torch = pytest.importorskip("torch")
 

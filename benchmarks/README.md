@@ -57,8 +57,10 @@ Policy is recorded on each raw result, not in the execution summary.
 
 The runner checks the Release configuration, disabled LTO/sanitizers,
 source root, and selected plugin binaries. SDK preflight requires
-`rocm-sdk-devel` in the workload's Python environment. This check is independent
-of rocjitsu's build toolchain and any cached `ROCM_PATH`. The wrapper must
+`rocm-sdk-devel` in the Python environment running `benchmarks.runner`. The
+runner also uses this environment's Python interpreter to launch workloads. SDK
+discovery and version recording happen in the runner process, independently of
+rocjitsu's build toolchain and any cached `ROCM_PATH`. The wrapper must
 select the binary from that build; arbitrary wrapper commands cannot be checked
 against CMake metadata. Rebuild rocjitsu after source changes.
 

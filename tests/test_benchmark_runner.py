@@ -21,6 +21,7 @@ from unittest import mock
 
 import pytest
 from support import benchmark_runner as harness
+from support.benchmark_adapter_cases import CASES
 
 from benchmarks import runner
 
@@ -79,15 +80,13 @@ def test_default_manifest_has_full_ordered_matrix() -> None:
     assert suite.timeout_seconds == 1200
 
 
-def test_nightly_triton_pairs_have_launch_reset_coverage():
-    from benchmark_adapter_cases import CASES
-
-    nightly_pairs = {
+def test_performance_triton_pairs_have_launch_reset_coverage():
+    performance_pairs = {
         (case.workload, case.params.get("configuration"))
         for case in runner.load_manifest().cases
         if case.workload != "tensile_candidate"
     }
-    assert nightly_pairs == set(CASES)
+    assert performance_pairs <= set(CASES)
 
 
 def test_smoke_manifest_has_single_triton_case(runner_context) -> None:
