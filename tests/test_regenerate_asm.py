@@ -92,6 +92,13 @@ def write_script(path: Path, body: str) -> Path:
     return path
 
 
+def write_header(path: Path) -> Path:
+    """A header at *path* that defines VALUE, for the include-path tests."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#define VALUE 1\n")
+    return path
+
+
 def prepend_to_path(
     monkeypatch: pytest.MonkeyPatch, directory: Path, only: bool = False
 ) -> None:
@@ -1107,7 +1114,7 @@ def test_every_include_directory_flag_is_searched_and_made_absolute(
         assert str(base / "inc") in "".join(regen.absolute_flags(flags, base))
 
 
-def test_forced_include_file_is_made_absolute_but_not_searched(
+def test_forced_include_file_is_not_an_include_directory(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # A forced include names a file, not a directory to search for headers.
@@ -2040,12 +2047,6 @@ def test_missing_default_sdk_is_reported(
 # the -iquote, -I and -isystem directories, in that order. The compile runs in
 # a scratch directory, so the script does the same search from the caller's
 # directory, and passes, and records, the absolute path of the file it finds.
-
-
-def write_header(path: Path) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("#define VALUE 1\n")
-    return path
 
 
 def test_forced_include_is_found_through_an_include_directory(
