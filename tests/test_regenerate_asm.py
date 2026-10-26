@@ -193,6 +193,24 @@ def test_failed_compile_keeps_pinned_file(
     ).read_text() == "not ours\n"
 
 
+# hipcc's cuid, as it appears in a listing: alone on a line, before a comma,
+# and as a label.
+CUID_FORMS = "\t.globl __hip_cuid_0123abcd\n\t.long __hip_cuid_0123abcd, 0\n__hip_cuid_0123abcd:\n"
+
+
+def test_normalize_replaces_every_form_of_the_cuid() -> None:
+    assert regen.normalize(CUID_FORMS) == (
+        "\t.globl __hip_cuid_corpus\n\t.long __hip_cuid_corpus, 0\n__hip_cuid_corpus:\n"
+    )
+
+
+def test_normalize_is_idempotent() -> None:
+    # The placeholder starts with a hex digit, c, so it must not be read as a
+    # hash and rewritten again.
+    once = regen.normalize(CUID_FORMS)
+    assert regen.normalize(once) == once
+
+
 def test_successful_compile_replaces_and_normalizes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

@@ -95,8 +95,10 @@ KERNELS_DIR = inventory.KERNELS_DIR
 ASM_DIR = inventory.ASM_DIR
 
 # hipcc's per-translation-unit id, which is regenerated on every invocation.
-# See the module docstring for why replacing it is safe.
-_CUID_RE = re.compile(r"__hip_cuid_[0-9a-f]+")
+# See the module docstring for why replacing it is safe. The word boundary keeps
+# the placeholder, whose "c" is a hex digit, from matching, so normalizing twice
+# changes nothing.
+_CUID_RE = re.compile(r"__hip_cuid_[0-9a-f]+\b")
 _CUID_PLACEHOLDER = "__hip_cuid_corpus"
 
 # The line naming the compiler that produced a file. See the module docstring.
