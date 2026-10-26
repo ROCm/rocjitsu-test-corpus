@@ -76,11 +76,11 @@ if BEHAVIOUR == "fail" or (failing and source.name == failing + ".hip"):
 text = "kernel:\n\ts_endpgm\n.globl __hip_cuid_0123abcd\n"
 if BEHAVIOUR == "silent":
     sys.exit(0)
-if BEHAVIOUR == "output":
-    Path(args[args.index("-o") + 1]).write_text(text)
-else:
+Path(args[args.index("-o") + 1]).write_text(text)
+if BEHAVIOUR == "save-temps":
     arch = next(arg for arg in args if arg.startswith("--offload-arch=")).split("=", 1)[1]
-    Path(f"{source.stem}-hip-amdgcn-amd-amdhsa-{arch}.s").write_text(text)
+    for suffix in (".hipi", ".tmp.bc"):
+        Path(f"{source.stem}-hip-amdgcn-amd-amdhsa-{arch}{suffix}").write_text("")
 """
 
 
@@ -113,8 +113,8 @@ def write_fake_compiler(compiler: Path, behaviour: str) -> Path:
     *behaviour* is one of:
       fail        exit 1 without writing anything
       output      write to the -o path
-      auto-named  ignore -o and write the auto-named file into the working
-                  directory, as hipcc sometimes does under --cuda-device-only
+      save-temps  write to the -o path, and write intermediates into the
+                  working directory, as -save-temps does
       silent      exit 0 without writing anything
     """
     return write_script(
@@ -157,10 +157,13 @@ def kernel(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def caller_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """The directory the script is run from, holding an unrelated stale file."""
+    """
+    The directory the script is run from, holding an unrelated file named like
+    an intermediate the compiler writes under -save-temps.
+    """
     directory = tmp_path / "caller"
     directory.mkdir()
-    (directory / "kernel-hip-amdgcn-amd-amdhsa-gfx950.s").write_text("not ours\n")
+    (directory / "kernel-hip-amdgcn-amd-amdhsa-gfx950.hipi").write_text("not ours\n")
     monkeypatch.chdir(directory)
     return directory
 
@@ -186,7 +189,7 @@ def test_failed_compile_keeps_pinned_file(
         "kernel.s"
     ]  # no staged leftovers
     assert (
-        caller_dir / "kernel-hip-amdgcn-amd-amdhsa-gfx950.s"
+        caller_dir / "kernel-hip-amdgcn-amd-amdhsa-gfx950.hipi"
     ).read_text() == "not ours\n"
 
 
@@ -207,24 +210,31 @@ def test_successful_compile_replaces_and_normalizes(
     assert [p.name for p in pinned.parent.iterdir()] == ["kernel.s"]
 
 
-def test_auto_named_output_stays_in_scratch(
+def test_intermediates_stay_in_the_scratch_directory(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     pinned: Path,
     kernel: Path,
     caller_dir: Path,
 ) -> None:
-    toolchain = install_fake_compiler(monkeypatch, tmp_path, "auto-named")
+    # -save-temps writes .hipi and .bc intermediates into the compiler's
+    # working directory: the scratch directory, never the caller's.
+    toolchain = install_fake_compiler(monkeypatch, tmp_path, "save-temps")
     regen.compile_device_asm(
-        kernel=kernel, target="gfx950", out=pinned, extra_flags=[], toolchain=toolchain
+        kernel=kernel,
+        target="gfx950",
+        out=pinned,
+        extra_flags=["-save-temps"],
+        toolchain=toolchain,
     )
     assert "s_endpgm" in pinned.read_text()
-    # The caller's same-named file is neither consumed nor deleted.
+    # The caller's same-named file is neither replaced nor deleted, and no
+    # intermediate is added beside it.
     assert sorted(p.name for p in caller_dir.iterdir()) == [
-        "kernel-hip-amdgcn-amd-amdhsa-gfx950.s"
+        "kernel-hip-amdgcn-amd-amdhsa-gfx950.hipi"
     ]
     assert (
-        caller_dir / "kernel-hip-amdgcn-amd-amdhsa-gfx950.s"
+        caller_dir / "kernel-hip-amdgcn-amd-amdhsa-gfx950.hipi"
     ).read_text() == "not ours\n"
 
 
@@ -233,7 +243,7 @@ def test_compile_that_writes_no_listing_is_a_failure(
 ) -> None:
     toolchain = install_fake_compiler(monkeypatch, tmp_path, "silent")
     with pytest.raises(
-        regen.CompileError, match="kernel.hip .gfx950.: hipcc produced no output"
+        regen.CompileError, match="kernel.hip .gfx950.: the compiler wrote no listing"
     ):
         regen.compile_device_asm(
             kernel=kernel,

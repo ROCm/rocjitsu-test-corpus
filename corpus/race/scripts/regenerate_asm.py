@@ -520,11 +520,11 @@ def compile_device_asm(
 
     *out* is written only once the compile has succeeded, and then replaced
     atomically, so a failed or interrupted compile leaves any existing *out* as
-    it was. The compiler runs in a private scratch directory, which is also its
-    working directory: hipcc sometimes ignores ``-o`` under
-    ``--cuda-device-only`` and writes an auto-named file into the working
-    directory instead, and that file must neither land in nor be deleted from
-    the caller's directory. *extra_flags* must not hold relative paths; see
+    it was. The compiler writes its listing to ``-o`` in a private scratch
+    directory, which is also its working directory: anything else it writes
+    there, such as the ``.hipi`` and ``.bc`` intermediates of
+    ``--cxxflags=-save-temps``, is discarded with it and never reaches the
+    caller's directory. *extra_flags* must not hold relative paths; see
     absolute_flags.
     """
     with tempfile.TemporaryDirectory(prefix="race-asm-compile-") as scratch_dir:
@@ -549,26 +549,13 @@ def compile_device_asm(
             raise CompileError(
                 f"{kernel.name} ({target}):\n{error.stderr.strip()}"
             ) from error
-        assembly = normalize(_compiled_listing(compiled, target=target).read_text())
+        if not compiled.is_file():
+            raise CompileError(
+                f"{kernel.name} ({target}): the compiler wrote no listing"
+            )
+        assembly = normalize(compiled.read_text())
 
     _replace(out, assembly)
-
-
-def _compiled_listing(requested: Path, target: str) -> Path:
-    """
-    The listing a compile wrote: *requested*, or the file hipcc names itself in
-    the same directory when it ignores ``-o``. Raises CompileError if neither.
-    """
-    if requested.is_file():
-        return requested
-    auto_named = requested.with_name(
-        f"{requested.stem}-hip-amdgcn-amd-amdhsa-{target}.s"
-    )
-    if auto_named.is_file():
-        return auto_named
-    raise CompileError(
-        f"{requested.stem}.hip ({target}): hipcc produced no output file"
-    )
 
 
 def _compile_command(
