@@ -157,10 +157,82 @@ def test_rdna2_packed_conversion_coverage():
     )[1].split("checkpoint 139", 1)[0]
     assert "v_cvt_pkrtz_f16_f32_e64 v30, v8, v9" in checkpoint_139
 
+
+def test_rdna2_omission_annotations():
+    assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
+    assert "no gfx1030 probe is assigned to this slot" not in assembly
+    assert assembly.count("; Deduplicated alias:") == 12
+    assert assembly.count("; Inherited empty slot:") == 22
+    assert assembly.count("; Unsupported on gfx1030:") == 32
+
+    checkpoint_73 = assembly.split("; Checkpoint 73: vop1_plain_00", 1)[1]
+    checkpoint_73 = checkpoint_73.split("checkpoint 73", 1)[0]
+    assert "v_cls_i32 is covered by v_ffbh_i32 in checkpoint 77" in checkpoint_73
+    assert "v_clz_i32_u32 is covered by v_ffbh_u32 in checkpoint 77" in checkpoint_73
+    assert "v_ctz_i32_b32 is covered by v_ffbl_b32 in checkpoint 77" in checkpoint_73
+
+    checkpoint_74 = assembly.split("; Checkpoint 74: vop1_plain_01", 1)[1]
+    checkpoint_74 = checkpoint_74.split("checkpoint 74", 1)[0]
+    assert checkpoint_74.count("; Inherited empty slot:") == 2
+
     checkpoint_136 = assembly.split(
         "; Checkpoint 136: vop3_from_vop1_plain_06", 1
     )[1].split("checkpoint 136", 1)[0]
-    assert "Intentional RDNA2 omission: v_not_b16 has no gfx1030 form." in checkpoint_136
+    assert (
+        "Unsupported on gfx1030: v_not_b16_e64 has no gfx1030 form."
+        in checkpoint_136
+    )
+
+
+def test_rdna2_integer_to_f16_uses_integer_inputs():
+    assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
+    probes = {
+        74: ("v_cvt_f16_i16 ", "v_cvt_f16_u16 "),
+        83: ("v_cvt_f16_i16 ", "v_cvt_f16_u16 "),
+        92: ("v_cvt_f16_i16 ", "v_cvt_f16_u16 "),
+        131: ("v_cvt_f16_i16_e64 ", "v_cvt_f16_u16_e64 "),
+    }
+    for checkpoint, mnemonics in probes.items():
+        body = assembly.split(f"; Checkpoint {checkpoint}:", 1)[1]
+        body = body.split(f"checkpoint {checkpoint}", 1)[0]
+        lines = [line.strip() for line in body.splitlines()]
+        for mnemonic in mnemonics:
+            instruction = next(
+                index for index, line in enumerate(lines) if line.startswith(mnemonic)
+            )
+            sweep = next(
+                line
+                for line in reversed(lines[:instruction])
+                if line.startswith("sweep_inputs ")
+            )
+            assert sweep == "sweep_inputs int", (checkpoint, mnemonic)
+
+
+def test_rdna2_buffer_resource_word3_uses_gfx10_layout():
+    assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
+    setup = "s_mov_b32 s26, 4096\ns_mov_b32 s27, 0x3104dfac"
+    words = [
+        int(value, 16)
+        for value in re.findall(
+            r"^s_mov_b32 s26, 4096\ns_mov_b32 s27, (0x[0-9a-f]+)$",
+            assembly,
+            re.MULTILINE,
+        )
+    ]
+    assert words == [0x3104DFAC] * 3
+    assert "0x3003ffac" not in assembly
+
+    for word in words:
+        assert tuple((word >> shift) & 0x7 for shift in (0, 3, 6, 9)) == (4, 5, 6, 7)
+        assert (word >> 12) & 0x7F == 77
+        assert (word >> 24) & 0x1 == 1
+        assert (word >> 28) & 0x3 == 3
+
+    assert assembly.index(setup) < assembly.index("; Checkpoint 313:")
+    for checkpoint in (481, 482):
+        body = assembly.split(f"; Checkpoint {checkpoint}:", 1)[1]
+        body = body.split(f"checkpoint {checkpoint}", 1)[0]
+        assert setup in body
 
 
 def test_rdna2_legacy_accumulators():
