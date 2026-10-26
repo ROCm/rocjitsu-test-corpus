@@ -46,11 +46,13 @@ explicitly as inline assembly, which the listings mark between `;;#ASMSTART` and
 `;;#ASMEND`. Mutants are derived from the waits: `s_waitcnt` on gfx950,
 including combined counters such as `vmcnt(0) lgkmcnt(0)`, and the per-counter
 `s_wait_*` instructions on gfx1250, including XCNT waits (`s_wait_xcnt`) and
-combined forms such as `s_wait_loadcnt_dscnt`. Which of them become mutants is
-the mutant generator's decision. Compiling at test time would let a toolchain
-update silently change the mutants. Pinning the assembly keeps the set of
-injected defects fixed, and makes moving it onto newer codegen a reviewable
-commit.
+combined forms such as `s_wait_loadcnt_dscnt`. Mutants also come from marked
+loads: in `global_byte_eviction`, a byte load that the mutation harness rewrites
+as a store is followed in both listings by a `; probe` marker block, which
+contains no instruction. Which waits and loads become mutants is the mutant
+generator's decision. Compiling at test time would let a toolchain update
+silently change the mutants. Pinning the assembly keeps the set of injected
+defects fixed, and makes moving it onto newer codegen a reviewable commit.
 
 Pinning fixes the listing's text, not which assembler can read it. A listing
 carries the SDK's assembler directives as well as its instructions, and a newer

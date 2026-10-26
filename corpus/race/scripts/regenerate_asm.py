@@ -26,12 +26,14 @@ Why the assembly is committed rather than compiled per run: the compiler places
 most of a kernel's wait instructions (``s_waitcnt`` on gfx950, the per-counter
 ``s_wait_*`` instructions on gfx1250; a few are inline assembly in the kernel
 source, between ``;;#ASMSTART`` and ``;;#ASMEND``), and the corpus derives its
-mutants from them; which waits become mutants is the mutant generator's
-decision. Compiling at test time therefore lets a toolchain bump silently
-reshape the corpus -- different mutants, different case IDs, different
-results -- so two runs months apart are not comparing the same thing. Freezing
-the assembly makes the set of injected defects fixed, and makes regenerating it
-a deliberate, reviewable commit.
+mutants from them, and from marked loads: in global_byte_eviction, a byte load
+the mutation harness rewrites as a store is followed by a ``; probe`` marker
+block with no instruction in it. Which waits and loads become mutants is the
+mutant generator's decision. Compiling at test time therefore lets a toolchain
+bump silently reshape the corpus -- different mutants, different case IDs,
+different results -- so two runs months apart are not comparing the same thing.
+Freezing the assembly makes the set of injected defects fixed, and makes
+regenerating it a deliberate, reviewable commit.
 
 Pinning fixes the text, not which assembler can read it: a listing carries the
 SDK's directives too, which a newer assembler can reject. The listings and their
