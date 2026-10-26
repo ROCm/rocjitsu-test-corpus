@@ -4,6 +4,7 @@ import dataclasses
 import errno
 import json
 import os
+import subprocess
 import sys
 import tomllib
 import typing
@@ -2036,34 +2037,19 @@ def test_missing_default_sdk_is_reported(
         regen.rocm_path()
 
 
-# --- A forced include is found the way the compiler finds it ------------------------
+# --- A forced include names a file from the caller's directory ------------------
 #
-# The compiler looks for `-include file` in its working directory, and then in
-# the -iquote, -I and -isystem directories, in that order. The compile runs in
-# a scratch directory, so the script does the same search from the caller's
-# directory, and passes, and records, the absolute path of the file it finds.
+# The compiler looks for `-include file` in its working directory first, and
+# then applies its own header-search rules, which the script does not copy. The
+# compile runs in a scratch directory, so a relative -include must name a file
+# from the caller's directory, where the compiler would look first: it is passed,
+# and recorded, as that absolute path. Anything else is rejected, since the
+# compiler might select a different file.
 
 
-def test_forced_include_is_found_through_an_include_directory(
-    manifest: Manifest,
-    corpus_main: CorpusMain,
-    monkeypatch: pytest.MonkeyPatch,
+def test_forced_include_in_the_working_directory_is_made_absolute(
     tmp_path: Path,
 ) -> None:
-    # Only include/options.h exists, as in a caller running
-    # `--cxxflags='-Iinclude -include options.h'`.
-    run, committed = corpus_main
-    manifest(["gfx950"], PORTABLE_CASE)
-    caller = tmp_path / "caller"
-    header = write_header(caller / "include" / "options.h")
-    monkeypatch.chdir(caller)
-    assert run("--cxxflags=-Iinclude -include options.h") == regen.ExitCode.SUCCESS
-    (argv,) = compiler_invocations(tmp_path)
-    assert argv[-3:] == [f"-I{caller / 'include'}", "-include", str(header)]
-    assert read_recipe(committed, "gfx950")["flags"][-2:] == ["-include", str(header)]
-
-
-def test_forced_include_in_the_working_directory_comes_first(tmp_path: Path) -> None:
     caller = tmp_path / "caller"
     in_caller = write_header(caller / "options.h")
     write_header(caller / "include" / "options.h")
@@ -2071,57 +2057,141 @@ def test_forced_include_in_the_working_directory_comes_first(tmp_path: Path) -> 
     assert regen.absolute_flags(flags, caller)[-1] == str(in_caller)
 
 
-@pytest.mark.parametrize(
-    "flags, found",
-    [
-        (["-isystem", "sys", "-Iangled", "-iquote", "quoted"], "quoted"),
-        (["-isystem", "sys", "-Iangled"], "angled"),
-        (["-isystem", "sys"], "sys"),
-    ],
-)
-def test_forced_include_follows_the_quote_search_order(
-    tmp_path: Path, flags: list[str], found: str
+def test_forced_include_with_a_path_from_the_working_directory_is_made_absolute(
+    tmp_path: Path,
 ) -> None:
     caller = tmp_path / "caller"
-    for directory in ("quoted", "angled", "sys"):
-        write_header(caller / directory / "options.h")
-    resolved = regen.absolute_flags([*flags, "-includeoptions.h"], caller)
-    assert resolved[-1] == f"-include{caller / found / 'options.h'}"
+    header = write_header(caller / "include" / "options.h")
+    resolved = regen.absolute_flags(["-includeinclude/options.h"], caller)
+    assert resolved == [f"-include{header}"]
 
 
-def test_forced_include_found_nowhere_is_left_to_the_compiler(tmp_path: Path) -> None:
-    # It may be in the SDK's include directory, or be an error the compiler
-    # reports; either way the compiler's own search decides.
-    flags = ["-include", "options.h"]
+def test_absolute_forced_include_is_passed_unchanged(tmp_path: Path) -> None:
+    flags = ["-include", str(tmp_path / "anywhere" / "options.h")]
     assert regen.absolute_flags(flags, tmp_path / "caller") == flags
 
 
-def test_real_compiler_finds_a_forced_include_through_an_include_directory(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_forced_include_not_in_the_working_directory_is_rejected(
+    tmp_path: Path,
 ) -> None:
-    # The same case with the SDK's own compiler, where one is installed. The
-    # kernel does not compile unless options.h is included, and options.h is
-    # only under include/.
+    # Only include/options.h exists: the compiler would search for options.h
+    # with its own rules, which the script cannot reproduce from elsewhere.
+    caller = tmp_path / "caller"
+    write_header(caller / "include" / "options.h")
+    with pytest.raises(regen.UsageError, match="-include options.h: not found in"):
+        regen.absolute_flags(["-Iinclude", "-include", "options.h"], caller)
+
+
+def test_rejected_forced_include_is_a_usage_error(
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    caller = tmp_path / "caller"
+    write_header(caller / "include" / "options.h")
+    monkeypatch.chdir(caller)
+    with pytest.raises(SystemExit) as exit_info:
+        run("--cxxflags=-Iinclude -include options.h")
+    # argparse's own status for a usage error, not an ExitCode.
+    assert exit_info.value.code == 2
+    assert "give its path from this directory" in capsys.readouterr().err
+    assert compiler_invocations(tmp_path) == []
+    assert not (committed / "gfx950").exists()
+
+
+# The flags of the overlapping-directory case: first is both an -I and an
+# -isystem directory, so the compiler searches it as a system directory, after
+# second. Each directory's options.h defines a different value.
+OVERLAPPING_FLAGS = [
+    "-Ifirst",
+    "-Isecond",
+    "-isystem",
+    "first",
+    "-include",
+    "options.h",
+]
+
+
+def overlapping_directories(caller: Path) -> None:
+    for directory, value in (("first", 11), ("second", 22)):
+        (caller / directory).mkdir(parents=True)
+        (caller / directory / "options.h").write_text(f"#define RACE_VALUE {value}\n")
+
+
+def real_toolchain() -> regen.Toolchain:
+    """The selected SDK's toolchain, or skip the test when there is none."""
     try:
-        toolchain = regen.select_toolchain()
+        return regen.select_toolchain()
     except regen.SetupError as error:
         pytest.skip(f"no ROCm SDK with a HIP compiler: {error}")
+
+
+def compiled_value(listing: str) -> str:
+    """The value of the kernel's `value` variable in a listing."""
+    lines = listing.splitlines()
+    return lines[lines.index("value:") + 1].split()[1]
+
+
+def compile_directly(toolchain: regen.Toolchain, kernel: Path, out: Path) -> None:
+    """Compile *kernel* with OVERLAPPING_FLAGS from its own directory, as a user would."""
+    subprocess.run(
+        [str(toolchain.compiler), f"--rocm-path={toolchain.root}", "-O3", "-x", "hip"]
+        + ["-S", "--cuda-device-only", "--offload-arch=gfx950", *OVERLAPPING_FLAGS]
+        + [str(kernel), "-o", str(out)],
+        cwd=kernel.parent,
+        check=True,
+        capture_output=True,
+        env=regen.compiler_environment(toolchain.root),
+    )
+
+
+def test_real_compiler_rejects_an_overlapping_directory_forced_include(
+    tmp_path: Path,
+) -> None:
+    # The compiler selects second/options.h here, where a copy of its search
+    # rules would select first/options.h, so the flag is rejected instead.
+    toolchain = real_toolchain()
     caller = tmp_path / "caller"
-    (caller / "include").mkdir(parents=True)
-    (caller / "include" / "options.h").write_text("#define RACE_FORCED_VALUE 7\n")
+    overlapping_directories(caller)
     kernel = caller / "forced.hip"
-    kernel.write_text(
-        "#include <hip/hip_runtime.h>\n"
-        "__global__ void forced(int *out) { *out = RACE_FORCED_VALUE; }\n"
-    )
-    monkeypatch.chdir(caller)
-    flags = regen.absolute_flags(["-Iinclude", "-include", "options.h"], caller)
-    assert flags[-1] == str(caller / "include" / "options.h")
-    out = tmp_path / "forced.s"
+    kernel.write_text("__attribute__((used)) __device__ int value = RACE_VALUE;\n")
+    direct = caller / "direct.s"
+    compile_directly(toolchain, kernel=kernel, out=direct)
+    assert compiled_value(direct.read_text()) == "22"
+    with pytest.raises(regen.UsageError, match="-include options.h: not found in"):
+        regen.absolute_flags(OVERLAPPING_FLAGS, caller)
+
+
+def test_real_compiler_selects_the_forced_include_the_script_records(
+    tmp_path: Path,
+) -> None:
+    # With options.h in the caller's directory, the compiler run from there
+    # selects it ahead of first/ and second/, and so does the scratch compile
+    # given the absolute path the script records.
+    toolchain = real_toolchain()
+    caller = tmp_path / "caller"
+    overlapping_directories(caller)
+    (caller / "options.h").write_text("#define RACE_VALUE 33\n")
+    kernel = caller / "forced.hip"
+    kernel.write_text("__attribute__((used)) __device__ int value = RACE_VALUE;\n")
+    direct = caller / "direct.s"
+    compile_directly(toolchain, kernel=kernel, out=direct)
+    flags = regen.absolute_flags(OVERLAPPING_FLAGS, caller)
+    assert flags[-1] == str(caller / "options.h")
+    regenerated = tmp_path / "regenerated.s"
     regen.compile_device_asm(
-        kernel=kernel, target="gfx950", out=out, extra_flags=flags, toolchain=toolchain
+        kernel=kernel,
+        target="gfx950",
+        out=regenerated,
+        extra_flags=flags,
+        toolchain=toolchain,
     )
-    assert '.amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx950' in out.read_text()
+    assert compiled_value(direct.read_text()) == "33"
+    assert compiled_value(regenerated.read_text()) == "33"
 
 
 def test_misspelled_case_table_leaves_every_pinned_file(

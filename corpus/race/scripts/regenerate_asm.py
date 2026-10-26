@@ -104,11 +104,10 @@ _CUID_PLACEHOLDER = "__hip_cuid_corpus"
 # The line naming the compiler that produced a file. See the module docstring.
 _IDENT_RE = re.compile(r"^\s*\.ident\s")
 
-# Flags that add a directory to the header search path, in the order the
-# compiler searches them for `#include "..."` and `-include`. Each takes its
-# value as a separate token or glued to the flag.
+# Flags that add a directory to the header search path. Each takes its value as
+# a separate token or glued to the flag.
 _INCLUDE_DIR_FLAGS = ("-iquote", "-I", "-isystem")
-# The flag that includes a file before the source, as `#include "file"` would.
+# The flag that includes a file before the source; see _forced_include.
 _FORCED_INCLUDE_FLAG = "-include"
 
 # The recipe the pinned assembly is built with. hipcc adds these on its own, but
@@ -199,32 +198,38 @@ def absolute_flags(flags: list[str], base: Path) -> list[str]:
 
     The compiler runs in a scratch directory, so a relative ``-I`` written
     against the caller's directory is made absolute. A relative ``-include`` is
-    looked up as the compiler would look it up, in *base* and then the include
-    directories; see _resolve_forced_include.
+    made absolute when it names a file in *base*; see _forced_include.
     """
     with_dirs = _map_flag_values(
         flags,
         names=_INCLUDE_DIR_FLAGS,
         resolve=lambda value: value if Path(value).is_absolute() else str(base / value),
     )
-    search = [base, *(Path(value) for value in _search_dirs(with_dirs))]
     return _map_flag_values(
         with_dirs,
         names=(_FORCED_INCLUDE_FLAG,),
-        resolve=lambda value: _resolve_forced_include(value, search),
+        resolve=lambda value: _forced_include(value, base),
     )
 
 
-def _resolve_forced_include(value: str, search: Sequence[Path]) -> str:
+def _forced_include(value: str, base: Path) -> str:
     """
-    The absolute path of the first file named *value* in *search*, or *value*
-    itself, for the compiler to look up, when there is none or it is absolute.
+    The file a ``-include`` names, for a compile run from a scratch directory.
+
+    The compiler looks for it in its working directory first, and then applies
+    header-search rules this script does not reproduce. So an absolute path is
+    kept, and a relative one must name a file in *base*, the caller's directory,
+    where the compiler would look first; it becomes that absolute path. Raises
+    UsageError otherwise, since the compiler might select a different file.
     """
-    if not Path(value).is_absolute():
-        for directory in search:
-            if (directory / value).is_file():
-                return str(directory / value)
-    return value
+    if Path(value).is_absolute():
+        return value
+    if (base / value).is_file():
+        return str(base / value)
+    raise UsageError(
+        f"-include {value}: not found in {base}; give its path from this directory, "
+        f"such as -include include/{Path(value).name}, or an absolute path"
+    )
 
 
 def _map_flag_values(
@@ -247,7 +252,10 @@ def _map_flag_values(
 
 
 def _search_dirs(flags: Sequence[str]) -> list[str]:
-    """The include directories in *flags*, in the compiler's search order."""
+    """
+    The include directories in *flags*, for checking that a declared header
+    exists. Which copy the compiler selects is left to the compiler.
+    """
     return [value for name in _INCLUDE_DIR_FLAGS for value in _flag_values(flags, name)]
 
 
