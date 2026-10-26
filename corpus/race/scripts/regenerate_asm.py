@@ -112,8 +112,12 @@ _IDENT_RE = re.compile(r"^\s*\.ident\s")
 # supported only for the include-directory options, which are made absolute,
 # and -include, which must name a file in the caller's directory; see
 # _forced_include. Each takes its value as a separate token or glued to it.
-_INCLUDE_DIR_FLAGS = ("-iquote", "-I", "-isystem")
+_INCLUDE_DIR_FLAGS = ("-I", "-iquote", "-isystem")
 _FORCED_INCLUDE_FLAG = "-include"
+# Those options, as the diagnostics and --help name them.
+_RELATIVE_PATH_FLAGS_TEXT = (
+    f"{', '.join(_INCLUDE_DIR_FLAGS)} and {_FORCED_INCLUDE_FLAG}"
+)
 # The other path-taking options the script recognizes. Each must be given an
 # absolute path: resolved in the scratch directory, a relative one would name
 # something else. A --option also takes its value after "=".
@@ -247,8 +251,8 @@ def _resolved_path(name: str, value: str, base: Path) -> str:
     if name == _FORCED_INCLUDE_FLAG:
         return _forced_include(value, base)
     raise UsageError(
-        f"{name} {value}: relative paths are supported only for -I, -iquote, "
-        f"-isystem and -include; give an absolute path"
+        f"{name} {value}: relative paths are supported only for "
+        f"{_RELATIVE_PATH_FLAGS_TEXT}; give an absolute path"
     )
 
 
@@ -797,9 +801,9 @@ _TARGET_HELP = (
 _CXXFLAGS_HELP = (
     "Extra compiler flags, split like shell words, so a path with spaces can be "
     "quoted, e.g. --cxxflags='-I\"/path/to/my headers\"'. Relative paths are "
-    "supported only for -I, -iquote, -isystem and -include, taken from the "
-    "directory the script runs in, and a relative -include must name a file in "
-    "this directory, such as -include include/options.h. Other path-taking "
+    f"supported only for {_RELATIVE_PATH_FLAGS_TEXT}, taken from the directory "
+    f"the script runs in, and a relative {_FORCED_INCLUDE_FLAG} must name a file "
+    "in this directory, such as -include include/options.h. Other path-taking "
     "options need absolute paths; anything else is rejected (exit 2). "
     "Default: none."
 )
