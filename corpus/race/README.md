@@ -41,9 +41,12 @@ Each `[[case]]` names one independently buildable kernel:
 
 ## Why the assembly is pinned
 
-The compiler decides how many `s_wait_*` instructions a kernel contains, and
-mutants are derived from them. Compiling at test time would let a toolchain
-update silently change the mutants. Pinning the assembly keeps the set of
+The compiler decides which wait instructions a kernel contains, and mutants are
+derived from them: `s_waitcnt` on gfx950, including combined counters such as
+`vmcnt(0) lgkmcnt(0)`, and the per-counter `s_wait_*` instructions on gfx1250,
+including combined forms such as `s_wait_loadcnt_dscnt` and `s_wait_xcnt`.
+Which of them become mutants is the mutant generator's decision. Compiling at
+test time would let a toolchain update silently change the mutants. Pinning the assembly keeps the set of
 injected defects fixed, and makes moving it onto newer codegen a reviewable
 commit.
 
@@ -116,9 +119,9 @@ python corpus/race/scripts/regenerate_asm.py --target gfx950    # one target
   ROCm's include directory and `-I`/`-isystem`/`-iquote` from `--cxxflags`.
 - **Failures.** A kernel that fails to compile leaves its target as it was, and
   the compiler's diagnostic is printed (exit 2).
-- **Environment.** Only the selected SDK and the recorded flags reach the
-  compiler. Variables that would change the compile without being recorded are
-  removed from its environment, with a note:
+- **Environment.** The compiler comes from the selected SDK, and gets the
+  recorded flags. Variables that would change the compile without being
+  recorded are removed from its environment, with a note:
   - `HIPCC_COMPILE_FLAGS_APPEND`, `HIPCC_LINK_FLAGS_APPEND` and
     `CCC_OVERRIDE_OPTIONS`, which add to the compiler's command line;
   - `CPATH`, `CPLUS_INCLUDE_PATH` and `C_INCLUDE_PATH`, which add header
@@ -128,6 +131,12 @@ python corpus/race/scripts/regenerate_asm.py --target gfx950    # one target
 
   `ROCM_PATH` is set to the selected SDK. Pass extra flags and include
   directories with `--cxxflags`, which `recipe.toml` records.
+
+  The recipe does not capture the whole host. The compiler's own header search
+  still includes host directories, such as the host C++ standard library,
+  `/usr/local/include` and `/usr/include`, which are not recorded. Regenerate
+  on a host whose system headers match, or treat a difference as possible
+  drift.
 
 Review the diff before committing. Where waits or loads moved, the mutants of
 those kernels change with them. Then run the inventory check below.

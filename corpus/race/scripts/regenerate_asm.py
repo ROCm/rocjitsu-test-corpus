@@ -23,9 +23,11 @@ script's ``--check`` can tell. The workflow is described
 in ``corpus/race/README.md``.
 
 Why the assembly is committed rather than compiled per run: the compiler decides
-how many ``s_wait_*`` instructions a kernel contains, and the corpus derives one
-mutant per wait. Compiling at test time therefore lets a toolchain bump silently
-reshape the corpus -- a different mutant count, different case IDs, different
+which wait instructions a kernel contains (``s_waitcnt`` on gfx950, the
+per-counter ``s_wait_*`` instructions on gfx1250), and the corpus derives its
+mutants from them; which waits become mutants is the mutant generator's
+decision. Compiling at test time therefore lets a toolchain bump silently
+reshape the corpus -- different mutants, different case IDs, different
 results -- so two runs months apart are not comparing the same thing. Freezing
 the assembly makes the set of injected defects fixed, and makes regenerating it
 a deliberate, reviewable commit.
@@ -51,7 +53,10 @@ and build, and the explicit flags. ``--check`` compares it with the recipe it
 would use, and reports a changed recipe apart from a toolchain update. Variables
 that change the compile from the environment, such as
 ``HIPCC_COMPILE_FLAGS_APPEND`` or ``CPATH``, would leave no record, so they are
-removed from the compile's environment; see ``_UNRECORDED_VARIABLES``.
+removed from the compile's environment; see ``_UNRECORDED_VARIABLES``. The
+recipe does not capture the whole host: the compiler's own header search still
+includes host directories, such as the host C++ standard library and
+``/usr/include``, which are not recorded.
 
 One normalization is applied on the way out. hipcc stamps each translation unit
 with a ``__hip_cuid_<hash>`` symbol that changes on every invocation, even for
@@ -276,8 +281,10 @@ def missing_headers(
 
 
 # --- Toolchain ---------------------------------------------------------------
-# Discovered, never pinned. Which toolchain produced a given .s is recorded in
-# that file's .ident line rather than being constrained here.
+# The SDK is selected from ROCM_PATH, rocm-sdk or _DEFAULT_ROCM_PATH, and its own
+# compiler is found within it; see select_toolchain. The compiler, its version,
+# the SDK's release and build, and the explicit flags are recorded in each
+# target's recipe.toml, and the compiler's .ident line names it in each listing.
 
 
 def rocm_path() -> Path:
