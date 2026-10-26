@@ -29,7 +29,9 @@ caught. It checks that:
 * every case has ``kernels/<kernel>.hip`` and, for each target it builds for,
   ``asm/<target>/<kernel>.s``;
 * every ``kernels/*.hip`` belongs to a case;
-* every ``asm/<target>/*.s`` belongs to a case that builds for that target;
+* every ``asm/<target>/*.s`` belongs to a case that builds for that target, and
+  ``asm/<target>/`` holds nothing but those listings and its recipe.toml, since
+  regeneration would remove anything else;
 * every ``asm/<target>/*.s`` declares ``.amdgcn_target`` for that target, which
   catches an empty file or a listing copied into the wrong directory. This is a
   sanity check on the files, not proof that they match their source;
@@ -101,6 +103,20 @@ def recipe_problems(target: str) -> list[str]:
     return []
 
 
+def stray_entries(target: str) -> list[str]:
+    """
+    Each entry of ``asm/<target>/`` that is neither a ``.s`` listing nor
+    recipe.toml. Regeneration replaces the directory with exactly those, so it
+    would remove anything else.
+    """
+    return [
+        f"asm/{target}/{entry.name}{'/' if entry.is_dir() else ''}: not a listing or "
+        f"{recipe.FILE_NAME}; regenerating {target} would remove it"
+        for entry in sorted((ASM_DIR / target).iterdir())
+        if entry.is_dir() or (entry.suffix != ".s" and entry.name != recipe.FILE_NAME)
+    ]
+
+
 def case_file_problems(corpus: inventory.Inventory) -> list[str]:
     """
     Each case's missing source or listing, and each kernel source that no case
@@ -144,6 +160,7 @@ def check(corpus: inventory.Inventory) -> list[str]:
     owned = corpus.outputs()
     for target in sorted(set(corpus.targets) & set(present)):
         errors.extend(recipe_problems(target))
+        errors.extend(stray_entries(target))
         for asm in sorted((ASM_DIR / target).glob("*.s")):
             if (target, asm.name) not in owned:
                 errors.append(

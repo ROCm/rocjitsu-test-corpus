@@ -457,3 +457,33 @@ def test_kernel_source_without_a_case_is_reported(
     code, out = run(capsys)
     assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert "kernels/stray.hip: no case uses it" in out
+
+
+# --- A target directory holds only its listings and recipe -------------------------
+#
+# Regeneration replaces a target directory with its listings and recipe.toml,
+# so anything else in it would be lost. The checker reports it first.
+
+
+@pytest.mark.parametrize(
+    "entry",
+    ["NOTES.md", "add_checked.S", ".hidden", "subdirectory/"],
+)
+def test_stray_entry_in_a_target_directory_is_reported(
+    corpus: BuildCorpus,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    entry: str,
+) -> None:
+    corpus(targets=["gfx950"], cases=PORTABLE, asm=["gfx950/portable"])
+    stray = tmp_path / "asm" / "gfx950" / entry.rstrip("/")
+    if entry.endswith("/"):
+        stray.mkdir()
+    else:
+        stray.write_text("")
+    code, out = run(capsys)
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
+    assert (
+        f"asm/gfx950/{entry}: not a listing or recipe.toml; regenerating gfx950 "
+        f"would remove it"
+    ) in out

@@ -187,7 +187,9 @@ python corpus/race/scripts/check_cases.py
 - every case has its `kernels/<kernel>.hip` and, for each target it builds for,
   its `asm/<target>/<kernel>.s`;
 - every `kernels/*.hip` belongs to a case;
-- every committed `.s` file belongs to a case that builds for that target;
+- every committed `.s` file belongs to a case that builds for that target, and a
+  target directory holds nothing but those listings and its `recipe.toml`, since
+  regeneration would remove anything else;
 - every committed `.s` file declares `.amdgcn_target` for the target its
   directory names;
 - every target directory has its `recipe.toml`, with all of its fields. Commit
