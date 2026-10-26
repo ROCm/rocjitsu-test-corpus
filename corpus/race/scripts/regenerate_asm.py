@@ -105,11 +105,39 @@ _CUID_PLACEHOLDER = "__hip_cuid_corpus"
 # The line naming the compiler that produced a file. See the module docstring.
 _IDENT_RE = re.compile(r"^\s*\.ident\s")
 
-# Flags that add a directory to the header search path. Each takes its value as
-# a separate token or glued to the flag.
+# The --cxxflags path contract. The compile runs in a scratch directory, so a
+# relative path must be resolved against the caller's directory first. That is
+# supported only for the include-directory options, which are made absolute,
+# and -include, which must name a file in the caller's directory; see
+# _forced_include. Each takes its value as a separate token or glued to it.
 _INCLUDE_DIR_FLAGS = ("-iquote", "-I", "-isystem")
-# The flag that includes a file before the source; see _forced_include.
 _FORCED_INCLUDE_FLAG = "-include"
+# The other path-taking options the script recognizes. Each must be given an
+# absolute path: resolved in the scratch directory, a relative one would name
+# something else. A --option also takes its value after "=".
+_ABSOLUTE_PATH_FLAGS = (
+    "--include-directory",
+    "--sysroot",
+    "-idirafter",
+    "-iframework",
+    "-imacros",
+    "-include-pch",
+    "-iprefix",
+    "-isysroot",
+    "-isystem-after",
+    "-ivfsoverlay",
+    "-iwithprefix",
+    "-iwithprefixbefore",
+    "-iwithsysroot",
+    "-resource-dir",
+)
+# Every path-taking option the script recognizes, longest first, so that one is
+# never read as a shorter one with a glued value: -include-pch is not -include.
+_PATH_FLAGS = sorted(
+    (*_INCLUDE_DIR_FLAGS, _FORCED_INCLUDE_FLAG, *_ABSOLUTE_PATH_FLAGS),
+    key=len,
+    reverse=True,
+)
 
 # The recipe the pinned assembly is built with. hipcc adds these on its own, but
 # the clang++ fallback does not: without them it compiles at -O0, and the
@@ -197,34 +225,42 @@ def absolute_flags(flags: list[str], base: Path) -> list[str]:
     """
     *flags* with relative paths resolved against *base*, the caller's directory.
 
-    The compiler runs in a scratch directory, so a relative ``-I`` written
-    against the caller's directory is made absolute. A relative ``-include`` is
-    made absolute when it names a file in *base*; see _forced_include.
+    This is the --cxxflags path contract. A relative ``-I``, ``-iquote`` or
+    ``-isystem`` directory is made absolute. A relative ``-include`` must name a
+    file in *base*, and becomes that absolute path; see _forced_include. Every
+    other path-taking option in _ABSOLUTE_PATH_FLAGS must be given an absolute
+    path. Raises UsageError for a path the contract does not support.
     """
-    with_dirs = _map_flag_values(
-        flags,
-        names=_INCLUDE_DIR_FLAGS,
-        resolve=lambda value: value if Path(value).is_absolute() else str(base / value),
+    return _rewrite_path_values(
+        flags, rewrite=lambda name, value: _resolved_path(name, value, base=base)
     )
-    return _map_flag_values(
-        with_dirs,
-        names=(_FORCED_INCLUDE_FLAG,),
-        resolve=lambda value: _forced_include(value, base),
+
+
+def _resolved_path(name: str, value: str, base: Path) -> str:
+    """The path option *name* gets for *value*, given relative to *base*."""
+    if Path(value).is_absolute():
+        return value
+    if name in _INCLUDE_DIR_FLAGS:
+        return str(base / value)
+    if name == _FORCED_INCLUDE_FLAG:
+        return _forced_include(value, base)
+    raise UsageError(
+        f"{name} {value}: relative paths are supported only for -I, -iquote, "
+        f"-isystem and -include; give an absolute path"
     )
 
 
 def _forced_include(value: str, base: Path) -> str:
     """
-    The file a ``-include`` names, for a compile run from a scratch directory.
+    The file a relative ``-include`` names, for a compile run from a scratch
+    directory.
 
     The compiler looks for it in its working directory first, and then applies
-    header-search rules this script does not reproduce. So an absolute path is
-    kept, and a relative one must name a file in *base*, the caller's directory,
-    where the compiler would look first; it becomes that absolute path. Raises
-    UsageError otherwise, since the compiler might select a different file.
+    header-search rules this script does not reproduce. So it must name a file
+    in *base*, the caller's directory, where the compiler would look first, and
+    becomes that absolute path. Raises UsageError otherwise, since the compiler
+    might select a different file.
     """
-    if Path(value).is_absolute():
-        return value
     if (base / value).is_file():
         return str(base / value)
     raise UsageError(
@@ -233,22 +269,26 @@ def _forced_include(value: str, base: Path) -> str:
     )
 
 
-def _map_flag_values(
-    flags: Sequence[str], names: Sequence[str], resolve: Callable[[str], str]
+def _rewrite_path_values(
+    flags: Sequence[str], rewrite: Callable[[str, str], str]
 ) -> list[str]:
-    """*flags* with the value of each flag in *names*, separate or glued, resolved."""
+    """
+    *flags* with the value of each path-taking option, separate, glued or after
+    "=", replaced by ``rewrite(option, value)``.
+    """
     out: list[str] = []
     tokens = iter(flags)
     for flag in tokens:
-        if flag in names:
+        name = next((n for n in _PATH_FLAGS if flag.startswith(n)), None)
+        if name is None:
             out.append(flag)
-            if (value := next(tokens, None)) is not None:
-                out.append(resolve(value))
-            continue
-        glued = next(
-            (n for n in names if flag.startswith(n) and len(flag) > len(n)), None
-        )
-        out.append(glued + resolve(flag[len(glued) :]) if glued else flag)
+        elif flag == name:
+            value = next(tokens, None)
+            out += [flag] if value is None else [flag, rewrite(name, value)]
+        else:
+            rest = flag[len(name) :]
+            separator = "=" if name.startswith("--") and rest.startswith("=") else ""
+            out.append(name + separator + rewrite(name, rest[len(separator) :]))
     return out
 
 
@@ -257,19 +297,15 @@ def _search_dirs(flags: Sequence[str]) -> list[str]:
     The include directories in *flags*, for checking that a declared header
     exists. Which copy the compiler selects is left to the compiler.
     """
-    return [value for name in _INCLUDE_DIR_FLAGS for value in _flag_values(flags, name)]
+    dirs: list[str] = []
 
+    def record(name: str, value: str) -> str:
+        if name in _INCLUDE_DIR_FLAGS:
+            dirs.append(value)
+        return value
 
-def _flag_values(flags: Sequence[str], name: str) -> list[str]:
-    """The value of each *name* flag in *flags*, separate or glued."""
-    values: list[str] = []
-    tokens = iter(flags)
-    for flag in tokens:
-        if flag == name:
-            values.append(next(tokens, ""))
-        elif flag.startswith(name) and len(flag) > len(name):
-            values.append(flag[len(name) :])
-    return values
+    _rewrite_path_values(flags, rewrite=record)
+    return dirs
 
 
 def include_dirs(flags: Sequence[str], root: Path) -> list[Path]:
@@ -758,7 +794,12 @@ _TARGET_HELP = (
 )
 _CXXFLAGS_HELP = (
     "Extra compiler flags, split like shell words, so a path with spaces can be "
-    "quoted, e.g. --cxxflags='-I\"/path/to/my headers\"'. Default: none."
+    "quoted, e.g. --cxxflags='-I\"/path/to/my headers\"'. Relative paths are "
+    "supported only for -I, -iquote, -isystem and -include, taken from the "
+    "directory the script runs in, and a relative -include must name a file in "
+    "this directory, such as -include include/options.h. Other path-taking "
+    "options need absolute paths; anything else is rejected (exit 2). "
+    "Default: none."
 )
 _CHECK_HELP = (
     "Do not write. Regenerate into a temporary directory and compare it with the "

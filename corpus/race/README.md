@@ -77,7 +77,7 @@ produce different code under the same `.ident`. So regenerating also writes
 | `compiler_version` | The `clang version` line of the compiler's `--version`. |
 | `rocm_release` | The SDK's release, from its `.info/version`, such as `10.1.0`, or `unknown`. |
 | `rocm_build` | The SDK's build, such as `10.1.0a20260822`: the version of the Python distributions that installed it, read from the selected installation. `unknown` for an SDK not installed that way, such as `/opt/rocm`. Two builds can share a release and a clang revision, so only the build tells them apart. |
-| `flags` | The explicit flags: `-O3 -x hip`, then `--cxxflags` as the compiler receives them. A relative path, such as `-Iinclude` or `-include include/options.h`, is made absolute against the directory the script runs from, so running from another directory, where it selects a different file, changes the recipe. |
+| `flags` | The explicit flags: `-O3 -x hip`, then `--cxxflags` as the compiler receives them. A supported relative path, such as `-Iinclude` or `-include include/options.h`, is made absolute against the directory the script runs from, so running from another directory, where it selects a different file, changes the recipe. See Extra flags for which relative paths are supported. |
 
 The recipe describes every listing in its target directory, and only those: a
 target directory holds its listings and `recipe.toml`, nothing else. `--check`
@@ -102,11 +102,17 @@ python corpus/race/scripts/regenerate_asm.py --target gfx950    # one target
   rejected (exit 4).
 - **Extra flags.** `--cxxflags` passes extra compiler flags, split like shell
   words, so a path with spaces can be quoted:
-  `--cxxflags='-I"/path/to/my headers"'`. Relative paths are taken from the
-  directory you run the script in. A relative `-include` must name a file from
-  there, such as `-include include/options.h`, or be an absolute path: the
-  compiler runs elsewhere, and its own header search could select a different
-  file. Anything else is rejected (exit 2).
+  `--cxxflags='-I"/path/to/my headers"'`. The compiler runs in a scratch
+  directory, so relative paths are supported only for these options, taken from
+  the directory you run the script in:
+  - `-I`, `-iquote` and `-isystem`, which are made absolute;
+  - `-include`, which must name a file in that directory, such as
+    `-include include/options.h`. The compiler's own header search could
+    otherwise select a different file.
+
+  Other path-taking options the script recognizes, such as `-idirafter`,
+  `--include-directory`, `-include-pch` and `-imacros`, need absolute paths. A
+  relative path for any of them is rejected (exit 2).
 - **Whole targets.** Every case is compiled into a temporary directory first.
   A target is published only when all of its cases compiled: its new listings,
   exactly the ones its cases produce, and its `recipe.toml` are staged in a

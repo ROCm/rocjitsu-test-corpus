@@ -4,6 +4,7 @@ import dataclasses
 import errno
 import json
 import os
+import re
 import subprocess
 import sys
 import tomllib
@@ -2211,3 +2212,75 @@ def test_misspelled_case_table_leaves_every_pinned_file(
     assert {
         path: path.read_text() for path in committed.rglob("*") if path.is_file()
     } == pinned
+
+
+# --- The path-flag contract -----------------------------------------------------
+#
+# The compile runs in a scratch directory. Relative paths are supported for -I,
+# -iquote, -isystem and -include, which the script resolves against the caller's
+# directory. Every other path-taking option the script knows must be given an
+# absolute path; a relative one is rejected rather than resolved in the wrong
+# directory.
+
+UNSUPPORTED_RELATIVE = {
+    "-idirafter": (["-idirafter", "include"], "-idirafter include"),
+    "-idirafter glued": (["-idirafterinclude"], "-idirafter include"),
+    "--include-directory": (
+        ["--include-directory=include"],
+        "--include-directory include",
+    ),
+    "-include-pch": (["-include-pch", "x.pch"], "-include-pch x.pch"),
+    "-imacros": (["-imacros", "macros.h"], "-imacros macros.h"),
+}
+
+
+@pytest.mark.parametrize(
+    "flags, named", UNSUPPORTED_RELATIVE.values(), ids=UNSUPPORTED_RELATIVE.keys()
+)
+def test_relative_path_for_an_unsupported_option_is_rejected(
+    tmp_path: Path, flags: list[str], named: str
+) -> None:
+    with pytest.raises(
+        regen.UsageError,
+        match=f"{re.escape(named)}: relative paths are supported only for -I, "
+        f"-iquote, -isystem and -include",
+    ):
+        regen.absolute_flags(flags, tmp_path)
+
+
+def test_absolute_path_for_an_unsupported_option_is_kept(tmp_path: Path) -> None:
+    # -include-pch is its own option, not -include with a value of "-pch".
+    for flags in (
+        ["-idirafter", "/abs/include"],
+        ["--include-directory=/abs/include"],
+        ["-include-pch", "/abs/x.pch"],
+    ):
+        assert regen.absolute_flags(flags, tmp_path) == flags
+
+
+def test_unsupported_relative_option_is_a_usage_error(
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    with pytest.raises(SystemExit) as exit_info:
+        run("--cxxflags=-idirafter include")
+    # argparse's own status for a usage error, not an ExitCode.
+    assert exit_info.value.code == 2
+    assert "give an absolute path" in capsys.readouterr().err
+    assert compiler_invocations(tmp_path) == []
+    assert not (committed / "gfx950").exists()
+
+
+def test_help_states_the_path_flag_contract(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        regen.main(["--help"])
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert (
+        "Relative paths are supported only for -I, -iquote, -isystem and -include"
+        in (help_text)
+    )
+    assert "a relative -include must name a file in this directory" in help_text
