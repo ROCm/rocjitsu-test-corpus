@@ -21,6 +21,11 @@ from pathlib import Path
 
 SCHEMA = 1
 
+# The keys cases.toml may have at its top level, and in its [corpus] table. Any
+# other is rejected: a misspelled [[case]] table would otherwise leave no cases.
+MANIFEST_KEYS = frozenset({"corpus", "case"})
+CORPUS_KEYS = frozenset({"schema", "targets"})
+
 # The corpus layout. This module lives in scripts/, beside cases.toml, kernels/
 # and asm/; both scripts take their paths from here.
 CORPUS_ROOT = Path(__file__).resolve().parent.parent
@@ -111,18 +116,33 @@ def load(path: Path) -> Inventory:
     if corpus.get("schema") != SCHEMA:
         raise InventoryError([f"{path.name}: unsupported corpus schema"])
 
-    problems: list[str] = []
+    problems = _unknown_keys(path, manifest=manifest, corpus=corpus)
     targets = _corpus_targets(path, corpus.get("targets"), problems)
     entries = manifest.get("case", [])
     if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):
         problems.append(f"{path.name}: case must be a list of [[case]] tables")
         entries = []
+    elif not entries:
+        problems.append(f"{path.name}: no [[case]] tables")
     cases = tuple(
         _cases(path=path, entries=entries, corpus_targets=targets, problems=problems)
     )
     if problems:
         raise InventoryError(problems)
     return Inventory(targets=targets, cases=cases)
+
+
+def _unknown_keys(
+    path: Path, manifest: dict[str, object], corpus: dict[str, object]
+) -> list[str]:
+    """A problem for each key of *manifest* or its [corpus] table that is not known."""
+    return [
+        f"{path.name}: unknown top-level key {key!r}"
+        for key in sorted(set(manifest) - MANIFEST_KEYS)
+    ] + [
+        f"{path.name}: unknown [corpus] key {key!r}"
+        for key in sorted(set(corpus) - CORPUS_KEYS)
+    ]
 
 
 def _read(path: Path) -> dict[str, object]:

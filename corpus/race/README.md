@@ -21,8 +21,14 @@ corpus/race/
 
 ## `cases.toml`
 
-`[corpus] targets` lists the gfx targets the corpus is built for. Both scripts
-read it, so adding a target is a deliberate edit here.
+`[corpus]` holds `schema` and `targets`. `targets` lists the gfx targets the
+corpus is built for. Both scripts read it, so adding a target is a deliberate
+edit here.
+
+The manifest is strict. A table or key other than `[corpus]`, its two keys,
+and `[[case]]` is rejected, as is a manifest with no `[[case]]` tables. A
+misspelled `[[case]]` table is therefore an error, not an empty corpus, which
+regeneration would otherwise publish by deleting every listing.
 
 Each `[[case]]` names one independently buildable kernel:
 
@@ -175,10 +181,12 @@ python corpus/race/scripts/check_cases.py
 
 - `[corpus] targets` is set, and `asm/` has a directory for each target and for
   nothing else;
-- cases use only known fields, with unique ids and kernels;
+- the manifest uses only known tables, keys and fields, has at least one case,
+  and its ids and kernels are unique;
 - every target in a case's `targets` is a corpus target;
 - every case has its `kernels/<kernel>.hip` and, for each target it builds for,
   its `asm/<target>/<kernel>.s`;
+- every `kernels/*.hip` belongs to a case;
 - every committed `.s` file belongs to a case that builds for that target;
 - every committed `.s` file declares `.amdgcn_target` for the target its
   directory names;

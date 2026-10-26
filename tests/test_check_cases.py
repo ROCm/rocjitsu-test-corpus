@@ -1,5 +1,6 @@
 # Copyright (c) 2026 Advanced Micro Devices, Inc.
 # SPDX-License-Identifier: MIT
+import re
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
@@ -40,7 +41,8 @@ def corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BuildCorpus:
     def build(targets: list[str] | None, cases: str, asm: list[str]) -> None:
         (tmp_path / "cases.toml").write_text(corpus_table(targets) + cases)
         (tmp_path / "kernels").mkdir(exist_ok=True)
-        for kernel in ("portable", "only"):
+        # The sources of the kernels the cases name, and no others.
+        for kernel in re.findall(r'^kernel = "(\w+)"$', cases, flags=re.MULTILINE):
             (tmp_path / "kernels" / f"{kernel}.hip").write_text("")
         (tmp_path / "asm").mkdir(exist_ok=True)
         for path in asm:
@@ -429,3 +431,29 @@ def test_mismatch_is_summarized_as_one(
     code, out = run(capsys)
     assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert "1 mismatch(es) between cases.toml and the corpus" in out
+
+
+# --- Every kernel source belongs to a case ------------------------------------------
+
+
+def test_misspelled_case_table_is_rejected(
+    corpus: BuildCorpus, capsys: pytest.CaptureFixture[str]
+) -> None:
+    corpus(
+        targets=["gfx950"],
+        cases=PORTABLE.replace("[[case]]", "[[cases]]"),
+        asm=["gfx950/portable"],
+    )
+    code, out = run(capsys)
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
+    assert "cases.toml: unknown top-level key 'cases'" in out
+
+
+def test_kernel_source_without_a_case_is_reported(
+    corpus: BuildCorpus, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    corpus(targets=["gfx950"], cases=PORTABLE, asm=["gfx950/portable"])
+    (tmp_path / "kernels" / "stray.hip").write_text("")
+    code, out = run(capsys)
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
+    assert "kernels/stray.hip: no case uses it" in out

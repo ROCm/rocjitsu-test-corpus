@@ -23,10 +23,12 @@ caught. It checks that:
 
 * ``[corpus] targets`` names at least one target, and ``asm/`` has a directory
   for each and for nothing else;
-* the manifest is valid, as ``inventory.load`` checks it: known fields, unique
-  ids and kernels, and every target in a case's ``targets`` a corpus target;
+* the manifest is valid, as ``inventory.load`` checks it: only known tables,
+  keys and fields, at least one case, unique ids and kernels, and every target
+  in a case's ``targets`` a corpus target;
 * every case has ``kernels/<kernel>.hip`` and, for each target it builds for,
   ``asm/<target>/<kernel>.s``;
+* every ``kernels/*.hip`` belongs to a case;
 * every ``asm/<target>/*.s`` belongs to a case that builds for that target;
 * every ``asm/<target>/*.s`` declares ``.amdgcn_target`` for that target, which
   catches an empty file or a listing copied into the wrong directory. This is a
@@ -99,6 +101,26 @@ def recipe_problems(target: str) -> list[str]:
     return []
 
 
+def case_file_problems(corpus: inventory.Inventory) -> list[str]:
+    """
+    Each case's missing source or listing, and each kernel source that no case
+    uses, such as one left behind by a removed or misspelled case.
+    """
+    problems: list[str] = []
+    for case in corpus.cases:
+        where = f"{CASES_PATH.name} [{case.id}]"
+        if not (KERNELS_DIR / f"{case.kernel}.hip").is_file():
+            problems.append(f"{where}: kernels/{case.kernel}.hip is missing")
+        for target in corpus.targets_of(case):
+            if not (ASM_DIR / target / f"{case.kernel}.s").is_file():
+                problems.append(f"{where}: asm/{target}/{case.kernel}.s is missing")
+    used = {f"{case.kernel}.hip" for case in corpus.cases}
+    for source in sorted(KERNELS_DIR.glob("*.hip")):
+        if source.name not in used:
+            problems.append(f"kernels/{source.name}: no case uses it")
+    return problems
+
+
 def check(corpus: inventory.Inventory) -> list[str]:
     """
     Every mismatch between a validated inventory and the files on disk.
@@ -117,13 +139,7 @@ def check(corpus: inventory.Inventory) -> list[str]:
                 f"asm/{target}/ is not a corpus target; add it to [corpus] targets"
             )
 
-    for case in corpus.cases:
-        where = f"{CASES_PATH.name} [{case.id}]"
-        if not (KERNELS_DIR / f"{case.kernel}.hip").is_file():
-            errors.append(f"{where}: kernels/{case.kernel}.hip is missing")
-        for target in corpus.targets_of(case):
-            if not (ASM_DIR / target / f"{case.kernel}.s").is_file():
-                errors.append(f"{where}: asm/{target}/{case.kernel}.s is missing")
+    errors.extend(case_file_problems(corpus))
 
     owned = corpus.outputs()
     for target in sorted(set(corpus.targets) & set(present)):

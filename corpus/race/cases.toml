@@ -25,7 +25,6 @@
 
 [corpus]
 schema = 1
-name = "race"
 targets = ["gfx950", "gfx1250"]
 
 # --- Global vector loads -----------------------------------------------------

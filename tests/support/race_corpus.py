@@ -54,7 +54,7 @@ def corpus_table(targets: list[str] | None, schema: int | None = None) -> str:
     """
     if schema is None:
         schema = import_module("inventory").SCHEMA
-    table = f'[corpus]\nschema = {schema}\nname = "race"\n'
+    table = f"[corpus]\nschema = {schema}\n"
     if targets is not None:
         table += f"targets = {json.dumps(targets)}\n"
     return table + "\n"

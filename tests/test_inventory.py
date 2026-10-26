@@ -138,6 +138,18 @@ BAD_MANIFESTS = {
         '[[case]]\nid = "a"\nkernel = {}\n',
         "cases.toml [a]: kernel must be a non-empty string",
     ),
+    # The manifest around the cases is as strict as the cases: a misspelled
+    # table would otherwise leave no cases, and regeneration would publish
+    # every target empty.
+    "misspelled case table": (
+        '[[cases]]\nid = "a"\nkernel = "a"\n',
+        "cases.toml: unknown top-level key 'cases'",
+    ),
+    "unknown corpus key": (
+        'name = "race"\n[[case]]\nid = "a"\nkernel = "a"\n',
+        "cases.toml: unknown [corpus] key 'name'",
+    ),
+    "no cases": ("", "cases.toml: no [[case]] tables"),
 }
 
 
@@ -245,11 +257,23 @@ def report_from_both_scripts(
     fails the way it documents for an invalid inventory: the checker exits 1,
     and regeneration exits SETUP_FAILED before compiling anything. Returns what
     each printed to stderr.
+
+    Both scripts see a corpus in *path*'s directory, never the committed one,
+    and regeneration cannot reach a compiler: a manifest that wrongly loads
+    fails the test instead of publishing anything.
     """
     check_cases = load_script("check_cases")
     regenerate_asm = load_script("regenerate_asm")
-    monkeypatch.setattr(check_cases, "CASES_PATH", path)
-    monkeypatch.setattr(regenerate_asm, "CASES_PATH", path)
+    for script in (check_cases, regenerate_asm):
+        monkeypatch.setattr(script, "CORPUS_ROOT", path.parent)
+        monkeypatch.setattr(script, "CASES_PATH", path)
+        monkeypatch.setattr(script, "KERNELS_DIR", path.parent / "kernels")
+        monkeypatch.setattr(script, "ASM_DIR", path.parent / "asm")
+
+    def no_toolchain() -> None:
+        raise AssertionError("an invalid inventory must stop before the toolchain")
+
+    monkeypatch.setattr(regenerate_asm, "select_toolchain", no_toolchain)
     assert check_cases.main([]) == check_cases.ExitCode.PROBLEMS_FOUND
     checker = capsys.readouterr().err
     assert regenerate_asm.main([]) == regenerate_asm.ExitCode.SETUP_FAILED

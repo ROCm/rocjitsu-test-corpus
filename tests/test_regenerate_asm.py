@@ -2098,3 +2098,22 @@ def test_real_compiler_finds_a_forced_include_through_an_include_directory(
         kernel=kernel, target="gfx950", out=out, extra_flags=flags, toolchain=toolchain
     )
     assert '.amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx950' in out.read_text()
+
+
+def test_misspelled_case_table_leaves_every_pinned_file(
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # [[cases]] for [[case]] would leave no cases, and so publish every target
+    # with no listings. The manifest is rejected instead, before anything is
+    # compiled or published.
+    run, committed = corpus_main
+    manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
+    commit_fresh_output(run, committed)
+    pinned = {path: path.read_text() for path in committed.rglob("*") if path.is_file()}
+    manifest(["gfx950", "gfx1250"], PORTABLE_CASE.replace("[[case]]", "[[cases]]"))
+    capsys.readouterr()
+    assert run() == regen.ExitCode.SETUP_FAILED
+    assert "unknown top-level key 'cases'" in capsys.readouterr().err
+    assert {
+        path: path.read_text() for path in committed.rglob("*") if path.is_file()
+    } == pinned
