@@ -975,6 +975,9 @@ def _print_install_summary(
         )
 
 
+# --- Comparing (--check) ----------------------------------------------------
+
+
 @dataclasses.dataclass(frozen=True)
 class FileComparison:
     """
