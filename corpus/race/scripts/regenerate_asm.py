@@ -137,6 +137,13 @@ _ABSOLUTE_PATH_FLAGS = (
     "-iwithsysroot",
     "-resource-dir",
 )
+# The path-taking options clang spells with "=", such as -resource-dir=/path,
+# as well as with a separate value.
+_EQUALS_FLAGS = ("--include-directory", "--sysroot", "-resource-dir")
+# Options that pass the next argument to a later stage unchanged. A path option
+# forwarded this way is passed through as written, so its path must be
+# absolute; see _forwarded_length.
+_FORWARDING_FLAGS = ("-Xclang", "-Xarch_device", "-Xarch_host", "-mllvm")
 # Every path-taking option the script recognizes, longest first, so that one is
 # never read as a shorter one with a glued value: -include-pch is not -include.
 _PATH_FLAGS = sorted(
@@ -243,8 +250,14 @@ def absolute_flags(flags: list[str], base: Path) -> list[str]:
 
 
 def _resolved_path(name: str, value: str, base: Path) -> str:
-    """The path option *name* gets for *value*, given relative to *base*."""
-    if Path(value).is_absolute():
+    """
+    The path option *name* gets for *value*, given relative to *base*. An
+    absolute path is kept, and so is one clang reads as relative to the sysroot,
+    which starts with "=".
+    """
+    if Path(value).is_absolute() or (
+        value.startswith("=") and name != _FORCED_INCLUDE_FLAG
+    ):
         return value
     if name in _INCLUDE_DIR_FLAGS:
         return str(base / value)
@@ -280,22 +293,74 @@ def _rewrite_path_values(
 ) -> list[str]:
     """
     *flags* with the value of each path-taking option, separate, glued or after
-    "=", replaced by ``rewrite(option, value)``.
+    "=", replaced by ``rewrite(option, value)``. Arguments forwarded to a later
+    stage are kept as written; see _forwarded_length.
     """
     out: list[str] = []
-    tokens = iter(flags)
-    for flag in tokens:
-        name = next((n for n in _PATH_FLAGS if flag.startswith(n)), None)
-        if name is None:
+    i = 0
+    while i < len(flags):
+        flag = flags[i]
+        name = _path_flag_name(flag)
+        if flag in _FORWARDING_FLAGS and i + 1 < len(flags):
+            length = _forwarded_length(flags, start=i, rewrite=rewrite)
+            out += flags[i : i + length]
+            i += length
+        elif name is None or (flag == name and i + 1 == len(flags)):
             out.append(flag)
+            i += 1
         elif flag == name:
-            value = next(tokens, None)
-            out += [flag] if value is None else [flag, rewrite(name, value)]
+            out += [flag, rewrite(name, flags[i + 1])]
+            i += 2
         else:
-            rest = flag[len(name) :]
-            separator = "=" if name.startswith("--") and rest.startswith("=") else ""
-            out.append(name + separator + rewrite(name, rest[len(separator) :]))
+            separator, value = _split_joined(flag, name)
+            out.append(name + separator + rewrite(name, value))
+            i += 1
     return out
+
+
+def _forwarded_length(
+    flags: Sequence[str], start: int, rewrite: Callable[[str, str], str]
+) -> int:
+    """
+    How many arguments the forwarding option at *start* covers: it and the
+    argument it forwards, or, for a forwarded path option with a separate value
+    (``-Xclang -iquote -Xclang /path``), both pairs. A forwarded path is passed
+    through unchanged, so it must be absolute, or relative to the sysroot.
+    Raises UsageError otherwise. *rewrite* still sees it, unchanged.
+    """
+    forwarding, argument = flags[start], flags[start + 1]
+    name = _path_flag_name(argument)
+    if name is None:
+        return 2
+    length, value = 2, None
+    if argument != name:
+        value = _split_joined(argument, name)[1]
+    elif start + 3 < len(flags) and flags[start + 2] == forwarding:
+        length, value = 4, flags[start + 3]
+    if value is not None:
+        if not (Path(value).is_absolute() or value.startswith("=")):
+            raise UsageError(
+                f"{forwarding} {name} {value}: a path forwarded with {forwarding} "
+                f"is passed through unchanged, so give an absolute path"
+            )
+        rewrite(name, value)
+    return length
+
+
+def _path_flag_name(flag: str) -> str | None:
+    """The path-taking option *flag* starts with, or None."""
+    return next((name for name in _PATH_FLAGS if flag.startswith(name)), None)
+
+
+def _split_joined(flag: str, name: str) -> tuple[str, str]:
+    """
+    The separator and value of *flag*, which joins option *name* to its value:
+    "=" for an option in _EQUALS_FLAGS spelled with it, else nothing.
+    """
+    rest = flag[len(name) :]
+    if name in _EQUALS_FLAGS and rest.startswith("="):
+        return "=", rest[1:]
+    return "", rest
 
 
 def _search_dirs(flags: Sequence[str]) -> list[str]:

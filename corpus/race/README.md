@@ -114,7 +114,11 @@ python corpus/race/scripts/regenerate_asm.py --target gfx950    # one target
 
   Other path-taking options the script recognizes, such as `-idirafter`,
   `--include-directory`, `-include-pch` and `-imacros`, need absolute paths. A
-  relative path for any of them is rejected (exit 2).
+  relative path for any of them is rejected (exit 2). An option's `=` spelling,
+  such as `-resource-dir=/path`, and a value clang reads as relative to the
+  sysroot, such as `-I=/usr/include`, are kept as written. So is an argument
+  forwarded with `-Xclang`, `-Xarch_host`, `-Xarch_device` or `-mllvm`; a path
+  forwarded that way must be absolute.
 - **Whole targets.** Every case is compiled into a temporary directory first.
   A target is published only when all of its cases compiled: its new listings,
   exactly the ones its cases produce, and its `recipe.toml` are staged in a

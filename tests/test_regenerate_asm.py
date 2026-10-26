@@ -1372,6 +1372,103 @@ def test_unsupported_relative_option_is_a_usage_error(
     assert not (committed / "gfx950").exists()
 
 
+# Valid absolute inputs the parser must keep exactly as written: the "="
+# spelling of options defined with it, values clang reads as relative to the
+# sysroot, and arguments forwarded to the compiler front end, whose boundaries
+# must not shift.
+KEPT_AS_WRITTEN = {
+    "-resource-dir=": ["-resource-dir=/abs/resource"],
+    "--sysroot=": ["--sysroot=/abs/sysroot"],
+    "--include-directory=": ["--include-directory=/abs/include"],
+    "-I= sysroot-relative": ["-I=/usr/include"],
+    "-isystem = sysroot-relative": ["-isystem", "=/usr/include"],
+    "-Xclang -iquote, separate": ["-Xclang", "-iquote", "-Xclang", "/abs/include"],
+    "-Xclang -iquote, glued": ["-Xclang", "-iquote/abs/include"],
+    "-Xclang, not a path": ["-Xclang", "-fno-pch-timestamp"],
+    "-mllvm, not a path": ["-mllvm", "-amdgpu-early-inline-all"],
+}
+
+
+@pytest.mark.parametrize("flags", KEPT_AS_WRITTEN.values(), ids=KEPT_AS_WRITTEN.keys())
+def test_valid_flags_are_kept_as_written(tmp_path: Path, flags: list[str]) -> None:
+    assert regen.absolute_flags(flags, tmp_path) == flags
+
+
+REJECTED_RELATIVE = {
+    "-resource-dir=": (["-resource-dir=resource"], "-resource-dir resource"),
+    "-Xclang -iquote, separate": (
+        ["-Xclang", "-iquote", "-Xclang", "include"],
+        "-Xclang -iquote include",
+    ),
+    "-Xclang -iquote, glued": (
+        ["-Xclang", "-iquoteinclude"],
+        "-Xclang -iquote include",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "flags, named", REJECTED_RELATIVE.values(), ids=REJECTED_RELATIVE.keys()
+)
+def test_relative_path_in_an_unsupported_spelling_is_rejected(
+    tmp_path: Path, flags: list[str], named: str
+) -> None:
+    with pytest.raises(regen.UsageError, match=f"{re.escape(named)}: "):
+        regen.absolute_flags(flags, tmp_path)
+
+
+def resource_dir(toolchain: regen.Toolchain) -> str:
+    """The resource directory of the SDK's clang."""
+    clang = toolchain.root / "llvm" / "bin" / "clang"
+    return subprocess.check_output(
+        [str(clang), "-print-resource-dir"], text=True
+    ).strip()
+
+
+@pytest.mark.parametrize("spelling", ["equals", "separate"])
+def test_real_compiler_accepts_an_absolute_resource_dir(
+    tmp_path: Path, spelling: str
+) -> None:
+    toolchain = real_toolchain()
+    directory = resource_dir(toolchain)
+    flags = (
+        [f"-resource-dir={directory}"]
+        if spelling == "equals"
+        else ["-resource-dir", directory]
+    )
+    assert regen.absolute_flags(flags, tmp_path) == flags
+    kernel = tmp_path / "kernel.hip"
+    kernel.write_text("__attribute__((used)) __device__ int value = 5;\n")
+    out = tmp_path / "kernel.s"
+    regen.compile_device_asm(
+        kernel=kernel, target="gfx950", out=out, extra_flags=flags, toolchain=toolchain
+    )
+    assert compiled_value(out.read_text()) == "5"
+
+
+def test_real_compiler_selects_a_header_through_a_forwarded_iquote(
+    tmp_path: Path,
+) -> None:
+    # The kernel's quoted include is found only through the forwarded -iquote.
+    toolchain = real_toolchain()
+    include = tmp_path / "forwarded"
+    include.mkdir()
+    (include / "forwarded.h").write_text("#define RACE_VALUE 44\n")
+    kernel = tmp_path / "kernel" / "forwarded.hip"
+    kernel.parent.mkdir()
+    kernel.write_text(
+        '#include "forwarded.h"\n'
+        "__attribute__((used)) __device__ int value = RACE_VALUE;\n"
+    )
+    flags = ["-Xclang", "-iquote", "-Xclang", str(include)]
+    assert regen.absolute_flags(flags, tmp_path) == flags
+    out = tmp_path / "forwarded.s"
+    regen.compile_device_asm(
+        kernel=kernel, target="gfx950", out=out, extra_flags=flags, toolchain=toolchain
+    )
+    assert compiled_value(out.read_text()) == "44"
+
+
 # --- The baseline recipe is explicit -------------------------------------------
 #
 # hipcc adds -O3 and -x hip itself; the documented clang++ fallback does not. So
