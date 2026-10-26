@@ -519,11 +519,6 @@ def test_portable_case_builds_for_every_corpus_target(
 # case is skipped. Headers outside the SDK come through --cxxflags -I.
 
 
-@pytest.fixture
-def rocwmma_case(monkeypatch: pytest.MonkeyPatch, kernel: Path) -> None:
-    monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
-
-
 def header_dir(tmp_path: Path) -> Path:
     include = tmp_path / "env-include"
     (include / "rocwmma").mkdir(parents=True)
@@ -536,12 +531,12 @@ def test_environment_include_path_is_not_searched(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     pinned: Path,
-    rocwmma_case: None,
+    kernel: Path,
     variable: str,
 ) -> None:
-    toolchain = install_fake_compiler(
-        monkeypatch, tmp_path, "fail"
-    )  # must not be invoked
+    # The compiler must not be invoked: the case is skipped first.
+    toolchain = install_fake_compiler(monkeypatch, tmp_path, "fail")
+    monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
     monkeypatch.setenv(variable, str(header_dir(tmp_path)))
     result = regen.regenerate(
         corpus=ROCWMMA_INVENTORY,
