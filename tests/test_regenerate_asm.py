@@ -2116,7 +2116,7 @@ OVERLAPPING_FLAGS = [
 ]
 
 
-def overlapping_directories(caller: Path) -> None:
+def write_overlapping_headers(caller: Path) -> None:
     for directory, value in (("first", 11), ("second", 22)):
         (caller / directory).mkdir(parents=True)
         (caller / directory / "options.h").write_text(f"#define RACE_VALUE {value}\n")
@@ -2156,7 +2156,7 @@ def test_real_compiler_rejects_an_overlapping_directory_forced_include(
     # rules would select first/options.h, so the flag is rejected instead.
     toolchain = real_toolchain()
     caller = tmp_path / "caller"
-    overlapping_directories(caller)
+    write_overlapping_headers(caller)
     kernel = caller / "forced.hip"
     kernel.write_text("__attribute__((used)) __device__ int value = RACE_VALUE;\n")
     direct = caller / "direct.s"
@@ -2174,7 +2174,7 @@ def test_real_compiler_selects_the_forced_include_the_script_records(
     # given the absolute path the script records.
     toolchain = real_toolchain()
     caller = tmp_path / "caller"
-    overlapping_directories(caller)
+    write_overlapping_headers(caller)
     (caller / "options.h").write_text("#define RACE_VALUE 33\n")
     kernel = caller / "forced.hip"
     kernel.write_text("__attribute__((used)) __device__ int value = RACE_VALUE;\n")
