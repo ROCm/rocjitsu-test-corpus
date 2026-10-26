@@ -1030,6 +1030,17 @@ def test_help_is_short_and_points_to_the_readme(
     assert "CI drift gate" not in help_text
 
 
+def test_help_states_the_path_flag_contract(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        regen.main(["--help"])
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert (
+        "Relative paths are supported only for -I, -iquote, -isystem and -include"
+        in (help_text)
+    )
+    assert "a relative -include must name a file in this directory" in help_text
+
+
 # --- The per-case field is targets ---------------------------------------------
 
 
@@ -1095,6 +1106,25 @@ def test_main_reads_the_manifest_once(
     assert len(reads) == 1
 
 
+def test_misspelled_case_table_leaves_every_pinned_file(
+    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # [[cases]] for [[case]] would leave no cases, and so publish every target
+    # with no listings. The manifest is rejected instead, before anything is
+    # compiled or published.
+    run, committed = corpus_main
+    manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
+    commit_fresh_output(run, committed)
+    pinned = {path: path.read_text() for path in committed.rglob("*") if path.is_file()}
+    manifest(["gfx950", "gfx1250"], PORTABLE_CASE.replace("[[case]]", "[[cases]]"))
+    capsys.readouterr()
+    assert run() == regen.ExitCode.SETUP_FAILED
+    assert "unknown top-level key 'cases'" in capsys.readouterr().err
+    assert {
+        path: path.read_text() for path in committed.rglob("*") if path.is_file()
+    } == pinned
+
+
 # --- One list of include-directory flags --------------------------------------
 #
 # The header preflight and the relative-path rewrite read include directories
@@ -1122,6 +1152,224 @@ def test_forced_include_file_is_not_an_include_directory(
         tmp_path / "rocm" / "include"
     ]
     assert regen.absolute_flags(flags, base) == ["-include", str(base / "pre.h")]
+
+
+# --- A forced include names a file from the caller's directory ------------------
+#
+# The compiler looks for `-include file` in its working directory first, and
+# then applies its own header-search rules, which the script does not copy. The
+# compile runs in a scratch directory, so a relative -include must name a file
+# from the caller's directory, where the compiler would look first: it is passed,
+# and recorded, as that absolute path. Anything else is rejected, since the
+# compiler might select a different file.
+
+
+def test_forced_include_in_the_working_directory_is_made_absolute(
+    tmp_path: Path,
+) -> None:
+    caller = tmp_path / "caller"
+    in_caller = write_header(caller / "options.h")
+    write_header(caller / "include" / "options.h")
+    flags = ["-Iinclude", "-include", "options.h"]
+    assert regen.absolute_flags(flags, caller)[-1] == str(in_caller)
+
+
+def test_forced_include_with_a_path_from_the_working_directory_is_made_absolute(
+    tmp_path: Path,
+) -> None:
+    caller = tmp_path / "caller"
+    header = write_header(caller / "include" / "options.h")
+    resolved = regen.absolute_flags(["-includeinclude/options.h"], caller)
+    assert resolved == [f"-include{header}"]
+
+
+def test_absolute_forced_include_is_passed_unchanged(tmp_path: Path) -> None:
+    flags = ["-include", str(tmp_path / "anywhere" / "options.h")]
+    assert regen.absolute_flags(flags, tmp_path / "caller") == flags
+
+
+def test_forced_include_not_in_the_working_directory_is_rejected(
+    tmp_path: Path,
+) -> None:
+    # Only include/options.h exists: the compiler would search for options.h
+    # with its own rules, which the script cannot reproduce from elsewhere.
+    caller = tmp_path / "caller"
+    write_header(caller / "include" / "options.h")
+    with pytest.raises(regen.UsageError, match="-include options.h: not found in"):
+        regen.absolute_flags(["-Iinclude", "-include", "options.h"], caller)
+
+
+def test_rejected_forced_include_is_a_usage_error(
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    caller = tmp_path / "caller"
+    write_header(caller / "include" / "options.h")
+    monkeypatch.chdir(caller)
+    with pytest.raises(SystemExit) as exit_info:
+        run("--cxxflags=-Iinclude -include options.h")
+    # argparse's own status for a usage error, not an ExitCode.
+    assert exit_info.value.code == 2
+    assert "give its path from this directory" in capsys.readouterr().err
+    assert compiler_invocations(tmp_path) == []
+    assert not (committed / "gfx950").exists()
+
+
+# The flags of the overlapping-directory case: first is both an -I and an
+# -isystem directory, so the compiler searches it as a system directory, after
+# second. Each directory's options.h defines a different value.
+OVERLAPPING_FLAGS = [
+    "-Ifirst",
+    "-Isecond",
+    "-isystem",
+    "first",
+    "-include",
+    "options.h",
+]
+
+
+def write_overlapping_headers(caller: Path) -> None:
+    for directory, value in (("first", 11), ("second", 22)):
+        (caller / directory).mkdir(parents=True)
+        (caller / directory / "options.h").write_text(f"#define RACE_VALUE {value}\n")
+
+
+def real_toolchain() -> regen.Toolchain:
+    """The selected SDK's toolchain, or skip the test when there is none."""
+    try:
+        return regen.select_toolchain()
+    except regen.SetupError as error:
+        pytest.skip(f"no ROCm SDK with a HIP compiler: {error}")
+
+
+def compiled_value(listing: str) -> str:
+    """The value of the kernel's `value` variable in a listing."""
+    lines = listing.splitlines()
+    return lines[lines.index("value:") + 1].split()[1]
+
+
+def compile_directly(toolchain: regen.Toolchain, kernel: Path, out: Path) -> None:
+    """Compile *kernel* with OVERLAPPING_FLAGS from its own directory, as a user would."""
+    subprocess.run(
+        [str(toolchain.compiler), f"--rocm-path={toolchain.root}", "-O3", "-x", "hip"]
+        + ["-S", "--cuda-device-only", "--offload-arch=gfx950", *OVERLAPPING_FLAGS]
+        + [str(kernel), "-o", str(out)],
+        cwd=kernel.parent,
+        check=True,
+        capture_output=True,
+        env=regen.compiler_environment(toolchain.root),
+    )
+
+
+def test_real_compiler_rejects_an_overlapping_directory_forced_include(
+    tmp_path: Path,
+) -> None:
+    # The compiler selects second/options.h here, where a copy of its search
+    # rules would select first/options.h, so the flag is rejected instead.
+    toolchain = real_toolchain()
+    caller = tmp_path / "caller"
+    write_overlapping_headers(caller)
+    kernel = caller / "forced.hip"
+    kernel.write_text("__attribute__((used)) __device__ int value = RACE_VALUE;\n")
+    direct = caller / "direct.s"
+    compile_directly(toolchain, kernel=kernel, out=direct)
+    assert compiled_value(direct.read_text()) == "22"
+    with pytest.raises(regen.UsageError, match="-include options.h: not found in"):
+        regen.absolute_flags(OVERLAPPING_FLAGS, caller)
+
+
+def test_real_compiler_selects_the_forced_include_the_script_records(
+    tmp_path: Path,
+) -> None:
+    # With options.h in the caller's directory, the compiler run from there
+    # selects it ahead of first/ and second/, and so does the scratch compile
+    # given the absolute path the script records.
+    toolchain = real_toolchain()
+    caller = tmp_path / "caller"
+    write_overlapping_headers(caller)
+    (caller / "options.h").write_text("#define RACE_VALUE 33\n")
+    kernel = caller / "forced.hip"
+    kernel.write_text("__attribute__((used)) __device__ int value = RACE_VALUE;\n")
+    direct = caller / "direct.s"
+    compile_directly(toolchain, kernel=kernel, out=direct)
+    flags = regen.absolute_flags(OVERLAPPING_FLAGS, caller)
+    assert flags[-1] == str(caller / "options.h")
+    regenerated = tmp_path / "regenerated.s"
+    regen.compile_device_asm(
+        kernel=kernel,
+        target="gfx950",
+        out=regenerated,
+        extra_flags=flags,
+        toolchain=toolchain,
+    )
+    assert compiled_value(direct.read_text()) == "33"
+    assert compiled_value(regenerated.read_text()) == "33"
+
+
+# --- The path-flag contract -----------------------------------------------------
+#
+# The compile runs in a scratch directory. Relative paths are supported for -I,
+# -iquote, -isystem and -include, which the script resolves against the caller's
+# directory. Every other path-taking option the script knows must be given an
+# absolute path; a relative one is rejected rather than resolved in the wrong
+# directory.
+
+UNSUPPORTED_RELATIVE = {
+    "-idirafter": (["-idirafter", "include"], "-idirafter include"),
+    "-idirafter glued": (["-idirafterinclude"], "-idirafter include"),
+    "--include-directory": (
+        ["--include-directory=include"],
+        "--include-directory include",
+    ),
+    "-include-pch": (["-include-pch", "x.pch"], "-include-pch x.pch"),
+    "-imacros": (["-imacros", "macros.h"], "-imacros macros.h"),
+}
+
+
+@pytest.mark.parametrize(
+    "flags, named", UNSUPPORTED_RELATIVE.values(), ids=UNSUPPORTED_RELATIVE.keys()
+)
+def test_relative_path_for_an_unsupported_option_is_rejected(
+    tmp_path: Path, flags: list[str], named: str
+) -> None:
+    with pytest.raises(
+        regen.UsageError,
+        match=f"{re.escape(named)}: relative paths are supported only for -I, "
+        f"-iquote, -isystem and -include",
+    ):
+        regen.absolute_flags(flags, tmp_path)
+
+
+def test_absolute_path_for_an_unsupported_option_is_kept(tmp_path: Path) -> None:
+    # -include-pch is its own option, not -include with a value of "-pch".
+    for flags in (
+        ["-idirafter", "/abs/include"],
+        ["--include-directory=/abs/include"],
+        ["-include-pch", "/abs/x.pch"],
+    ):
+        assert regen.absolute_flags(flags, tmp_path) == flags
+
+
+def test_unsupported_relative_option_is_a_usage_error(
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    with pytest.raises(SystemExit) as exit_info:
+        run("--cxxflags=-idirafter include")
+    # argparse's own status for a usage error, not an ExitCode.
+    assert exit_info.value.code == 2
+    assert "give an absolute path" in capsys.readouterr().err
+    assert compiler_invocations(tmp_path) == []
+    assert not (committed / "gfx950").exists()
 
 
 # --- The baseline recipe is explicit -------------------------------------------
@@ -2036,251 +2284,3 @@ def test_missing_default_sdk_is_reported(
     monkeypatch.setattr(regen, "_DEFAULT_ROCM_PATH", tmp_path / "missing")
     with pytest.raises(regen.SetupError, match="no ROCm SDK"):
         regen.rocm_path()
-
-
-# --- A forced include names a file from the caller's directory ------------------
-#
-# The compiler looks for `-include file` in its working directory first, and
-# then applies its own header-search rules, which the script does not copy. The
-# compile runs in a scratch directory, so a relative -include must name a file
-# from the caller's directory, where the compiler would look first: it is passed,
-# and recorded, as that absolute path. Anything else is rejected, since the
-# compiler might select a different file.
-
-
-def test_forced_include_in_the_working_directory_is_made_absolute(
-    tmp_path: Path,
-) -> None:
-    caller = tmp_path / "caller"
-    in_caller = write_header(caller / "options.h")
-    write_header(caller / "include" / "options.h")
-    flags = ["-Iinclude", "-include", "options.h"]
-    assert regen.absolute_flags(flags, caller)[-1] == str(in_caller)
-
-
-def test_forced_include_with_a_path_from_the_working_directory_is_made_absolute(
-    tmp_path: Path,
-) -> None:
-    caller = tmp_path / "caller"
-    header = write_header(caller / "include" / "options.h")
-    resolved = regen.absolute_flags(["-includeinclude/options.h"], caller)
-    assert resolved == [f"-include{header}"]
-
-
-def test_absolute_forced_include_is_passed_unchanged(tmp_path: Path) -> None:
-    flags = ["-include", str(tmp_path / "anywhere" / "options.h")]
-    assert regen.absolute_flags(flags, tmp_path / "caller") == flags
-
-
-def test_forced_include_not_in_the_working_directory_is_rejected(
-    tmp_path: Path,
-) -> None:
-    # Only include/options.h exists: the compiler would search for options.h
-    # with its own rules, which the script cannot reproduce from elsewhere.
-    caller = tmp_path / "caller"
-    write_header(caller / "include" / "options.h")
-    with pytest.raises(regen.UsageError, match="-include options.h: not found in"):
-        regen.absolute_flags(["-Iinclude", "-include", "options.h"], caller)
-
-
-def test_rejected_forced_include_is_a_usage_error(
-    manifest: Manifest,
-    corpus_main: CorpusMain,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    run, committed = corpus_main
-    manifest(["gfx950"], PORTABLE_CASE)
-    caller = tmp_path / "caller"
-    write_header(caller / "include" / "options.h")
-    monkeypatch.chdir(caller)
-    with pytest.raises(SystemExit) as exit_info:
-        run("--cxxflags=-Iinclude -include options.h")
-    # argparse's own status for a usage error, not an ExitCode.
-    assert exit_info.value.code == 2
-    assert "give its path from this directory" in capsys.readouterr().err
-    assert compiler_invocations(tmp_path) == []
-    assert not (committed / "gfx950").exists()
-
-
-# The flags of the overlapping-directory case: first is both an -I and an
-# -isystem directory, so the compiler searches it as a system directory, after
-# second. Each directory's options.h defines a different value.
-OVERLAPPING_FLAGS = [
-    "-Ifirst",
-    "-Isecond",
-    "-isystem",
-    "first",
-    "-include",
-    "options.h",
-]
-
-
-def write_overlapping_headers(caller: Path) -> None:
-    for directory, value in (("first", 11), ("second", 22)):
-        (caller / directory).mkdir(parents=True)
-        (caller / directory / "options.h").write_text(f"#define RACE_VALUE {value}\n")
-
-
-def real_toolchain() -> regen.Toolchain:
-    """The selected SDK's toolchain, or skip the test when there is none."""
-    try:
-        return regen.select_toolchain()
-    except regen.SetupError as error:
-        pytest.skip(f"no ROCm SDK with a HIP compiler: {error}")
-
-
-def compiled_value(listing: str) -> str:
-    """The value of the kernel's `value` variable in a listing."""
-    lines = listing.splitlines()
-    return lines[lines.index("value:") + 1].split()[1]
-
-
-def compile_directly(toolchain: regen.Toolchain, kernel: Path, out: Path) -> None:
-    """Compile *kernel* with OVERLAPPING_FLAGS from its own directory, as a user would."""
-    subprocess.run(
-        [str(toolchain.compiler), f"--rocm-path={toolchain.root}", "-O3", "-x", "hip"]
-        + ["-S", "--cuda-device-only", "--offload-arch=gfx950", *OVERLAPPING_FLAGS]
-        + [str(kernel), "-o", str(out)],
-        cwd=kernel.parent,
-        check=True,
-        capture_output=True,
-        env=regen.compiler_environment(toolchain.root),
-    )
-
-
-def test_real_compiler_rejects_an_overlapping_directory_forced_include(
-    tmp_path: Path,
-) -> None:
-    # The compiler selects second/options.h here, where a copy of its search
-    # rules would select first/options.h, so the flag is rejected instead.
-    toolchain = real_toolchain()
-    caller = tmp_path / "caller"
-    write_overlapping_headers(caller)
-    kernel = caller / "forced.hip"
-    kernel.write_text("__attribute__((used)) __device__ int value = RACE_VALUE;\n")
-    direct = caller / "direct.s"
-    compile_directly(toolchain, kernel=kernel, out=direct)
-    assert compiled_value(direct.read_text()) == "22"
-    with pytest.raises(regen.UsageError, match="-include options.h: not found in"):
-        regen.absolute_flags(OVERLAPPING_FLAGS, caller)
-
-
-def test_real_compiler_selects_the_forced_include_the_script_records(
-    tmp_path: Path,
-) -> None:
-    # With options.h in the caller's directory, the compiler run from there
-    # selects it ahead of first/ and second/, and so does the scratch compile
-    # given the absolute path the script records.
-    toolchain = real_toolchain()
-    caller = tmp_path / "caller"
-    write_overlapping_headers(caller)
-    (caller / "options.h").write_text("#define RACE_VALUE 33\n")
-    kernel = caller / "forced.hip"
-    kernel.write_text("__attribute__((used)) __device__ int value = RACE_VALUE;\n")
-    direct = caller / "direct.s"
-    compile_directly(toolchain, kernel=kernel, out=direct)
-    flags = regen.absolute_flags(OVERLAPPING_FLAGS, caller)
-    assert flags[-1] == str(caller / "options.h")
-    regenerated = tmp_path / "regenerated.s"
-    regen.compile_device_asm(
-        kernel=kernel,
-        target="gfx950",
-        out=regenerated,
-        extra_flags=flags,
-        toolchain=toolchain,
-    )
-    assert compiled_value(direct.read_text()) == "33"
-    assert compiled_value(regenerated.read_text()) == "33"
-
-
-def test_misspelled_case_table_leaves_every_pinned_file(
-    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # [[cases]] for [[case]] would leave no cases, and so publish every target
-    # with no listings. The manifest is rejected instead, before anything is
-    # compiled or published.
-    run, committed = corpus_main
-    manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
-    commit_fresh_output(run, committed)
-    pinned = {path: path.read_text() for path in committed.rglob("*") if path.is_file()}
-    manifest(["gfx950", "gfx1250"], PORTABLE_CASE.replace("[[case]]", "[[cases]]"))
-    capsys.readouterr()
-    assert run() == regen.ExitCode.SETUP_FAILED
-    assert "unknown top-level key 'cases'" in capsys.readouterr().err
-    assert {
-        path: path.read_text() for path in committed.rglob("*") if path.is_file()
-    } == pinned
-
-
-# --- The path-flag contract -----------------------------------------------------
-#
-# The compile runs in a scratch directory. Relative paths are supported for -I,
-# -iquote, -isystem and -include, which the script resolves against the caller's
-# directory. Every other path-taking option the script knows must be given an
-# absolute path; a relative one is rejected rather than resolved in the wrong
-# directory.
-
-UNSUPPORTED_RELATIVE = {
-    "-idirafter": (["-idirafter", "include"], "-idirafter include"),
-    "-idirafter glued": (["-idirafterinclude"], "-idirafter include"),
-    "--include-directory": (
-        ["--include-directory=include"],
-        "--include-directory include",
-    ),
-    "-include-pch": (["-include-pch", "x.pch"], "-include-pch x.pch"),
-    "-imacros": (["-imacros", "macros.h"], "-imacros macros.h"),
-}
-
-
-@pytest.mark.parametrize(
-    "flags, named", UNSUPPORTED_RELATIVE.values(), ids=UNSUPPORTED_RELATIVE.keys()
-)
-def test_relative_path_for_an_unsupported_option_is_rejected(
-    tmp_path: Path, flags: list[str], named: str
-) -> None:
-    with pytest.raises(
-        regen.UsageError,
-        match=f"{re.escape(named)}: relative paths are supported only for -I, "
-        f"-iquote, -isystem and -include",
-    ):
-        regen.absolute_flags(flags, tmp_path)
-
-
-def test_absolute_path_for_an_unsupported_option_is_kept(tmp_path: Path) -> None:
-    # -include-pch is its own option, not -include with a value of "-pch".
-    for flags in (
-        ["-idirafter", "/abs/include"],
-        ["--include-directory=/abs/include"],
-        ["-include-pch", "/abs/x.pch"],
-    ):
-        assert regen.absolute_flags(flags, tmp_path) == flags
-
-
-def test_unsupported_relative_option_is_a_usage_error(
-    manifest: Manifest,
-    corpus_main: CorpusMain,
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    run, committed = corpus_main
-    manifest(["gfx950"], PORTABLE_CASE)
-    with pytest.raises(SystemExit) as exit_info:
-        run("--cxxflags=-idirafter include")
-    # argparse's own status for a usage error, not an ExitCode.
-    assert exit_info.value.code == 2
-    assert "give an absolute path" in capsys.readouterr().err
-    assert compiler_invocations(tmp_path) == []
-    assert not (committed / "gfx950").exists()
-
-
-def test_help_states_the_path_flag_contract(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit):
-        regen.main(["--help"])
-    help_text = " ".join(capsys.readouterr().out.split())
-    assert (
-        "Relative paths are supported only for -I, -iquote, -isystem and -include"
-        in (help_text)
-    )
-    assert "a relative -include must name a file in this directory" in help_text
