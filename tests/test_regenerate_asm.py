@@ -285,6 +285,7 @@ def test_declared_header_found_through_include_flag(
 
 def test_relative_include_flags_are_made_absolute(tmp_path: Path) -> None:
     base = tmp_path / "caller"
+    write_header(base / "pre.h")
     flags = ["-I../inc", "-isystem", "sys", "-I/abs", "-O2", "-include", "pre.h"]
     assert regen.absolute_flags(flags, base) == [
         f"-I{base / '../inc'}",
@@ -1081,7 +1082,9 @@ def test_every_include_directory_flag_is_searched_and_made_absolute(
 def test_forced_include_file_is_made_absolute_but_not_searched(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # A forced include names a file, not a directory to search for headers.
     base = tmp_path / "caller"
+    write_header(base / "pre.h")
     flags = ["-include", "pre.h"]
     assert regen.include_dirs(flags, root=tmp_path / "rocm") == [
         tmp_path / "rocm" / "include"
@@ -2001,3 +2004,97 @@ def test_missing_default_sdk_is_reported(
     monkeypatch.setattr(regen, "_DEFAULT_ROCM_PATH", tmp_path / "missing")
     with pytest.raises(regen.SetupError, match="no ROCm SDK"):
         regen.rocm_path()
+
+
+# --- A forced include is found the way the compiler finds it ------------------------
+#
+# The compiler looks for `-include file` in its working directory, and then in
+# the -iquote, -I and -isystem directories, in that order. The compile runs in
+# a scratch directory, so the script does the same search from the caller's
+# directory, and passes, and records, the absolute path of the file it finds.
+
+
+def write_header(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#define VALUE 1\n")
+    return path
+
+
+def test_forced_include_is_found_through_an_include_directory(
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # Only include/options.h exists, as in a caller running
+    # `--cxxflags='-Iinclude -include options.h'`.
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    caller = tmp_path / "caller"
+    header = write_header(caller / "include" / "options.h")
+    monkeypatch.chdir(caller)
+    assert run("--cxxflags=-Iinclude -include options.h") == regen.ExitCode.SUCCESS
+    (argv,) = compiler_invocations(tmp_path)
+    assert argv[-3:] == [f"-I{caller / 'include'}", "-include", str(header)]
+    assert read_recipe(committed, "gfx950")["flags"][-2:] == ["-include", str(header)]
+
+
+def test_forced_include_in_the_working_directory_comes_first(tmp_path: Path) -> None:
+    caller = tmp_path / "caller"
+    in_caller = write_header(caller / "options.h")
+    write_header(caller / "include" / "options.h")
+    flags = ["-Iinclude", "-include", "options.h"]
+    assert regen.absolute_flags(flags, caller)[-1] == str(in_caller)
+
+
+@pytest.mark.parametrize(
+    "flags, found",
+    [
+        (["-isystem", "sys", "-Iangled", "-iquote", "quoted"], "quoted"),
+        (["-isystem", "sys", "-Iangled"], "angled"),
+        (["-isystem", "sys"], "sys"),
+    ],
+)
+def test_forced_include_follows_the_quote_search_order(
+    tmp_path: Path, flags: list[str], found: str
+) -> None:
+    caller = tmp_path / "caller"
+    for directory in ("quoted", "angled", "sys"):
+        write_header(caller / directory / "options.h")
+    resolved = regen.absolute_flags([*flags, "-includeoptions.h"], caller)
+    assert resolved[-1] == f"-include{caller / found / 'options.h'}"
+
+
+def test_forced_include_found_nowhere_is_left_to_the_compiler(tmp_path: Path) -> None:
+    # It may be in the SDK's include directory, or be an error the compiler
+    # reports; either way the compiler's own search decides.
+    flags = ["-include", "options.h"]
+    assert regen.absolute_flags(flags, tmp_path / "caller") == flags
+
+
+def test_real_compiler_finds_a_forced_include_through_an_include_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The same case with the SDK's own compiler, where one is installed. The
+    # kernel does not compile unless options.h is included, and options.h is
+    # only under include/.
+    try:
+        toolchain = regen.select_toolchain()
+    except regen.SetupError as error:
+        pytest.skip(f"no ROCm SDK with a HIP compiler: {error}")
+    caller = tmp_path / "caller"
+    (caller / "include").mkdir(parents=True)
+    (caller / "include" / "options.h").write_text("#define RACE_FORCED_VALUE 7\n")
+    kernel = caller / "forced.hip"
+    kernel.write_text(
+        "#include <hip/hip_runtime.h>\n"
+        "__global__ void forced(int *out) { *out = RACE_FORCED_VALUE; }\n"
+    )
+    monkeypatch.chdir(caller)
+    flags = regen.absolute_flags(["-Iinclude", "-include", "options.h"], caller)
+    assert flags[-1] == str(caller / "include" / "options.h")
+    out = tmp_path / "forced.s"
+    regen.compile_device_asm(
+        kernel=kernel, target="gfx950", out=out, extra_flags=flags, toolchain=toolchain
+    )
+    assert '.amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx950' in out.read_text()

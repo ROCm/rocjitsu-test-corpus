@@ -76,7 +76,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Sequence, Set
+from collections.abc import Callable, Sequence, Set
 from pathlib import Path
 
 import inventory
@@ -97,12 +97,12 @@ _CUID_PLACEHOLDER = "__hip_cuid_corpus"
 # The line naming the compiler that produced a file. See the module docstring.
 _IDENT_RE = re.compile(r"^\s*\.ident\s")
 
-# Flags that add a directory to the header search path. Each takes its value as
-# a separate token or glued to the flag.
-_INCLUDE_DIR_FLAGS = ("-isystem", "-iquote", "-I")
-# Flags whose value is a path: the search directories, and -include, whose value
-# is a file to include rather than a directory to search.
-_PATH_FLAGS = (*_INCLUDE_DIR_FLAGS, "-include")
+# Flags that add a directory to the header search path, in the order the
+# compiler searches them for `#include "..."` and `-include`. Each takes its
+# value as a separate token or glued to the flag.
+_INCLUDE_DIR_FLAGS = ("-iquote", "-I", "-isystem")
+# The flag that includes a file before the source, as `#include "file"` would.
+_FORCED_INCLUDE_FLAG = "-include"
 
 # The recipe the pinned assembly is built with. hipcc adds these on its own, but
 # the clang++ fallback does not: without them it compiles at -O0, and the
@@ -188,52 +188,83 @@ def parse_cxxflags(text: str) -> list[str]:
 
 def absolute_flags(flags: list[str], base: Path) -> list[str]:
     """
-    *flags* with relative include paths made absolute against *base*.
+    *flags* with relative paths resolved against *base*, the caller's directory.
 
     The compiler runs in a scratch directory, so a relative ``-I`` written
-    against the caller's working directory has to be resolved first.
+    against the caller's directory is made absolute. A relative ``-include`` is
+    looked up as the compiler would look it up, in *base* and then the include
+    directories; see _resolve_forced_include.
     """
+    with_dirs = _map_flag_values(
+        flags,
+        names=_INCLUDE_DIR_FLAGS,
+        resolve=lambda value: value if Path(value).is_absolute() else str(base / value),
+    )
+    search = [base, *(Path(value) for value in _search_dirs(with_dirs))]
+    return _map_flag_values(
+        with_dirs,
+        names=(_FORCED_INCLUDE_FLAG,),
+        resolve=lambda value: _resolve_forced_include(value, search),
+    )
+
+
+def _resolve_forced_include(value: str, search: Sequence[Path]) -> str:
+    """
+    The absolute path of the first file named *value* in *search*, or *value*
+    itself, for the compiler to look up, when there is none or it is absolute.
+    """
+    if not Path(value).is_absolute():
+        for directory in search:
+            if (directory / value).is_file():
+                return str(directory / value)
+    return value
+
+
+def _map_flag_values(
+    flags: Sequence[str], names: Sequence[str], resolve: Callable[[str], str]
+) -> list[str]:
+    """*flags* with the value of each flag in *names*, separate or glued, resolved."""
     out: list[str] = []
-    expect_path = False
-    for flag in flags:
-        if expect_path:
-            out.append(str(base / flag) if not Path(flag).is_absolute() else flag)
-            expect_path = False
-            continue
-        if flag in _PATH_FLAGS:
+    tokens = iter(flags)
+    for flag in tokens:
+        if flag in names:
             out.append(flag)
-            expect_path = True
+            if (value := next(tokens, None)) is not None:
+                out.append(resolve(value))
             continue
-        prefix = next(
-            (p for p in _PATH_FLAGS if flag.startswith(p) and len(flag) > len(p)), None
+        glued = next(
+            (n for n in names if flag.startswith(n) and len(flag) > len(n)), None
         )
-        if prefix is not None and not Path(flag[len(prefix) :]).is_absolute():
-            out.append(prefix + str(base / flag[len(prefix) :]))
-        else:
-            out.append(flag)
+        out.append(glued + resolve(flag[len(glued) :]) if glued else flag)
     return out
+
+
+def _search_dirs(flags: Sequence[str]) -> list[str]:
+    """The include directories in *flags*, in the compiler's search order."""
+    return [value for name in _INCLUDE_DIR_FLAGS for value in _flag_values(flags, name)]
+
+
+def _flag_values(flags: Sequence[str], name: str) -> list[str]:
+    """The value of each *name* flag in *flags*, separate or glued."""
+    values: list[str] = []
+    tokens = iter(flags)
+    for flag in tokens:
+        if flag == name:
+            values.append(next(tokens, ""))
+        elif flag.startswith(name) and len(flag) > len(name):
+            values.append(flag[len(name) :])
+    return values
 
 
 def include_dirs(flags: Sequence[str], root: Path) -> list[Path]:
     """
     Where the compiler will look for headers, with the SDK at *root*.
 
-    The SDK's include, then -I/-isystem/-iquote. The include-path environment
-    variables are not searched, because the compile does not inherit them; see
-    _UNRECORDED_VARIABLES.
+    The SDK's include, then the -iquote, -I and -isystem directories. The
+    include-path environment variables are not searched, because the compile
+    does not inherit them; see _UNRECORDED_VARIABLES.
     """
-    dirs = [root / "include"]
-    tokens = iter(flags)
-    for flag in tokens:
-        for prefix in _INCLUDE_DIR_FLAGS:
-            if flag == prefix:
-                dirs.append(Path(next(tokens, "")))
-            elif flag.startswith(prefix) and len(flag) > len(prefix):
-                dirs.append(Path(flag[len(prefix) :]))
-            else:
-                continue
-            break
-    return dirs
+    return [root / "include", *(Path(value) for value in _search_dirs(flags))]
 
 
 def missing_headers(
