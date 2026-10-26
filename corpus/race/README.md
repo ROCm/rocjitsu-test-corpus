@@ -41,14 +41,16 @@ Each `[[case]]` names one independently buildable kernel:
 
 ## Why the assembly is pinned
 
-The compiler decides which wait instructions a kernel contains, and mutants are
-derived from them: `s_waitcnt` on gfx950, including combined counters such as
-`vmcnt(0) lgkmcnt(0)`, and the per-counter `s_wait_*` instructions on gfx1250,
-including XCNT waits (`s_wait_xcnt`) and combined forms such as
-`s_wait_loadcnt_dscnt`. Which of them become mutants is the mutant generator's
-decision. Compiling at test time would let a toolchain update silently change
-the mutants. Pinning the assembly keeps the set of injected defects fixed, and
-makes moving it onto newer codegen a reviewable commit.
+Most wait instructions are placed by the compiler; some kernels insert them
+explicitly as inline assembly, which the listings mark between `;;#ASMSTART` and
+`;;#ASMEND`. Mutants are derived from the waits: `s_waitcnt` on gfx950,
+including combined counters such as `vmcnt(0) lgkmcnt(0)`, and the per-counter
+`s_wait_*` instructions on gfx1250, including XCNT waits (`s_wait_xcnt`) and
+combined forms such as `s_wait_loadcnt_dscnt`. Which of them become mutants is
+the mutant generator's decision. Compiling at test time would let a toolchain
+update silently change the mutants. Pinning the assembly keeps the set of
+injected defects fixed, and makes moving it onto newer codegen a reviewable
+commit.
 
 Pinning fixes the listing's text, not which assembler can read it. A listing
 carries the SDK's assembler directives as well as its instructions, and a newer

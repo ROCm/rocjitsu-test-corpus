@@ -22,9 +22,10 @@ only, not whether the assembly is up to date with its source, which only this
 script's ``--check`` can tell. The workflow is described
 in ``corpus/race/README.md``.
 
-Why the assembly is committed rather than compiled per run: the compiler decides
-which wait instructions a kernel contains (``s_waitcnt`` on gfx950, the
-per-counter ``s_wait_*`` instructions on gfx1250), and the corpus derives its
+Why the assembly is committed rather than compiled per run: the compiler places
+most of a kernel's wait instructions (``s_waitcnt`` on gfx950, the per-counter
+``s_wait_*`` instructions on gfx1250; a few are inline assembly in the kernel
+source, between ``;;#ASMSTART`` and ``;;#ASMEND``), and the corpus derives its
 mutants from them; which waits become mutants is the mutant generator's
 decision. Compiling at test time therefore lets a toolchain bump silently
 reshape the corpus -- different mutants, different case IDs, different
