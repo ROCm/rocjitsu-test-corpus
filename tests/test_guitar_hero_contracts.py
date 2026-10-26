@@ -161,9 +161,25 @@ def test_rdna2_packed_conversion_coverage():
 def test_rdna2_omission_annotations():
     assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
     assert "no gfx1030 probe is assigned to this slot" not in assembly
-    assert assembly.count("; Deduplicated alias:") == 12
+    assert assembly.count("; Deduplicated alias:") == 17
     assert assembly.count("; Inherited empty slot:") == 22
-    assert assembly.count("; Unsupported on gfx1030:") == 32
+    assert assembly.count("; Unsupported on gfx1030:") == 27
+
+    for suffix, checkpoint in [
+        ("", 76),
+        (" DPP16", 85),
+        (" DPP8", 94),
+        ("_e64", 133),
+    ]:
+        assert (
+            f"v_cvt_nearest_i32_f32{suffix} is covered by "
+            f"v_cvt_rpi_i32_f32{'_e64' if suffix == '_e64' else ''} "
+            f"in checkpoint {checkpoint}"
+        ) in assembly
+    assert (
+        "v_cvt_floor_i32_f32_e64 is covered by "
+        "v_cvt_flr_i32_f32_e64 in checkpoint 132"
+    ) in assembly
 
     checkpoint_73 = assembly.split("; Checkpoint 73: vop1_plain_00", 1)[1]
     checkpoint_73 = checkpoint_73.split("checkpoint 73", 1)[0]

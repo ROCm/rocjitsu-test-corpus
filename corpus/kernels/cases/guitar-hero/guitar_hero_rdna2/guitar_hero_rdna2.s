@@ -2253,7 +2253,7 @@ v_mov_b32 v16, 0xa5a5a5a5
 ; Unsupported on gfx1030: v_cvt_i32_i16 has no gfx1030 form.
 sweep_inputs float
 v_mov_b32 v18, 0xa5a5a5a5
-; Unsupported on gfx1030: v_cvt_nearest_i32_f32 has no gfx1030 form.
+; Deduplicated alias: v_cvt_nearest_i32_f32 is covered by v_cvt_rpi_i32_f32 in checkpoint 76.
 sweep_inputs half
 v_mov_b32 v20, 0xa5a5a5a5
 v_cvt_norm_i16_f16 v20, v8
@@ -2557,7 +2557,7 @@ s_mov_b32 exec_lo, -1
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v18, 0xa5a5a5a5
-; Unsupported on gfx1030: v_cvt_nearest_i32_f32 with DPP16 has no gfx1030 form.
+; Deduplicated alias: v_cvt_nearest_i32_f32 DPP16 is covered by v_cvt_rpi_i32_f32 in checkpoint 85.
 s_mov_b32 exec_lo, -1
 s_mov_b32 exec_lo, -1
 sweep_inputs half
@@ -2928,7 +2928,7 @@ s_mov_b32 exec_lo, 0xa5a55a5a
 s_mov_b32 exec_lo, -1
 sweep_inputs float
 v_mov_b32 v18, 0xa5a5a5a5
-; Unsupported on gfx1030: v_cvt_nearest_i32_f32 with DPP8 has no gfx1030 form.
+; Deduplicated alias: v_cvt_nearest_i32_f32 DPP8 is covered by v_cvt_rpi_i32_f32 in checkpoint 94.
 s_mov_b32 exec_lo, 0xa5a55a5a
 s_mov_b32 exec_lo, -1
 sweep_inputs half
@@ -4275,7 +4275,7 @@ v_mov_b32 v22, 0xa5a5a5a5
 v_cvt_f32_ubyte3_e64 v22, v8
 sweep_inputs float
 v_mov_b32 v24, 0xa5a5a5a5
-; Unsupported on gfx1030: v_cvt_floor_i32_f32_e64 has no gfx1030 form.
+; Deduplicated alias: v_cvt_floor_i32_f32_e64 is covered by v_cvt_flr_i32_f32_e64 in checkpoint 132.
 sweep_inputs float
 v_mov_b32 v26, 0xa5a5a5a5
 v_cvt_flr_i32_f32_e64 v26, v8
@@ -4296,7 +4296,7 @@ v_mov_b32 v16, 0xa5a5a5a5
 ; Unsupported on gfx1030: v_cvt_i32_i16_e64 has no gfx1030 form.
 sweep_inputs float
 v_mov_b32 v18, 0xa5a5a5a5
-; Unsupported on gfx1030: v_cvt_nearest_i32_f32_e64 has no gfx1030 form.
+; Deduplicated alias: v_cvt_nearest_i32_f32_e64 is covered by v_cvt_rpi_i32_f32_e64 in checkpoint 133.
 sweep_inputs half
 v_mov_b32 v20, 0xa5a5a5a5
 v_cvt_norm_i16_f16_e64 v20, v8

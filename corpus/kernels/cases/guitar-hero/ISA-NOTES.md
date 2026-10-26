@@ -28,7 +28,7 @@ exercise packed-dot DPP permutations. The shipped smoke has no hardware oracle.
 
 ## RDNA2
 
-Runtime qualification: unqualified. No clean simulator or gfx1030 hardware run has completed.
+Runtime qualification: hardware-qualified; simulator unqualified.
 
 The gfx1030 variant is an independent wave32 source port of the gfx1100 case,
 audited against the RDNA2 manual and instruction inventory and assembled with
@@ -52,6 +52,12 @@ operands follow the gfx10 layouts.
 The inventory has 490 named checkpoints; its name table and per-group output
 stride are checked against the assembly. These structural and build checks
 establish SDK assembler support, not execution on gfx1030 hardware.
+
+Development-time hardware runs on an AMD Radeon RX 6800 XT completed all 490
+checkpoints for all three fixed seeds in both one- and seven-group modes at
+corpus revision `ef209c2de01c1701ef5bdc0aeef28f5baba8af51`. Both runs passed
+the harness checks. The smoke retains no saved outputs or independent hardware
+oracle.
 
 Store completion uses `s_waitcnt_vscnt`; VMEM, LDS and scalar observations use
 the applicable VM/LGKM waits. The split VM, LGKM, EXP and dependency waits and
@@ -96,7 +102,7 @@ registered cases from corpus revision
 `b6fc339bc3b6e63db65192c1130f0c3ea942338f` and `configs/gfx1030.json` still
 aborted before kernel launch with `Unsupported encoding value for scalar write:
 125`; no current Guitar Hero probe executed. No clean simulator run of the
-current instruction stream and no gfx1030 hardware run has completed.
+current instruction stream has completed.
 [Pull request 75](https://github.com/ROCm/rocjitsu-test-corpus/pull/75) retains
 the detailed audit history.
 
