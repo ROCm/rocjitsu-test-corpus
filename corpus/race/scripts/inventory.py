@@ -176,12 +176,15 @@ def _cases(
                     f"{where}: lists target {target}, which is not in [corpus] targets"
                 )
 
-        if case_id in seen_ids:
-            problems.append(f"{where}: duplicate id")
-        if kernel in seen_kernels:
-            problems.append(f"{where}: kernel {kernel} is already used by another case")
-        seen_ids.add(case_id)
-        seen_kernels.add(kernel)
+        _check_unique(
+            case_id, seen=seen_ids, problem=f"{where}: duplicate id", problems=problems
+        )
+        _check_unique(
+            kernel,
+            seen=seen_kernels,
+            problem=f"{where}: kernel {kernel} is already used by another case",
+            problems=problems,
+        )
         yield Case(id=case_id, kernel=kernel, targets=targets, headers=headers)
 
 
@@ -194,10 +197,29 @@ def _field_problems(where: str, entry: dict[str, object]) -> list[str]:
         else:
             problems.append(f"{where}: unknown field {field!r}")
     for name in ("id", "kernel"):
-        value = entry.get(name)
-        if not isinstance(value, str) or not value:
+        if not _is_name(entry.get(name)):
             problems.append(f"{where}: {name} must be a non-empty string")
     return problems
+
+
+def _check_unique(
+    value: object, seen: set[str], problem: str, problems: list[str]
+) -> None:
+    """
+    Add *problem* if *value* is in *seen*, then add *value* to *seen*. Only a
+    valid id or kernel is checked: an invalid one is already reported, and may
+    not be hashable.
+    """
+    if not _is_name(value):
+        return
+    if value in seen:
+        problems.append(problem)
+    seen.add(value)
+
+
+def _is_name(value: object) -> bool:
+    """Whether *value* is a valid id or kernel: a non-empty string."""
+    return isinstance(value, str) and bool(value)
 
 
 def _string_list(

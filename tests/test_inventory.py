@@ -120,6 +120,24 @@ BAD_MANIFESTS = {
         '[[case]]\nid = "a"\nkernel = "a"\nheaders = "x.hpp"\n',
         "cases.toml [a]: headers must be a list of strings",
     ),
+    # An id or kernel that is not a string cannot be checked for duplicates,
+    # and must be reported rather than crash that check.
+    "id is a list": (
+        '[[case]]\nid = []\nkernel = "a"\n',
+        "cases.toml [[]]: id must be a non-empty string",
+    ),
+    "id is a table": (
+        '[[case]]\nid = {}\nkernel = "a"\n',
+        "cases.toml [{}]: id must be a non-empty string",
+    ),
+    "kernel is a list": (
+        '[[case]]\nid = "a"\nkernel = []\n',
+        "cases.toml [a]: kernel must be a non-empty string",
+    ),
+    "kernel is a table": (
+        '[[case]]\nid = "a"\nkernel = {}\n',
+        "cases.toml [a]: kernel must be a non-empty string",
+    ),
 }
 
 
