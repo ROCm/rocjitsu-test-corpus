@@ -539,9 +539,9 @@ def test_environment_include_path_is_not_searched(
 # --- Header preflight resolves sysroot-relative include directories --------------
 #
 # A directory starting with "=", such as -I=/custom, is relative to the sysroot:
-# the last -isysroot, else the last --sysroot. The preflight looks for declared
-# headers where the compiler would, so a header reachable only that way does not
-# make regenerate() skip its case. With no sysroot, the compiler keeps the "="
+# the last -isysroot, else the last --sysroot. The preflight resolves it the same
+# way when checking that a declared header exists, so a header reachable only
+# that way does not make regenerate() skip its case. With no sysroot, the compiler keeps the "="
 # path as written, and so does the preflight.
 
 SYSROOT_HEADER_CASE = regen.inventory.Case(

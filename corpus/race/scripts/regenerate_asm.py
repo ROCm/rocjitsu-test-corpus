@@ -464,12 +464,14 @@ def _search_dirs(flags: Sequence[str]) -> list[Path]:
 
 def include_dirs(flags: Sequence[str], root: Path) -> list[Path]:
     """
-    Where the compiler will look for headers, with the SDK at *root*.
+    The directories checked for a declared header's existence, with the SDK at
+    *root*: the SDK's include directory, and the directory of each option in
+    _INCLUDE_DIR_FLAGS, with sysroot-relative ones resolved; see _search_dirs.
 
-    The SDK's include, then the -iquote, -I and -isystem directories, with
-    sysroot-relative ones resolved; see _search_dirs. The include-path
-    environment variables are not searched, because the compile does not
-    inherit them; see _UNRECORDED_VARIABLES.
+    This is an existence check only. It implies no search order: which copy of
+    a header the compiler selects is left to the compiler. The include-path
+    environment variables are not checked, because the compile does not inherit
+    them; see _UNRECORDED_VARIABLES.
     """
     return [root / "include", *_search_dirs(flags)]
 
