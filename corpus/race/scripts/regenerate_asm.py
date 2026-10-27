@@ -154,12 +154,13 @@ _FORWARDING_FLAGS = (
     "-mllvm",
 )
 # The other arguments --cxxflags accepts: options that cannot carry a path.
-# Macros, optimization levels, debug info, warnings, -f and -m switches without
-# a value, the language standard, and -save-temps. Anything else, such as an
-# alias of a path option, a response file (@file) or an input file, could name
-# a path the script cannot see, and is rejected.
+# Macros, optimization levels, warnings, -f and -m switches without a value,
+# the language standard, and -save-temps. Anything else, such as an alias of a
+# path option, a response file (@file) or an input file, could name a path the
+# script cannot see, and is rejected. So is -g: debug info embeds the scratch
+# compile directory, so the listing would differ on every regeneration.
 _PLAIN_OPTION = re.compile(
-    r"-(?:[DU]\S+|O(?:[0-3sgz]|fast)?|g[\w-]*|W[\w-]+(?:=[\w-]+)?"
+    r"-(?:[DU]\S+|O(?:[0-3sgz]|fast)?|W[\w-]+(?:=[\w-]+)?"
     r"|f[\w-]+|m[\w-]+|std=[\w+]+|save-temps)"
 )
 # Prefixes of the other forwarding options, which the script does not follow.
@@ -957,10 +958,11 @@ _CXXFLAGS_HELP = (
     f"the script runs in, and a relative {_FORCED_INCLUDE_FLAG} must name a file "
     "in this directory, such as -include include/options.h. Other path-taking "
     f"options need absolute paths. {_PATH_EXCEPTIONS_HELP} Other options are "
-    "accepted only if they cannot carry a path: -D and -U macros, -O levels, -g, "
+    "accepted only if they cannot carry a path: -D and -U macros, -O levels, "
     "-W warnings, -f and -m switches without a value, -std= and -save-temps. "
-    "Anything else, such as an alias of a path option, a response file (@file) "
-    "or an input file, is rejected (exit 2). Default: none."
+    "Anything else, such as an alias of a path option, a response file (@file), "
+    "an input file or -g, whose debug info would embed the scratch directory, is "
+    "rejected (exit 2). Default: none."
 )
 _CHECK_HELP = (
     "Do not write. Regenerate into a temporary directory and compare it with the "

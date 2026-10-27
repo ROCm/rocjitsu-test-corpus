@@ -1165,6 +1165,7 @@ def test_help_states_the_path_flag_contract(capsys: pytest.CaptureFixture[str]) 
     assert "relative to the sysroot" in help_text
     assert "a path forwarded that way must be absolute" in help_text
     assert "a response file (@file)" in help_text
+    assert "-g, whose debug info would embed the scratch directory" in help_text
 
 
 # --- The per-case field is targets ---------------------------------------------
@@ -1533,8 +1534,6 @@ KEPT_AS_WRITTEN = {
         "-UNAME",
         "-Wno-unused-variable",
         "-Werror=unused-variable",
-        "-g",
-        "-gdwarf-5",
         "-fno-inline",
         "-mcumode",
         "-mno-wavefrontsize64",
@@ -1556,6 +1555,9 @@ UNSUPPORTED_ARGUMENTS = {
     # A response file, whose arguments the script cannot see.
     "@ relative": (["@flags.rsp"], "@flags.rsp"),
     "@ absolute": (["@/abs/flags.rsp"], "@/abs/flags.rsp"),
+    # Debug info, which embeds the scratch compile directory.
+    "-g": (["-g"], "-g"),
+    "-gdwarf-5": (["-gdwarf-5"], "-gdwarf-5"),
     # An input file, and plain options whose value can be a path.
     "input file": (["extra.hip"], "extra.hip"),
     "-f with a value": (
@@ -2647,3 +2649,28 @@ def test_missing_default_sdk_is_reported(
     monkeypatch.setattr(regen, "_DEFAULT_ROCM_PATH", tmp_path / "missing")
     with pytest.raises(regen.SetupError, match="no ROCm SDK"):
         regen.rocm_path()
+
+
+# --- A regeneration reproduces itself --------------------------------------------
+#
+# Each compile runs in its own scratch directory, so nothing the compiler embeds
+# may depend on it. Debug info would (-g is rejected); the accepted forms that
+# change codegen must not, so an immediate --check after an update matches.
+
+
+@pytest.mark.parametrize(
+    "cxxflags", [[], ["--cxxflags=-O1"], ["--cxxflags=-save-temps"]]
+)
+def test_real_compiler_regeneration_then_check_matches(
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    monkeypatch: pytest.MonkeyPatch,
+    cxxflags: list[str],
+) -> None:
+    real_toolchain()
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    monkeypatch.setattr(regen, "select_toolchain", SELECT_TOOLCHAIN)
+    assert run(*cxxflags) == regen.ExitCode.SUCCESS
+    assert (committed / "gfx950" / "kernel.s").is_file()
+    assert run("--check", *cxxflags) == regen.ExitCode.SUCCESS
