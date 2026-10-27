@@ -2338,14 +2338,15 @@ def test_changed_release_is_a_toolchain_change_even_without_builds() -> None:
     )
 
 
-@pytest.mark.parametrize("record", ["Build", "RegenerateResult"])
-def test_records_are_frozen_dataclasses_of_immutable_fields(record: str) -> None:
+@pytest.mark.parametrize("record", [regen.Build, regen.RegenerateResult])
+def test_records_are_frozen_dataclasses_of_immutable_fields(
+    record: type[regen.Build] | type[regen.RegenerateResult],
+) -> None:
     # Like the inventory and recipe records: frozen, and with tuples rather
     # than lists, so no field can be changed in place either.
-    record_type = getattr(regen, record)
-    assert dataclasses.is_dataclass(record_type)
-    assert record_type.__dataclass_params__.frozen
-    hints = typing.get_type_hints(record_type)
+    assert dataclasses.is_dataclass(record)
+    assert record.__dataclass_params__.frozen
+    hints = typing.get_type_hints(record)
     assert not any(typing.get_origin(hint) is list for hint in hints.values())
 
 
