@@ -123,8 +123,15 @@ python corpus/race/scripts/regenerate_asm.py --target gfx950    # one target
   Path options are recognized only by their complete names. An argument that
   only starts like one, such as `-iframeworkwithsysroot` or
   `--include-directory-after=`, is rejected rather than read as a path, and so
-  is any other forwarding option, such as `-Xassembler` or `-Wp,`. Options that
-  take no path, such as `-O1` or `-DNAME=1`, pass through unchanged.
+  is any other forwarding option, such as `-Xassembler` or `-Wp,`.
+
+  Every other argument must be an option that cannot carry a path, and passes
+  through unchanged: `-D` and `-U` macros, `-O` levels, `-g`, `-W` warnings,
+  `-f` and `-m` switches without a value (`-ffast-math`, not
+  `-fprofile-instr-use=file`), `-std=` and `-save-temps`. Anything else is
+  rejected (exit 2), including aliases of path options such as `--include=`,
+  response files (`@file`), whose arguments the script cannot see, and input
+  files.
 - **Whole targets.** Every case is compiled into a temporary directory first.
   A target is published only when all of its cases compiled: its new listings,
   exactly the ones its cases produce, and its `recipe.toml` are staged in a

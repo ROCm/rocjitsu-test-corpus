@@ -153,6 +153,15 @@ _FORWARDING_FLAGS = (
     "-Xpreprocessor",
     "-mllvm",
 )
+# The other arguments --cxxflags accepts: options that cannot carry a path.
+# Macros, optimization levels, debug info, warnings, -f and -m switches without
+# a value, the language standard, and -save-temps. Anything else, such as an
+# alias of a path option, a response file (@file) or an input file, could name
+# a path the script cannot see, and is rejected.
+_PLAIN_OPTION = re.compile(
+    r"-(?:[DU]\S+|O(?:[0-3sgz]|fast)?|g[\w-]*|W[\w-]+(?:=[\w-]+)?"
+    r"|f[\w-]+|m[\w-]+|std=[\w+]+|save-temps)"
+)
 # Prefixes of the other forwarding options, which the script does not follow.
 # They could carry a path it cannot see, so they are rejected.
 _UNFOLLOWED_FORWARDING = ("-X", "-Wp,", "-Wa,", "-Wl,")
@@ -258,8 +267,10 @@ def absolute_flags(flags: list[str], base: Path) -> list[str]:
     which clang reads as relative to the sysroot (``-I=/usr/include``), and an
     argument forwarded with an option in _FORWARDING_FLAGS, whose path must be
     absolute; see _forwarded_length. Path options are recognized only by their
-    complete spelling; see _split_joined. Raises UsageError for anything the
-    contract does not support.
+    complete spelling; see _split_joined. Any other argument must be a plain
+    option that cannot carry a path; see _PLAIN_OPTION. Raises UsageError for
+    anything the contract does not support, such as an alias of a path option, a
+    response file or an input file.
     """
     return _rewrite_path_values(
         flags, rewrite=lambda name, value: _resolved_path(name, value, base=base)
@@ -324,7 +335,12 @@ def _rewrite_path_values(
             length = _forwarded_length(flags, start=i, rewrite=rewrite)
             out += flags[i : i + length]
             i += length
-        elif name is None or (flag == name and i + 1 == len(flags)):
+        elif name is None:
+            if not _PLAIN_OPTION.fullmatch(flag):
+                raise _unsupported(flag)
+            out.append(flag)
+            i += 1
+        elif flag == name and i + 1 == len(flags):
             out.append(flag)
             i += 1
         elif flag == name:
@@ -911,9 +927,11 @@ _CXXFLAGS_HELP = (
     f"supported only for {_RELATIVE_PATH_FLAGS_TEXT}, taken from the directory "
     f"the script runs in, and a relative {_FORCED_INCLUDE_FLAG} must name a file "
     "in this directory, such as -include include/options.h. Other path-taking "
-    f"options need absolute paths. {_PATH_EXCEPTIONS_HELP} Anything else, such as "
-    "an option that only starts like a path option, is rejected (exit 2). "
-    "Default: none."
+    f"options need absolute paths. {_PATH_EXCEPTIONS_HELP} Other options are "
+    "accepted only if they cannot carry a path: -D and -U macros, -O levels, -g, "
+    "-W warnings, -f and -m switches without a value, -std= and -save-temps. "
+    "Anything else, such as an alias of a path option, a response file (@file) "
+    "or an input file, is rejected (exit 2). Default: none."
 )
 _CHECK_HELP = (
     "Do not write. Regenerate into a temporary directory and compare it with the "

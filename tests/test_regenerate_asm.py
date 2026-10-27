@@ -1041,6 +1041,7 @@ def test_help_states_the_path_flag_contract(capsys: pytest.CaptureFixture[str]) 
     assert "a relative -include must name a file in this directory" in help_text
     assert "relative to the sysroot" in help_text
     assert "a path forwarded that way must be absolute" in help_text
+    assert "a response file (@file)" in help_text
 
 
 # --- The per-case field is targets ---------------------------------------------
@@ -1322,7 +1323,9 @@ def test_real_compiler_selects_the_forced_include_the_script_records(
 # directory. Two kinds of argument are kept as written: a value clang reads as
 # relative to the sysroot (-I=/usr/include), and an argument forwarded with
 # -Xclang, -Xpreprocessor, -Xarch_* or -mllvm, whose path must be absolute.
-# Anything that only starts like a path option is rejected by name.
+# Anything that only starts like a path option is rejected by name. Every other
+# argument must be a plain option that cannot carry a path; aliases, response
+# files and input files are rejected.
 
 UNSUPPORTED_RELATIVE = {
     "-idirafter": (["-idirafter", "include"], "-idirafter include"),
@@ -1398,6 +1401,23 @@ KEPT_AS_WRITTEN = {
     ],
     "-iframework, glued absolute": ["-iframework/abs/include"],
     "not a path option": ["-O1", "-DX=1", "-Wall", "-ffast-math"],
+    "every accepted plain form": [
+        "-O0",
+        "-O3",
+        "-Ofast",
+        "-DNAME",
+        '-DPATH="a/b"',
+        "-UNAME",
+        "-Wno-unused-variable",
+        "-Werror=unused-variable",
+        "-g",
+        "-gdwarf-5",
+        "-fno-inline",
+        "-mcumode",
+        "-mno-wavefrontsize64",
+        "-std=c++20",
+        "-save-temps",
+    ],
 }
 
 
@@ -1406,6 +1426,19 @@ KEPT_AS_WRITTEN = {
 # forwarding option it does not follow. Each is rejected by name, not read as a
 # path option with a glued value.
 UNSUPPORTED_ARGUMENTS = {
+    # Aliases of the path options, which the script does not interpret.
+    "--include=": (["--include=opt.h"], "--include=opt.h"),
+    "--imacros=": (["--imacros=opt.h"], "--imacros=opt.h"),
+    "-cxx-isystem": (["-cxx-isystem", "include"], "-cxx-isystem"),
+    # A response file, whose arguments the script cannot see.
+    "@ relative": (["@flags.rsp"], "@flags.rsp"),
+    "@ absolute": (["@/abs/flags.rsp"], "@/abs/flags.rsp"),
+    # An input file, and plain options whose value can be a path.
+    "input file": (["extra.hip"], "extra.hip"),
+    "-f with a value": (
+        ["-fprofile-instr-use=prof.profdata"],
+        "-fprofile-instr-use=prof.profdata",
+    ),
     "--include-directory-after=": (
         ["--include-directory-after=/abs/include"],
         "--include-directory-after=/abs/include",
@@ -1431,6 +1464,72 @@ def test_unsupported_argument_is_rejected_by_name(
         match=f"{re.escape(argument)}: not an option or spelling this script supports",
     ):
         regen.absolute_flags(flags, tmp_path)
+
+
+# --include=opt.h and a response file selecting it, with a second header that
+# a scratch compile would select instead. Each is rejected before compiling.
+def write_selectable_headers(caller: Path) -> Path:
+    """opt.h (11) in *caller*, and second/opt.h (22). Returns second/."""
+    (caller / "opt.h").write_text("#define RACE_VALUE 11\n")
+    (caller / "second").mkdir()
+    (caller / "second" / "opt.h").write_text("#define RACE_VALUE 22\n")
+    return caller / "second"
+
+
+def compile_from(toolchain: regen.Toolchain, caller: Path, flags: list[str]) -> str:
+    """The value a kernel compiled directly from *caller* with *flags* selects."""
+    kernel = caller / "selected.hip"
+    kernel.write_text("__attribute__((used)) __device__ int value = RACE_VALUE;\n")
+    out = caller / "selected.s"
+    subprocess.run(
+        [str(toolchain.compiler), f"--rocm-path={toolchain.root}", "-O3", "-x", "hip"]
+        + ["-S", "--cuda-device-only", "--offload-arch=gfx950", *flags]
+        + [str(kernel), "-o", str(out)],
+        cwd=caller,
+        check=True,
+        capture_output=True,
+        env=regen.compiler_environment(toolchain.root),
+    )
+    return compiled_value(out.read_text())
+
+
+@pytest.mark.parametrize("form", ["alias", "response file"])
+def test_real_compiler_form_the_script_cannot_interpret_is_rejected(
+    tmp_path: Path, form: str
+) -> None:
+    toolchain = real_toolchain()
+    caller = tmp_path / "caller"
+    caller.mkdir()
+    second = write_selectable_headers(caller)
+    if form == "alias":
+        flags = ["--include=opt.h", f"-I{second}"]
+    else:
+        response = caller / "flags.rsp"
+        response.write_text(f"-include opt.h -I{second}\n")
+        flags = [f"@{response}"]
+    # Directly, from the caller's directory, the caller's opt.h is selected.
+    assert compile_from(toolchain, caller=caller, flags=flags) == "11"
+    # A scratch compile would select second/opt.h, so the form is rejected.
+    with pytest.raises(regen.UsageError, match="not an option or spelling"):
+        regen.absolute_flags(flags, caller)
+
+
+def test_response_file_is_rejected_before_compiling(
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    (tmp_path / "flags.rsp").write_text("-Iinclude\n")
+    with pytest.raises(SystemExit) as exit_info:
+        run(f"--cxxflags=@{tmp_path / 'flags.rsp'}")
+    # argparse's own status for a usage error, not an ExitCode.
+    assert exit_info.value.code == 2
+    assert "not an option or spelling" in capsys.readouterr().err
+    assert compiler_invocations(tmp_path) == []
+    assert not (committed / "gfx950").exists()
 
 
 def test_real_compiler_selects_a_header_through_xpreprocessor(tmp_path: Path) -> None:
