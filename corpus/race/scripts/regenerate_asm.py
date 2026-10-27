@@ -137,9 +137,12 @@ _ABSOLUTE_PATH_FLAGS = (
     "-iwithsysroot",
     "-resource-dir",
 )
-# The path-taking options clang spells with "=", such as -resource-dir=/path,
-# as well as with a separate value.
-_EQUALS_FLAGS = ("--include-directory", "--sysroot", "-resource-dir")
+# The path-taking options clang spells with "=" as well as with a separate value:
+# every --option, and -resource-dir.
+_EQUALS_FLAGS = (
+    *(flag for flag in _ABSOLUTE_PATH_FLAGS if flag.startswith("--")),
+    "-resource-dir",
+)
 # Options that pass the next argument to a later stage unchanged. A path option
 # forwarded this way is passed through as written, so its path must be
 # absolute; see _forwarded_length.

@@ -2381,3 +2381,13 @@ def test_missing_default_sdk_is_reported(
     monkeypatch.setattr(regen, "_DEFAULT_ROCM_PATH", tmp_path / "missing")
     with pytest.raises(regen.SetupError, match="no ROCm SDK"):
         regen.rocm_path()
+
+
+def test_every_long_path_option_takes_an_equals_value(tmp_path: Path) -> None:
+    # The "=" spelling is derived from the option table, so a --option added
+    # there accepts it without a second list to update.
+    long_options = [f for f in regen._ABSOLUTE_PATH_FLAGS if f.startswith("--")]
+    assert long_options
+    for option in [*long_options, "-resource-dir"]:
+        flags = [f"{option}=/abs/path"]
+        assert regen.absolute_flags(flags, tmp_path) == flags
