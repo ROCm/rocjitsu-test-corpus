@@ -322,6 +322,9 @@ def test_declared_header_found_through_include_flag(
     assert "s_endpgm" in pinned.read_text()
 
 
+# --- --check: code drift versus compiler provenance ---------------------------
+
+
 def assembly(
     ident: str = "AMD clang version 23 (abc)", wait: str = "s_waitcnt vmcnt(0)"
 ) -> str:
@@ -655,17 +658,6 @@ def test_real_compiler_header_under_the_sysroot_is_regenerated(
 # not have.
 
 
-def test_check_help_describes_the_textual_comparison(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    with pytest.raises(SystemExit):
-        regen.main(["--help"])
-    help_text = " ".join(capsys.readouterr().out.split())
-    assert ".ident" in help_text
-    assert "directive" in help_text and "metadata" in help_text
-    assert "means this toolchain generates different code" not in help_text
-
-
 def test_drift_report_does_not_mention_ordinals(
     drift_dirs: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -841,31 +833,6 @@ def test_update_mode_reports_a_skipped_case_and_leaves_its_target(
     assert not (committed / "gfx950" / "recipe.toml").exists()
 
 
-def test_check_help_documents_the_exit_codes(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    with pytest.raises(SystemExit):
-        regen.main(["--help"])
-    help_text = " ".join(capsys.readouterr().out.split())
-    assert (
-        "Exits 0 on success, 1 when --check finds drift, 2 when a case fails to compile "
-        "or an argument is invalid, 3 when a case was skipped"
-    ) in help_text
-    assert "4 when the inventory or the toolchain cannot be used" in help_text
-
-
-def test_exit_codes_keep_their_public_numbers() -> None:
-    # The numbers are part of the script's interface: --help and the README
-    # document them, and callers may test them. Everything else names them.
-    assert {code.name: int(code) for code in regen.ExitCode} == {
-        "SUCCESS": 0,
-        "DRIFT": 1,
-        "COMPILE_FAILED": 2,
-        "INCOMPLETE": 3,
-        "SETUP_FAILED": 4,
-    }
-
-
 # --- A compile failure keeps the compiler's diagnostic -----------------------
 
 
@@ -1011,14 +978,14 @@ def test_rocm_path_is_absolute(
 
 
 def test_clang_is_used_when_the_sdk_has_no_hipcc(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, no_sdk_discovery: None
+    tmp_path: Path, no_sdk_discovery: None
 ) -> None:
     compiler = fake_sdk(tmp_path / "rocm", layout="llvm/bin/clang++")
     assert regen.find_hip_compiler(tmp_path / "rocm") == compiler
 
 
 def test_missing_compiler_error_names_both_candidates(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, no_sdk_discovery: None
+    tmp_path: Path, no_sdk_discovery: None
 ) -> None:
     (tmp_path / "rocm").mkdir()
     with pytest.raises(regen.SetupError) as error:
@@ -1050,7 +1017,7 @@ def test_check_allowing_skips_names_the_cases_not_compared(
 
 
 def test_check_allowing_skips_still_fails_on_drift(
-    manifest: Manifest, corpus_main: CorpusMain, capsys: pytest.CaptureFixture[str]
+    manifest: Manifest, corpus_main: CorpusMain
 ) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
@@ -1125,7 +1092,7 @@ def test_check_leaves_no_temporary_directory(
 
 
 def test_help_is_short_and_points_to_the_readme(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     with pytest.raises(SystemExit):
         regen.main(["--help"])
@@ -1150,6 +1117,42 @@ def test_help_states_the_path_flag_contract(capsys: pytest.CaptureFixture[str]) 
     assert "a path forwarded that way must be absolute" in help_text
     assert "a response file (@file)" in help_text
     assert "-g, whose debug info would embed the scratch directory" in help_text
+
+
+def test_check_help_describes_the_textual_comparison(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        regen.main(["--help"])
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert ".ident" in help_text
+    assert "directive" in help_text and "metadata" in help_text
+    assert "means this toolchain generates different code" not in help_text
+
+
+def test_check_help_documents_the_exit_codes(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        regen.main(["--help"])
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert (
+        "Exits 0 on success, 1 when --check finds drift, 2 when a case fails to compile "
+        "or an argument is invalid, 3 when a case was skipped"
+    ) in help_text
+    assert "4 when the inventory or the toolchain cannot be used" in help_text
+
+
+def test_exit_codes_keep_their_public_numbers() -> None:
+    # The numbers are part of the script's interface: --help and the README
+    # document them, and callers may test them. Everything else names them.
+    assert {code.name: int(code) for code in regen.ExitCode} == {
+        "SUCCESS": 0,
+        "DRIFT": 1,
+        "COMPILE_FAILED": 2,
+        "INCOMPLETE": 3,
+        "SETUP_FAILED": 4,
+    }
 
 
 # --- The per-case field is targets ---------------------------------------------
@@ -1257,12 +1260,9 @@ def test_relative_include_flags_are_made_absolute(tmp_path: Path) -> None:
     ]
 
 
-# --- --check: code drift versus compiler provenance ---------------------------
-
-
 @pytest.mark.parametrize("flag", regen._INCLUDE_DIR_FLAGS)
 def test_every_include_directory_flag_is_searched_and_made_absolute(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, flag: str
+    tmp_path: Path, flag: str
 ) -> None:
     base = tmp_path / "caller"
     for flags in ([flag, "inc"], [f"{flag}inc"]):
@@ -1270,9 +1270,7 @@ def test_every_include_directory_flag_is_searched_and_made_absolute(
         assert str(base / "inc") in "".join(regen.absolute_flags(flags, base))
 
 
-def test_forced_include_file_is_not_an_include_directory(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_forced_include_file_is_not_an_include_directory(tmp_path: Path) -> None:
     # A forced include names a file, not a directory to search for headers.
     base = tmp_path / "caller"
     write_header(base / "pre.h")
@@ -2432,7 +2430,7 @@ def test_failing_rocm_sdk_is_reported_rather_than_skipped(
 
 
 def test_failing_compiler_version_is_reported_rather_than_unknown(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    tmp_path: Path,
 ) -> None:
     tool = write_script(
         tmp_path / "broken-hipcc", "import sys\nprint('cannot start')\nsys.exit(1)\n"

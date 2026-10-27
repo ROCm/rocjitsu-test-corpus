@@ -210,6 +210,19 @@ def test_unknown_field_is_reported(
     assert "cases.toml [portable]: unknown field 'ordinal'" in out
 
 
+def test_misspelled_case_table_is_rejected(
+    corpus: BuildCorpus, capsys: pytest.CaptureFixture[str]
+) -> None:
+    corpus(
+        targets=["gfx950"],
+        cases=PORTABLE.replace("[[case]]", "[[cases]]"),
+        asm=["gfx950/portable"],
+    )
+    code, out = run(capsys)
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
+    assert "cases.toml: unknown top-level key 'cases'" in out
+
+
 def test_missing_assembly_is_reported(
     corpus: BuildCorpus, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -434,19 +447,6 @@ def test_mismatch_is_summarized_as_one(
 
 
 # --- Every kernel source belongs to a case ------------------------------------------
-
-
-def test_misspelled_case_table_is_rejected(
-    corpus: BuildCorpus, capsys: pytest.CaptureFixture[str]
-) -> None:
-    corpus(
-        targets=["gfx950"],
-        cases=PORTABLE.replace("[[case]]", "[[cases]]"),
-        asm=["gfx950/portable"],
-    )
-    code, out = run(capsys)
-    assert code == check_cases.ExitCode.PROBLEMS_FOUND
-    assert "cases.toml: unknown top-level key 'cases'" in out
 
 
 def test_kernel_source_without_a_case_is_reported(
