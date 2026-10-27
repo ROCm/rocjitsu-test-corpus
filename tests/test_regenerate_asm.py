@@ -622,16 +622,17 @@ def test_real_compiler_header_under_the_sysroot_is_regenerated(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The kernel needs required.h, reachable only as -I=/custom under the
-    # sysroot: VALUE is undefined without it, so the compile succeeds only if the
-    # header is found. The sysroot links the host's /usr, for the C++ headers HIP
-    # needs.
+    # sysroot: VALUE is undefined without it, so the compile succeeds, and emits
+    # the header's value, only if the header is found. The sysroot links the
+    # host's /usr, for the C++ headers HIP needs.
     toolchain = real_toolchain()
     sysroot = sysroot_with_header(tmp_path / "sysroot")
     (sysroot / "usr").symlink_to("/usr")
     kernels = tmp_path / "kernels"
     kernels.mkdir()
     (kernels / "kernel.hip").write_text(
-        "#include <required.h>\\n__attribute__((used)) __device__ int value = VALUE;\\n"
+        "#include <required.h>\n"
+        "__attribute__((used)) __device__ int value = VALUE;\n"
     )
     monkeypatch.setattr(regen, "KERNELS_DIR", kernels)
     out_root = tmp_path / "out"
@@ -643,8 +644,7 @@ def test_real_compiler_header_under_the_sysroot_is_regenerated(
         toolchain=toolchain,
     )
     assert result == regen.RegenerateResult(failures=(), skipped=())
-    listing = (out_root / "gfx950" / "kernel.s").read_text()
-    assert '.amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx950' in listing
+    assert compiled_value((out_root / "gfx950" / "kernel.s").read_text()) == "1"
 
 
 # --- What the script says about regeneration and --check ----------------------
