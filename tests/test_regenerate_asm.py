@@ -320,24 +320,6 @@ def test_declared_header_found_through_include_flag(
     assert "s_endpgm" in pinned.read_text()
 
 
-def test_relative_include_flags_are_made_absolute(tmp_path: Path) -> None:
-    base = tmp_path / "caller"
-    write_header(base / "pre.h")
-    flags = ["-I../inc", "-isystem", "sys", "-I/abs", "-O2", "-include", "pre.h"]
-    assert regen.absolute_flags(flags, base) == [
-        f"-I{base / '../inc'}",
-        "-isystem",
-        str(base / "sys"),
-        "-I/abs",
-        "-O2",
-        "-include",
-        str(base / "pre.h"),
-    ]
-
-
-# --- --check: code drift versus compiler provenance ---------------------------
-
-
 def assembly(
     ident: str = "AMD clang version 23 (abc)", wait: str = "s_waitcnt vmcnt(0)"
 ) -> str:
@@ -1256,6 +1238,24 @@ def test_misspelled_case_table_leaves_every_pinned_file(
 #
 # The header preflight and the relative-path rewrite read include directories
 # from the same flags, so a flag added to one is understood by both.
+
+
+def test_relative_include_flags_are_made_absolute(tmp_path: Path) -> None:
+    base = tmp_path / "caller"
+    write_header(base / "pre.h")
+    flags = ["-I../inc", "-isystem", "sys", "-I/abs", "-O2", "-include", "pre.h"]
+    assert regen.absolute_flags(flags, base) == [
+        f"-I{base / '../inc'}",
+        "-isystem",
+        str(base / "sys"),
+        "-I/abs",
+        "-O2",
+        "-include",
+        str(base / "pre.h"),
+    ]
+
+
+# --- --check: code drift versus compiler provenance ---------------------------
 
 
 @pytest.mark.parametrize("flag", regen._INCLUDE_DIR_FLAGS)
