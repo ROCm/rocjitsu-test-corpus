@@ -4,6 +4,26 @@ Small HIP kernels for scoring race and data-hazard detectors, with their device
 assembly pinned per gfx target. Mutants are derived from the pinned assembly,
 so the assembly, not the HIP source, is what the corpus is built on.
 
+## Using the listings
+
+A pinned listing is device code only. To run a case, build an executable from
+three parts:
+
+1. **Host object.** Compile the host half of the HIP source,
+   `hipcc -c --cuda-host-only`. It holds the host code and the kernel launch,
+   and refers to its device code through a `__hip_fatbin_<hash>` symbol.
+2. **Device code.** Assemble the pinned listing, or a mutant of it, for its
+   target with the SDK recorded in that target's `recipe.toml`, bundle it with
+   `clang-offload-bundler`, and embed the bundle in an object under the host
+   object's fatbin symbol.
+3. **Link** the two objects.
+
+Do not compile the HIP source the usual way: that regenerates the device code
+with whatever toolchain is installed and bypasses the pinned listing, mutants
+included. The listing's `__hip_cuid_<hash>` symbol is normalized to a
+placeholder and is not used to find the device code, so a pinned listing links
+against a freshly compiled host object.
+
 ## Layout
 
 ```text
