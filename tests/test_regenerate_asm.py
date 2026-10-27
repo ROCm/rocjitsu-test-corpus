@@ -1321,7 +1321,6 @@ def test_real_compiler_selects_the_forced_include_the_script_records(
 
 UNSUPPORTED_RELATIVE = {
     "-idirafter": (["-idirafter", "include"], "-idirafter include"),
-    "-idirafter glued": (["-idirafterinclude"], "-idirafter include"),
     "--include-directory": (
         ["--include-directory=include"],
         "--include-directory include",
@@ -1386,7 +1385,69 @@ KEPT_AS_WRITTEN = {
     "-Xclang -iquote, glued": ["-Xclang", "-iquote/abs/include"],
     "-Xclang, not a path": ["-Xclang", "-fno-pch-timestamp"],
     "-mllvm, not a path": ["-mllvm", "-amdgpu-early-inline-all"],
+    "-Xpreprocessor -iquote, separate": [
+        "-Xpreprocessor",
+        "-iquote",
+        "-Xpreprocessor",
+        "/abs/include",
+    ],
+    "-iframework, glued absolute": ["-iframework/abs/include"],
+    "not a path option": ["-O1", "-DX=1", "-Wall", "-ffast-math"],
 }
+
+
+# Arguments the parser cannot classify safely: an option that only starts like a
+# path option, a path option spelled in a way the script does not accept, or a
+# forwarding option it does not follow. Each is rejected by name, not read as a
+# path option with a glued value.
+UNSUPPORTED_ARGUMENTS = {
+    "--include-directory-after=": (
+        ["--include-directory-after=/abs/include"],
+        "--include-directory-after=/abs/include",
+    ),
+    "-iframeworkwithsysroot": (
+        ["-iframeworkwithsysroot", "/abs/include"],
+        "-iframeworkwithsysroot",
+    ),
+    "-idirafter glued relative": (["-idirafterinclude"], "-idirafterinclude"),
+    "-Xassembler": (["-Xassembler", "-mcpu=gfx950"], "-Xassembler"),
+    "-Wp,": (["-Wp,-I,include"], "-Wp,-I,include"),
+}
+
+
+@pytest.mark.parametrize(
+    "flags, argument", UNSUPPORTED_ARGUMENTS.values(), ids=UNSUPPORTED_ARGUMENTS.keys()
+)
+def test_unsupported_argument_is_rejected_by_name(
+    tmp_path: Path, flags: list[str], argument: str
+) -> None:
+    with pytest.raises(
+        regen.UsageError,
+        match=f"{re.escape(argument)}: not an option or spelling this script supports",
+    ):
+        regen.absolute_flags(flags, tmp_path)
+
+
+def test_real_compiler_selects_a_header_through_xpreprocessor(tmp_path: Path) -> None:
+    # As for -Xclang: the forwarding boundaries are kept, and the quoted include
+    # is found only through the forwarded -iquote.
+    toolchain = real_toolchain()
+    include = tmp_path / "forwarded"
+    include.mkdir()
+    (include / "forwarded.h").write_text("#define RACE_VALUE 55\n")
+    kernel = tmp_path / "kernel" / "forwarded.hip"
+    kernel.parent.mkdir()
+    kernel.write_text(
+        '#include "forwarded.h"\n'
+        "__attribute__((used)) __device__ int value = RACE_VALUE;\n"
+    )
+    flags = ["-Xpreprocessor", "-iquote", "-Xpreprocessor", str(include)]
+    assert regen.absolute_flags(flags, tmp_path) == flags
+    out = tmp_path / "forwarded.s"
+    regen.compile_device_asm(
+        kernel=kernel, target="gfx950", out=out, extra_flags=flags, toolchain=toolchain
+    )
+    assert compiled_value(out.read_text()) == "55"
 
 
 @pytest.mark.parametrize("flags", KEPT_AS_WRITTEN.values(), ids=KEPT_AS_WRITTEN.keys())

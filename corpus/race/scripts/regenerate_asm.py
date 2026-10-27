@@ -146,7 +146,16 @@ _EQUALS_FLAGS = (
 # Options that pass the next argument to a later stage unchanged. A path option
 # forwarded this way is passed through as written, so its path must be
 # absolute; see _forwarded_length.
-_FORWARDING_FLAGS = ("-Xclang", "-Xarch_device", "-Xarch_host", "-mllvm")
+_FORWARDING_FLAGS = (
+    "-Xarch_device",
+    "-Xarch_host",
+    "-Xclang",
+    "-Xpreprocessor",
+    "-mllvm",
+)
+# Prefixes of the other forwarding options, which the script does not follow.
+# They could carry a path it cannot see, so they are rejected.
+_UNFOLLOWED_FORWARDING = ("-X", "-Wp,", "-Wa,", "-Wl,")
 # Every path-taking option the script recognizes, longest first, so that one is
 # never read as a shorter one with a glued value: -include-pch is not -include.
 _PATH_FLAGS = sorted(
@@ -304,6 +313,8 @@ def _rewrite_path_values(
     while i < len(flags):
         flag = flags[i]
         name = _path_flag_name(flag)
+        if flag not in _FORWARDING_FLAGS and flag.startswith(_UNFOLLOWED_FORWARDING):
+            raise _unsupported(flag)
         if flag in _FORWARDING_FLAGS and i + 1 < len(flags):
             length = _forwarded_length(flags, start=i, rewrite=rewrite)
             out += flags[i : i + length]
@@ -357,13 +368,29 @@ def _path_flag_name(flag: str) -> str | None:
 
 def _split_joined(flag: str, name: str) -> tuple[str, str]:
     """
-    The separator and value of *flag*, which joins option *name* to its value:
-    "=" for an option in _EQUALS_FLAGS spelled with it, else nothing.
+    The separator and value of *flag*, which starts with option *name* and joins
+    its value to it. Only complete spellings are accepted: "=" for an option in
+    _EQUALS_FLAGS, a glued value for the options that support relative paths,
+    and a glued absolute path for the others. Anything else may be a different
+    option that only starts the same way, so it raises UsageError rather than
+    being read as a path.
     """
     rest = flag[len(name) :]
-    if name in _EQUALS_FLAGS and rest.startswith("="):
-        return "=", rest[1:]
-    return "", rest
+    if name in _EQUALS_FLAGS:
+        if rest.startswith("="):
+            return "=", rest[1:]
+    elif name in (*_INCLUDE_DIR_FLAGS, _FORCED_INCLUDE_FLAG) or (
+        Path(rest).is_absolute() or rest.startswith("=")
+    ):
+        return "", rest
+    raise _unsupported(flag)
+
+
+def _unsupported(argument: str) -> UsageError:
+    return UsageError(
+        f"{argument}: not an option or spelling this script supports in --cxxflags; "
+        f"see --cxxflags in --help"
+    )
 
 
 def _search_dirs(flags: Sequence[str]) -> list[str]:
@@ -872,8 +899,9 @@ _CXXFLAGS_HELP = (
     f"supported only for {_RELATIVE_PATH_FLAGS_TEXT}, taken from the directory "
     f"the script runs in, and a relative {_FORCED_INCLUDE_FLAG} must name a file "
     "in this directory, such as -include include/options.h. Other path-taking "
-    "options need absolute paths; anything else is rejected (exit 2). "
-    "Default: none."
+    "options need absolute paths, and arguments are forwarded only with "
+    f"{', '.join(_FORWARDING_FLAGS)}. Anything else, such as an option that only "
+    "starts like a path option, is rejected (exit 2). Default: none."
 )
 _CHECK_HELP = (
     "Do not write. Regenerate into a temporary directory and compare it with the "
