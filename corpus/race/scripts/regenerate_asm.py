@@ -254,7 +254,12 @@ def absolute_flags(flags: list[str], base: Path) -> list[str]:
     ``-isystem`` directory is made absolute. A relative ``-include`` must name a
     file in *base*, and becomes that absolute path; see _forced_include. Every
     other path-taking option in _ABSOLUTE_PATH_FLAGS must be given an absolute
-    path. Raises UsageError for a path the contract does not support.
+    path. Two kinds of argument are kept as written: a value starting with "=",
+    which clang reads as relative to the sysroot (``-I=/usr/include``), and an
+    argument forwarded with an option in _FORWARDING_FLAGS, whose path must be
+    absolute; see _forwarded_length. Path options are recognized only by their
+    complete spelling; see _split_joined. Raises UsageError for anything the
+    contract does not support.
     """
     return _rewrite_path_values(
         flags, rewrite=lambda name, value: _resolved_path(name, value, base=base)
@@ -893,15 +898,22 @@ _TARGET_HELP = (
     "gfx target to regenerate; repeat for several. Default: every target in "
     "[corpus] targets in cases.toml."
 )
+# The exceptions to the --cxxflags path contract, for --help.
+_PATH_EXCEPTIONS_HELP = (
+    'A value starting with "=", which clang reads as relative to the sysroot, '
+    "such as -I=/usr/include, is kept as written. Arguments are forwarded only "
+    f"with {', '.join(_FORWARDING_FLAGS)}; they are kept as written, and a path "
+    "forwarded that way must be absolute."
+)
 _CXXFLAGS_HELP = (
     "Extra compiler flags, split like shell words, so a path with spaces can be "
     "quoted, e.g. --cxxflags='-I\"/path/to/my headers\"'. Relative paths are "
     f"supported only for {_RELATIVE_PATH_FLAGS_TEXT}, taken from the directory "
     f"the script runs in, and a relative {_FORCED_INCLUDE_FLAG} must name a file "
     "in this directory, such as -include include/options.h. Other path-taking "
-    "options need absolute paths, and arguments are forwarded only with "
-    f"{', '.join(_FORWARDING_FLAGS)}. Anything else, such as an option that only "
-    "starts like a path option, is rejected (exit 2). Default: none."
+    f"options need absolute paths. {_PATH_EXCEPTIONS_HELP} Anything else, such as "
+    "an option that only starts like a path option, is rejected (exit 2). "
+    "Default: none."
 )
 _CHECK_HELP = (
     "Do not write. Regenerate into a temporary directory and compare it with the "

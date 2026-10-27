@@ -1039,6 +1039,8 @@ def test_help_states_the_path_flag_contract(capsys: pytest.CaptureFixture[str]) 
         in (help_text)
     )
     assert "a relative -include must name a file in this directory" in help_text
+    assert "relative to the sysroot" in help_text
+    assert "a path forwarded that way must be absolute" in help_text
 
 
 # --- The per-case field is targets ---------------------------------------------
@@ -1317,7 +1319,10 @@ def test_real_compiler_selects_the_forced_include_the_script_records(
 # -iquote, -isystem and -include, which the script resolves against the caller's
 # directory. Every other path-taking option the script knows must be given an
 # absolute path; a relative one is rejected rather than resolved in the wrong
-# directory.
+# directory. Two kinds of argument are kept as written: a value clang reads as
+# relative to the sysroot (-I=/usr/include), and an argument forwarded with
+# -Xclang, -Xpreprocessor, -Xarch_* or -mllvm, whose path must be absolute.
+# Anything that only starts like a path option is rejected by name.
 
 UNSUPPORTED_RELATIVE = {
     "-idirafter": (["-idirafter", "include"], "-idirafter include"),
