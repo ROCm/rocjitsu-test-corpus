@@ -414,19 +414,47 @@ def _unsupported(argument: str) -> UsageError:
     )
 
 
-def _search_dirs(flags: Sequence[str]) -> list[str]:
-    """
-    The include directories in *flags*, for checking that a declared header
-    exists. Which copy the compiler selects is left to the compiler.
-    """
-    dirs: list[str] = []
+def _path_values(flags: Sequence[str]) -> list[tuple[str, str]]:
+    """Each path option in *flags* and its value, in order."""
+    values: list[tuple[str, str]] = []
 
     def record(name: str, value: str) -> str:
-        if name in _INCLUDE_DIR_FLAGS:
-            dirs.append(value)
+        values.append((name, value))
         return value
 
     _rewrite_path_values(flags, rewrite=record)
+    return values
+
+
+def _header_sysroot(values: Sequence[tuple[str, str]]) -> str | None:
+    """
+    The sysroot an include directory starting with "=" is relative to: the last
+    -isysroot, else the last --sysroot, as the compiler resolves it. None when
+    neither is given, and the compiler keeps the "=" path as written.
+    """
+    for name in ("-isysroot", "--sysroot"):
+        given = [value for option, value in values if option == name]
+        if given:
+            return given[-1]
+    return None
+
+
+def _search_dirs(flags: Sequence[str]) -> list[Path]:
+    """
+    The include directories in *flags*, for checking that a declared header
+    exists, with a sysroot-relative one (``-I=/dir``) resolved under the
+    sysroot. Which copy the compiler selects is left to the compiler.
+    """
+    values = _path_values(flags)
+    sysroot = _header_sysroot(values)
+    dirs: list[Path] = []
+    for name, value in values:
+        if name not in _INCLUDE_DIR_FLAGS:
+            continue
+        if value.startswith("=") and sysroot is not None:
+            dirs.append(Path(sysroot) / value[1:].lstrip("/"))
+        else:
+            dirs.append(Path(value))
     return dirs
 
 
@@ -434,11 +462,12 @@ def include_dirs(flags: Sequence[str], root: Path) -> list[Path]:
     """
     Where the compiler will look for headers, with the SDK at *root*.
 
-    The SDK's include, then the -iquote, -I and -isystem directories. The
-    include-path environment variables are not searched, because the compile
-    does not inherit them; see _UNRECORDED_VARIABLES.
+    The SDK's include, then the -iquote, -I and -isystem directories, with
+    sysroot-relative ones resolved; see _search_dirs. The include-path
+    environment variables are not searched, because the compile does not
+    inherit them; see _UNRECORDED_VARIABLES.
     """
-    return [root / "include", *(Path(value) for value in _search_dirs(flags))]
+    return [root / "include", *_search_dirs(flags)]
 
 
 def missing_headers(

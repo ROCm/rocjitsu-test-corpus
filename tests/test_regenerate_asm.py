@@ -552,6 +552,117 @@ def test_environment_include_path_is_not_searched(
     assert pinned.read_text() == PINNED
 
 
+# --- Header preflight resolves sysroot-relative include directories --------------
+#
+# A directory starting with "=", such as -I=/custom, is relative to the sysroot:
+# the last -isysroot, else the last --sysroot. The preflight looks for declared
+# headers where the compiler would, so a header reachable only that way does not
+# make regenerate() skip its case. With no sysroot, the compiler keeps the "="
+# path as written, and so does the preflight.
+
+SYSROOT_HEADER_CASE = regen.inventory.Case(
+    id="sysroot", kernel="kernel", targets=(), headers=("required.h",)
+)
+SYSROOT_HEADER_INVENTORY = regen.inventory.Inventory(
+    targets=("gfx950",), cases=(SYSROOT_HEADER_CASE,)
+)
+
+
+def sysroot_with_header(path: Path) -> Path:
+    """A sysroot at *path* whose custom/ holds required.h. Returns *path*."""
+    write_header(path / "custom" / "required.h")
+    return path
+
+
+def sysroot_flags(form: str, sysroot: Path, other: Path) -> list[str]:
+    """The flags of each sysroot form; *other* is a sysroot without the header."""
+    return {
+        "-I=": [f"--sysroot={sysroot}", "-I=/custom"],
+        "-isystem =": ["--sysroot", str(sysroot), "-isystem", "=/custom"],
+        "-iquote =": [f"--sysroot={sysroot}", "-iquote", "=/custom"],
+        "-isysroot over --sysroot": [
+            "-isysroot",
+            str(sysroot),
+            f"--sysroot={other}",
+            "-I=/custom",
+        ],
+    }[form]
+
+
+@pytest.mark.parametrize(
+    "form", ["-I=", "-isystem =", "-iquote =", "-isysroot over --sysroot"]
+)
+def test_header_under_the_sysroot_is_found(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    pinned: Path,
+    kernel: Path,
+    form: str,
+) -> None:
+    toolchain = install_fake_compiler(monkeypatch, tmp_path, "output")
+    monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
+    sysroot = sysroot_with_header(tmp_path / "sysroot")
+    flags = sysroot_flags(form, sysroot=sysroot, other=tmp_path / "other")
+    assert regen.absolute_flags(flags, tmp_path) == flags
+    result = regen.regenerate(
+        corpus=SYSROOT_HEADER_INVENTORY,
+        targets=["gfx950"],
+        extra_flags=flags,
+        out_root=pinned.parent.parent,
+        toolchain=toolchain,
+    )
+    assert result == regen.RegenerateResult(failures=(), skipped=())
+    assert "s_endpgm" in pinned.read_text()
+
+
+def test_overridden_sysroot_is_not_searched(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, pinned: Path, kernel: Path
+) -> None:
+    # Only --sysroot has the header, but -isysroot overrides it for headers.
+    toolchain = install_fake_compiler(monkeypatch, tmp_path, "fail")  # not invoked
+    monkeypatch.setattr(regen, "KERNELS_DIR", kernel.parent)
+    with_header = sysroot_with_header(tmp_path / "with-header")
+    flags = ["-isysroot", str(tmp_path / "without"), f"--sysroot={with_header}"]
+    result = regen.regenerate(
+        corpus=SYSROOT_HEADER_INVENTORY,
+        targets=["gfx950"],
+        extra_flags=[*flags, "-I=/custom"],
+        out_root=pinned.parent.parent,
+        toolchain=toolchain,
+    )
+    assert len(result.skipped) == 1 and "required.h" in result.skipped[0]
+    assert pinned.read_text() == PINNED
+
+
+def test_real_compiler_header_under_the_sysroot_is_regenerated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The kernel needs required.h, reachable only as -I=/custom under the
+    # sysroot: VALUE is undefined without it, so the compile succeeds only if the
+    # header is found. The sysroot links the host's /usr, for the C++ headers HIP
+    # needs.
+    toolchain = real_toolchain()
+    sysroot = sysroot_with_header(tmp_path / "sysroot")
+    (sysroot / "usr").symlink_to("/usr")
+    kernels = tmp_path / "kernels"
+    kernels.mkdir()
+    (kernels / "kernel.hip").write_text(
+        "#include <required.h>\\n__attribute__((used)) __device__ int value = VALUE;\\n"
+    )
+    monkeypatch.setattr(regen, "KERNELS_DIR", kernels)
+    out_root = tmp_path / "out"
+    result = regen.regenerate(
+        corpus=SYSROOT_HEADER_INVENTORY,
+        targets=["gfx950"],
+        extra_flags=[f"--sysroot={sysroot}", "-I=/custom"],
+        out_root=out_root,
+        toolchain=toolchain,
+    )
+    assert result == regen.RegenerateResult(failures=(), skipped=())
+    listing = (out_root / "gfx950" / "kernel.s").read_text()
+    assert '.amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx950' in listing
+
+
 # --- What the script says about regeneration and --check ----------------------
 #
 # cases.toml is an inventory: id, kernel, targets and headers. The messages
