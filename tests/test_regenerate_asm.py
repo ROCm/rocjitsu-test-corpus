@@ -1532,28 +1532,6 @@ def test_response_file_is_rejected_before_compiling(
     assert not (committed / "gfx950").exists()
 
 
-def test_real_compiler_selects_a_header_through_xpreprocessor(tmp_path: Path) -> None:
-    # As for -Xclang: the forwarding boundaries are kept, and the quoted include
-    # is found only through the forwarded -iquote.
-    toolchain = real_toolchain()
-    include = tmp_path / "forwarded"
-    include.mkdir()
-    (include / "forwarded.h").write_text("#define RACE_VALUE 55\n")
-    kernel = tmp_path / "kernel" / "forwarded.hip"
-    kernel.parent.mkdir()
-    kernel.write_text(
-        '#include "forwarded.h"\n'
-        "__attribute__((used)) __device__ int value = RACE_VALUE;\n"
-    )
-    flags = ["-Xpreprocessor", "-iquote", "-Xpreprocessor", str(include)]
-    assert regen.absolute_flags(flags, tmp_path) == flags
-    out = tmp_path / "forwarded.s"
-    regen.compile_device_asm(
-        kernel=kernel, target="gfx950", out=out, extra_flags=flags, toolchain=toolchain
-    )
-    assert compiled_value(out.read_text()) == "55"
-
-
 @pytest.mark.parametrize("flags", KEPT_AS_WRITTEN.values(), ids=KEPT_AS_WRITTEN.keys())
 def test_valid_flags_are_kept_as_written(tmp_path: Path, flags: list[str]) -> None:
     assert regen.absolute_flags(flags, tmp_path) == flags
@@ -1611,10 +1589,12 @@ def test_real_compiler_accepts_an_absolute_resource_dir(
     assert compiled_value(out.read_text()) == "5"
 
 
+@pytest.mark.parametrize("forwarding", ["-Xclang", "-Xpreprocessor"])
 def test_real_compiler_selects_a_header_through_a_forwarded_iquote(
-    tmp_path: Path,
+    tmp_path: Path, forwarding: str
 ) -> None:
-    # The kernel's quoted include is found only through the forwarded -iquote.
+    # The forwarding boundaries are kept, and the kernel's quoted include is
+    # found only through the forwarded -iquote.
     toolchain = real_toolchain()
     include = tmp_path / "forwarded"
     include.mkdir()
@@ -1625,7 +1605,7 @@ def test_real_compiler_selects_a_header_through_a_forwarded_iquote(
         '#include "forwarded.h"\n'
         "__attribute__((used)) __device__ int value = RACE_VALUE;\n"
     )
-    flags = ["-Xclang", "-iquote", "-Xclang", str(include)]
+    flags = [forwarding, "-iquote", forwarding, str(include)]
     assert regen.absolute_flags(flags, tmp_path) == flags
     out = tmp_path / "forwarded.s"
     regen.compile_device_asm(
