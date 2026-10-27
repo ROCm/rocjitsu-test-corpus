@@ -1465,7 +1465,8 @@ def test_real_compiler_selects_the_forced_include_the_script_records(
 # absolute path; a relative one is rejected rather than resolved in the wrong
 # directory. Two kinds of argument are kept as written: a value clang reads as
 # relative to the sysroot (-I=/usr/include), and an argument forwarded with
-# -Xclang, -Xpreprocessor, -Xarch_* or -mllvm, whose path must be absolute.
+# -Xclang, -Xpreprocessor or -Xarch_*, whose path must be absolute, and which is
+# otherwise checked like a top-level argument.
 # Anything that only starts like a path option is rejected by name. Every other
 # argument must be a plain option that cannot carry a path; aliases, response
 # files and input files are rejected.
@@ -1535,7 +1536,6 @@ KEPT_AS_WRITTEN = {
     "-Xclang -iquote, separate": ["-Xclang", "-iquote", "-Xclang", "/abs/include"],
     "-Xclang -iquote, glued": ["-Xclang", "-iquote/abs/include"],
     "-Xclang, not a path": ["-Xclang", "-fno-pch-timestamp"],
-    "-mllvm, not a path": ["-mllvm", "-amdgpu-early-inline-all"],
     "-Xpreprocessor -iquote, separate": [
         "-Xpreprocessor",
         "-iquote",
@@ -1574,6 +1574,18 @@ UNSUPPORTED_ARGUMENTS = {
     # A response file, whose arguments the script cannot see.
     "@ relative": (["@flags.rsp"], "@flags.rsp"),
     "@ absolute": (["@/abs/flags.rsp"], "@/abs/flags.rsp"),
+    # Forwarded arguments are checked as top-level ones are.
+    "-Xarch_device --include=": (
+        ["-Xarch_device", "--include=opt.h"],
+        "--include=opt.h",
+    ),
+    "-Xclang @file": (["-Xclang", "@/abs/flags.rsp"], "@/abs/flags.rsp"),
+    "-Xpreprocessor @file": (["-Xpreprocessor", "@flags.rsp"], "@flags.rsp"),
+    "-Xarch_host input file": (["-Xarch_host", "extra.hip"], "extra.hip"),
+    "nested forwarding": (["-Xarch_device", "-Xclang", "-fno-inline"], "-Xclang"),
+    # Backend options, which the script does not interpret.
+    "-mllvm": (["-mllvm", "-amdgpu-early-inline-all"], "-mllvm"),
+    "forwarded -mllvm": (["-Xclang", "-mllvm"], "-mllvm"),
     # Debug info, which embeds the scratch compile directory.
     "-g": (["-g"], "-g"),
     "-gdwarf-5": (["-gdwarf-5"], "-gdwarf-5"),
@@ -1620,7 +1632,10 @@ def write_selectable_headers(caller: Path) -> Path:
     return caller / "second"
 
 
-@pytest.mark.parametrize("form", ["alias", "response file"])
+@pytest.mark.parametrize(
+    "form",
+    ["alias", "response file", "forwarded alias", "forwarded response file"],
+)
 def test_real_compiler_form_the_script_cannot_interpret_is_rejected(
     tmp_path: Path, form: str
 ) -> None:
@@ -1628,12 +1643,17 @@ def test_real_compiler_form_the_script_cannot_interpret_is_rejected(
     caller = tmp_path / "caller"
     caller.mkdir()
     second = write_selectable_headers(caller)
-    if form == "alias":
-        flags = ["--include=opt.h", f"-I{second}"]
-    else:
-        response = caller / "flags.rsp"
-        response.write_text(f"-include opt.h -I{second}\n")
-        flags = [f"@{response}"]
+    response = caller / "flags.rsp"
+    response.write_text(f"-include opt.h -I{second}\n")
+    # -Xarch_device forwards one argument, so its response file holds one.
+    forwarded = caller / "forwarded.rsp"
+    forwarded.write_text("-includeopt.h\n")
+    flags = {
+        "alias": ["--include=opt.h", f"-I{second}"],
+        "response file": [f"@{response}"],
+        "forwarded alias": ["-Xarch_device", "--include=opt.h", f"-I{second}"],
+        "forwarded response file": ["-Xarch_device", f"@{forwarded}", f"-I{second}"],
+    }[form]
     # Directly, from the caller's directory, the caller's opt.h is selected.
     kernel = caller / "selected.hip"
     kernel.write_text("__attribute__((used)) __device__ int value = RACE_VALUE;\n")

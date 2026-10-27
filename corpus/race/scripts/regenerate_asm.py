@@ -146,13 +146,7 @@ _EQUALS_FLAGS = (
 # Options that pass the next argument to a later stage unchanged. A path option
 # forwarded this way is passed through as written, so its path must be
 # absolute; see _forwarded_length.
-_FORWARDING_FLAGS = (
-    "-Xarch_device",
-    "-Xarch_host",
-    "-Xclang",
-    "-Xpreprocessor",
-    "-mllvm",
-)
+_FORWARDING_FLAGS = ("-Xarch_device", "-Xarch_host", "-Xclang", "-Xpreprocessor")
 # The other arguments --cxxflags accepts: options that cannot carry a path.
 # Macros, optimization levels, warnings, -f and -m switches without a value,
 # the language standard, and -save-temps. Anything else, such as an alias of a
@@ -163,9 +157,10 @@ _PLAIN_OPTION = re.compile(
     r"-(?:[DU]\S+|O(?:[0-3sgz]|fast)?|W[\w-]+(?:=[\w-]+)?"
     r"|f[\w-]+|m[\w-]+|std=[\w+]+|save-temps)"
 )
-# Prefixes of the other forwarding options, which the script does not follow.
-# They could carry a path it cannot see, so they are rejected.
-_UNFOLLOWED_FORWARDING = ("-X", "-Wp,", "-Wa,", "-Wl,")
+# Prefixes of the other forwarding options, which the script does not follow,
+# and -mllvm, whose backend options it does not interpret. They could carry a
+# path it cannot see, so they are rejected.
+_UNFOLLOWED_FORWARDING = ("-X", "-Wp,", "-Wa,", "-Wl,", "-mllvm")
 # Every path-taking option the script recognizes, longest first, so that one is
 # never read as a shorter one with a glued value: -include-pch is not -include.
 _PATH_FLAGS = sorted(
@@ -266,8 +261,9 @@ def absolute_flags(flags: list[str], base: Path) -> list[str]:
     other path-taking option in _ABSOLUTE_PATH_FLAGS must be given an absolute
     path. Two kinds of argument are kept as written: a value starting with "=",
     which clang reads as relative to the sysroot (``-I=/usr/include``), and an
-    argument forwarded with an option in _FORWARDING_FLAGS, whose path must be
-    absolute; see _forwarded_length. Path options are recognized only by their
+    argument forwarded with an option in _FORWARDING_FLAGS, which is checked
+    like a top-level argument and whose path must be absolute; see
+    _forwarded_length. Path options are recognized only by their
     complete spelling; see _split_joined. Any other argument must be a plain
     option that cannot carry a path; see _PLAIN_OPTION. Raises UsageError for
     anything the contract does not support, such as an alias of a path option, a
@@ -360,13 +356,20 @@ def _forwarded_length(
     """
     How many arguments the forwarding option at *start* covers: it and the
     argument it forwards, or, for a forwarded path option with a separate value
-    (``-Xclang -iquote -Xclang /path``), both pairs. A forwarded path is passed
-    through unchanged, so it must be absolute, or relative to the sysroot.
-    Raises UsageError otherwise. *rewrite* still sees it, unchanged.
+    (``-Xclang -iquote -Xclang /path``), both pairs. A forwarded argument is
+    passed through unchanged and checked as a top-level one is: a path must be
+    absolute, or relative to the sysroot, and anything else must be a plain
+    option (see _PLAIN_OPTION), not an alias, a response file, an input file or
+    another forwarding option. Raises UsageError otherwise. *rewrite* still sees
+    a forwarded path, unchanged.
     """
     forwarding, argument = flags[start], flags[start + 1]
     name = _path_flag_name(argument)
     if name is None:
+        if argument.startswith(_UNFOLLOWED_FORWARDING) or not _PLAIN_OPTION.fullmatch(
+            argument
+        ):
+            raise _unsupported(argument)
         return 2
     length, value = 2, None
     if argument != name:
@@ -948,8 +951,8 @@ _TARGET_HELP = (
 _PATH_EXCEPTIONS_HELP = (
     'A value starting with "=", which clang reads as relative to the sysroot, '
     "such as -I=/usr/include, is kept as written. Arguments are forwarded only "
-    f"with {', '.join(_FORWARDING_FLAGS)}; they are kept as written, and a path "
-    "forwarded that way must be absolute."
+    f"with {', '.join(_FORWARDING_FLAGS)}; they are kept as written and checked "
+    "like top-level arguments, and a path forwarded that way must be absolute."
 )
 _CXXFLAGS_HELP = (
     "Extra compiler flags, split like shell words, so a path with spaces can be "

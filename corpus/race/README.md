@@ -137,13 +137,14 @@ python corpus/race/scripts/regenerate_asm.py --target gfx950    # one target
   relative path for any of them is rejected (exit 2). An option's `=` spelling,
   such as `-resource-dir=/path`, and a value clang reads as relative to the
   sysroot, such as `-I=/usr/include`, are kept as written. So is an argument
-  forwarded with `-Xclang`, `-Xpreprocessor`, `-Xarch_host`, `-Xarch_device` or
-  `-mllvm`; a path forwarded that way must be absolute.
+  forwarded with `-Xclang`, `-Xpreprocessor`, `-Xarch_host` or `-Xarch_device`.
+  A forwarded argument is checked like a top-level one, under the rules below,
+  and a path forwarded that way must be absolute.
 
   Path options are recognized only by their complete names. An argument that
   only starts like one, such as `-iframeworkwithsysroot` or
   `--include-directory-after=`, is rejected rather than read as a path, and so
-  is any other forwarding option, such as `-Xassembler` or `-Wp,`.
+  is any other forwarding option, such as `-Xassembler`, `-Wp,` or `-mllvm`.
 
   Every other argument must be an option that cannot carry a path, and passes
   through unchanged: `-D` and `-U` macros, `-O` levels, `-W` warnings, `-f` and
