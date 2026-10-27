@@ -759,6 +759,18 @@ def test_check_help_documents_the_exit_codes(
     assert "4 when the inventory or the toolchain cannot be used" in help_text
 
 
+def test_exit_codes_keep_their_public_numbers() -> None:
+    # The numbers are part of the script's interface: --help and the README
+    # document them, and callers may test them. Everything else names them.
+    assert {code.name: int(code) for code in regen.ExitCode} == {
+        "SUCCESS": 0,
+        "DRIFT": 1,
+        "COMPILE_FAILED": 2,
+        "INCOMPLETE": 3,
+        "SETUP_FAILED": 4,
+    }
+
+
 # --- A compile failure keeps the compiler's diagnostic -----------------------
 
 
@@ -1614,6 +1626,16 @@ def test_real_compiler_selects_a_header_through_a_forwarded_iquote(
     assert compiled_value(out.read_text()) == "44"
 
 
+def test_every_long_path_option_takes_an_equals_value(tmp_path: Path) -> None:
+    # The "=" spelling is derived from the option table, so a --option added
+    # there accepts it without a second list to update.
+    long_options = [f for f in regen._ABSOLUTE_PATH_FLAGS if f.startswith("--")]
+    assert long_options
+    for option in [*long_options, "-resource-dir"]:
+        flags = [f"{option}=/abs/path"]
+        assert regen.absolute_flags(flags, tmp_path) == flags
+
+
 # --- The baseline recipe is explicit -------------------------------------------
 #
 # hipcc adds -O3 and -x hip itself; the documented clang++ fallback does not. So
@@ -2460,18 +2482,6 @@ def test_header_selected_from_another_directory_changes_the_recipe(
     assert "recipe unchanged" not in out
 
 
-def test_exit_codes_keep_their_public_numbers() -> None:
-    # The numbers are part of the script's interface: --help and the README
-    # document them, and callers may test them. Everything else names them.
-    assert {code.name: int(code) for code in regen.ExitCode} == {
-        "SUCCESS": 0,
-        "DRIFT": 1,
-        "COMPILE_FAILED": 2,
-        "INCOMPLETE": 3,
-        "SETUP_FAILED": 4,
-    }
-
-
 # --- The SDK and its compiler are resolved once per run ----------------------------
 #
 # The recipe and every compile use the same SDK and compiler, resolved once when
@@ -2526,13 +2536,3 @@ def test_missing_default_sdk_is_reported(
     monkeypatch.setattr(regen, "_DEFAULT_ROCM_PATH", tmp_path / "missing")
     with pytest.raises(regen.SetupError, match="no ROCm SDK"):
         regen.rocm_path()
-
-
-def test_every_long_path_option_takes_an_equals_value(tmp_path: Path) -> None:
-    # The "=" spelling is derived from the option table, so a --option added
-    # there accepts it without a second list to update.
-    long_options = [f for f in regen._ABSOLUTE_PATH_FLAGS if f.startswith("--")]
-    assert long_options
-    for option in [*long_options, "-resource-dir"]:
-        flags = [f"{option}=/abs/path"]
-        assert regen.absolute_flags(flags, tmp_path) == flags
