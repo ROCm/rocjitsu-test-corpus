@@ -1380,17 +1380,24 @@ def compiled_value(listing: str) -> str:
     return lines[lines.index("value:") + 1].split()[1]
 
 
-def compile_directly(toolchain: regen.Toolchain, kernel: Path, out: Path) -> None:
-    """Compile *kernel* with OVERLAPPING_FLAGS from its own directory, as a user would."""
+def compile_directly(
+    toolchain: regen.Toolchain, kernel: Path, out: Path, flags: list[str], cwd: Path
+) -> str:
+    """
+    Compile *kernel* to *out* with *flags*, from *cwd*, as a user would run the
+    compiler, without the script's command builder. Returns the value of the
+    kernel's `value` variable; see compiled_value.
+    """
     subprocess.run(
         [str(toolchain.compiler), f"--rocm-path={toolchain.root}", "-O3", "-x", "hip"]
-        + ["-S", "--cuda-device-only", "--offload-arch=gfx950", *OVERLAPPING_FLAGS]
+        + ["-S", "--cuda-device-only", "--offload-arch=gfx950", *flags]
         + [str(kernel), "-o", str(out)],
-        cwd=kernel.parent,
+        cwd=cwd,
         check=True,
         capture_output=True,
         env=regen.compiler_environment(toolchain.root),
     )
+    return compiled_value(out.read_text())
 
 
 def test_real_compiler_rejects_an_overlapping_directory_forced_include(
@@ -1403,9 +1410,14 @@ def test_real_compiler_rejects_an_overlapping_directory_forced_include(
     write_overlapping_headers(caller)
     kernel = caller / "forced.hip"
     kernel.write_text("__attribute__((used)) __device__ int value = RACE_VALUE;\n")
-    direct = caller / "direct.s"
-    compile_directly(toolchain, kernel=kernel, out=direct)
-    assert compiled_value(direct.read_text()) == "22"
+    direct = compile_directly(
+        toolchain,
+        kernel=kernel,
+        out=caller / "direct.s",
+        flags=OVERLAPPING_FLAGS,
+        cwd=caller,
+    )
+    assert direct == "22"
     with pytest.raises(regen.UsageError, match="-include options.h: not found in"):
         regen.absolute_flags(OVERLAPPING_FLAGS, caller)
 
@@ -1422,8 +1434,13 @@ def test_real_compiler_selects_the_forced_include_the_script_records(
     (caller / "options.h").write_text("#define RACE_VALUE 33\n")
     kernel = caller / "forced.hip"
     kernel.write_text("__attribute__((used)) __device__ int value = RACE_VALUE;\n")
-    direct = caller / "direct.s"
-    compile_directly(toolchain, kernel=kernel, out=direct)
+    direct = compile_directly(
+        toolchain,
+        kernel=kernel,
+        out=caller / "direct.s",
+        flags=OVERLAPPING_FLAGS,
+        cwd=caller,
+    )
     flags = regen.absolute_flags(OVERLAPPING_FLAGS, caller)
     assert flags[-1] == str(caller / "options.h")
     regenerated = tmp_path / "regenerated.s"
@@ -1434,7 +1451,7 @@ def test_real_compiler_selects_the_forced_include_the_script_records(
         extra_flags=flags,
         toolchain=toolchain,
     )
-    assert compiled_value(direct.read_text()) == "33"
+    assert direct == "33"
     assert compiled_value(regenerated.read_text()) == "33"
 
 
@@ -1601,23 +1618,6 @@ def write_selectable_headers(caller: Path) -> Path:
     return caller / "second"
 
 
-def compile_from(toolchain: regen.Toolchain, caller: Path, flags: list[str]) -> str:
-    """The value a kernel compiled directly from *caller* with *flags* selects."""
-    kernel = caller / "selected.hip"
-    kernel.write_text("__attribute__((used)) __device__ int value = RACE_VALUE;\n")
-    out = caller / "selected.s"
-    subprocess.run(
-        [str(toolchain.compiler), f"--rocm-path={toolchain.root}", "-O3", "-x", "hip"]
-        + ["-S", "--cuda-device-only", "--offload-arch=gfx950", *flags]
-        + [str(kernel), "-o", str(out)],
-        cwd=caller,
-        check=True,
-        capture_output=True,
-        env=regen.compiler_environment(toolchain.root),
-    )
-    return compiled_value(out.read_text())
-
-
 @pytest.mark.parametrize("form", ["alias", "response file"])
 def test_real_compiler_form_the_script_cannot_interpret_is_rejected(
     tmp_path: Path, form: str
@@ -1633,7 +1633,12 @@ def test_real_compiler_form_the_script_cannot_interpret_is_rejected(
         response.write_text(f"-include opt.h -I{second}\n")
         flags = [f"@{response}"]
     # Directly, from the caller's directory, the caller's opt.h is selected.
-    assert compile_from(toolchain, caller=caller, flags=flags) == "11"
+    kernel = caller / "selected.hip"
+    kernel.write_text("__attribute__((used)) __device__ int value = RACE_VALUE;\n")
+    direct = compile_directly(
+        toolchain, kernel=kernel, out=caller / "selected.s", flags=flags, cwd=caller
+    )
+    assert direct == "11"
     # A scratch compile would select second/opt.h, so the form is rejected.
     with pytest.raises(regen.UsageError, match="not an option or spelling"):
         regen.absolute_flags(flags, caller)
