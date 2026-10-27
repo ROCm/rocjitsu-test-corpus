@@ -18,6 +18,8 @@ from support.race_corpus import corpus_table, load_script
 from test_recipe import BAD_RECIPES, GOOD, GOOD_TEXT
 
 regen = load_script("regenerate_asm")
+# The real toolchain selection. install_fake_compiler replaces
+# regen.select_toolchain with a fake; the real-compiler tests put this back.
 SELECT_TOOLCHAIN = regen.select_toolchain
 
 # A case that needs the rocWMMA headers, as inventory.load returns it.
@@ -2216,8 +2218,6 @@ def test_failed_swap_restores_the_old_target(
 # from the selected installation itself, so it does not depend on PATH or on how
 # the root was named.
 
-REAL_ROCM_PATH = regen.rocm_path
-
 
 def pip_sdk(tmp_path: Path, versions: dict[str, str]) -> Path:
     """
@@ -2288,7 +2288,7 @@ def test_build_is_found_through_a_symlinked_rocm_path_without_rocm_sdk(
     link.symlink_to(root)
     monkeypatch.setenv("ROCM_PATH", str(link))
     prepend_to_path(monkeypatch, tmp_path / "empty-bin", only=True)
-    selected = REAL_ROCM_PATH()
+    selected = regen.rocm_path()
     assert selected == root
     assert regen.sdk_build(selected) == "10.1.0a1"
 
@@ -2301,7 +2301,7 @@ def test_build_is_found_through_rocm_sdk_discovery(
     link.symlink_to(root)
     monkeypatch.delenv("ROCM_PATH", raising=False)
     install_fake_rocm_sdk(monkeypatch, tmp_path, link)
-    selected = REAL_ROCM_PATH()
+    selected = regen.rocm_path()
     assert selected == root
     assert regen.sdk_build(selected) == "10.1.0a1"
 
@@ -2408,7 +2408,7 @@ def test_failing_rocm_sdk_is_reported_rather_than_skipped(
     with pytest.raises(
         regen.SetupError, match="rocm-sdk path --root failed .*no SDK installed"
     ):
-        REAL_ROCM_PATH()
+        regen.rocm_path()
 
 
 def test_failing_compiler_version_is_reported_rather_than_unknown(
@@ -2430,7 +2430,7 @@ def test_rocm_path_that_is_not_a_directory_is_reported(
     with pytest.raises(
         regen.SetupError, match="ROCM_PATH .*missing.* is not a directory"
     ):
-        REAL_ROCM_PATH()
+        regen.rocm_path()
 
 
 # --- The compiler always comes from the selected SDK ------------------------------
