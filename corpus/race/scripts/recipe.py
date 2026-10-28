@@ -124,8 +124,8 @@ def load(path: Path) -> Recipe | None:
     The recipe at *path*, or None if there is none.
 
     Raises RecipeError naming every problem, not just the first. A file that
-    cannot be read, or is not valid TOML, is a RecipeError too, with the
-    underlying error as its cause.
+    cannot be read, is not valid UTF-8 or is not valid TOML is a RecipeError
+    too, with the underlying error as its cause.
     """
     if not path.is_file():
         return None
@@ -133,6 +133,8 @@ def load(path: Path) -> Recipe | None:
         fields = tomllib.loads(path.read_text(encoding="utf-8"))
     except OSError as error:
         raise RecipeError([f"cannot be read ({error.strerror})"]) from error
+    except UnicodeDecodeError as error:
+        raise RecipeError([f"not valid UTF-8 ({error})"]) from error
     except tomllib.TOMLDecodeError as error:
         raise RecipeError([f"not valid TOML ({error})"]) from error
 

@@ -32,21 +32,23 @@ def without_field(field: str) -> str:
     )
 
 
-# Each malformed recipe, and the problem load() reports for it, built from GOOD
-# so that a schema change updates every fixture here. The two scripts' tests run
-# the same cases through their own entry points.
+# Each malformed recipe, as the bytes of the file, and the problem load()
+# reports for it, built from GOOD so that a schema change updates every fixture
+# here. Bytes, so that a file that is not valid UTF-8 is one of them. The two
+# scripts' tests run the same cases through their own entry points.
 BAD_RECIPES = {
-    "malformed TOML": ("compiler = \n", "not valid TOML"),
-    "missing field": (without_field("rocm_build"), "rocm_build is missing"),
+    "malformed TOML": (b"compiler = \n", "not valid TOML"),
+    "not valid UTF-8": (GOOD_TEXT.encode() + b"# \xff\n", "not valid UTF-8"),
+    "missing field": (without_field("rocm_build").encode(), "rocm_build is missing"),
     "empty field": (
-        recipe.dumps(dataclasses.replace(GOOD, compiler="")),
+        recipe.dumps(dataclasses.replace(GOOD, compiler="")).encode(),
         "compiler must be a non-empty string",
     ),
     "flags not a list": (
-        without_field("flags") + 'flags = "-O3"\n',
+        (without_field("flags") + 'flags = "-O3"\n').encode(),
         "flags must be a list of strings",
     ),
-    "unknown field": (GOOD_TEXT + 'sdk = "x"\n', "unknown field 'sdk'"),
+    "unknown field": ((GOOD_TEXT + 'sdk = "x"\n').encode(), "unknown field 'sdk'"),
 }
 
 
@@ -68,10 +70,10 @@ def test_absent_recipe_loads_as_none(tmp_path: Path) -> None:
     assert recipe.load(tmp_path / recipe.FILE_NAME) is None
 
 
-@pytest.mark.parametrize("text, problem", BAD_RECIPES.values(), ids=BAD_RECIPES.keys())
-def test_invalid_recipe_is_rejected(tmp_path: Path, text: str, problem: str) -> None:
+@pytest.mark.parametrize("data, problem", BAD_RECIPES.values(), ids=BAD_RECIPES.keys())
+def test_invalid_recipe_is_rejected(tmp_path: Path, data: bytes, problem: str) -> None:
     path = tmp_path / recipe.FILE_NAME
-    path.write_text(text, encoding="utf-8")
+    path.write_bytes(data)
     with pytest.raises(recipe.RecipeError) as error:
         recipe.load(path)
     assert any(problem in reported for reported in error.value.problems)
@@ -120,6 +122,17 @@ def test_invalid_toml_keeps_the_parse_error(tmp_path: Path) -> None:
         recipe.load(path)
     assert isinstance(error.value.__cause__, tomllib.TOMLDecodeError)
     assert "line 1" in error.value.problems[0]
+
+
+def test_invalid_utf8_keeps_the_decode_error(tmp_path: Path) -> None:
+    # The decoder's error is the cause, and its diagnostic, with the offending
+    # byte's position, is in the problem.
+    path = tmp_path / recipe.FILE_NAME
+    path.write_bytes(GOOD_TEXT.encode() + b"# \xff\n")
+    with pytest.raises(recipe.RecipeError) as error:
+        recipe.load(path)
+    assert isinstance(error.value.__cause__, UnicodeDecodeError)
+    assert "0xff in position" in error.value.problems[0]
 
 
 # --- Strings are written as TOML strings ------------------------------------------

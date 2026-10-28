@@ -146,11 +146,17 @@ def _unknown_keys(
 
 
 def _read(path: Path) -> dict[str, object]:
-    """The TOML at *path*, as a table. Raises InventoryError if it cannot be read."""
+    """
+    The TOML at *path*, as a table. Raises InventoryError, with the underlying
+    error as its cause, if it cannot be read, is not valid UTF-8 or is not valid
+    TOML.
+    """
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as error:
         raise InventoryError([f"{path}: cannot be read ({error.strerror})"]) from error
+    except UnicodeDecodeError as error:
+        raise InventoryError([f"{path.name}: not valid UTF-8 ({error})"]) from error
     try:
         return tomllib.loads(text)
     except tomllib.TOMLDecodeError as error:

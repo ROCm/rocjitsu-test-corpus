@@ -661,11 +661,18 @@ def compiler_version(toolchain: Toolchain) -> str:
 
 
 def sdk_release(root: Path) -> str:
-    """The release of the SDK at *root*, such as ``10.1.0``, from ``.info/version``."""
+    """
+    The release of the SDK at *root*, such as ``10.1.0``, from ``.info/version``.
+    Raises SetupError if that file is not valid UTF-8.
+    """
     version_file = root / ".info" / "version"
-    if version_file.is_file() and (release := version_file.read_text().strip()):
-        return release
-    return recipe.UNKNOWN
+    if not version_file.is_file():
+        return recipe.UNKNOWN
+    try:
+        release = version_file.read_text(encoding="utf-8").strip()
+    except UnicodeDecodeError as error:
+        raise SetupError(f"{version_file}: not valid UTF-8 ({error})") from error
+    return release or recipe.UNKNOWN
 
 
 def sdk_build(root: Path) -> str:
@@ -801,7 +808,13 @@ def compile_device_asm(
             raise CompileError(
                 f"{kernel.name} ({target}): the compiler wrote no listing"
             )
-        assembly = normalize(compiled.read_text())
+        try:
+            assembly = normalize(compiled.read_text(encoding="utf-8"))
+        except UnicodeDecodeError as error:
+            raise CompileError(
+                f"{kernel.name} ({target}): the compiler wrote a listing that is "
+                f"not valid UTF-8 ({error})"
+            ) from error
 
     _replace(out, assembly)
 
@@ -835,7 +848,12 @@ def _replace(out: Path, text: str) -> None:
     """Write *text* to *out* via a sibling temporary file and an atomic rename."""
     out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
-        "w", dir=out.parent, prefix=f".{out.name}.", suffix=".tmp", delete=False
+        "w",
+        encoding="utf-8",
+        dir=out.parent,
+        prefix=f".{out.name}.",
+        suffix=".tmp",
+        delete=False,
     ) as staged:
         staged.write(text)
     try:
@@ -1348,9 +1366,16 @@ def _compare_file(
 
 
 def _compare_listings(name: str, fresh: Path, committed: Path) -> FileComparison:
-    """Compare two listings of one case, with their ``.ident`` lines apart."""
-    fresh_body, fresh_ident = split_provenance(fresh.read_text())
-    committed_body, committed_ident = split_provenance(committed.read_text())
+    """
+    Compare two listings of one case, with their ``.ident`` lines apart. A
+    committed listing that is not valid UTF-8 cannot match, and is drift.
+    """
+    fresh_body, fresh_ident = split_provenance(fresh.read_text(encoding="utf-8"))
+    try:
+        committed_text = committed.read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        return FileComparison(drift=f"{name}: committed, but not valid UTF-8 ({error})")
+    committed_body, committed_ident = split_provenance(committed_text)
     if fresh_body != committed_body:
         changed = sum(
             1

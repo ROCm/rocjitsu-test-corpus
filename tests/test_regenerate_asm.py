@@ -80,6 +80,9 @@ if BEHAVIOUR == "fail" or (failing and source.name == failing + ".hip"):
 text = "kernel:\n\ts_endpgm\n.globl __hip_cuid_0123abcd\n"
 if BEHAVIOUR == "silent":
     sys.exit(0)
+if BEHAVIOUR == "invalid-utf8":
+    Path(args[args.index("-o") + 1]).write_bytes(b"kernel:\n\t; \xff\n")
+    sys.exit(0)
 Path(args[args.index("-o") + 1]).write_text(text)
 if BEHAVIOUR == "save-temps":
     arch = next(arg for arg in args if arg.startswith("--offload-arch=")).split("=", 1)[1]
@@ -122,11 +125,12 @@ def write_fake_compiler(compiler: Path, behaviour: str) -> Path:
     named in ``FAKE_COMPILER_FAIL`` fails whatever *behaviour* says.
 
     *behaviour* is one of:
-      fail        exit 1 without writing anything
-      output      write to the -o path
-      save-temps  write to the -o path, and write intermediates into the
-                  working directory, as -save-temps does
-      silent      exit 0 without writing anything
+      fail          exit 1 without writing anything
+      invalid-utf8  write a listing that is not valid UTF-8 to the -o path
+      output        write to the -o path
+      save-temps    write to the -o path, and write intermediates into the
+                    working directory, as -save-temps does
+      silent        exit 0 without writing anything
     """
     return write_script(
         compiler,
@@ -281,6 +285,26 @@ def test_compile_that_writes_no_listing_is_a_failure(
             extra_flags=[],
             toolchain=toolchain,
         )
+    assert pinned.read_text() == PINNED
+
+
+def test_compile_that_writes_invalid_utf8_is_a_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, pinned: Path, kernel: Path
+) -> None:
+    toolchain = install_fake_compiler(monkeypatch, tmp_path, "invalid-utf8")
+    with pytest.raises(
+        regen.CompileError,
+        match="kernel.hip .gfx950.: the compiler wrote a listing that is not valid "
+        "UTF-8",
+    ) as error:
+        regen.compile_device_asm(
+            kernel=kernel,
+            target="gfx950",
+            out=pinned,
+            extra_flags=[],
+            toolchain=toolchain,
+        )
+    assert isinstance(error.value.__cause__, UnicodeDecodeError)
     assert pinned.read_text() == PINNED
 
 
@@ -2082,24 +2106,38 @@ def test_check_without_a_committed_recipe_says_so(
 # --- An invalid committed recipe is reported, not raised -----------------------------
 
 
-@pytest.mark.parametrize("text, problem", BAD_RECIPES.values(), ids=BAD_RECIPES.keys())
+@pytest.mark.parametrize("data, problem", BAD_RECIPES.values(), ids=BAD_RECIPES.keys())
 def test_check_reports_an_invalid_committed_recipe(
     manifest: Manifest,
     corpus_main: CorpusMain,
     capsys: pytest.CaptureFixture[str],
-    text: str,
+    data: bytes,
     problem: str,
 ) -> None:
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
-    (committed / "gfx950" / "recipe.toml").write_text(text, encoding="utf-8")
+    (committed / "gfx950" / "recipe.toml").write_bytes(data)
     capsys.readouterr()
     # The recipe comparison is informational: the assembly still matches.
     assert run("--check") == regen.ExitCode.SUCCESS
     out = capsys.readouterr().out
     assert "gfx950: recipe.toml cannot be compared" in out
     assert problem in out
+
+
+def test_check_reports_a_committed_listing_that_is_not_utf8_as_drift(
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    commit_fresh_output(run, committed)
+    (committed / "gfx950" / "kernel.s").write_bytes(b"kernel:\n\t; \xff\n")
+    capsys.readouterr()
+    assert run("--check") == regen.ExitCode.DRIFT
+    assert "gfx950/kernel.s: committed, but not valid UTF-8" in capsys.readouterr().err
 
 
 # --- A target's listings and recipe are replaced together, or not at all --------
@@ -2355,6 +2393,15 @@ def test_sdk_outside_a_distribution_has_an_unknown_build(tmp_path: Path) -> None
     root.mkdir()
     assert regen.sdk_build(root) == regen.recipe.UNKNOWN
     assert regen.sdk_release(root) == regen.recipe.UNKNOWN
+
+
+def test_sdk_release_that_is_not_utf8_is_a_setup_error(tmp_path: Path) -> None:
+    root = tmp_path / "opt-rocm"
+    (root / ".info").mkdir(parents=True)
+    (root / ".info" / "version").write_bytes(b"10.1.\xff\n")
+    with pytest.raises(regen.SetupError, match="version: not valid UTF-8") as error:
+        regen.sdk_release(root)
+    assert isinstance(error.value.__cause__, UnicodeDecodeError)
 
 
 def test_build_is_found_through_a_symlinked_rocm_path_without_rocm_sdk(

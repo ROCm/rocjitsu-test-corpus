@@ -404,16 +404,16 @@ def test_missing_recipe_is_reported(
 # --- The recipe is read by the shared loader ----------------------------------------
 
 
-@pytest.mark.parametrize("text, problem", BAD_RECIPES.values(), ids=BAD_RECIPES.keys())
+@pytest.mark.parametrize("data, problem", BAD_RECIPES.values(), ids=BAD_RECIPES.keys())
 def test_invalid_recipe_is_reported_as_the_shared_loader_reports_it(
     corpus: BuildCorpus,
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
-    text: str,
+    data: bytes,
     problem: str,
 ) -> None:
     corpus(targets=["gfx950"], cases=PORTABLE, asm=["gfx950/portable"])
-    (tmp_path / "asm" / "gfx950" / "recipe.toml").write_text(text, encoding="utf-8")
+    (tmp_path / "asm" / "gfx950" / "recipe.toml").write_bytes(data)
     code, out = run(capsys)
     assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert f"asm/gfx950/recipe.toml: {problem}" in out

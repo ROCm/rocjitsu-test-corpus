@@ -193,39 +193,44 @@ def test_unsupported_schema_is_rejected(tmp_path: Path) -> None:
 
 # --- Manifests that cannot be read as an inventory ----------------------------
 #
-# A file that is not valid TOML, or whose [corpus] or cases are not tables, is
-# reported as an InventoryError like any other invalid manifest, not raised as
-# whatever exception reading it happened to hit. The TOML parser's error is kept
-# as the cause.
+# A file that is not valid UTF-8 or not valid TOML, or whose [corpus] or cases
+# are not tables, is reported as an InventoryError like any other invalid
+# manifest, not raised as whatever exception reading it happened to hit. The
+# decoder's or parser's error is kept as the cause. Each file is given as its
+# bytes, so that one that is not valid UTF-8 can be among them.
 
 CORPUS = corpus_table(["gfx950"])
 
 MALFORMED_FILES = {
     "unterminated table header": (
         # The header's closing bracket removed.
-        corpus_table(["gfx950"]).replace("[corpus]", "[corpus", 1),
+        corpus_table(["gfx950"]).replace("[corpus]", "[corpus", 1).encode(),
         "cases.toml: not valid TOML",
     ),
-    "corpus not a table": ("corpus = 1\n", "cases.toml: [corpus] must be a table"),
+    "not valid UTF-8": (
+        CORPUS.encode() + b"# \xff\n",
+        "cases.toml: not valid UTF-8",
+    ),
+    "corpus not a table": (b"corpus = 1\n", "cases.toml: [corpus] must be a table"),
     "case not a list": (
-        "case = 1\n" + CORPUS,
+        ("case = 1\n" + CORPUS).encode(),
         "cases.toml: case must be a list of [[case]] tables",
     ),
     "case entry not a table": (
-        'case = ["x"]\n' + CORPUS,
+        ('case = ["x"]\n' + CORPUS).encode(),
         "cases.toml: case must be a list of [[case]] tables",
     ),
 }
 
 
 @pytest.mark.parametrize(
-    "text, problem", MALFORMED_FILES.values(), ids=MALFORMED_FILES.keys()
+    "data, problem", MALFORMED_FILES.values(), ids=MALFORMED_FILES.keys()
 )
 def test_malformed_file_is_an_inventory_error(
-    tmp_path: Path, text: str, problem: str
+    tmp_path: Path, data: bytes, problem: str
 ) -> None:
     path = tmp_path / "cases.toml"
-    path.write_text(text, encoding="utf-8")
+    path.write_bytes(data)
     with pytest.raises(inventory.InventoryError) as error:
         inventory.load(path)
     assert any(problem in reported for reported in error.value.problems)
@@ -239,6 +244,16 @@ def test_invalid_toml_keeps_the_parse_error(tmp_path: Path) -> None:
     assert isinstance(error.value.__cause__, tomllib.TOMLDecodeError)
     # The parser's own diagnostic, with its line and column, is in the message.
     assert "line 1" in error.value.problems[0]
+
+
+def test_invalid_utf8_keeps_the_decode_error(tmp_path: Path) -> None:
+    path = tmp_path / "cases.toml"
+    path.write_bytes(CORPUS.encode() + b"# \xff\n")
+    with pytest.raises(inventory.InventoryError) as error:
+        inventory.load(path)
+    assert isinstance(error.value.__cause__, UnicodeDecodeError)
+    # The decoder's own diagnostic, with the byte's position, is in the message.
+    assert "0xff in position" in error.value.problems[0]
 
 
 def test_unreadable_file_is_an_inventory_error(tmp_path: Path) -> None:
@@ -298,17 +313,17 @@ def test_both_scripts_report_the_same_problem(
 
 
 @pytest.mark.parametrize(
-    "text, problem", MALFORMED_FILES.values(), ids=MALFORMED_FILES.keys()
+    "data, problem", MALFORMED_FILES.values(), ids=MALFORMED_FILES.keys()
 )
 def test_both_scripts_report_a_malformed_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    text: str,
+    data: bytes,
     problem: str,
 ) -> None:
     path = tmp_path / "cases.toml"
-    path.write_text(text, encoding="utf-8")
+    path.write_bytes(data)
     checker, regeneration = report_from_both_scripts(path, monkeypatch, capsys)
     assert problem in checker and problem in regeneration
 
