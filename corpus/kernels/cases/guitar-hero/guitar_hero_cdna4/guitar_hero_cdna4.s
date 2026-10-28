@@ -4,6 +4,7 @@
 ; s4:5=group output, s6:7=optional raw checkpoint, s8=seed, s9=trace id.
 .amdgcn_target "amdgcn-amd-amdhsa--gfx950"
 .amdhsa_code_object_version 6
+
 .text
 .protected guitar_hero_cdna4
 .globl guitar_hero_cdna4
@@ -16,6 +17,861 @@ v_mov_b32 \dest, \lo
 v_mov_b32 v63, \hi
 v_cndmask_b32 \dest, \dest, v63, s[58:59]
 .endm
+; Boundary-probe helpers for the existing checkpoints.
+
+; Dependent source-format probes for gfx950. Each macro folds incoming
+; results before replacing them; callers feed the following existing checkpoint.
+; These operand helpers use s16:s23 and v16:v31 as scratch. fold_results retains
+; its existing hash-register and target scratch contract. EXEC is restored.
+;
+; LLVM cannot spell every integer16 floating selector accepted by the ISA.
+; The named encoding helpers retain the plain integer/B16 selector forms
+; measured in isolated instruction chains on gfx1100/gfx1201, including
+; inverse-two-pi selector 248. Full-smoke hashes can differ at other instructions.
+; Modifier payloads follow the target ISA field tables; their corpus launches
+; still require separate runtime validation. No reserved form is enabled.
+
+.set GH_SRC_VGPR, 256
+.set GH_SRC_DPP16, 250
+.set GH_SRC_SDWA, 249
+.set GH_OP_ADD_NC_U16, 771
+.set GH_OP_ADD_U16_CDNA4, 294
+.set GH_OP_ADD_U16_VOP2_CDNA4, 38
+.set GH_OP_CVT_F16_U16, 464
+.set GH_OP_CVT_F16_U16_CDNA4, 377
+.set GH_OP_MOV_B16, 28
+.set GH_OP_CNDMASK_B16, 605
+.set GH_OP_MAD_LEGACY_U16_CDNA4, 491
+.set GH_OP_DOT2_BF16_BF16, 615
+.set GH_OP_CVT_F32_BF16_CDNA4, 91
+.set GH_OP_CVT_F32_BF16_CDNA5, 498
+
+.macro gh_operand_validate arch
+.if \arch != 94
+.error "unsupported operand corner architecture"
+.endif
+.endm
+
+.macro gh_operand_wait arch
+gh_operand_validate \arch
+.if (\arch == 4) || (\arch == 95)
+s_wait_alu 0xfffe
+.else
+s_nop 1
+.endif
+.endm
+
+; VOP3 source field composition is shared by these four targets. CDNA4
+; uses its GFX9 encoding prefix; RDNA3/4 and CDNA5 use the newer prefix.
+.macro gh_operand_vop3 arch, opcode, dst, src0, src1=128, src2=128, opsel=0
+gh_operand_validate \arch
+.if \arch == 94
+.long 0xd0000000 | ((\opcode) << 16) | (\dst) | ((\opsel) << 11)
+.else
+.long 0xd4000000 | ((\opcode) << 16) | (\dst) | ((\opsel) << 11)
+.endif
+.long (\src0) | ((\src1) << 9) | ((\src2) << 18)
+.endm
+
+; DPP16 row_mirror with all rows/banks enabled and bound_ctrl=1. SRC0 is
+; v24; only SRC1 is an inline constant, so the alternate encoding is legal.
+.macro gh_operand_vop3_dpp arch, opcode, dst, src1, src2=128
+gh_operand_validate \arch
+gh_operand_vop3 \arch, \opcode, \dst, GH_SRC_DPP16, \src1, \src2
+.long (24) | (0x140 << 8) | (1 << 19) | (0xf << 24) | (0xf << 28)
+.endm
+
+; CDNA4 SDWA source0 is a scalar inline selector (S0=1), both inputs select
+; WORD_0, and the destination is DWORD/UNUSED_PAD. LLVM cannot spell selector 248
+; in this integer source position, but it occupies the same scalar namespace.
+.macro gh_operand_sdwa_u16 selector
+.long (GH_OP_ADD_U16_VOP2_CDNA4 << 25) | (16 << 17) | (24 << 9) | GH_SRC_SDWA
+.long (\selector) | (6 << 8) | (4 << 16) | (1 << 23) | (4 << 24)
+.endm
+
+.macro gh_operand_s_mov dst, value, arch
+s_mov_b32 \dst, \value
+gh_operand_wait \arch
+.endm
+
+.macro gh_corner_raw_scalar arch
+gh_operand_validate \arch
+fold_results
+clear_results
+.irp value,0.5,-0.5,1.0,-1.0,2.0,-2.0,4.0,-4.0,0.15915494
+s_sext_i32_i16 s16, \value
+gh_operand_wait \arch
+s_pack_ll_b32_b16 s17, \value, \value
+gh_operand_wait \arch
+s_pack_lh_b32_b16 s18, \value, \value
+gh_operand_wait \arch
+s_pack_hh_b32_b16 s19, \value, \value
+gh_operand_wait \arch
+.if \arch != 94
+s_pack_hl_b32_b16 s20, \value, \value
+gh_operand_wait \arch
+.else
+; CDNA4 has LL/LH/HH, but no HL instruction.
+s_xor_b32 s20, s18, s19
+gh_operand_wait \arch
+.endif
+s_xor_b32 s21, s17, s19
+gh_operand_wait \arch
+v_mov_b32 v16, s16
+v_mov_b32 v17, s17
+v_mov_b32 v18, s18
+v_mov_b32 v19, s19
+v_mov_b32 v20, s20
+v_mov_b32 v21, s21
+fold_results
+.endr
+.endm
+
+; F16 and integer16 see different values for the same nine floating selectors.
+; Each result is consumed by a conversion/ALU before the next batch overwrites it.
+.macro gh_corner_vector16 arch
+gh_operand_validate \arch
+fold_results
+clear_results
+.irp value,0.5,-0.5,1.0,-1.0,2.0,-2.0,4.0,-4.0,0.15915494
+v_mov_b32 v24, 0
+v_mov_b32 v16, 0xdeadbeef
+.if \arch == 94
+v_add_f16_e64 v16, \value, v24
+v_nop
+v_cvt_f32_f16_e64 v17, v16
+.else
+v_add_f16_e64 v16.l, \value, v24.l
+v_nop
+v_cvt_f32_f16_e64 v17, v16.l
+.endif
+v_nop
+v_add_f32 v18, 1.0, v17
+fold_results
+.endr
+; Numeric half constants also reach modifier delegates. DPP takes its inline
+; input from SRC1; CDNA4 SDWA permits a scalar-inline SRC0.
+.irp value,0.5,-0.5,1.0,-1.0,2.0,-2.0,4.0,-4.0,0.15915494
+v_mov_b32 v24, 0
+v_mov_b32 v16, 0xdeadbeef
+.if \arch == 94
+v_add_f16_sdwa v16, \value, v24 dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:WORD_0 src1_sel:WORD_0
+v_nop
+v_cvt_f32_f16_e64 v17, v16
+.elseif \arch == 3
+; GFX11 DPP16 requires VGPR arithmetic sources. The typed inline producer
+; feeds the legal DPP form instead of encoding a forbidden scalar SRC1.
+v_mov_b32 v25, 0
+v_add_f16_e64 v24.l, \value, v24.l
+v_nop
+v_add_f16_e64_dpp v16.l, v24.l, v25.l row_mirror row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:0
+v_nop
+v_cvt_f32_f16_e64 v17, v16.l
+.else
+v_add_f16_e64_dpp v16.l, v24.l, \value row_mirror row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:0
+v_nop
+v_cvt_f32_f16_e64 v17, v16.l
+.endif
+v_nop
+v_add_f32 v18, 1.0, v17
+fold_results
+.endr
+.irp selector,240,241,242,243,244,245,246,247,248
+v_mov_b32 v24, 0
+v_mov_b32 v16, 0xdeadbeef
+.if \arch == 94
+gh_operand_vop3 \arch, GH_OP_ADD_U16_CDNA4, 16, \selector, GH_SRC_VGPR+24
+.else
+gh_operand_vop3 \arch, GH_OP_ADD_NC_U16, 16, \selector, GH_SRC_VGPR+24
+.endif
+v_nop
+v_and_b32 v17, 0xffff, v16
+v_cvt_f32_u32 v18, v17
+v_add_f32 v19, 1.0, v18
+; A half destination does not make an integer source use half inlines.
+.if \arch == 94
+gh_operand_vop3 \arch, GH_OP_CVT_F16_U16_CDNA4, 20, \selector
+v_nop
+v_cvt_f32_f16_e64 v21, v20
+.else
+gh_operand_vop3 \arch, GH_OP_CVT_F16_U16, 20, \selector
+v_nop
+v_cvt_f32_f16_e64 v21, v20.l
+.endif
+v_nop
+v_add_f32 v22, 1.0, v21
+fold_results
+.endr
+; Legal high VGPR source/destination selection on modern true16 targets.
+.if \arch != 94
+v_mov_b32 v24, 0x40003c00
+v_mov_b32 v25, 0x3c004000
+v_mov_b32 v16, 0xdeadbeef
+v_add_nc_u16_e64 v16.h, v24.h, v25.l
+v_nop
+v_lshrrev_b32 v17, 16, v16
+v_xor_b32 v18, v17, v16
+fold_results
+; DPP delegates retain the integer source format for SRC1's floating selector.
+.irp selector,240,241,242,243,244,245,246,247,248
+v_mov_b32 v24, 0
+v_mov_b32 v16, 0xdeadbeef
+.if \arch == 3
+gh_operand_vop3 \arch, GH_OP_ADD_NC_U16, 24, \selector, GH_SRC_VGPR+24
+v_nop
+gh_operand_vop3_dpp \arch, GH_OP_ADD_NC_U16, 16, GH_SRC_VGPR+24
+.else
+gh_operand_vop3_dpp \arch, GH_OP_ADD_NC_U16, 16, \selector
+.endif
+v_nop
+v_and_b32 v17, 0xffff, v16
+v_add_nc_u32 v18, 1, v17
+fold_results
+.endr
+.else
+; CDNA4 SDWA can select an inline scalar source. Its staging must retain the
+; integer FP32 carrier, including inverse-two-pi's nonzero low half.
+.irp selector,240,241,242,243,244,245,246,247,248
+v_mov_b32 v24, 0
+v_mov_b32 v16, 0xdeadbeef
+gh_operand_sdwa_u16 \selector
+v_nop
+v_and_b32 v17, 0xffff, v16
+v_add_u32 v18, 1, v17
+fold_results
+.endr
+.endif
+.endm
+
+.macro gh_corner_b16 arch
+gh_operand_validate \arch
+fold_results
+clear_results
+.irp selector,240,241,242,243,244,245,246,247,248
+v_mov_b32 v24, 1
+v_mov_b32 v25, 0
+v_mov_b32 v16, 0xdeadbeef
+.if \arch == 94
+; Legacy U16 MAD's bit-format operands retain the same FP32 inline carrier.
+gh_operand_vop3 \arch, GH_OP_MAD_LEGACY_U16_CDNA4, 16, \selector, GH_SRC_VGPR+24, GH_SRC_VGPR+25
+.else
+; MOV_B16 e32, then low-half consumption; CNDMASK independently exercises
+; the second B16 consumer with a zero condition selecting SRC0.
+.long 0x7e000000 | (16 << 17) | (GH_OP_MOV_B16 << 9) | (\selector)
+.endif
+v_nop
+v_and_b32 v17, 0xffff, v16
+.if \arch == 94
+v_add_u32 v18, 1, v17
+.else
+v_add_nc_u32 v18, 1, v17
+gh_operand_s_mov s22, 0, \arch
+gh_operand_s_mov s23, 0, \arch
+gh_operand_vop3 \arch, GH_OP_CNDMASK_B16, 19, \selector, GH_SRC_VGPR+25, 22
+v_nop
+v_and_b32 v20, 0xffff, v19
+v_add_nc_u32 v21, 1, v20
+.endif
+fold_results
+.endr
+.if \arch != 94
+gh_operand_s_mov s22, -1, \arch
+gh_operand_s_mov s23, -1, \arch
+.irp selector,240,241,242,243,244,245,246,247,248
+v_mov_b32 v24, 0
+v_mov_b32 v16, 0xdeadbeef
+.if \arch == 3
+.long 0x7e000000 | (25 << 17) | (GH_OP_MOV_B16 << 9) | (\selector)
+v_nop
+gh_operand_vop3_dpp \arch, GH_OP_CNDMASK_B16, 16, GH_SRC_VGPR+25, 22
+.else
+gh_operand_vop3_dpp \arch, GH_OP_CNDMASK_B16, 16, \selector, 22
+.endif
+v_nop
+v_and_b32 v17, 0xffff, v16
+v_add_nc_u32 v18, 1, v17
+fold_results
+.endr
+.endif
+.endm
+
+.macro gh_corner_bf16 arch
+gh_operand_validate \arch
+fold_results
+clear_results
+.irp selector,240,241,242,243,244,245,246,247,248
+v_mov_b32 v16, 0xdeadbeef
+.if \arch == 94
+; CDNA4's numeric BF16 source is the low half, not a raw FP32 carrier.
+.long 0x7e000000 | (16 << 17) | (GH_OP_CVT_F32_BF16_CDNA4 << 9) | (\selector)
+.elseif \arch == 95
+; CDNA5 permits floating inlines through e64 with FP32 carrier/high OPSEL.
+; Its VOP1 floating-inline form is not a legal replacement.
+gh_operand_vop3 \arch, GH_OP_CVT_F32_BF16_CDNA5, 16, \selector, 128, 128, 1
+.else
+; Zero packed multiplicands make the numeric BF16 accumulator independently
+; observable. Selector 248 must retain BF16 0x3e22 rather than rounded 0x3e23.
+v_mov_b32 v24, 0
+v_mov_b32 v25, 0
+gh_operand_vop3 \arch, GH_OP_DOT2_BF16_BF16, 16, GH_SRC_VGPR+24, GH_SRC_VGPR+25, \selector
+.endif
+v_nop
+.if (\arch == 94) || (\arch == 95)
+v_add_f32 v17, 1.0, v16
+v_xor_b32 v18, v16, v17
+.else
+v_and_b32 v17, 0xffff, v16
+v_lshlrev_b32 v18, 16, v17
+v_add_f32 v19, 1.0, v18
+.endif
+fold_results
+.endr
+.if (\arch == 3) || (\arch == 4)
+.irp selector,240,241,242,243,244,245,246,247,248
+v_mov_b32 v24, 0
+v_mov_b32 v25, 0
+.if \arch == 3
+gh_operand_vop3 \arch, GH_OP_DOT2_BF16_BF16, 26, GH_SRC_VGPR+24, GH_SRC_VGPR+25, \selector
+v_nop
+gh_operand_vop3_dpp \arch, GH_OP_DOT2_BF16_BF16, 16, GH_SRC_VGPR+25, GH_SRC_VGPR+26
+.else
+gh_operand_vop3_dpp \arch, GH_OP_DOT2_BF16_BF16, 16, GH_SRC_VGPR+25, \selector
+.endif
+v_nop
+v_and_b32 v17, 0xffff, v16
+v_lshlrev_b32 v18, 16, v17
+v_add_f32 v19, 1.0, v18
+fold_results
+.endr
+.endif
+; Register carriers are selected as raw bits, independently of inline format.
+.if (\arch == 94) || (\arch == 95)
+gh_operand_s_mov s16, 0x3f804000, \arch
+v_mov_b32 v24, 0x40003f80
+.if \arch == 94
+v_cvt_f32_bf16 v16, s16
+v_cvt_f32_bf16 v17, v24
+.else
+v_cvt_f32_bf16_e64 v16, s16 op_sel:[1]
+v_cvt_f32_bf16_e64 v17, v24.h
+.endif
+v_nop
+v_add_f32 v18, v16, v17
+fold_results
+.endif
+.endm
+
+; PC import and return-address dependency chains for scalar_local_calls.
+; Inputs: full EXEC, existing clear_results/fold_results macros.
+; Clobbers: s16:s23, v16:v31, SCC and VCC; restores full EXEC and MODE.CSP.
+; No raw addresses enter the hash: only address differences and fixed markers.
+; Isolated instruction chains measured high-bit masking on gfx1100/gfx1201.
+; Full-smoke hashes can differ at other instructions. The gfx950 and
+; gfx1250 cases follow simulator masks, pending matching hardware;
+; their manuals do not establish the masking of noncanonical input PCs.
+; High-PC export/fetch boundaries require separately mapped code.
+
+.macro gh_pc_wait gfx12
+.if \gfx12
+s_wait_alu 0xf1fc
+.else
+s_nop 1
+.endif
+.endm
+
+.macro gh_pc_full_exec wave_size
+.if \wave_size == 64
+s_mov_b64 exec, -1
+.else
+s_mov_b32 exec_lo, -1
+.endif
+.endm
+
+.macro gh_pc_poison_high high, pc_bits
+.if \pc_bits == 57
+s_and_b32 \high, \high, 0x01ffffff
+s_or_b32 \high, \high, 0xa4000000
+.else
+s_and_b32 \high, \high, 0x0000ffff
+s_or_b32 \high, \high, 0xa5a50000
+.endif
+.endm
+
+.macro gh_pc_corners pc_bits, wave_size, gfx12, cdna_fork=0
+.if ((\pc_bits != 48) && (\pc_bits != 57)) || ((\wave_size != 32) && (\wave_size != 64))
+.error "unsupported PC corner width"
+.endif
+.if ((\gfx12 != 0) && (\gfx12 != 1)) || ((\cdna_fork != 0) && (\cdna_fork != 1))
+.error "unsupported PC corner capability"
+.endif
+gh_pc_full_exec \wave_size
+fold_results
+clear_results
+
+; GETPC -> address arithmetic -> ignored-high-bit SETPC -> dependent marker.
+; A missing branch takes the guarded fallback instead of accidentally reaching
+; the intended target by ordinary fallthrough.
+s_getpc_b64 s[16:17]
+.Lgh_pc_set_anchor\@:
+gh_pc_wait \gfx12
+s_add_u32 s16, s16, .Lgh_pc_set_body\@-.Lgh_pc_set_anchor\@
+s_addc_u32 s17, s17, 0
+gh_pc_poison_high s17, \pc_bits
+gh_pc_wait \gfx12
+s_setpc_b64 s[16:17]
+v_mov_b32 v16, 0xbad00001
+s_branch .Lgh_pc_set_done\@
+.Lgh_pc_set_body\@:
+v_mov_b32 v16, 0x13579bdf
+.Lgh_pc_set_done\@:
+fold_results
+clear_results
+
+; Nonaliasing SWAPPC must export precisely its following instruction's PC.
+; Its return value is consumed by SETPC and by independent label differences.
+s_getpc_b64 s[16:17]
+.Lgh_pc_swap_anchor\@:
+gh_pc_wait \gfx12
+s_add_u32 s22, s16, .Lgh_pc_swap_return\@-.Lgh_pc_swap_anchor\@
+s_addc_u32 s23, s17, 0
+s_add_u32 s16, s16, .Lgh_pc_swap_body\@-.Lgh_pc_swap_anchor\@
+s_addc_u32 s17, s17, 0
+gh_pc_poison_high s17, \pc_bits
+s_mov_b32 s20, 0
+gh_pc_wait \gfx12
+s_swappc_b64 s[18:19], s[16:17]
+.Lgh_pc_swap_return\@:
+gh_pc_wait \gfx12
+s_add_u32 s20, s20, 17
+s_branch .Lgh_pc_swap_done\@
+.Lgh_pc_swap_body\@:
+gh_pc_wait \gfx12
+s_add_u32 s20, s20, 3
+gh_pc_wait \gfx12
+s_setpc_b64 s[18:19]
+.Lgh_pc_swap_done\@:
+s_xor_b32 s21, s18, s22
+s_xor_b32 s22, s19, s23
+gh_pc_wait \gfx12
+v_mov_b32 v16, s20
+v_mov_b32 v17, s21
+v_mov_b32 v18, s22
+fold_results
+clear_results
+
+; Aliased SWAPPC must read its target before overwriting the same pair with
+; the return PC. SETPC then consumes that overwritten pair.
+s_getpc_b64 s[16:17]
+.Lgh_pc_alias_anchor\@:
+gh_pc_wait \gfx12
+s_add_u32 s18, s16, .Lgh_pc_alias_return\@-.Lgh_pc_alias_anchor\@
+s_addc_u32 s19, s17, 0
+s_add_u32 s16, s16, .Lgh_pc_alias_body\@-.Lgh_pc_alias_anchor\@
+s_addc_u32 s17, s17, 0
+gh_pc_poison_high s17, \pc_bits
+s_mov_b32 s20, 0
+gh_pc_wait \gfx12
+s_swappc_b64 s[16:17], s[16:17]
+.Lgh_pc_alias_return\@:
+gh_pc_wait \gfx12
+s_add_u32 s20, s20, 29
+s_branch .Lgh_pc_alias_done\@
+.Lgh_pc_alias_body\@:
+gh_pc_wait \gfx12
+s_add_u32 s20, s20, 7
+gh_pc_wait \gfx12
+s_setpc_b64 s[16:17]
+.Lgh_pc_alias_done\@:
+s_xor_b32 s21, s16, s18
+s_xor_b32 s22, s17, s19
+gh_pc_wait \gfx12
+v_mov_b32 v16, s20
+v_mov_b32 v17, s21
+v_mov_b32 v18, s22
+fold_results
+clear_results
+
+; CALL's exported pair controls the return. A comparison against a separately
+; constructed label address supplies an observable fallback for a bad export.
+s_getpc_b64 s[16:17]
+.Lgh_pc_call_anchor\@:
+gh_pc_wait \gfx12
+s_add_u32 s16, s16, .Lgh_pc_call_return\@-.Lgh_pc_call_anchor\@
+s_addc_u32 s17, s17, 0
+s_mov_b32 s20, 0
+gh_pc_wait \gfx12
+s_call_b64 s[18:19], .Lgh_pc_call_body\@
+.Lgh_pc_call_return\@:
+gh_pc_wait \gfx12
+s_add_u32 s20, s20, 43
+s_branch .Lgh_pc_call_done\@
+.Lgh_pc_call_body\@:
+gh_pc_wait \gfx12
+s_cmp_eq_u64 s[16:17], s[18:19]
+s_cbranch_scc0 .Lgh_pc_call_bad\@
+s_add_u32 s20, s20, 11
+gh_pc_wait \gfx12
+s_setpc_b64 s[18:19]
+.Lgh_pc_call_bad\@:
+s_mov_b32 s20, 0xbad00002
+gh_pc_wait \gfx12
+s_setpc_b64 s[16:17]
+.Lgh_pc_call_done\@:
+s_xor_b32 s21, s16, s18
+s_xor_b32 s22, s17, s19
+gh_pc_wait \gfx12
+v_mov_b32 v16, s20
+v_mov_b32 v17, s21
+v_mov_b32 v18, s22
+
+.if \cdna_fork
+fold_results
+clear_results
+; CSP4 uses scratch s16:s19 for the saved EXEC/PC, preserving kernel SGPRs.
+; Comparisons exercise both uniform outcomes, both smaller-side orders and an
+; empty EXEC. The indirect target carries ignored upper bits; a divergent JOIN
+; must consume the saved alternative PC.
+s_getreg_b32 s22, hwreg(HW_REG_MODE, 29, 3)
+s_nop 1
+.irp compare,0x00000000,0x00000005,0xfffffffa,0xffffffff,0xeeeeeeee
+s_mov_b32 s23, 4
+s_setreg_b32 hwreg(HW_REG_MODE, 29, 3), s23
+s_nop 1
+s_getpc_b64 s[20:21]
+.Lgh_pc_fork_anchor\@\compare:
+s_add_u32 s20, s20, .Lgh_pc_fork_then\@\compare-.Lgh_pc_fork_anchor\@\compare
+s_addc_u32 s21, s21, 0
+gh_pc_poison_high s21, 48
+s_mov_b32 vcc_lo, \compare
+.if (\compare == 0x00000000) || (\compare == 0x00000005)
+s_mov_b32 vcc_hi, 0
+.else
+s_mov_b32 vcc_hi, -1
+.endif
+s_nop 1
+.if \compare == 0xeeeeeeee
+s_mov_b64 exec, 0
+.endif
+s_cbranch_g_fork vcc, s[20:21]
+v_mov_b32 v16, 2
+s_branch .Lgh_pc_fork_join\@\compare
+.Lgh_pc_fork_then\@\compare:
+v_mov_b32 v16, 1
+.Lgh_pc_fork_join\@\compare:
+s_cbranch_join s23
+s_mov_b64 exec, -1
+v_xor_b32 v17, 0x55aa55aa, v16
+fold_results
+clear_results
+.endr
+s_setreg_b32 hwreg(HW_REG_MODE, 29, 3), s22
+s_nop 1
+v_mov_b32 v16, 0x50434353
+.endif
+gh_pc_full_exec \wave_size
+.endm
+
+; Memory corner probes for the existing Guitar Hero checkpoints.
+; Inputs: s14:s15 = this workgroup's 4096-byte workspace, v0 = local id.
+; Clobbers: s16:s23, v16:v31, v54:v57, SCC and VCC. EXEC exits full.
+; Every intermediate result is folded before its registers are reused.
+; A wave owns 64 workspace bytes at readfirstlane(v0)*64, so the two wave32s
+; never share a location. Each memory probe selects just lane zero of its wave.
+
+; Reject mixed operand/memory target tokens before emitting raw encodings.
+.macro gh_corner_validate arch
+.ifnc \arch,cdna4
+.error "unsupported memory corner architecture"
+.endif
+.endm
+
+.macro gh_corner_exec arch, wave_size, mask
+gh_corner_validate \arch
+.if \wave_size == 64
+s_mov_b64 exec, \mask
+.else
+s_mov_b32 exec_lo, \mask
+.endif
+.endm
+
+.macro gh_corner_salu_wait arch
+gh_corner_validate \arch
+.ifc \arch,rdna4
+s_wait_alu 0xfffe
+.else
+.ifc \arch,cdna5
+s_wait_alu 0xfffe
+.endif
+.endif
+.endm
+
+.macro gh_corner_memory_wait arch
+gh_corner_validate \arch
+.ifc \arch,cdna4
+s_waitcnt 0
+.else
+.ifc \arch,rdna3
+s_waitcnt vmcnt(0)
+s_waitcnt_vscnt null, 0
+.else
+s_wait_loadcnt 0
+s_wait_storecnt 0
+.endif
+.endif
+.endm
+
+.macro gh_corner_memory_base arch, wave_size
+gh_corner_validate \arch
+gh_corner_exec \arch, \wave_size, -1
+v_readfirstlane_b32 s21, v0
+.ifc \arch,cdna4
+s_nop 7
+.else
+.ifc \arch,rdna3
+s_waitcnt_depctr 0
+.else
+s_wait_alu 0xf1ff
+.endif
+.endif
+s_lshl_b32 s21, s21, 6
+gh_corner_salu_wait \arch
+s_add_u32 s22, s14, s21
+s_addc_u32 s23, s15, 0
+gh_corner_salu_wait \arch
+.endm
+
+.macro gh_corner_global_load arch, destination, address, offset=0
+gh_corner_validate \arch
+.ifc \arch,cdna4
+global_load_dword \destination, \address, s[22:23] offset:\offset
+.else
+global_load_b32 \destination, \address, s[22:23] offset:\offset
+.endif
+.endm
+
+.macro gh_corner_global_load128 arch, destination, address, offset=0
+gh_corner_validate \arch
+.ifc \arch,cdna4
+global_load_dwordx4 \destination, \address, s[22:23] offset:\offset
+.else
+global_load_b128 \destination, \address, s[22:23] offset:\offset
+.endif
+.endm
+
+.macro gh_corner_global_store128 arch, source, address, offset=0
+gh_corner_validate \arch
+.ifc \arch,cdna4
+global_store_dwordx4 \address, \source, s[22:23] offset:\offset
+.else
+global_store_b128 \address, \source, s[22:23] offset:\offset
+.endif
+.endm
+
+.macro gh_corner_memory_initialize arch, wave_size
+gh_corner_validate \arch
+gh_corner_exec \arch, \wave_size, -1
+clear_results
+v_mov_b32 v24, 0x10203004
+v_mov_b32 v25, 0x21314108
+v_mov_b32 v26, 0x3242520c
+v_mov_b32 v27, 0x43536300
+v_mov_b32 v54, 0
+gh_corner_exec \arch, \wave_size, 1
+gh_corner_global_store128 \arch, v[24:27], v54, 0
+gh_corner_global_store128 \arch, v[24:27], v54, 16
+gh_corner_global_store128 \arch, v[24:27], v54, 32
+gh_corner_global_store128 \arch, v[24:27], v54, 48
+gh_corner_memory_wait \arch
+.endm
+
+.macro gh_corner_buffer_descriptor arch, bound, stride=0
+gh_corner_validate \arch
+s_mov_b32 s16, s22
+.ifc \arch,cdna5
+; CDNA5: 57-bit base, 45-bit byte count, stride in DWORD 3.
+s_and_b32 s17, s23, 0x01ffffff
+gh_corner_salu_wait \arch
+s_or_b32 s17, s17, ((\bound & 127) << 25)
+s_mov_b32 s18, (\bound >> 7)
+s_mov_b32 s19, (\stride << 12)
+.else
+; The older descriptors retain a 48-bit base and a separate count DWORD.
+s_and_b32 s17, s23, 0xffff
+gh_corner_salu_wait \arch
+s_or_b32 s17, s17, (\stride << 16)
+s_mov_b32 s18, \bound
+.ifc \arch,cdna4
+s_mov_b32 s19, 0x00027fac
+.else
+s_mov_b32 s19, 0x30020fac
+.endif
+.endif
+gh_corner_salu_wait \arch
+.endm
+
+.macro gh_corner_buffer_issue opcode, data, kind
+.if \kind == 1
+\opcode \data, v54, s[16:19], s20 offen offset:12
+.elseif \kind == 3
+\opcode \data, v[54:55], s[16:19], s20 idxen offen
+.else
+\opcode \data, v54, s[16:19], s20 offen
+.endif
+.endm
+
+.macro gh_corner_buffer_load arch, width, kind
+gh_corner_validate \arch
+.ifc \arch,cdna4
+.if \width == 64
+gh_corner_buffer_issue buffer_load_dwordx2, v[16:17], \kind
+.elseif \width == 96
+gh_corner_buffer_issue buffer_load_dwordx3, v[16:18], \kind
+.else
+gh_corner_buffer_issue buffer_load_dwordx4, v[16:19], \kind
+.endif
+.else
+.if \width == 64
+gh_corner_buffer_issue buffer_load_b64, v[16:17], \kind
+.elseif \width == 96
+gh_corner_buffer_issue buffer_load_b96, v[16:18], \kind
+.else
+gh_corner_buffer_issue buffer_load_b128, v[16:19], \kind
+.endif
+.endif
+.endm
+
+.macro gh_corner_buffer_store arch, width, kind
+gh_corner_validate \arch
+.ifc \arch,cdna4
+.if \width == 64
+gh_corner_buffer_issue buffer_store_dwordx2, v[24:25], \kind
+.elseif \width == 96
+gh_corner_buffer_issue buffer_store_dwordx3, v[24:26], \kind
+.else
+gh_corner_buffer_issue buffer_store_dwordx4, v[24:27], \kind
+.endif
+.else
+.if \width == 64
+gh_corner_buffer_issue buffer_store_b64, v[24:25], \kind
+.elseif \width == 96
+gh_corner_buffer_issue buffer_store_b96, v[24:26], \kind
+.else
+gh_corner_buffer_issue buffer_store_b128, v[24:27], \kind
+.endif
+.endif
+.endm
+
+.macro gh_corner_buffer_case arch, wave_size, width, remaining, kind
+gh_corner_validate \arch
+gh_corner_memory_initialize \arch, \wave_size
+.if \kind == 1
+; Exercise nonzero SOFFSET, VOFFSET and immediate together. On gfx950 the
+; simulator includes SOFFSET/end-of-DWORD bounds, while the CDNA3/4 manuals
+; describe a start-offset check excluding SOFFSET. No gfx950 capture here.
+gh_corner_buffer_descriptor \arch, (24 + \remaining)
+s_mov_b32 s20, 4
+v_mov_b32 v54, 8
+.elseif \kind == 3
+; IDXEN retains ordinary per-DWORD bounds on CDNA5: index 1, stride 16,
+; SOFFSET 4 and VOFFSET 0 address byte 20 of the backing allocation.
+gh_corner_buffer_descriptor \arch, (20 + \remaining), 16
+s_mov_b32 s20, 4
+v_mov_b32 v54, 1
+v_mov_b32 v55, 0
+.else
+.if \kind == 2
+; A nonzero descriptor stride alone does not make a raw access structured.
+gh_corner_buffer_descriptor \arch, \remaining, 16
+.else
+gh_corner_buffer_descriptor \arch, \remaining
+.endif
+s_mov_b32 s20, 0
+v_mov_b32 v54, 0
+.endif
+gh_corner_salu_wait \arch
+gh_corner_buffer_load \arch, \width, \kind
+gh_corner_memory_wait \arch
+; Consume the loaded bits in a second, always-backed memory dependency.
+; Every possible address is an aligned DWORD in bytes 48..60.
+v_xor_b32 v56, 0x10203004, v16
+v_and_b32 v56, 12, v56
+v_add_u32 v56, 48, v56
+gh_corner_global_load \arch, v20, v56
+gh_corner_memory_wait \arch
+gh_corner_exec \arch, \wave_size, -1
+fold_results
+gh_corner_exec \arch, \wave_size, 1
+; A load -> arithmetic -> bounded store -> unbounded read chain exposes both
+; zero filling and suppressed stores without letting one hide the other.
+v_xor_b32 v24, 0x01010101, v16
+v_xor_b32 v25, 0x02020202, v17
+v_xor_b32 v26, 0x03030303, v18
+v_xor_b32 v27, 0x04040404, v19
+gh_corner_buffer_store \arch, \width, \kind
+gh_corner_memory_wait \arch
+.if \kind == 1
+v_mov_b32 v56, 24
+.elseif \kind == 3
+v_mov_b32 v56, 20
+.else
+v_mov_b32 v56, 0
+.endif
+gh_corner_global_load128 \arch, v[28:31], v56
+gh_corner_memory_wait \arch
+gh_corner_exec \arch, \wave_size, -1
+fold_results
+.endm
+
+.macro gh_corner_buffer_bounds arch, wave_size
+gh_corner_validate \arch
+gh_corner_memory_base \arch, \wave_size
+; Raw B64/B96/B128 cover every residual byte through 20, including exact
+; fits and the byte immediately before/after each DWORD and payload boundary.
+; CDNA5's raw extra-DWORD crossing rule was exposed by Triton PR 12512 for
+; aligned B128 with 4/8 bytes left and whole fits. Other widths and byte
+; boundaries remain model qualifications, rather than physical measurements.
+; gfx950's SOFFSET participation/end-of-DWORD behavior also follows the
+; simulator's hardware claim, not the CDNA3/4 manual rule; it is unmeasured here.
+.irp width,64,96,128
+.irp remaining,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20
+gh_corner_buffer_case \arch, \wave_size, \width, \remaining, 0
+gh_corner_buffer_case \arch, \wave_size, \width, \remaining, 1
+gh_corner_buffer_case \arch, \wave_size, \width, \remaining, 2
+.ifc \arch,cdna5
+gh_corner_buffer_case \arch, \wave_size, \width, \remaining, 3
+.endif
+.endr
+.endr
+.endm
+
+.macro gh_corner_cdna_global_case offset
+gh_corner_memory_initialize cdna4, 64
+; Modular 64-bit compensation makes the final address the same backed word
+; for every unsigned VGPR32 offset, independently of the allocation's address.
+s_sub_u32 s16, s22, \offset
+s_subb_u32 s17, s23, 0
+v_mov_b32 v54, \offset
+global_load_dword v16, v54, s[16:17]
+s_waitcnt 0
+; Load -> arithmetic -> compensated store -> ordinary read, all at byte zero.
+v_xor_b32 v24, 0x01010101, v16
+global_store_dword v54, v24, s[16:17]
+s_waitcnt 0
+v_mov_b32 v55, 0
+global_load_dword v20, v55, s[22:23]
+s_waitcnt 0
+gh_corner_exec cdna4, 64, -1
+fold_results
+.endm
+
+.macro gh_corner_cdna_global_offsets
+gh_corner_memory_base cdna4, 64
+gh_corner_cdna_global_case 0
+gh_corner_cdna_global_case 0x7fffffff
+gh_corner_cdna_global_case 0x80000000
+gh_corner_cdna_global_case 0xffffffff
+.endm
+
 .macro clear_results
 .irp r,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
 v_mov_b32 v\r, 0
@@ -3227,6 +4083,8 @@ sweep_inputs int
 v_mov_b32 v30, 0xa5a5a5a5
 v_alignbyte_b32_e64 v30, v8, v9, v10
 region_end 101
+gh_corner_vector16 94
+gh_corner_b16 94
 checkpoint 101
 
 ; Checkpoint 102: vop3_plain_01
@@ -6763,6 +7621,7 @@ s_waitcnt 0
 checkpoint 201
 
 ; Checkpoint 202: global_operations_17
+gh_corner_cdna_global_offsets
 clear_results
 global_store_dwordx4 v53, v[8:11], s[14:15]
 s_waitcnt 0
@@ -7927,6 +8786,7 @@ s_mov_b32 s26, 4096
 s_mov_b32 s27, 0x00027fac
 s_mov_b32 s28, 0
 ; Checkpoint 238: buffer_operations_00
+gh_corner_buffer_bounds cdna4, 64
 clear_results
 global_store_dwordx4 v53, v[8:11], s[14:15]
 s_waitcnt 0
@@ -9102,6 +9962,7 @@ v_mov_b32 v28, s16
 v_mov_b32 v29, s17
 v_mov_b32 v30, s22
 mask_result v31, s21, s56
+gh_corner_raw_scalar 94
 checkpoint 266
 
 ; Checkpoint 267: scalar_sop1_10
@@ -11648,6 +12509,7 @@ s_setreg_imm32_b32 hwreg(HW_REG_MODE, 4, 4), 15
 s_nop 1
 s_getreg_b32 s17, hwreg(HW_REG_MODE, 0, 8)
 v_mov_b32 v21, s17
+gh_pc_corners 48, 64, 0, 1
 checkpoint 324
 
 ; CDNA matrix instructions use a converged wave. Conservative NOPs cover
@@ -33530,6 +34392,7 @@ v_cvt_f32_bf16 v64, 0x8000
 s_nop 7
 v_mov_b32 v16, v64
 region_end 709
+gh_corner_bf16 94
 checkpoint 709
 
 ; Checkpoint 710: cvt_f32_bf16_e64_cdna4
