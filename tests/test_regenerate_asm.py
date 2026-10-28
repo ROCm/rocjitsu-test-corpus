@@ -503,9 +503,9 @@ def test_portable_case_builds_for_every_corpus_target(
 # --- Header preflight ignores the environment's include paths ------------------
 #
 # The compile does not inherit CPATH, CPLUS_INCLUDE_PATH or C_INCLUDE_PATH (see
-# "Only recorded inputs reach the compiler"), so the preflight does not search
-# them either: a header available only through one of them is missing, and its
-# case is skipped. Headers outside the SDK come through --cxxflags -I.
+# "Only recorded inputs reach the compiler"), so the preflight does not check
+# them for headers either: a header available only through one of them is
+# missing, and its case is skipped. Headers outside the SDK come through --cxxflags -I.
 
 
 def header_dir(tmp_path: Path) -> Path:
@@ -516,7 +516,7 @@ def header_dir(tmp_path: Path) -> Path:
 
 
 @pytest.mark.parametrize("variable", ["CPATH", "CPLUS_INCLUDE_PATH", "C_INCLUDE_PATH"])
-def test_environment_include_path_is_not_searched(
+def test_environment_include_path_is_not_checked_for_headers(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     pinned: Path,
@@ -602,7 +602,7 @@ def test_header_under_the_sysroot_is_found(
     assert "s_endpgm" in pinned.read_text()
 
 
-def test_overridden_sysroot_is_not_searched(
+def test_overridden_sysroot_is_not_checked_for_headers(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, pinned: Path, kernel: Path
 ) -> None:
     # Only --sysroot has the header, but -isysroot overrides it for headers.
@@ -1261,7 +1261,7 @@ def test_relative_include_flags_are_made_absolute(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("flag", regen._INCLUDE_DIR_FLAGS)
-def test_every_include_directory_flag_is_searched_and_made_absolute(
+def test_every_include_directory_flag_is_collected_and_made_absolute(
     tmp_path: Path, flag: str
 ) -> None:
     base = tmp_path / "caller"
@@ -1271,7 +1271,7 @@ def test_every_include_directory_flag_is_searched_and_made_absolute(
 
 
 def test_forced_include_file_is_not_an_include_directory(tmp_path: Path) -> None:
-    # A forced include names a file, not a directory to search for headers.
+    # A forced include names a file, not an include directory.
     base = tmp_path / "caller"
     write_header(base / "pre.h")
     flags = ["-include", "pre.h"]
