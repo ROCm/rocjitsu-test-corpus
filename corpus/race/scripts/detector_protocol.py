@@ -40,11 +40,11 @@ REPORT_SCHEMA = 1
 RESOURCES = frozenset(
     {
         "global",  # device-visible memory
-        "lds",     # workgroup-shared local data share
-        "scratch", # per-thread private memory
-        "vgpr",    # vector register
-        "agpr",    # accumulation vector register
-        "sgpr",    # scalar register
+        "lds",  # workgroup-shared local data share
+        "scratch",  # per-thread private memory
+        "vgpr",  # vector register
+        "agpr",  # accumulation vector register
+        "sgpr",  # scalar register
     }
 )
 
@@ -54,7 +54,7 @@ HAZARD_KINDS = frozenset(
         "RAW",
         "WAR",
         "WAW",
-        "LocalMemoryRace",   # cross-wave race on LDS
+        "LocalMemoryRace",  # cross-wave race on LDS
         "GlobalMemoryRace",  # cross-workgroup race on global memory
     }
 )
@@ -163,7 +163,9 @@ class Detector(Protocol):
     supports: frozenset[tuple[str, str]]  # (resource, hazard_kind) pairs
     needs_execution: bool
 
-    def detect(self, artifacts: MutantArtifacts, run_wrapper: str | None) -> Detection: ...
+    def detect(
+        self, artifacts: MutantArtifacts, run_wrapper: str | None
+    ) -> Detection: ...
 
 
 # --- Capability scoping ------------------------------------------------------
@@ -305,7 +307,6 @@ class RunReport:
             )
             + "\n"
         )
-
 
 
 def load_report(path: Path) -> Mapping[str, Any]:

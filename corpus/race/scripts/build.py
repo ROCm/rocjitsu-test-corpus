@@ -52,7 +52,7 @@ class BuildError(RuntimeError):
 
 
 def rocm_path() -> Path:
-    if (explicit := os.environ.get("ROCM_PATH") is not None):
+    if (explicit := os.environ.get("ROCM_PATH")) is not None:
         return Path(explicit)
     if shutil.which("rocm-sdk"):
         proc = subprocess.run(
@@ -103,7 +103,9 @@ def resolve_toolchain() -> Toolchain:
 
 
 def _run(argv: list[str], step: str) -> subprocess.CompletedProcess:
-    proc = subprocess.run(argv, capture_output=True, text=True, errors="replace", check=False)
+    proc = subprocess.run(
+        argv, capture_output=True, text=True, errors="replace", check=False
+    )
     if proc.returncode != 0:
         raise BuildError(f"{step} failed:\n  {' '.join(argv)}\n{proc.stderr.strip()}")
     return proc
@@ -139,7 +141,9 @@ def compile_host_object(
 # --- Per-mutant steps --------------------------------------------------------
 
 
-def assemble_device_object(asm: Path, target: str, out: Path, *, tools: Toolchain) -> Path:
+def assemble_device_object(
+    asm: Path, target: str, out: Path, *, tools: Toolchain
+) -> Path:
     """Assemble the (possibly mutated) device assembly into a code object."""
     out.parent.mkdir(parents=True, exist_ok=True)
     _run(
@@ -157,7 +161,9 @@ def assemble_device_object(asm: Path, target: str, out: Path, *, tools: Toolchai
     return out
 
 
-def create_offload_bundle(device_obj: Path, target: str, out: Path, *, tools: Toolchain) -> Path:
+def create_offload_bundle(
+    device_obj: Path, target: str, out: Path, *, tools: Toolchain
+) -> Path:
     targets = f"host-x86_64-unknown-linux-gnu,hipv4-amdgcn-amd-amdhsa--{target}"
     _run(
         [
@@ -180,21 +186,25 @@ def fatbin_symbol(host_obj: Path, *, tools: Toolchain) -> str:
 
     Not always plain ``__hip_fatbin``: the runtime may suffix it, and embedding
     under the wrong name links cleanly but leaves the device code unreachable,
-    so the kernel silently does nothing.
+    so the kernel silently does nothing. So there is no default: raises
+    BuildError if llvm-nm fails or names no such symbol.
     """
-    proc = subprocess.run(
-        [str(tools.llvm_nm), str(host_obj)], capture_output=True, text=True, check=False
+    proc = _run(
+        [str(tools.llvm_nm), str(host_obj)], f"reading symbols of {host_obj.name}"
     )
-    if proc.returncode != 0:
-        proc = subprocess.run(["nm", str(host_obj)], capture_output=True, text=True, check=False)
     for line in proc.stdout.splitlines():
         match = re.search(r"\b(__hip_fatbin\w*)\b", line)
         if match and "wrapper" not in match.group(1):
             return match.group(1)
-    return "__hip_fatbin"
+    raise BuildError(
+        f"{host_obj.name} has no __hip_fatbin symbol to embed the device code "
+        f"under; llvm-nm printed:\n{proc.stdout.strip() or '(nothing)'}"
+    )
 
 
-def embed_fatbin(bundle: Path, symbol: str, workdir: Path, out: Path, *, tools: Toolchain) -> Path:
+def embed_fatbin(
+    bundle: Path, symbol: str, workdir: Path, out: Path, *, tools: Toolchain
+) -> Path:
     """Wrap the bundle in a host object via ``.incbin`` under *symbol*."""
     mcin = workdir / "hip_obj_gen.mcin"
     mcin.write_text(
@@ -220,13 +230,26 @@ def embed_fatbin(bundle: Path, symbol: str, workdir: Path, out: Path, *, tools: 
     return out
 
 
-def link_executable(host_obj: Path, fatbin_obj: Path, out: Path, *, tools: Toolchain) -> Path:
+_OLD_DRIVER_FLAG = "--no-offload-new-driver"
+
+# How the compiler driver reports an option it does not know, e.g. clang's
+# "unknown argument: '--no-offload-new-driver'".
+_REJECTED_FLAG_RE = re.compile(
+    r"(unknown argument|unsupported option|unrecognized (command[- ]line )?option)"
+    rf"[^\n]*{re.escape(_OLD_DRIVER_FLAG)}"
+)
+
+
+def link_executable(
+    host_obj: Path, fatbin_obj: Path, out: Path, *, tools: Toolchain
+) -> Path:
     """
     Link host and fatbin objects.
 
     ``--no-offload-new-driver`` keeps hipcc from re-processing the device code
-    that was just hand-assembled, which would discard the mutation. Older hipcc
-    does not accept the flag, hence the fallback.
+    that was just hand-assembled, which would discard the mutation. Only a hipcc
+    that rejects the flag itself, as older ones do, is retried without it. Any
+    other link failure raises BuildError with its own diagnostic.
     """
     common = [
         "-o",
@@ -237,24 +260,24 @@ def link_executable(host_obj: Path, fatbin_obj: Path, out: Path, *, tools: Toolc
         f"-L{tools.root}/lib",
         f"-Wl,-rpath,{tools.root}/lib",
     ]
-    proc = subprocess.run(
-        [str(tools.hipcc), "--no-offload-new-driver", *common],
-        capture_output=True,
-        text=True,
-        errors="replace",
-        check=False,
-    )
-    if proc.returncode != 0:
-        proc = subprocess.run(
-            [str(tools.hipcc), *common],
-            capture_output=True,
-            text=True,
-            errors="replace",
-            check=False,
-        )
-    if proc.returncode != 0:
+    proc = _link([str(tools.hipcc), _OLD_DRIVER_FLAG, *common])
+    if proc.returncode == 0:
+        return out
+    if not _REJECTED_FLAG_RE.search(proc.stderr):
         raise BuildError(f"linking {out.name} failed:\n{proc.stderr.strip()}")
+    retry = _link([str(tools.hipcc), *common])
+    if retry.returncode != 0:
+        raise BuildError(
+            f"linking {out.name} failed, retried without {_OLD_DRIVER_FLAG}, which "
+            f"hipcc rejected:\n{retry.stderr.strip()}"
+        )
     return out
+
+
+def _link(argv: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        argv, capture_output=True, text=True, errors="replace", check=False
+    )
 
 
 @dataclass(frozen=True)
@@ -284,11 +307,15 @@ def build_from_asm(
     workdir.mkdir(parents=True, exist_ok=True)
     stem = asm.stem
 
-    device_obj = assemble_device_object(asm, target, workdir / f"{stem}_dev.o", tools=tools)
+    device_obj = assemble_device_object(
+        asm, target, workdir / f"{stem}_dev.o", tools=tools
+    )
     if not link:
         return BuiltMutant(asm=asm, code_object=device_obj, executable=None)  # type: ignore[arg-type]
 
-    bundle = create_offload_bundle(device_obj, target, workdir / f"{stem}.hipfb", tools=tools)
+    bundle = create_offload_bundle(
+        device_obj, target, workdir / f"{stem}.hipfb", tools=tools
+    )
     symbol = fatbin_symbol(host_obj, tools=tools)
     fatbin_obj = embed_fatbin(
         bundle, symbol, workdir, workdir / f"{stem}_fatbin.o", tools=tools

@@ -137,7 +137,7 @@ _MEMORY_SITE_RESOURCE = (
 
 def _counter_family(site: "mutate.WaitSite") -> str:
     """Which counter the wait drains, from the mnemonic or the legacy operand."""
-    if (split := _SPLIT_COUNTER.get(site.mnemonic)):
+    if split := _SPLIT_COUNTER.get(site.mnemonic):
         return split
     operand = site.full_line
     has_lgkm = "lgkmcnt" in operand
@@ -151,7 +151,9 @@ def _counter_family(site: "mutate.WaitSite") -> str:
     return "unknown"
 
 
-def _nearest_inflight(lines: list[str], line_number: int, families: tuple[str, ...]) -> str | None:
+def _nearest_inflight(
+    lines: list[str], line_number: int, families: tuple[str, ...]
+) -> str | None:
     """
     Resource of the nearest preceding operation this wait could be draining.
 
@@ -201,7 +203,7 @@ def derive_resource(case: Case, site, lines: list[str]) -> str:
                 return resource
         raise SystemExit(
             f"{case.id}: memory site {site.ordinal} ({site.load_mnemonic}) does not say "
-            f"which memory it touches; pin it with resource = \"...\" in cases.toml"
+            f'which memory it touches; pin it with resource = "..." in cases.toml'
         )
 
     family = _counter_family(site)
@@ -221,7 +223,7 @@ def derive_resource(case: Case, site, lines: list[str]) -> str:
         raise SystemExit(
             f"{case.id}: cannot tell what wait {site.ordinal} ({site.full_line.strip()}) "
             f"guards: no scalar, DS or vector memory operation within the "
-            f"{_INFLIGHT_SCAN_LINES} lines before it. Pin it with resource = \"...\" "
+            f'{_INFLIGHT_SCAN_LINES} lines before it. Pin it with resource = "..." '
             f"in cases.toml."
         )
     return "vgpr"
@@ -376,7 +378,9 @@ def generate(targets: list[str]) -> list[dict]:
                         "hazard": hazard,
                         "site": label,
                     }
-                    if (exemption := case.exemption_for(kind, site.ordinal)) is not None:
+                    if (
+                        exemption := case.exemption_for(kind, site.ordinal)
+                    ) is not None:
                         # Verified now rather than at run time: if codegen moved
                         # this ordinal onto a different instruction, the
                         # exemption is stale and would silently excuse a site
@@ -437,18 +441,25 @@ def main() -> int:
     args = parser.parse_args()
 
     targets = args.target or _targets_in_asm()
-    print(f"enumerating {', '.join(targets)} from {ASM_DIR.relative_to(CORPUS_ROOT.parent.parent)}")
+    print(
+        f"enumerating {', '.join(targets)} from {ASM_DIR.relative_to(CORPUS_ROOT.parent.parent)}"
+    )
 
     rows = generate(targets)
     if not rows:
-        print("no mutation sites found; refusing to write an empty manifest", file=sys.stderr)
+        print(
+            "no mutation sites found; refusing to write an empty manifest",
+            file=sys.stderr,
+        )
         return 2
 
     rendered = render_manifest(rows, targets)
     if args.check:
         current = MANIFEST_PATH.read_text() if MANIFEST_PATH.is_file() else ""
         if current != rendered:
-            print("mutants.toml is out of date; re-run without --check", file=sys.stderr)
+            print(
+                "mutants.toml is out of date; re-run without --check", file=sys.stderr
+            )
             return 1
         print("mutants.toml is up to date")
         return 0
@@ -457,7 +468,9 @@ def main() -> int:
     kinds = {}
     for row in rows:
         kinds[row["resource"]] = kinds.get(row["resource"], 0) + 1
-    print(f"\nwrote {MANIFEST_PATH.relative_to(CORPUS_ROOT.parent.parent)}: {len(rows)} mutants")
+    print(
+        f"\nwrote {MANIFEST_PATH.relative_to(CORPUS_ROOT.parent.parent)}: {len(rows)} mutants"
+    )
     print(f"  by resource: {kinds}")
     print("\nReview the resource/hazard tags before committing: they are derived,")
     print("and a wrong tag silently moves a case in or out of a detector's scope.")
