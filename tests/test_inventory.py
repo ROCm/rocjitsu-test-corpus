@@ -14,7 +14,7 @@ inventory = import_module("inventory")
 def write_manifest(
     path: Path, body: str, targets: tuple[str, ...] = ("gfx950", "gfx1250")
 ) -> Path:
-    path.write_text(corpus_table(list(targets)) + body)
+    path.write_text(corpus_table(list(targets)) + body, encoding="utf-8")
     return path
 
 
@@ -184,7 +184,9 @@ def test_every_problem_is_reported_at_once(tmp_path: Path) -> None:
 
 def test_unsupported_schema_is_rejected(tmp_path: Path) -> None:
     path = tmp_path / "cases.toml"
-    path.write_text(corpus_table(["gfx950"], schema=inventory.SCHEMA + 1))
+    path.write_text(
+        corpus_table(["gfx950"], schema=inventory.SCHEMA + 1), encoding="utf-8"
+    )
     with pytest.raises(inventory.InventoryError, match="unsupported corpus schema"):
         inventory.load(path)
 
@@ -223,7 +225,7 @@ def test_malformed_file_is_an_inventory_error(
     tmp_path: Path, text: str, problem: str
 ) -> None:
     path = tmp_path / "cases.toml"
-    path.write_text(text)
+    path.write_text(text, encoding="utf-8")
     with pytest.raises(inventory.InventoryError) as error:
         inventory.load(path)
     assert any(problem in reported for reported in error.value.problems)
@@ -231,7 +233,7 @@ def test_malformed_file_is_an_inventory_error(
 
 def test_invalid_toml_keeps_the_parse_error(tmp_path: Path) -> None:
     path = tmp_path / "cases.toml"
-    path.write_text("[corpus\n")
+    path.write_text("[corpus\n", encoding="utf-8")
     with pytest.raises(inventory.InventoryError) as error:
         inventory.load(path)
     assert isinstance(error.value.__cause__, tomllib.TOMLDecodeError)
@@ -306,7 +308,7 @@ def test_both_scripts_report_a_malformed_file(
     problem: str,
 ) -> None:
     path = tmp_path / "cases.toml"
-    path.write_text(text)
+    path.write_text(text, encoding="utf-8")
     checker, regeneration = report_from_both_scripts(path, monkeypatch, capsys)
     assert problem in checker and problem in regeneration
 
@@ -330,7 +332,7 @@ def test_scratch_manifests_use_the_current_schema(
     # schema change updates every scratch manifest with it.
     monkeypatch.setattr(inventory, "SCHEMA", inventory.SCHEMA + 1)
     path = write_manifest(tmp_path / "cases.toml", PORTABLE)
-    assert f"schema = {inventory.SCHEMA}" in path.read_text()
+    assert f"schema = {inventory.SCHEMA}" in path.read_text(encoding="utf-8")
     assert inventory.load(path).cases[0].id == "portable"
 
 

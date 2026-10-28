@@ -426,7 +426,7 @@ def manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Manifest:
     monkeypatch.setattr(regen, "CASES_PATH", path)
 
     def write(targets: list[str] | None, cases: str) -> None:
-        path.write_text(corpus_table(targets) + cases)
+        path.write_text(corpus_table(targets) + cases, encoding="utf-8")
 
     return write
 
@@ -1229,13 +1229,15 @@ def test_misspelled_case_table_leaves_every_pinned_file(
     run, committed = corpus_main
     manifest(["gfx950", "gfx1250"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
-    pinned = {path: path.read_text() for path in committed.rglob("*") if path.is_file()}
+    pinned = {
+        path: path.read_bytes() for path in committed.rglob("*") if path.is_file()
+    }
     manifest(["gfx950", "gfx1250"], PORTABLE_CASE.replace("[[case]]", "[[cases]]"))
     capsys.readouterr()
     assert run() == regen.ExitCode.SETUP_FAILED
     assert "unknown top-level key 'cases'" in capsys.readouterr().err
     assert {
-        path: path.read_text() for path in committed.rglob("*") if path.is_file()
+        path: path.read_bytes() for path in committed.rglob("*") if path.is_file()
     } == pinned
 
 
@@ -1916,7 +1918,9 @@ def test_header_selection_cannot_change_under_the_same_recipe(
 
 
 def read_recipe(committed: Path, target: str) -> dict[str, object]:
-    return tomllib.loads((committed / target / "recipe.toml").read_text())
+    return tomllib.loads(
+        (committed / target / "recipe.toml").read_text(encoding="utf-8")
+    )
 
 
 def set_rocm_release(tmp_path: Path, release: str) -> None:
@@ -1958,9 +1962,9 @@ def test_check_does_not_rewrite_the_committed_recipe(
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
-    before = (committed / "gfx950" / "recipe.toml").read_text()
+    before = (committed / "gfx950" / "recipe.toml").read_text(encoding="utf-8")
     run("--check", "--cxxflags=-DX=1")
-    assert (committed / "gfx950" / "recipe.toml").read_text() == before
+    assert (committed / "gfx950" / "recipe.toml").read_text(encoding="utf-8") == before
 
 
 def test_check_reports_an_unchanged_recipe(
@@ -2034,7 +2038,7 @@ def test_check_reports_an_invalid_committed_recipe(
     run, committed = corpus_main
     manifest(["gfx950"], PORTABLE_CASE)
     commit_fresh_output(run, committed)
-    (committed / "gfx950" / "recipe.toml").write_text(text)
+    (committed / "gfx950" / "recipe.toml").write_text(text, encoding="utf-8")
     capsys.readouterr()
     # The recipe comparison is informational: the assembly still matches.
     assert run("--check") == regen.ExitCode.SUCCESS
@@ -2058,7 +2062,7 @@ def seed_target(committed: Path, target: str, kernels: list[str]) -> None:
     (committed / target).mkdir(parents=True, exist_ok=True)
     for kernel in kernels:
         (committed / target / f"{kernel}.s").write_text(f"old {kernel}\n")
-    (committed / target / "recipe.toml").write_text(GOOD_TEXT)
+    (committed / target / "recipe.toml").write_text(GOOD_TEXT, encoding="utf-8")
 
 
 def assert_untouched(committed: Path, target: str, kernels: list[str]) -> None:

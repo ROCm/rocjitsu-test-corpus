@@ -39,7 +39,9 @@ def corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BuildCorpus:
     monkeypatch.setattr(check_cases, "CASES_PATH", tmp_path / "cases.toml")
 
     def build(targets: list[str] | None, cases: str, asm: list[str]) -> None:
-        (tmp_path / "cases.toml").write_text(corpus_table(targets) + cases)
+        (tmp_path / "cases.toml").write_text(
+            corpus_table(targets) + cases, encoding="utf-8"
+        )
         (tmp_path / "kernels").mkdir(exist_ok=True)
         # The sources of the kernels the cases name, and no others.
         for kernel in re.findall(r'^kernel = "(\w+)"$', cases, flags=re.MULTILINE):
@@ -48,7 +50,9 @@ def corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BuildCorpus:
         for path in asm:
             target, kernel = path.split("/")
             (tmp_path / "asm" / target).mkdir(exist_ok=True)
-            (tmp_path / "asm" / target / "recipe.toml").write_text(GOOD_TEXT)
+            (tmp_path / "asm" / target / "recipe.toml").write_text(
+                GOOD_TEXT, encoding="utf-8"
+            )
             (tmp_path / "asm" / target / f"{kernel}.s").write_text(listing(target))
 
     return build
@@ -81,7 +85,9 @@ def test_target_with_no_listings_passes(
     # more: the target's directory with only its recipe.
     corpus(targets=["gfx950", "gfx1250"], cases=GFX1250_ONLY, asm=["gfx1250/only"])
     (tmp_path / "asm" / "gfx950").mkdir()
-    (tmp_path / "asm" / "gfx950" / "recipe.toml").write_text(GOOD_TEXT)
+    (tmp_path / "asm" / "gfx950" / "recipe.toml").write_text(
+        GOOD_TEXT, encoding="utf-8"
+    )
     code, out = run(capsys)
     assert code == check_cases.ExitCode.SUCCESS, out
 
@@ -177,7 +183,7 @@ def test_manifest_without_targets_is_rejected(
 
 
 def test_committed_manifest_declares_its_targets() -> None:
-    manifest = tomllib.loads((CORPUS_DIR / "cases.toml").read_text())
+    manifest = tomllib.loads((CORPUS_DIR / "cases.toml").read_text(encoding="utf-8"))
     assert manifest["corpus"]["targets"] == ["gfx950", "gfx1250"]
 
 
@@ -407,7 +413,7 @@ def test_invalid_recipe_is_reported_as_the_shared_loader_reports_it(
     problem: str,
 ) -> None:
     corpus(targets=["gfx950"], cases=PORTABLE, asm=["gfx950/portable"])
-    (tmp_path / "asm" / "gfx950" / "recipe.toml").write_text(text)
+    (tmp_path / "asm" / "gfx950" / "recipe.toml").write_text(text, encoding="utf-8")
     code, out = run(capsys)
     assert code == check_cases.ExitCode.PROBLEMS_FOUND
     assert f"asm/gfx950/recipe.toml: {problem}" in out

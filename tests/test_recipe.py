@@ -52,7 +52,7 @@ BAD_RECIPES = {
 
 def test_dumps_and_load_round_trip(tmp_path: Path) -> None:
     path = tmp_path / recipe.FILE_NAME
-    path.write_text(GOOD_TEXT)
+    path.write_text(GOOD_TEXT, encoding="utf-8")
     assert recipe.load(path) == GOOD
 
 
@@ -60,7 +60,7 @@ def test_unknown_build_round_trips(tmp_path: Path) -> None:
     # An SDK whose build cannot be found is recorded as such, not as its release.
     release_only = dataclasses.replace(GOOD, rocm_build=recipe.UNKNOWN)
     path = tmp_path / recipe.FILE_NAME
-    path.write_text(recipe.dumps(release_only))
+    path.write_text(recipe.dumps(release_only), encoding="utf-8")
     assert recipe.load(path) == release_only
 
 
@@ -71,7 +71,7 @@ def test_absent_recipe_loads_as_none(tmp_path: Path) -> None:
 @pytest.mark.parametrize("text, problem", BAD_RECIPES.values(), ids=BAD_RECIPES.keys())
 def test_invalid_recipe_is_rejected(tmp_path: Path, text: str, problem: str) -> None:
     path = tmp_path / recipe.FILE_NAME
-    path.write_text(text)
+    path.write_text(text, encoding="utf-8")
     with pytest.raises(recipe.RecipeError) as error:
         recipe.load(path)
     assert any(problem in reported for reported in error.value.problems)
@@ -79,7 +79,7 @@ def test_invalid_recipe_is_rejected(tmp_path: Path, text: str, problem: str) -> 
 
 def test_every_problem_is_reported_at_once(tmp_path: Path) -> None:
     path = tmp_path / recipe.FILE_NAME
-    path.write_text('compiler = ""\nflags = "-O3"\n')
+    path.write_text('compiler = ""\nflags = "-O3"\n', encoding="utf-8")
     with pytest.raises(recipe.RecipeError) as error:
         recipe.load(path)
     # An empty compiler, three missing toolchain fields, and bad flags.
@@ -115,7 +115,7 @@ def test_invalid_toml_keeps_the_parse_error(tmp_path: Path) -> None:
     # As for the inventory: the parser's error is the cause, and its
     # diagnostic is in the problem.
     path = tmp_path / recipe.FILE_NAME
-    path.write_text("compiler = \n")
+    path.write_text("compiler = \n", encoding="utf-8")
     with pytest.raises(recipe.RecipeError) as error:
         recipe.load(path)
     assert isinstance(error.value.__cause__, tomllib.TOMLDecodeError)
