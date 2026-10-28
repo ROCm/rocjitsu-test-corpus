@@ -2698,3 +2698,36 @@ def test_real_compiler_regeneration_then_check_matches(
     assert run(*cxxflags) == regen.ExitCode.SUCCESS
     assert (committed / "gfx950" / "kernel.s").is_file()
     assert run("--check", *cxxflags) == regen.ExitCode.SUCCESS
+
+
+# --- Paths outside the Basic Multilingual Plane --------------------------------------
+
+
+def test_include_path_outside_the_bmp_is_recorded_and_readable(
+    manifest: Manifest, corpus_main: CorpusMain, tmp_path: Path
+) -> None:
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    include = tmp_path / "include-\U00020bb7"
+    include.mkdir()
+    assert run(f"--cxxflags=-I{include}") == regen.ExitCode.SUCCESS
+    recorded = regen.recipe.load(committed / "gfx950" / "recipe.toml")
+    assert recorded.flags[-1] == f"-I{include}"
+
+
+def test_path_that_cannot_be_recorded_is_a_usage_error(
+    manifest: Manifest,
+    corpus_main: CorpusMain,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # A path the shell passed as bytes that are not UTF-8.
+    run, committed = corpus_main
+    manifest(["gfx950"], PORTABLE_CASE)
+    with pytest.raises(SystemExit) as exit_info:
+        run("--cxxflags=-I/abs/\udcff")
+    # argparse's own status for a usage error, not an ExitCode.
+    assert exit_info.value.code == 2
+    assert "cannot be recorded in recipe.toml" in capsys.readouterr().err
+    assert compiler_invocations(tmp_path) == []
+    assert not (committed / "gfx950").exists()

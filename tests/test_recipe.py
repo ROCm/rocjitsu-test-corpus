@@ -1,12 +1,15 @@
 # Copyright (c) 2026 Advanced Micro Devices, Inc.
 # SPDX-License-Identifier: MIT
 import dataclasses
+import os
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
 import pytest
 
-from support.race_corpus import CORPUS_DIR, import_module
+from support.race_corpus import CORPUS_DIR, SCRIPTS_DIR, import_module
 
 recipe = import_module("recipe")
 
@@ -117,3 +120,51 @@ def test_invalid_toml_keeps_the_parse_error(tmp_path: Path) -> None:
         recipe.load(path)
     assert isinstance(error.value.__cause__, tomllib.TOMLDecodeError)
     assert "line 1" in error.value.problems[0]
+
+
+# --- Strings are written as TOML strings ------------------------------------------
+#
+# Every string is written as a TOML basic string, in UTF-8: characters outside the
+# Basic Multilingual Plane as themselves, not as the surrogate-pair escapes JSON
+# uses, which TOML rejects, and the characters TOML requires escaped, escaped.
+
+AWKWARD = 'U+20BB7 \U00020bb7, "quotes", back\\slash, tab\t, newline\n, \x01 and \x7f'
+
+
+def test_awkward_strings_round_trip(tmp_path: Path) -> None:
+    awkward = dataclasses.replace(
+        GOOD, compiler_version=AWKWARD, flags=("-O3", f"-I/abs/{AWKWARD}")
+    )
+    path = tmp_path / recipe.FILE_NAME
+    path.write_text(recipe.dumps(awkward), encoding="utf-8")
+    assert recipe.load(path) == awkward
+
+
+def test_character_outside_the_bmp_is_written_as_itself() -> None:
+    text = recipe.dumps(dataclasses.replace(GOOD, flags=("-I/abs/\U00020bb7",)))
+    assert "\U00020bb7" in text
+    assert "\\ud842" not in text
+
+
+def test_string_that_is_not_unicode_cannot_be_written() -> None:
+    # A path the filesystem did not decode as UTF-8 holds a lone surrogate, which
+    # no UTF-8 file can hold.
+    with pytest.raises(ValueError, match="not valid Unicode"):
+        recipe.dumps(dataclasses.replace(GOOD, flags=("-I/abs/\udcff",)))
+
+
+def test_recipe_is_read_as_utf8_whatever_the_locale(tmp_path: Path) -> None:
+    # A fresh interpreter in the C locale, whose default text encoding is ASCII,
+    # still reads the recipe as UTF-8, as TOML requires.
+    awkward = dataclasses.replace(GOOD, flags=("-I/abs/\U00020bb7",))
+    path = tmp_path / recipe.FILE_NAME
+    path.write_bytes(recipe.dumps(awkward).encode("utf-8"))
+    program = (
+        f"import sys; sys.path.insert(0, {str(SCRIPTS_DIR)!r}); import recipe; "
+        f"from pathlib import Path; print(ascii(recipe.load(Path({str(path)!r})).flags))"
+    )
+    environment = {**os.environ, "LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0"}
+    output = subprocess.check_output(
+        [sys.executable, "-c", program], env=environment, text=True
+    )
+    assert output.strip() == ascii(awkward.flags)

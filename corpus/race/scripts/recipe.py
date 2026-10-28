@@ -11,7 +11,6 @@ here, not in each script.
 """
 
 import dataclasses
-import json
 import tomllib
 from pathlib import Path
 
@@ -20,6 +19,16 @@ FILE_NAME = "recipe.toml"
 # A toolchain field whose value could not be found, such as the build of an SDK
 # that was not installed as a Python distribution.
 UNKNOWN = "unknown"
+
+# The UTF-16 surrogate code points. Python uses them, lone, for the bytes of a
+# path that are not UTF-8; no UTF-8 file, and so no recipe.toml, can hold one.
+_SURROGATES = range(0xD800, 0xDFFF + 1)
+# The characters a TOML basic string must escape, besides the quotation mark and
+# the backslash: the control characters, U+0000 to U+001F and U+007F (DEL),
+# except tab.
+_TOML_ESCAPED_CONTROLS = frozenset(
+    {chr(code) for code in range(0x20)} - {"\t"} | {"\x7f"}
+)
 
 
 class RecipeError(ValueError):
@@ -76,17 +85,38 @@ TOOLCHAIN_FIELDS = tuple(field for field in FIELDS if field != "flags")
 
 
 def dumps(recipe: Recipe) -> str:
-    """*recipe* as the text of a recipe.toml."""
+    """
+    *recipe* as the text of a recipe.toml, to be written as UTF-8. Raises
+    ValueError for a string that is not valid Unicode; see _toml_string.
+    """
     lines = [
         "# How the .s files beside this one were regenerated. Written by",
         "# regenerate_asm.py and compared by regenerate_asm.py --check.",
         *(
-            f"{field} = {json.dumps(getattr(recipe, field))}"
+            f"{field} = {_toml_string(getattr(recipe, field))}"
             for field in TOOLCHAIN_FIELDS
         ),
-        f"flags = {json.dumps(list(recipe.flags))}",
+        f"flags = [{', '.join(_toml_string(flag) for flag in recipe.flags)}]",
     ]
     return "\n".join(lines) + "\n"
+
+
+def _toml_string(value: str) -> str:
+    """
+    *value* as a TOML basic string. The quotation mark, the backslash and the
+    control characters other than tab are escaped, as TOML requires; every other
+    character, including one outside the Basic Multilingual Plane, is written as
+    itself. Raises ValueError for a lone surrogate, such as a path whose bytes
+    are not UTF-8, which no TOML file can hold.
+    """
+    if any(ord(char) in _SURROGATES for char in value):
+        raise ValueError(f"{value!r} is not valid Unicode")
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    escaped = "".join(
+        f"\\u{ord(char):04x}" if char in _TOML_ESCAPED_CONTROLS else char
+        for char in escaped
+    )
+    return f'"{escaped}"'
 
 
 def load(path: Path) -> Recipe | None:
@@ -100,7 +130,7 @@ def load(path: Path) -> Recipe | None:
     if not path.is_file():
         return None
     try:
-        fields = tomllib.loads(path.read_text())
+        fields = tomllib.loads(path.read_text(encoding="utf-8"))
     except OSError as error:
         raise RecipeError([f"cannot be read ({error.strerror})"]) from error
     except tomllib.TOMLDecodeError as error:

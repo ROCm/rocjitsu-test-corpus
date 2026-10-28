@@ -148,7 +148,7 @@ def _unknown_keys(
 def _read(path: Path) -> dict[str, object]:
     """The TOML at *path*, as a table. Raises InventoryError if it cannot be read."""
     try:
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
     except OSError as error:
         raise InventoryError([f"{path}: cannot be read ({error.strerror})"]) from error
     try:

@@ -932,12 +932,20 @@ def _plan_build(args: argparse.Namespace) -> Build:
     # path that selects a different file from another directory changes it.
     extra_flags = tuple(absolute_flags(cxxflags, Path.cwd()))
     toolchain = select_toolchain()
+    build_recipe = current_recipe(toolchain=toolchain, extra_flags=extra_flags)
+    try:
+        # Checked before anything is compiled: the recipe is written at publish.
+        recipe.dumps(build_recipe)
+    except ValueError as error:
+        raise UsageError(
+            f"--cxxflags cannot be recorded in recipe.toml: {error}"
+        ) from error
     return Build(
         corpus=corpus,
         targets=tuple(targets),
         extra_flags=extra_flags,
         toolchain=toolchain,
-        recipe=current_recipe(toolchain=toolchain, extra_flags=extra_flags),
+        recipe=build_recipe,
     )
 
 
@@ -1150,7 +1158,9 @@ def _publish_target(target: str, built: Path, build_recipe: recipe.Recipe) -> in
         listings = sorted(built.glob("*.s"))
         for listing in listings:
             shutil.copyfile(listing, staging / listing.name)
-        (staging / recipe.FILE_NAME).write_text(recipe.dumps(build_recipe))
+        (staging / recipe.FILE_NAME).write_text(
+            recipe.dumps(build_recipe), encoding="utf-8"
+        )
         _swap_in(staging, ASM_DIR / target)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
