@@ -8,6 +8,10 @@
 # site of its kind in asm/<target>/<kernel>.s, counted in emission order.
 # That assembly is committed and frozen, so this manifest only changes
 # when regenerate_asm.py is run or cases.toml is edited.
+#
+# A mutant is identified by (target, id), which is unique in this file.
+# `id` is target-local: the same id names a different instruction on
+# each target, so key mutants by the pair, never by id alone.
 
 [manifest]
 schema = 1

@@ -18,6 +18,12 @@ toolchain present. The manifest holds *recipes* -- ``(kernel, kind, ordinal)``
 plus the tags scoring needs -- which are applied to the committed assembly when
 a case is built.
 
+A mutant is identified by ``(target, id)``. ``id`` is ``<kernel>.<kind><NNN>``
+and is target-local: its ordinal counts sites in that target's assembly, so the
+same id names a different instruction on each target. Selectors and coverage
+consumers must key mutants by the pair, as a per-target ``RunReport`` does.
+generate() rejects a manifest in which the pair is not unique.
+
 Run this after ``regenerate_asm.py`` changes the assembly, or after editing tags
 in ``cases.toml``::
 
@@ -281,6 +287,10 @@ def render_manifest(rows: list[dict], targets: list[str]) -> str:
         "# site of its kind in asm/<target>/<kernel>.s, counted in emission order.",
         "# That assembly is committed and frozen, so this manifest only changes",
         "# when regenerate_asm.py is run or cases.toml is edited.",
+        "#",
+        "# A mutant is identified by (target, id), which is unique in this file.",
+        "# `id` is target-local: the same id names a different instruction on",
+        "# each target, so key mutants by the pair, never by id alone.",
         "",
         "[manifest]",
         f"schema = {MANIFEST_SCHEMA}",
@@ -389,7 +399,25 @@ def generate(targets: list[str]) -> list[dict]:
         print(f"  skip: {note}")
     for note in failed:
         print(f"  FAIL: {note}", file=sys.stderr)
+    check_unique_keys(rows)
     return rows
+
+
+def check_unique_keys(rows: list[dict]) -> None:
+    """
+    Raise SystemExit naming every (target, id) that more than one row has. The
+    pair is the manifest's key; see the module docstring.
+    """
+    counts: dict[tuple[str, str], int] = {}
+    for row in rows:
+        key = (row["target"], row["id"])
+        counts[key] = counts.get(key, 0) + 1
+    if duplicates := sorted(key for key, count in counts.items() if count > 1):
+        named = ", ".join(f"{target}/{mutant_id}" for target, mutant_id in duplicates)
+        raise SystemExit(
+            f"mutants.toml: (target, id) must be unique, but these repeat: {named}. "
+            f"Two cases may share a kernel in cases.toml."
+        )
 
 
 def main() -> int:

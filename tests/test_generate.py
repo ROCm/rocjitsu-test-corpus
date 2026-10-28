@@ -1,5 +1,6 @@
 # Copyright (c) 2026 Advanced Micro Devices, Inc.
 # SPDX-License-Identifier: MIT
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -63,3 +64,49 @@ def test_committed_mutants_match_the_committed_corpus(
     # Every case is generated for, or skipped on, each target: none is missing
     # a listing because its targets were not read.
     assert "FAIL" not in capsys.readouterr().err
+
+
+# --- A mutant is identified by (target, id) ------------------------------------
+
+# A case on every target, with one wait in each target's listing.
+PORTABLE = (
+    '[[case]]\nid = "only"\nkernel = "only"\nmutate = ["wait"]\nhazard = "RAW"\n'
+    'resource = "vgpr"\n'
+)
+LISTINGS = {"gfx950": "\ts_waitcnt vmcnt(0)\n", "gfx1250": "\ts_wait_loadcnt 0x0\n"}
+
+
+def test_ids_are_target_local_and_the_pair_is_unique(scratch: Path) -> None:
+    write_corpus(scratch, PORTABLE, listings=LISTINGS)
+    rows = generate.generate(["gfx950", "gfx1250"])
+    # One id, naming a different instruction on each target.
+    assert {(row["target"], row["id"], row["site"]) for row in rows} == {
+        ("gfx950", "only.wait000", "s_waitcnt"),
+        ("gfx1250", "only.wait000", "s_wait_loadcnt"),
+    }
+
+
+def test_repeated_target_and_id_is_rejected(scratch: Path) -> None:
+    # Two cases sharing a kernel give every mutant of it the same (target, id).
+    second = PORTABLE.replace('id = "only"', 'id = "again"')
+    write_corpus(scratch, PORTABLE + second, listings=LISTINGS)
+    with pytest.raises(
+        SystemExit,
+        match=r"\(target, id\) must be unique, but these repeat: "
+        r"gfx1250/only\.wait000, gfx950/only\.wait000",
+    ):
+        generate.generate(["gfx950", "gfx1250"])
+
+
+def test_manifest_header_defines_the_key() -> None:
+    header = generate.render_manifest([], ["gfx950"])
+    assert "A mutant is identified by (target, id), which is unique" in header
+    assert "never by id alone" in header
+
+
+def test_committed_manifest_has_unique_keys() -> None:
+    mutants = tomllib.loads(generate.MANIFEST_PATH.read_text())["mutant"]
+    keys = [(mutant["target"], mutant["id"]) for mutant in mutants]
+    assert len(keys) == len(set(keys))
+    # The ids alone repeat across targets, which is why the pair is the key.
+    assert len({mutant["id"] for mutant in mutants}) < len(keys)
