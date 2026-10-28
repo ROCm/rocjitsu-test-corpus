@@ -64,12 +64,17 @@ class Exemption:
     nothing there is *correct*, so scoring it as a miss would penalise the
     right answer. ``site`` pins the exemption to a specific instruction so it
     cannot drift onto a different one when codegen changes.
+
+    Ordinals count sites in one target's assembly, and the instruction at an
+    ordinal can differ between targets, so an exemption may name the ``target``
+    it was checked against. None applies it to every target.
     """
 
     kind: str
     ordinal: int
     site: str
     reason: str
+    target: str | None = None
 
 
 @dataclass(frozen=True)
@@ -82,9 +87,14 @@ class Case:
     resource: str | None  # optional override; see derive_resource
     exempt: tuple[Exemption, ...] = ()
 
-    def exemption_for(self, kind: str, ordinal: int) -> Exemption | None:
+    def exemption_for(self, kind: str, ordinal: int, target: str) -> Exemption | None:
+        """The exemption for site *ordinal* of *kind* on *target*, if any."""
         for entry in self.exempt:
-            if entry.kind == kind and entry.ordinal == ordinal:
+            if (
+                entry.kind == kind
+                and entry.ordinal == ordinal
+                and entry.target in (None, target)
+            ):
                 return entry
         return None
 
@@ -262,6 +272,7 @@ def load_cases() -> list[Case]:
                     ordinal=e["ordinal"],
                     site=e["site"],
                     reason=e["reason"],
+                    target=e.get("target"),
                 )
                 for e in entry.get("exempt", [])
             ),
@@ -379,7 +390,7 @@ def generate(targets: list[str]) -> list[dict]:
                         "site": label,
                     }
                     if (
-                        exemption := case.exemption_for(kind, site.ordinal)
+                        exemption := case.exemption_for(kind, site.ordinal, target)
                     ) is not None:
                         # Verified now rather than at run time: if codegen moved
                         # this ordinal onto a different instruction, the

@@ -32,6 +32,12 @@
 #                scripts/check_cases.py verifies it against the assembly.
 #   resource     optional: pins the resource tag of every mutant in the case.
 #                Normally omitted; see "Resources" below.
+#   exempt       optional [[case.exempt]] entries: mutations that provably
+#                introduce no race, so reporting nothing is correct and the
+#                mutant is not scored. Each names `kind`, `ordinal` and the
+#                `site` instruction found there (checked against the assembly),
+#                a `reason`, and optionally the `target` it applies to --
+#                needed when the instruction at that ordinal differs by target.
 #
 # Waits
 #   Counters are spelled as each target's assembly spells them, because the
@@ -186,6 +192,51 @@ mutate = ["wait"]
 hazard = "WAR"
 waits = { gfx1250 = ["dscnt", "kmcnt", "loadcnt"], gfx950 = ["lgkmcnt", "vmcnt"] }
 description = "LDS WAR (ds_read then ds_write to the same slot)"
+
+# Waits 2 and 4 drain the two DS stores -- `sdata[tid] = input[i]` and
+# `sdata[tid] = val + 1` -- just before each __syncthreads(). After the first
+# barrier every thread reads back only sdata[tid]; after the second, only
+# thread 0 reads sdata[0]. No thread reads a slot another thread wrote, and a
+# wave's own DS operations complete in order, so removing either wait exposes
+# nothing; the stores have no register result to protect either. This is an
+# assessment of the assembly against the ISA, not a hardware result.
+#
+# The ordinals match on both targets but the instruction there does not, so
+# each target has its own entries, qualified separately:
+#   gfx1250  s_wait_dscnt counts only DS operations, so the wait drains only
+#            the store before it.
+#   gfx950   s_waitcnt lgkmcnt also counts scalar memory loads, which complete
+#            out of order, so the exemption holds only if none is outstanding.
+#            None is: the kernel's s_load_* are drained by an earlier
+#            lgkmcnt(0) before wait 2, and wait 3 drains everything before the
+#            store that wait 4 follows.
+[[case.exempt]]
+target = "gfx950"
+kind = "wait"
+ordinal = 2
+site = "s_waitcnt"
+reason = "drains only the DS store before the first barrier (no scalar load is outstanding); afterwards each thread reads back only its own sdata slot, which its own in-order DS store already wrote"
+
+[[case.exempt]]
+target = "gfx950"
+kind = "wait"
+ordinal = 4
+site = "s_waitcnt"
+reason = "drains only the DS store before the second barrier (no scalar load is outstanding); afterwards only thread 0 reads, and only its own slot sdata[0]"
+
+[[case.exempt]]
+target = "gfx1250"
+kind = "wait"
+ordinal = 2
+site = "s_wait_dscnt"
+reason = "drains the DS store before the first barrier; afterwards each thread reads back only its own sdata slot, which its own in-order DS store already wrote"
+
+[[case.exempt]]
+target = "gfx1250"
+kind = "wait"
+ordinal = 4
+site = "s_wait_dscnt"
+reason = "drains the DS store before the second barrier; afterwards only thread 0 reads, and only its own slot sdata[0]"
 
 [[case]]
 id = "trans-lds"

@@ -110,3 +110,63 @@ def test_committed_manifest_has_unique_keys() -> None:
     assert len(keys) == len(set(keys))
     # The ids alone repeat across targets, which is why the pair is the key.
     assert len({mutant["id"] for mutant in mutants}) < len(keys)
+
+
+# --- Exemptions can be scoped to the target they were checked against ----------
+
+
+def exemption(site: str, target: str | None = None) -> str:
+    """A [[case.exempt]] table for wait ordinal 0 at *site*, on *target* if given."""
+    scope = f'target = "{target}"\n' if target else ""
+    return (
+        f'[[case.exempt]]\n{scope}kind = "wait"\nordinal = 0\nsite = "{site}"\n'
+        'reason = "harmless"\n'
+    )
+
+
+def exempt_targets(rows: list[dict]) -> set[str]:
+    return {row["target"] for row in rows if row.get("exempt")}
+
+
+def test_targeted_exemption_applies_only_to_its_target(scratch: Path) -> None:
+    write_corpus(
+        scratch, PORTABLE + exemption("s_wait_loadcnt", "gfx1250"), listings=LISTINGS
+    )
+    rows = generate.generate(["gfx950", "gfx1250"])
+    assert exempt_targets(rows) == {"gfx1250"}
+
+
+def test_one_exemption_per_target_with_its_own_site(scratch: Path) -> None:
+    exemptions = exemption("s_waitcnt", "gfx950") + exemption(
+        "s_wait_loadcnt", "gfx1250"
+    )
+    write_corpus(scratch, PORTABLE + exemptions, listings=LISTINGS)
+    rows = generate.generate(["gfx950", "gfx1250"])
+    assert exempt_targets(rows) == {"gfx950", "gfx1250"}
+
+
+def test_untargeted_exemption_must_match_the_site_on_every_target(
+    scratch: Path,
+) -> None:
+    # Without a target the exemption applies to gfx950 too, where ordinal 0 is
+    # s_waitcnt, so it is stale there.
+    write_corpus(scratch, PORTABLE + exemption("s_wait_loadcnt"), listings=LISTINGS)
+    with pytest.raises(
+        SystemExit,
+        match="expects 's_wait_loadcnt', but gfx950 codegen puts 's_waitcnt'",
+    ):
+        generate.generate(["gfx950", "gfx1250"])
+
+
+def test_committed_lds_war_pattern_exempts_its_unprotected_waits() -> None:
+    mutants = tomllib.loads(generate.MANIFEST_PATH.read_text())["mutant"]
+    exempt = {
+        (mutant["target"], mutant["id"])
+        for mutant in mutants
+        if mutant["case"] == "lds-war-pattern" and mutant.get("exempt")
+    }
+    assert exempt == {
+        (target, f"lds_war_pattern.wait00{ordinal}")
+        for target in ("gfx950", "gfx1250")
+        for ordinal in (2, 4)
+    }

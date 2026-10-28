@@ -401,6 +401,8 @@ ordinal = 2
 resource = "lds"
 hazard = "WAR"
 site = "s_wait_dscnt"
+exempt = true
+exempt_reason = "drains the DS store before the first barrier; afterwards each thread reads back only its own sdata slot, which its own in-order DS store already wrote"
 
 [[mutant]]
 id = "lds_war_pattern.wait003"
@@ -423,6 +425,8 @@ ordinal = 4
 resource = "lds"
 hazard = "WAR"
 site = "s_wait_dscnt"
+exempt = true
+exempt_reason = "drains the DS store before the second barrier; afterwards only thread 0 reads, and only its own slot sdata[0]"
 
 [[mutant]]
 id = "lds_war_pattern.wait005"
@@ -1294,6 +1298,8 @@ ordinal = 2
 resource = "lds"
 hazard = "WAR"
 site = "s_waitcnt"
+exempt = true
+exempt_reason = "drains only the DS store before the first barrier (no scalar load is outstanding); afterwards each thread reads back only its own sdata slot, which its own in-order DS store already wrote"
 
 [[mutant]]
 id = "lds_war_pattern.wait003"
@@ -1316,6 +1322,8 @@ ordinal = 4
 resource = "lds"
 hazard = "WAR"
 site = "s_waitcnt"
+exempt = true
+exempt_reason = "drains only the DS store before the second barrier (no scalar load is outstanding); afterwards only thread 0 reads, and only its own slot sdata[0]"
 
 [[mutant]]
 id = "lds_war_pattern.wait005"
