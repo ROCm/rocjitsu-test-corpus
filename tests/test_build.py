@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 import json
 import sys
+import typing
 from pathlib import Path
 
 import pytest
@@ -10,14 +11,20 @@ from support.race_corpus import load_script
 
 build = load_script("build")
 
-# Stand-ins for llvm-nm and hipcc. llvm-nm prints FAKE_NM_OUTPUT and exits with
-# FAKE_NM_EXIT. hipcc appends its arguments to <script>.argv, then behaves as
-# FAKE_LINK says:
+# Stand-ins for clang, llvm-nm and hipcc. clang writes an empty code object to
+# its -o path. llvm-nm prints FAKE_NM_OUTPUT and exits with FAKE_NM_EXIT. hipcc
+# appends its arguments to <script>.argv, then behaves as FAKE_LINK says:
 #   ok           link succeeds
 #   reject-flag  reject --no-offload-new-driver as clang does, else succeed
 #   link-error   fail with a linker error, whatever the flags
 #   reject-then-link-error
 #                reject the flag, and fail with a linker error without it
+FAKE_CLANG = """
+import sys
+import typing
+from pathlib import Path
+Path(sys.argv[sys.argv.index("-o") + 1]).write_bytes(b"")
+"""
 FAKE_NM = """
 import os, sys
 status = int(os.environ.get("FAKE_NM_EXIT", "0"))
@@ -53,12 +60,12 @@ def write_tool(path: Path, body: str) -> Path:
 
 @pytest.fixture
 def tools(tmp_path: Path) -> build.Toolchain:
-    """A toolchain whose llvm-nm and hipcc are the fakes above."""
+    """A toolchain whose clang, llvm-nm and hipcc are the fakes above."""
     unused = tmp_path / "unused"
     return build.Toolchain(
         root=tmp_path,
         hipcc=write_tool(tmp_path / "hipcc", FAKE_HIPCC),
-        clang=unused,
+        clang=write_tool(tmp_path / "clang", FAKE_CLANG),
         bundler=unused,
         llvm_mc=unused,
         llvm_nm=write_tool(tmp_path / "llvm-nm", FAKE_NM),
@@ -178,3 +185,29 @@ def test_rocm_path_is_taken_from_the_environment(
 ) -> None:
     monkeypatch.setenv("ROCM_PATH", str(tmp_path / "rocm"))
     assert build.rocm_path() == tmp_path / "rocm"
+
+
+# --- A build that stops at the code object has no executable ---------------------
+
+
+def test_executable_is_optional_in_the_record() -> None:
+    # Callers see from the annotation that an executable may be absent.
+    assert typing.get_type_hints(build.BuiltMutant)["executable"] == Path | None
+
+
+def test_unlinked_build_stops_at_the_code_object(
+    tools: build.Toolchain, tmp_path: Path
+) -> None:
+    built = build.build_from_asm(
+        tmp_path / "kernel.s",
+        tmp_path / "host.o",
+        "gfx950",
+        tmp_path / "work",
+        tools=tools,
+        link=False,
+    )
+    assert built.executable is None
+    assert built.code_object == tmp_path / "work" / "kernel_dev.o"
+    assert built.code_object.is_file()
+    # Nothing past the code object ran: no link was attempted.
+    assert not tools.hipcc.with_name(tools.hipcc.name + ".argv").exists()

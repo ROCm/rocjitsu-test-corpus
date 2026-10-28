@@ -282,9 +282,20 @@ def _link(argv: list[str]) -> subprocess.CompletedProcess:
 
 @dataclass(frozen=True)
 class BuiltMutant:
+    """
+    What build_from_asm produced.
+
+    Attributes:
+        asm: The (possibly mutated) assembly it was built from.
+        code_object: The assembled device code object.
+        executable: The linked executable, or None when the build stopped at
+            the code object (``link=False``), as for a static detector. As in
+            detector_protocol.MutantArtifacts, a caller must handle its absence.
+    """
+
     asm: Path
     code_object: Path
-    executable: Path
+    executable: Path | None
 
 
 def build_from_asm(
@@ -311,7 +322,7 @@ def build_from_asm(
         asm, target, workdir / f"{stem}_dev.o", tools=tools
     )
     if not link:
-        return BuiltMutant(asm=asm, code_object=device_obj, executable=None)  # type: ignore[arg-type]
+        return BuiltMutant(asm=asm, code_object=device_obj, executable=None)
 
     bundle = create_offload_bundle(
         device_obj, target, workdir / f"{stem}.hipfb", tools=tools
