@@ -72,7 +72,7 @@ class Exemption:
 class Case:
     id: str
     kernel: str
-    requires: list[str]
+    targets: list[str]  # empty means every target
     mutate: list[str]
     hazard: str
     resource: str | None  # optional override; see derive_resource
@@ -246,7 +246,7 @@ def load_cases() -> list[Case]:
         Case(
             id=entry["id"],
             kernel=entry["kernel"],
-            requires=entry.get("requires", []),
+            targets=entry.get("targets", []),
             mutate=entry.get("mutate", ["wait"]),
             hazard=entry["hazard"],
             resource=entry.get("resource"),
@@ -332,8 +332,10 @@ def generate(targets: list[str]) -> list[dict]:
 
     for target in targets:
         for case in cases:
-            if case.requires and target not in case.requires:
-                skipped.append(f"{case.id} ({target}): requires {', '.join(case.requires)}")
+            if case.targets and target not in case.targets:
+                skipped.append(
+                    f"{case.id} ({target}): builds only for {', '.join(case.targets)}"
+                )
                 continue
 
             asm = ASM_DIR / target / f"{case.kernel}.s"
