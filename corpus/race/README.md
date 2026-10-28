@@ -157,9 +157,21 @@ python corpus/race/scripts/regenerate_asm.py --target gfx950    # one target
   is any other forwarding option, such as `-Xassembler`, `-Wp,` or `-mllvm`.
 
   Every other argument must be an option that cannot carry a path, and passes
-  through unchanged: `-D` and `-U` macros, `-O` levels, `-W` warnings, `-f` and
-  `-m` switches without a value (`-ffast-math`, not `-fprofile-instr-use=file`),
-  `-std=` and `-save-temps`. Anything else is rejected (exit 2), including
+  through unchanged: `-D` and `-U` macros, `-O` levels, `-W` warnings, `-std=`,
+  `-save-temps`, and these `-f` and `-m` switches, which compile to the same
+  listing on every regeneration:
+
+  - `-ffast-math`, `-finline`, `-funroll-loops`, `-fstrict-aliasing`,
+    `-fgpu-approx-transcendentals`, `-fgpu-flush-denormals-to-zero` and
+    `-fhip-fp32-correctly-rounded-divide-sqrt`, and the `-fno-` form of each;
+  - `-fno-gpu-rdc`;
+  - `-mcumode`, `-mwavefrontsize64`, and the `-mno-` form of each.
+
+  Other `-f` and `-m` switches are rejected (exit 2), because some embed
+  per-invocation data that an immediate `--check` would report as drift:
+  `-frecord-command-line` and `-fsave-optimization-record` embed the compile's
+  temporary directory, and `-fprofile-generate`, `-fcoverage-mapping` and
+  `-fgpu-rdc` change encoded metadata. Anything else is rejected too, including
   aliases of path options such as `--include=`, response files (`@file`), whose
   arguments the script cannot see, and input files. So is `-g`: debug info
   embeds each compile's temporary directory, so the listing would differ on

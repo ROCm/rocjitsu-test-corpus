@@ -1116,7 +1116,22 @@ def test_help_states_the_path_flag_contract(capsys: pytest.CaptureFixture[str]) 
     assert "relative to the sysroot" in help_text
     assert "a path forwarded that way must be absolute" in help_text
     assert "a response file (@file)" in help_text
-    assert "-g, whose debug info would embed the scratch directory" in help_text
+    assert (
+        "-g or another -f or -m switch, which could embed the scratch directory or "
+        "other per-invocation data" in help_text
+    )
+
+
+def test_help_lists_every_reproducible_switch(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # argparse wraps at hyphens, which would split the longer switch names.
+    monkeypatch.setenv("COLUMNS", "10000")
+    with pytest.raises(SystemExit):
+        regen.main(["--help"])
+    help_text = capsys.readouterr().out
+    for switch in regen._REPRODUCIBLE_SWITCHES:
+        assert re.search(rf"{re.escape(switch)}\b", help_text), switch
 
 
 def test_check_help_describes_the_textual_comparison(
@@ -1535,7 +1550,7 @@ KEPT_AS_WRITTEN = {
     "-isystem = sysroot-relative": ["-isystem", "=/usr/include"],
     "-Xclang -iquote, separate": ["-Xclang", "-iquote", "-Xclang", "/abs/include"],
     "-Xclang -iquote, glued": ["-Xclang", "-iquote/abs/include"],
-    "-Xclang, not a path": ["-Xclang", "-fno-pch-timestamp"],
+    "-Xclang, not a path": ["-Xclang", "-ffast-math"],
     "-Xpreprocessor -iquote, separate": [
         "-Xpreprocessor",
         "-iquote",
@@ -1589,12 +1604,8 @@ UNSUPPORTED_ARGUMENTS = {
     # Debug info, which embeds the scratch compile directory.
     "-g": (["-g"], "-g"),
     "-gdwarf-5": (["-gdwarf-5"], "-gdwarf-5"),
-    # An input file, and plain options whose value can be a path.
+    # An input file, which the script cannot see.
     "input file": (["extra.hip"], "extra.hip"),
-    "-f with a value": (
-        ["-fprofile-instr-use=prof.profdata"],
-        "-fprofile-instr-use=prof.profdata",
-    ),
     "--include-directory-after=": (
         ["--include-directory-after=/abs/include"],
         "--include-directory-after=/abs/include",
@@ -1618,6 +1629,50 @@ def test_unsupported_argument_is_rejected_by_name(
     with pytest.raises(
         regen.UsageError,
         match=f"{re.escape(argument)}: not an option or spelling this script supports",
+    ):
+        regen.absolute_flags(flags, tmp_path)
+
+
+# -f and -m switches outside the reproducible set. The first five compile, but
+# embed the scratch compile directory or change encoded metadata, so an
+# immediate --check after an update reports drift. The rest are rejected
+# because they are not known to compile reproducibly, not because they drift.
+UNREPRODUCIBLE_SWITCHES = {
+    "-frecord-command-line": (["-frecord-command-line"], "-frecord-command-line"),
+    "-fsave-optimization-record": (
+        ["-fsave-optimization-record"],
+        "-fsave-optimization-record",
+    ),
+    "-fprofile-generate": (["-fprofile-generate"], "-fprofile-generate"),
+    "-fprofile-instr-generate -fcoverage-mapping": (
+        ["-fprofile-instr-generate", "-fcoverage-mapping"],
+        "-fprofile-instr-generate",
+    ),
+    "-fgpu-rdc": (["-fgpu-rdc"], "-fgpu-rdc"),
+    "forwarded -frecord-command-line": (
+        ["-Xclang", "-frecord-command-line"],
+        "-frecord-command-line",
+    ),
+    "-f with a value": (
+        ["-fprofile-instr-use=prof.profdata"],
+        "-fprofile-instr-use=prof.profdata",
+    ),
+    "unlisted -m": (["-mno-xnack"], "-mno-xnack"),
+}
+
+
+@pytest.mark.parametrize(
+    "flags, argument",
+    UNREPRODUCIBLE_SWITCHES.values(),
+    ids=UNREPRODUCIBLE_SWITCHES.keys(),
+)
+def test_switch_outside_the_reproducible_set_is_rejected(
+    tmp_path: Path, flags: list[str], argument: str
+) -> None:
+    with pytest.raises(
+        regen.UsageError,
+        match=f"{re.escape(argument)}: not one of the -f and -m switches known to "
+        "compile reproducibly",
     ):
         regen.absolute_flags(flags, tmp_path)
 
@@ -2716,12 +2771,27 @@ def test_missing_default_sdk_is_reported(
 # --- A regeneration reproduces itself --------------------------------------------
 #
 # Each compile runs in its own scratch directory, so nothing the compiler embeds
-# may depend on it. Debug info would (-g is rejected); the accepted forms that
-# change codegen must not, so an immediate --check after an update matches.
+# may depend on it. Debug info would (-g is rejected), and so would the -f and
+# -m switches outside the reproducible set; every accepted form must not, so an
+# immediate --check after an update matches. Each switch in the set is covered
+# here, so adding one without this check fails.
+REGENERATION_FLAGS = {
+    "no flags": [],
+    **{
+        level: [f"--cxxflags={level}"]
+        for level in ("-O0", "-O1", "-O2", "-O3", "-Os", "-Oz", "-Og", "-Ofast")
+    },
+    "-D, -U, -W and -std=": ["--cxxflags=-DNAME=1 -UOTHER -Wall -std=c++20"],
+    "-save-temps": ["--cxxflags=-save-temps"],
+    **{
+        switch: [f"--cxxflags={switch}"]
+        for switch in sorted(regen._REPRODUCIBLE_SWITCHES)
+    },
+}
 
 
 @pytest.mark.parametrize(
-    "cxxflags", [[], ["--cxxflags=-O1"], ["--cxxflags=-save-temps"]]
+    "cxxflags", REGENERATION_FLAGS.values(), ids=REGENERATION_FLAGS.keys()
 )
 def test_real_compiler_regeneration_then_check_matches(
     manifest: Manifest,

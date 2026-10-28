@@ -148,14 +148,44 @@ _EQUALS_FLAGS = (
 # absolute; see _forwarded_length.
 _FORWARDING_FLAGS = ("-Xarch_device", "-Xarch_host", "-Xclang", "-Xpreprocessor")
 # The other arguments --cxxflags accepts: options that cannot carry a path.
-# Macros, optimization levels, warnings, -f and -m switches without a value,
-# the language standard, and -save-temps. Anything else, such as an alias of a
-# path option, a response file (@file) or an input file, could name a path the
-# script cannot see, and is rejected. So is -g: debug info embeds the scratch
-# compile directory, so the listing would differ on every regeneration.
+# Macros, optimization levels, warnings, the language standard, -save-temps,
+# and the -f and -m switches in _REPRODUCIBLE_SWITCHES. Anything else, such as
+# an alias of a path option, a response file (@file) or an input file, could
+# name a path the script cannot see, and is rejected. So is -g: debug info
+# embeds the scratch compile directory, so the listing would differ on every
+# regeneration.
 _PLAIN_OPTION = re.compile(
-    r"-(?:[DU]\S+|O(?:[0-3sgz]|fast)?|W[\w-]+(?:=[\w-]+)?"
-    r"|f[\w-]+|m[\w-]+|std=[\w+]+|save-temps)"
+    r"-(?:[DU]\S+|O(?:[0-3sgz]|fast)?|W[\w-]+(?:=[\w-]+)?|std=[\w+]+|save-temps)"
+)
+# The -f and -m switches --cxxflags accepts: those that compile to the same
+# listing in every scratch directory, so an immediate --check after an update
+# matches. Other switches can embed per-invocation data, such as the scratch
+# compile directory (-frecord-command-line, -fsave-optimization-record) or
+# encoded metadata (-fprofile-generate, -fcoverage-mapping, -fgpu-rdc), and
+# would be reported as drift, so they are rejected. A switch is added here
+# only with a real-compiler regenerate-then-check test.
+_REPRODUCIBLE_SWITCHES = frozenset(
+    {
+        "-ffast-math",
+        "-fno-fast-math",
+        "-finline",
+        "-fno-inline",
+        "-funroll-loops",
+        "-fno-unroll-loops",
+        "-fstrict-aliasing",
+        "-fno-strict-aliasing",
+        "-fgpu-approx-transcendentals",
+        "-fno-gpu-approx-transcendentals",
+        "-fgpu-flush-denormals-to-zero",
+        "-fno-gpu-flush-denormals-to-zero",
+        "-fhip-fp32-correctly-rounded-divide-sqrt",
+        "-fno-hip-fp32-correctly-rounded-divide-sqrt",
+        "-fno-gpu-rdc",
+        "-mcumode",
+        "-mno-cumode",
+        "-mwavefrontsize64",
+        "-mno-wavefrontsize64",
+    }
 )
 # Prefixes of the other forwarding options, which the script does not follow,
 # and -mllvm, whose backend options it does not interpret. They could carry a
@@ -265,7 +295,7 @@ def absolute_flags(flags: list[str], base: Path) -> list[str]:
     like a top-level argument and whose path must be absolute; see
     _forwarded_length. Path options are recognized only by their
     complete spelling; see _split_joined. Any other argument must be a plain
-    option that cannot carry a path; see _PLAIN_OPTION. Raises UsageError for
+    option that cannot carry a path; see _check_plain_option. Raises UsageError for
     anything the contract does not support, such as an alias of a path option, a
     response file or an input file.
     """
@@ -333,8 +363,7 @@ def _rewrite_path_values(
             out += flags[i : i + length]
             i += length
         elif name is None:
-            if not _PLAIN_OPTION.fullmatch(flag):
-                raise _unsupported(flag)
+            _check_plain_option(flag)
             out.append(flag)
             i += 1
         elif flag == name and i + 1 == len(flags):
@@ -359,17 +388,16 @@ def _forwarded_length(
     (``-Xclang -iquote -Xclang /path``), both pairs. A forwarded argument is
     passed through unchanged and checked as a top-level one is: a path must be
     absolute, or relative to the sysroot, and anything else must be a plain
-    option (see _PLAIN_OPTION), not an alias, a response file, an input file or
+    option (see _check_plain_option), not an alias, a response file, an input file or
     another forwarding option. Raises UsageError otherwise. *rewrite* still sees
     a forwarded path, unchanged.
     """
     forwarding, argument = flags[start], flags[start + 1]
     name = _path_flag_name(argument)
     if name is None:
-        if argument.startswith(_UNFOLLOWED_FORWARDING) or not _PLAIN_OPTION.fullmatch(
-            argument
-        ):
+        if argument.startswith(_UNFOLLOWED_FORWARDING):
             raise _unsupported(argument)
+        _check_plain_option(argument)
         return 2
     length, value = 2, None
     if argument != name:
@@ -409,6 +437,22 @@ def _split_joined(flag: str, name: str) -> tuple[str, str]:
     ):
         return "", rest
     raise _unsupported(flag)
+
+
+def _check_plain_option(argument: str) -> None:
+    """
+    Raise UsageError unless *argument* is an option that cannot carry a path:
+    one _PLAIN_OPTION matches, or a switch in _REPRODUCIBLE_SWITCHES. Any other
+    -f or -m switch is named as one that may not compile reproducibly.
+    """
+    if argument in _REPRODUCIBLE_SWITCHES or _PLAIN_OPTION.fullmatch(argument):
+        return
+    if argument.startswith(("-f", "-m")):
+        raise UsageError(
+            f"{argument}: not one of the -f and -m switches known to compile "
+            f"reproducibly in --cxxflags; see --cxxflags in --help"
+        )
+    raise _unsupported(argument)
 
 
 def _unsupported(argument: str) -> UsageError:
@@ -972,10 +1016,11 @@ _CXXFLAGS_HELP = (
     "in this directory, such as -include include/options.h. Other path-taking "
     f"options need absolute paths. {_PATH_EXCEPTIONS_HELP} Other options are "
     "accepted only if they cannot carry a path: -D and -U macros, -O levels, "
-    "-W warnings, -f and -m switches without a value, -std= and -save-temps. "
+    "-W warnings, -std=, -save-temps, and these -f and -m switches, which "
+    f"compile reproducibly: {', '.join(sorted(_REPRODUCIBLE_SWITCHES))}. "
     "Anything else, such as an alias of a path option, a response file (@file), "
-    "an input file or -g, whose debug info would embed the scratch directory, is "
-    "rejected (exit 2). Default: none."
+    "an input file, -g or another -f or -m switch, which could embed the scratch "
+    "directory or other per-invocation data, is rejected (exit 2). Default: none."
 )
 _CHECK_HELP = (
     "Do not write. Regenerate into a temporary directory and compare it with the "
