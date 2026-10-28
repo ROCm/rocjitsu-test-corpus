@@ -36,9 +36,18 @@ MUTATION_KIND_WAIT = "wait"
 MUTATION_KIND_MEMORY = "memory"
 VALID_MUTATION_KINDS = frozenset({MUTATION_KIND_WAIT, MUTATION_KIND_MEMORY})
 
-# s_wait_xcnt tracks address translation (XNACK replay) rather than data
-# completion, so removing it produces no data hazard for a detector to find.
-# Excluded by default; pass an empty set to include it.
+# s_wait_xcnt is excluded as a scope choice, not because removing it is
+# harmless. XCNT tracks memory instructions whose address translation may still
+# be replayed (XNACK replay), and a replayed instruction needs its address and
+# descriptor source registers again. A wait on XCNT therefore guards a
+# source-register hazard: LLVM's SIInsertWaitcnts places one before a register
+# definition that would overwrite such a source. In asm/gfx1250/add_buffer.s,
+# s_wait_xcnt 0x1 precedes the s_or_b64 that overwrites s[0:1], part of the
+# buffer descriptor an earlier buffer_load_b32 may still need on replay.
+# Removing the wait matters only when a translation is actually replayed, and
+# on targets without shader XNACK replay the instruction is a NOP. The detectors
+# this corpus scores check data-completion hazards, so these waits are not
+# mutation sites. Pass an empty set to include them.
 DEFAULT_EXCLUDED_WAITS = frozenset({"s_wait_xcnt"})
 
 _WAIT_RE = re.compile(r"(s_wait\w+)\s+(\S+)")

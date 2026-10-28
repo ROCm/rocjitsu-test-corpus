@@ -82,8 +82,9 @@ _AMDGCN_TARGET_RE = re.compile(
     r'^\s*\.amdgcn_target\s+"[^"]*-([^-":]+)(?::[^"]*)?"', re.MULTILINE
 )
 
-# s_wait_xcnt tracks address-translation replay rather than data completion.
-# It is never a mutation site and never counts as a wait the kernel exercises.
+# s_wait_xcnt is out of the corpus's scope, as in mutate.DEFAULT_EXCLUDED_WAITS,
+# which explains the replay-dependent hazard it guards. It is never a mutation
+# site and never counts as a wait the kernel exercises.
 EXCLUDED_WAITS = frozenset({"s_wait_xcnt"})
 
 # Matches a wait mnemonic and its first operand on a stripped line. Kept in

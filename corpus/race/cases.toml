@@ -53,9 +53,14 @@
 #   wait for either appears (pointer_chase's gfx1250 dscnt comes only from
 #   s_wait_loadcnt_dscnt, a distinct instruction from s_wait_dscnt). It is
 #   still one mutation site: removing it removes both waits.
-#   `s_wait_xcnt` is out of scope. It tracks address-translation replay rather
-#   than data completion, so removing it creates no race; it is never a
-#   mutation site and is never listed.
+#   `s_wait_xcnt` is out of scope by choice; it is never a mutation site and is
+#   never listed. It does guard a hazard: XCNT tracks memory instructions whose
+#   address translation may still be replayed (XNACK replay), and the wait keeps
+#   a later instruction from overwriting a source register, such as a buffer
+#   descriptor, that a replayed one needs. That hazard appears only when a
+#   translation is replayed, and on targets without shader XNACK replay the
+#   wait is a NOP; the corpus scores data-completion hazards. See
+#   DEFAULT_EXCLUDED_WAITS in scripts/mutate.py.
 #
 # Resources
 #   A counter alone does not say which resource a removed wait leaves exposed.
