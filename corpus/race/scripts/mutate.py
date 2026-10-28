@@ -28,8 +28,6 @@ it reads text and writes text. Everything that knows about a particular tool
 lives in ``adapters/``.
 """
 
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass
 from pathlib import Path

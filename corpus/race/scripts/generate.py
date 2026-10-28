@@ -34,8 +34,6 @@ The tags it derives are a best guess and are meant to be reviewed; see
 ``derive_resource`` for why the wait counter alone does not determine them.
 """
 
-from __future__ import annotations
-
 import argparse
 import sys
 import tomllib

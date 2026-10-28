@@ -25,8 +25,6 @@ Resource and hazard names here are the corpus's own, not any one detector's
 internal spelling. Adapters map them onto their tool's vocabulary.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 from dataclasses import dataclass, field

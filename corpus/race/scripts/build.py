@@ -36,8 +36,6 @@ The host object depends only on the kernel, so it is cached per kernel and
 shared by all of that kernel's mutants; everything else is per mutant.
 """
 
-from __future__ import annotations
-
 import os
 import re
 import shutil
