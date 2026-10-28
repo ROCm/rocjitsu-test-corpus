@@ -39,9 +39,239 @@ def test_checkpoint_layout(manifest):
     if name == "guitar_hero_cdna4":
         assert ".wavefront_size: 64" in assembly
         assert ".private_segment_fixed_size: 0" in assembly
+    elif name == "guitar_hero_rdna2":
+        assert ".wavefront_size: 32" in assembly
+        assert ".private_segment_fixed_size: 64" in assembly
+        assert ".amdhsa_user_sgpr_count 4" in assembly
+        assert ".amdhsa_user_sgpr_flat_scratch_init 1" in assembly
+        assert ".amdhsa_system_sgpr_private_segment_wavefront_offset 1" in assembly
+        assert ".amdhsa_reserve_flat_scratch 1" in assembly
+        lines = [line.split(";", 1)[0].strip() for line in assembly.splitlines()]
+        lines = [line for line in lines if line]
+        entry = lines.index("guitar_hero_rdna2:")
+        assert lines[entry + 1:entry + 6] == [
+            "s_add_u32 s2, s2, s5",
+            "s_addc_u32 s3, s3, 0",
+            "s_setreg_b32 hwreg(HW_REG_FLAT_SCR_LO), s2",
+            "s_setreg_b32 hwreg(HW_REG_FLAT_SCR_HI), s3",
+            "s_mov_b32 s48, s4",
+        ]
     elif name == "guitar_hero_cdna5":
         assert ".wavefront_size: 32" in assembly
         assert ".private_segment_fixed_size: 64" in assembly
+
+
+def test_rdna2_ds_cmpst_compare_and_replacement_operands():
+    assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
+    instructions = re.findall(r"^ds_cmpst.*$", assembly, re.MULTILINE)
+    assert instructions == [
+        "ds_cmpst_b32 v52, v41, v40",
+        "ds_cmpst_b64 v52, v[34:35], v[32:33]",
+        "ds_cmpst_rtn_b32 v16, v52, v41, v40",
+        "ds_cmpst_rtn_b64 v[24:25], v52, v[34:35], v[32:33]",
+        "ds_cmpst_f32 v52, v42, v40",
+        "ds_cmpst_rtn_f32 v16, v52, v42, v40",
+        "ds_cmpst_f64 v52, v[42:43], v[40:41]",
+        "ds_cmpst_rtn_f64 v[16:17], v52, v[42:43], v[40:41]",
+    ]
+
+    # Comparison values equal initialized LDS on even lanes and differ on odd
+    # lanes; replacement values differ from initialized LDS on every lane.
+    for checkpoint in (178, 179):
+        body = assembly.split(f"; Checkpoint {checkpoint}:", 1)[1]
+        body = body.split(f"checkpoint {checkpoint}", 1)[0]
+        assert "v_xor_b32 v40, 0x00400000, v8" in body
+        assert "v_and_b32 v41, 1, v0\nv_xor_b32 v41, v41, v8" in body
+        assert "v_and_b32 v36, 1, v0\nv_xor_b32 v34, v36, v8" in body
+    for checkpoint in (474, 475, 476, 477):
+        body = assembly.split(f"; Checkpoint {checkpoint}:", 1)[1]
+        body = body.split(f"checkpoint {checkpoint}", 1)[0]
+        assert "v_and_b32 v44, 1, v0\nv_xor_b32 v42, v44, v8" in body
+
+
+def test_rdna2_low_half_dpp8_coverage():
+    assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
+    start = assembly.index("; Checkpoint 91: vop1_dpp8_00")
+    end = assembly.index("; Checkpoint 115: vop3_plain_00")
+    dpp8 = assembly[start:end]
+    expected = {
+        "v_ceil_f16",
+        "v_cos_f16",
+        "v_cvt_f16_f32",
+        "v_cvt_f16_i16",
+        "v_cvt_f16_u16",
+        "v_cvt_f32_f16",
+        "v_cvt_i16_f16",
+        "v_cvt_norm_i16_f16",
+        "v_cvt_norm_u16_f16",
+        "v_cvt_u16_f16",
+        "v_exp_f16",
+        "v_floor_f16",
+        "v_fract_f16",
+        "v_frexp_exp_i16_f16",
+        "v_frexp_mant_f16",
+        "v_log_f16",
+        "v_rcp_f16",
+        "v_rndne_f16",
+        "v_rsq_f16",
+        "v_sat_pk_u8_i16",
+        "v_sin_f16",
+        "v_sqrt_f16",
+        "v_trunc_f16",
+        "v_add_f16",
+        "v_fmac_f16",
+        "v_ldexp_f16",
+        "v_max_f16",
+        "v_min_f16",
+        "v_mul_f16",
+        "v_sub_f16",
+        "v_subrev_f16",
+    }
+    observed = [
+        line.split()[0]
+        for line in dpp8.splitlines()
+        if " dpp8:" in line and line.split()[0] in expected
+    ]
+    assert len(observed) == len(expected) == 31
+    assert set(observed) == expected
+
+    conversion = dpp8.split("; Checkpoint 92: vop1_dpp8_01", 1)[1]
+    conversion = conversion.split("checkpoint 92", 1)[0]
+    assert "s_mov_b32 exec_lo, 0xa5a55a5a\ns_mov_b32 exec_lo, -1" not in conversion
+
+
+def test_rdna2_packed_conversion_coverage():
+    assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
+    checkpoint_118 = assembly.split("; Checkpoint 118: vop3_plain_03", 1)[1]
+    checkpoint_118 = checkpoint_118.split("checkpoint 118", 1)[0]
+    for instruction in [
+        "v_cvt_pknorm_i16_f16 v18, v8, v9",
+        "v_cvt_pknorm_i16_f32 v20, v8, v9",
+        "v_cvt_pknorm_u16_f16 v22, v8, v9",
+        "v_cvt_pknorm_u16_f32 v24, v8, v9",
+    ]:
+        assert instruction in checkpoint_118
+
+    checkpoint_139 = assembly.split(
+        "; Checkpoint 139: vop3_from_vop2_plain_00", 1
+    )[1].split("checkpoint 139", 1)[0]
+    assert "v_cvt_pkrtz_f16_f32_e64 v30, v8, v9" in checkpoint_139
+
+
+def test_rdna2_omission_annotations():
+    assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
+    assert "no gfx1030 probe is assigned to this slot" not in assembly
+    assert assembly.count("; Deduplicated alias:") == 17
+    assert assembly.count("; Inherited empty slot:") == 22
+    assert assembly.count("; Unsupported on gfx1030:") == 27
+
+    for suffix, checkpoint in [
+        ("", 76),
+        (" DPP16", 85),
+        (" DPP8", 94),
+        ("_e64", 133),
+    ]:
+        assert (
+            f"v_cvt_nearest_i32_f32{suffix} is covered by "
+            f"v_cvt_rpi_i32_f32{'_e64' if suffix == '_e64' else ''} "
+            f"in checkpoint {checkpoint}"
+        ) in assembly
+    assert (
+        "v_cvt_floor_i32_f32_e64 is covered by "
+        "v_cvt_flr_i32_f32_e64 in checkpoint 132"
+    ) in assembly
+
+    checkpoint_73 = assembly.split("; Checkpoint 73: vop1_plain_00", 1)[1]
+    checkpoint_73 = checkpoint_73.split("checkpoint 73", 1)[0]
+    assert "v_cls_i32 is covered by v_ffbh_i32 in checkpoint 77" in checkpoint_73
+    assert "v_clz_i32_u32 is covered by v_ffbh_u32 in checkpoint 77" in checkpoint_73
+    assert "v_ctz_i32_b32 is covered by v_ffbl_b32 in checkpoint 77" in checkpoint_73
+
+    checkpoint_74 = assembly.split("; Checkpoint 74: vop1_plain_01", 1)[1]
+    checkpoint_74 = checkpoint_74.split("checkpoint 74", 1)[0]
+    assert checkpoint_74.count("; Inherited empty slot:") == 2
+
+    checkpoint_136 = assembly.split(
+        "; Checkpoint 136: vop3_from_vop1_plain_06", 1
+    )[1].split("checkpoint 136", 1)[0]
+    assert (
+        "Unsupported on gfx1030: v_not_b16_e64 has no gfx1030 form."
+        in checkpoint_136
+    )
+
+
+def test_rdna2_integer_to_f16_uses_integer_inputs():
+    assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
+    probes = {
+        74: ("v_cvt_f16_i16 ", "v_cvt_f16_u16 "),
+        83: ("v_cvt_f16_i16 ", "v_cvt_f16_u16 "),
+        92: ("v_cvt_f16_i16 ", "v_cvt_f16_u16 "),
+        131: ("v_cvt_f16_i16_e64 ", "v_cvt_f16_u16_e64 "),
+    }
+    for checkpoint, mnemonics in probes.items():
+        body = assembly.split(f"; Checkpoint {checkpoint}:", 1)[1]
+        body = body.split(f"checkpoint {checkpoint}", 1)[0]
+        lines = [line.strip() for line in body.splitlines()]
+        for mnemonic in mnemonics:
+            instruction = next(
+                index for index, line in enumerate(lines) if line.startswith(mnemonic)
+            )
+            sweep = next(
+                line
+                for line in reversed(lines[:instruction])
+                if line.startswith("sweep_inputs ")
+            )
+            assert sweep == "sweep_inputs int", (checkpoint, mnemonic)
+
+
+def test_rdna2_buffer_resource_word3_uses_gfx10_layout():
+    assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
+    setup = "s_mov_b32 s26, 4096\ns_mov_b32 s27, 0x3104dfac"
+    words = [
+        int(value, 16)
+        for value in re.findall(
+            r"^s_mov_b32 s26, 4096\ns_mov_b32 s27, (0x[0-9a-f]+)$",
+            assembly,
+            re.MULTILINE,
+        )
+    ]
+    assert words == [0x3104DFAC] * 3
+    assert "0x3003ffac" not in assembly
+
+    for word in words:
+        assert tuple((word >> shift) & 0x7 for shift in (0, 3, 6, 9)) == (4, 5, 6, 7)
+        assert (word >> 12) & 0x7F == 77
+        assert (word >> 24) & 0x1 == 1
+        assert (word >> 28) & 0x3 == 3
+
+    assert assembly.index(setup) < assembly.index("; Checkpoint 313:")
+    for checkpoint in (481, 482):
+        body = assembly.split(f"; Checkpoint {checkpoint}:", 1)[1]
+        body = body.split(f"checkpoint {checkpoint}", 1)[0]
+        assert setup in body
+
+
+def test_rdna2_legacy_accumulators():
+    assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
+    e32 = assembly.split(
+        "; Checkpoint 456: rdna2_legacy_accumulators_e32_plain", 1
+    )[1].split("checkpoint 456", 1)[0]
+    assert "v_dot2c_f32_f16 v16, v8, v9" in e32
+    assert "v_fmac_legacy_f32 v17, v4, v5" in e32
+
+    e64 = assembly.split(
+        "; Checkpoint 459: rdna2_legacy_accumulators_e64_plain", 1
+    )[1].split("checkpoint 459", 1)[0]
+    assert "v_fmac_legacy_f32_e64 v17, v4, v5" in e64
+    assert "v_dot2c_f32_f16_e64" not in e64
+
+
+def test_rdna2_vop3_plain_11_is_not_empty():
+    assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
+    body = assembly.split("; Checkpoint 126: vop3_plain_11", 1)[1]
+    body = body.split("checkpoint 126", 1)[0]
+    assert "v_min_i16_e64 v16, v8, v9" in body
+    assert "v_min_u16_e64 v18, v8, v9" in body
 
 
 def test_cdna5_scheduling_contract():
