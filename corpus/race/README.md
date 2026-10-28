@@ -6,17 +6,27 @@ so the assembly, not the HIP source, is what the corpus is built on.
 
 ## Using the listings
 
-A pinned listing is device code only. To run a case, build an executable from
-three parts:
+A pinned listing is device code only. To run a case, build an executable in
+these steps:
 
 1. **Host object.** Compile the host half of the HIP source,
    `hipcc -c --cuda-host-only`. It holds the host code and the kernel launch,
    and refers to its device code through a `__hip_fatbin_<hash>` symbol.
-2. **Device code.** Assemble the pinned listing, or a mutant of it, for its
-   target with the SDK recorded in that target's `recipe.toml`, bundle it with
-   `clang-offload-bundler`, and embed the bundle in an object under the host
-   object's fatbin symbol.
-3. **Link** the two objects.
+2. **Device code object.** With the SDK recorded in the target's
+   `recipe.toml`, build a loadable code object from the pinned listing, or a
+   mutant of it:
+   - assemble it for the target:
+     `clang -target amdgcn-amd-amdhsa -mcpu=<target> -c <kernel>.s`;
+   - link the result with the SDK's `ld.lld -shared`.
+
+   Assembly alone gives a relocatable object (`ET_REL`), which the HIP runtime
+   cannot load; the device link gives the shared object (`ET_DYN`) it loads.
+   The clang driver does both steps when given no `-c`.
+3. **Bundle and embed.** Bundle the code object with `clang-offload-bundler`
+   under the bundle ID `hipv4-amdgcn-amd-amdhsa--<target>`, and embed the
+   bundle in an object under the host object's fatbin symbol. The bundle ID is
+   the offload target, not the listing's `.amdgcn_target` string.
+4. **Link** the host object and the embedded bundle into the executable.
 
 Do not compile the HIP source the usual way: that regenerates the device code
 with whatever toolchain is installed and bypasses the pinned listing, mutants
