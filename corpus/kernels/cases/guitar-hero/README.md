@@ -89,8 +89,9 @@ hash collisions are possible and no captured file is treated as an oracle.
 "$gh_exe" --stop-after-checkpoint 11
 ```
 
-Raw dumps contain v16–v31 for each work-item and require one workgroup. A dump
-may be combined with a stop at or after its checkpoint. Stopping exercises only
+Raw dumps show v16–v31 at the checkpoint for each work-item and require one
+workgroup. Earlier values folded into the hashes are not retained. A dump may
+be combined with a stop at or after its checkpoint. Stopping exercises only
 a prefix. A one-group rerun may not reproduce a scheduling-dependent failure.
 Hardware and simulator digests can differ; resolving those differences is
 separate from this smoke workload.
@@ -100,13 +101,16 @@ separate from this smoke workload.
 Sweeps cover target-supported integer, floating and packed arithmetic;
 modifiers and rounding/denormal policies; compact and extended encodings;
 DPP8/DPP16, lane access and reductions; memory and atomics; and matrix operations.
+Dependent boundary chains fold into nearby existing checkpoints, preserving
+their IDs. Raw dumps show the final register state at each checkpoint.
 Boundary checkpoints select negative conversion inputs, signed overflow and carry,
 NaNs, signed zeros, packed subnormals, nonzero scalar-relative offsets and FFT/rotate
 cross-lane controls. Full and alternating EXEC masks preserve inactive sentinels.
 These inputs exercise paths that mnemonic presence alone does not establish.
 
 Distinct encodings exercise the decoder; byte-identical aliases add no decoder
-behavior. Rejected encodings are not inserted as raw instruction words.
+behavior. Raw encodings cover documented operand forms the assembler cannot
+spell. Reserved encodings are excluded.
 
 Ordinary arithmetic regions retain EXEC through input setup, operations and
 result folding. Their 5–8 iterations hash seed, region and iteration into mixed,
