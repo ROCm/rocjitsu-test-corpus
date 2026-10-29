@@ -33,6 +33,11 @@ assembly, or after editing ``cases.toml``::
     python corpus/race/scripts/generate.py                    # every target
     python corpus/race/scripts/generate.py --target gfx950    # gfx950 only
     python corpus/race/scripts/generate.py --check            # exit 1 if stale
+
+The manifest holds every corpus target. ``--target`` regenerates the rows of
+the named targets and keeps the others as committed, and ``--check`` compares
+what would be written. Nothing is written unless every selected case's
+assembly is present, so an incomplete corpus never truncates the manifest.
 """
 
 import argparse
@@ -285,20 +290,28 @@ def load_corpus() -> inventory.Inventory:
 
 
 def generate(corpus: inventory.Inventory, targets: list[str]) -> list[MutantRow]:
-    """Every mutant of the cases that build for *targets*, target by target."""
-    rows: list[MutantRow] = []
-    for target in targets:
-        for case in corpus.cases:
-            if not (case.builds_for(target) and case.rules.mutate):
-                continue
-            if not (ASM_DIR / target / f"{case.kernel}.s").is_file():
-                print(
-                    f"  FAIL: {case.id} ({target}): asm/{target}/{case.kernel}.s is "
-                    f"missing; run python corpus/race/scripts/regenerate_asm.py",
-                    file=sys.stderr,
-                )
-                continue
-            rows += case_rows(case, target)
+    """
+    Every mutant of the cases that build for *targets*, target by target.
+
+    Raises GenerationError, before generating anything, if a case's assembly
+    is missing, since the manifest would silently lose its mutants.
+    """
+    selected = [
+        (target, case)
+        for target in targets
+        for case in corpus.cases
+        if case.builds_for(target) and case.rules.mutate
+    ]
+    if missing := [
+        f"asm/{target}/{case.kernel}.s"
+        for target, case in selected
+        if not (ASM_DIR / target / f"{case.kernel}.s").is_file()
+    ]:
+        raise GenerationError(
+            f"missing assembly, so the manifest would lose its mutants: "
+            f"{', '.join(missing)}. Run python corpus/race/scripts/regenerate_asm.py."
+        )
+    rows = [row for target, case in selected for row in case_rows(case, target)]
     check_unique_keys(rows)
     return rows
 
@@ -373,6 +386,44 @@ def check_unique_keys(rows: list[MutantRow]) -> None:
 # --- The manifest ------------------------------------------------------------
 
 
+def committed_rows() -> tuple[tuple[str, ...], list[MutantRow]]:
+    """The targets and rows of the committed manifest; none if there is none."""
+    if not MANIFEST_PATH.is_file():
+        return (), []
+    manifest = tomllib.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    return (
+        tuple(manifest.get("manifest", {}).get("targets", [])),
+        [MutantRow.from_table(table) for table in manifest.get("mutant", [])],
+    )
+
+
+def manifest_rows(
+    corpus: inventory.Inventory, selected: list[str]
+) -> tuple[list[str], list[MutantRow]]:
+    """
+    The targets and rows of the manifest to write: every corpus target, with
+    the rows of *selected* regenerated and the others kept as committed.
+
+    Raises GenerationError if an unselected target has no committed rows to
+    keep, since writing would drop them.
+    """
+    targets = sorted(corpus.targets)
+    fresh = generate(corpus, selected)
+    kept_targets, kept = committed_rows()
+    if unkept := [t for t in targets if t not in selected and t not in kept_targets]:
+        raise GenerationError(
+            f"mutants.toml has no rows for {', '.join(unkept)} to keep; regenerate "
+            f"them too, or run without --target"
+        )
+    rows = [
+        row
+        for target in targets
+        for row in (fresh if target in selected else kept)
+        if row.target == target
+    ]
+    return targets, rows
+
+
 def _toml_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"', '\\"')
 
@@ -438,7 +489,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--target",
         action="append",
         default=[],
-        help="Corpus target to enumerate for; repeat for several. Default: every one.",
+        help=(
+            "Corpus target to regenerate; repeat for several. The other targets' "
+            "rows are kept as committed. Default: every corpus target."
+        ),
     )
     parser.add_argument(
         "--check",
@@ -454,8 +508,10 @@ def main(argv: list[str]) -> ExitCode:
     args = parser.parse_args(argv)
     try:
         corpus = load_corpus()
-        targets = args.target or sorted(corpus.targets)
-        rows = generate(corpus, targets)
+        if unknown := sorted(set(args.target) - set(corpus.targets)):
+            parser.error(f"--target {', '.join(unknown)}: not a corpus target")
+        selected = args.target or sorted(corpus.targets)
+        targets, rows = manifest_rows(corpus, selected)
     except GenerationError as error:
         print(f"error: {error}", file=sys.stderr)
         return ExitCode.FAILED

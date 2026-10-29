@@ -162,6 +162,78 @@ def test_flat_memory_site_needs_a_tag(scratch: Path) -> None:
         rows_of(scratch, ["gfx1250"])
 
 
+# --- The manifest is never written incomplete ------------------------------------
+
+
+def generate_main(*argv: str) -> "generate.ExitCode":
+    return generate.main(list(argv))
+
+
+def test_missing_assembly_aborts_and_keeps_the_manifest(
+    scratch: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_corpus(scratch, PORTABLE, LISTINGS)
+    assert generate_main() == generate.ExitCode.SUCCESS
+    committed = (scratch / "mutants.toml").read_text()
+    (scratch / "asm" / "gfx950" / "only.s").unlink()
+    capsys.readouterr()
+    assert generate_main() == generate.ExitCode.FAILED
+    assert "missing assembly" in capsys.readouterr().err
+    assert (scratch / "mutants.toml").read_text() == committed
+    # --check does not pass on what it cannot generate either.
+    assert generate_main("--check") == generate.ExitCode.FAILED
+
+
+def test_target_subset_keeps_the_other_targets(scratch: Path) -> None:
+    write_corpus(scratch, PORTABLE, LISTINGS)
+    assert generate_main() == generate.ExitCode.SUCCESS
+    committed = (scratch / "mutants.toml").read_text()
+    assert generate_main("--target", "gfx950") == generate.ExitCode.SUCCESS
+    assert (scratch / "mutants.toml").read_text() == committed
+    assert generate_main("--check", "--target", "gfx950") == generate.ExitCode.SUCCESS
+
+
+def test_target_subset_regenerates_only_its_target(scratch: Path) -> None:
+    write_corpus(scratch, PORTABLE, LISTINGS)
+    assert generate_main() == generate.ExitCode.SUCCESS
+    # gfx1250 gains a second wait site, and so a second mutant.
+    (scratch / "asm" / "gfx1250" / "only.s").write_text(
+        LISTINGS["gfx1250"] + "\tglobal_load_b32 v3, v0, s[0:1]\n\ts_wait_loadcnt 0x0\n"
+        "\tv_add_nc_u32_e32 v4, v3, v3\n"
+    )
+    assert generate_main("--check", "--target", "gfx950") == generate.ExitCode.SUCCESS
+    assert (
+        generate_main("--check", "--target", "gfx1250") == generate.ExitCode.OUT_OF_DATE
+    )
+    assert generate_main("--target", "gfx950") == generate.ExitCode.SUCCESS
+    manifest = tomllib.loads((scratch / "mutants.toml").read_text())
+    assert manifest["manifest"]["targets"] == ["gfx1250", "gfx950"]
+    # gfx1250's committed row is kept, not regenerated.
+    assert [(m["target"], m["id"]) for m in manifest["mutant"]] == [
+        ("gfx1250", "only.wait000"),
+        ("gfx950", "only.wait000"),
+    ]
+    assert generate_main("--target", "gfx1250") == generate.ExitCode.SUCCESS
+    manifest = tomllib.loads((scratch / "mutants.toml").read_text())
+    assert len(manifest["mutant"]) == 3
+
+
+def test_target_subset_without_committed_rows_is_rejected(
+    scratch: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_corpus(scratch, PORTABLE, LISTINGS)
+    assert generate_main("--target", "gfx950") == generate.ExitCode.FAILED
+    assert "mutants.toml has no rows for gfx1250 to keep" in capsys.readouterr().err
+    assert not (scratch / "mutants.toml").exists()
+
+
+def test_unknown_target_is_a_usage_error(scratch: Path) -> None:
+    write_corpus(scratch, PORTABLE, LISTINGS)
+    with pytest.raises(SystemExit) as exit_info:
+        generate_main("--target", "gfx1201")
+    assert exit_info.value.code == 2
+
+
 # --- The committed manifest ------------------------------------------------------
 
 
