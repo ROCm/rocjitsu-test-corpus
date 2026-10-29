@@ -20,6 +20,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
+from detector_protocol import HAZARD_KINDS, RESOURCES
+
 SCHEMA = 1
 
 # The keys cases.toml may have at its top level, and in its [corpus] table. Any
@@ -46,8 +48,11 @@ class InventoryError(ValueError):
 # The mutation kinds a case may opt into with ``mutate``.
 MUTATION_KINDS = frozenset({"wait", "memory"})
 
-# The keys of a [[case.exempt]] table. All but ``target`` are required.
-EXEMPTION_KEYS = frozenset({"kind", "ordinal", "site", "reason", "target"})
+# The keys of a [[case.exempt]] and a [[case.tag]] table. All but ``target``
+# are required.
+_PIN_KEYS = frozenset({"kind", "ordinal", "site", "target"})
+EXEMPTION_KEYS = _PIN_KEYS | {"reason"}
+TAG_KEYS = _PIN_KEYS | {"resource", "hazard", "reason"}
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -95,6 +100,22 @@ class Exemption(SitePin):
     reason: str
 
 
+@dataclass(frozen=True, kw_only=True)
+class TagOverride(SitePin):
+    """
+    The scoring tag of a site whose derived tag is wrong, or that has none.
+
+    Attributes:
+        resource: The resource tag; see detector_protocol.RESOURCES.
+        hazard: The hazard kind; see detector_protocol.HAZARD_KINDS.
+        reason: Why the derived tag does not apply.
+    """
+
+    resource: str
+    hazard: str
+    reason: str
+
+
 @dataclass(frozen=True)
 class MutationRules:
     """
@@ -103,20 +124,21 @@ class MutationRules:
 
     Attributes:
         mutate: The mutation kinds the case opts into; see MUTATION_KINDS.
-        hazard: The dominant hazard kind the kernel is built to produce.
+        hazard: The hazard pattern the kernel is written around. It describes
+            the kernel; each mutant's tag is derived from its own site.
         description: What the kernel exercises, in a sentence.
-        resource: The resource tag pinned for every mutant of the case.
         waits: Per target, the counters the case's assembly waits on, or None
             if the manifest gives no ``waits`` table.
         exempt: The mutations exempt from scoring.
+        tags: The sites whose scoring tag is given rather than derived.
     """
 
     mutate: tuple[str, ...] = ()
     hazard: str | None = None
     description: str | None = None
-    resource: str | None = None
     waits: dict[str, tuple[str, ...]] | None = None
     exempt: tuple[Exemption, ...] = ()
+    tags: tuple[TagOverride, ...] = ()
 
     def declared(self) -> bool:
         """Whether the manifest gives the case any mutation rule."""
@@ -126,9 +148,13 @@ class MutationRules:
         """The exemption of site *ordinal* of *kind* on *target*, if any."""
         return next((e for e in self.exempt if e.names(kind, ordinal, target)), None)
 
+    def tag_for(self, kind: str, ordinal: int, target: str) -> TagOverride | None:
+        """The tag override of site *ordinal* of *kind* on *target*, if any."""
+        return next((t for t in self.tags if t.names(kind, ordinal, target)), None)
+
     def pins(self) -> tuple[SitePin, ...]:
-        """Every site this case pins."""
-        return self.exempt
+        """Every site this case pins, by exemption or tag override."""
+        return self.exempt + self.tags
 
 
 @dataclass(frozen=True)
@@ -158,10 +184,11 @@ class Case:
 
 
 # The fields a [[case]] table may have: those of Case, with MutationRules'
-# fields in place of ``rules``.
+# fields in place of ``rules``. MutationRules.tags is the [[case.tag]] array.
 CASE_FIELDS = frozenset(
     {item.name for item in fields(Case)} - {"rules"}
-    | {item.name for item in fields(MutationRules)}
+    | {item.name for item in fields(MutationRules)} - {"tags"}
+    | {"tag"}
 )
 
 
@@ -325,20 +352,21 @@ def _mutation_rules(
                 f"{where}: mutate lists {kind!r}; known kinds are "
                 f"{', '.join(sorted(MUTATION_KINDS))}"
             )
-    hazard, description, resource = (
+    hazard, description = (
         _optional_string(
             where=where, name=name, value=entry.get(name), problems=problems
         )
-        for name in ("hazard", "description", "resource")
+        for name in ("hazard", "description")
     )
     exempt = _site_pins(where, entry.get("exempt", []), "exempt", problems)
+    tags = _site_pins(where, entry.get("tag", []), "tag", problems)
     return MutationRules(
         mutate=mutate,
         hazard=hazard,
         description=description,
-        resource=resource,
         waits=_waits(where=where, value=entry.get("waits"), problems=problems),
         exempt=tuple(Exemption(**table) for table in exempt),
+        tags=tuple(TagOverride(**table) for table in tags),
     )
 
 
@@ -372,8 +400,8 @@ def _site_pins(
     where: str, value: object, name: str, problems: list[str]
 ) -> list[dict[str, object]]:
     """
-    The valid [[case.<name>]] tables in *value*, with a problem for each
-    invalid one.
+    The valid [[case.<name>]] tables in *value*, *name* being ``exempt`` or
+    ``tag``, with a problem for each invalid one.
     """
     if not isinstance(value, list) or not all(isinstance(t, dict) for t in value):
         problems.append(f"{where}: {name} must be a list of [[case.{name}]] tables")
@@ -389,7 +417,7 @@ def _site_pins(
 
 def _site_pin_problems(where: str, table: dict[str, object], name: str) -> list[str]:
     """What is wrong with one [[case.<name>]] table."""
-    keys = EXEMPTION_KEYS
+    keys = EXEMPTION_KEYS if name == "exempt" else TAG_KEYS
     problems = [
         f"{where}: unknown [[case.{name}]] key {key!r}"
         for key in sorted(set(table) - keys)
@@ -402,12 +430,16 @@ def _site_pin_problems(where: str, table: dict[str, object], name: str) -> list[
         problems.append(f"{where}: {name} ordinal must be a non-negative integer")
     if table.get("target") is not None and not _is_name(table.get("target")):
         problems.append(f"{where}: {name} target must be a non-empty string")
-    kind = table.get("kind")
-    if _is_name(kind) and kind not in MUTATION_KINDS:
-        problems.append(
-            f"{where}: {name} kind {kind!r} is not one of "
-            f"{', '.join(sorted(MUTATION_KINDS))}"
-        )
+    for key, known in (
+        ("kind", MUTATION_KINDS),
+        ("resource", RESOURCES),
+        ("hazard", HAZARD_KINDS),
+    ):
+        if key in keys and _is_name(table.get(key)) and table[key] not in known:
+            problems.append(
+                f"{where}: {name} {key} {table[key]!r} is not one of "
+                f"{', '.join(sorted(known))}"
+            )
     return problems
 
 

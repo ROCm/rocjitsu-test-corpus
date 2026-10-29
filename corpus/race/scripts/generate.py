@@ -24,8 +24,9 @@ same id names a different instruction on each target. Selectors and coverage
 consumers must key mutants by the pair, as a per-target ``RunReport`` does.
 generate() rejects a manifest in which the pair is not unique.
 
-The tags it derives are a best guess and are meant to be reviewed; see
-``derive_resource`` for why the wait counter alone does not determine them.
+Each mutant's tag is derived from its own site; see ``site_tag``. A site the
+derivation cannot tag, and one it tags wrongly, is settled in ``cases.toml``,
+and generation fails until it is.
 
 Run this from the repository root after ``regenerate_asm.py`` changes the
 assembly, or after editing ``cases.toml``::
@@ -46,6 +47,7 @@ import sys
 import tomllib
 from dataclasses import dataclass
 
+import exposure
 import inventory
 import mutate
 from detector_protocol import validate_tags
@@ -54,6 +56,15 @@ ASM_DIR = inventory.ASM_DIR
 CASES_PATH = inventory.CASES_PATH
 MANIFEST_PATH = inventory.CORPUS_ROOT / "mutants.toml"
 MANIFEST_SCHEMA = 1
+
+# The race a load rewritten as a store opens with other threads' reads of the
+# same memory, from the load's address space. flat_ is absent: a flat address
+# may be global memory, LDS or scratch, so such a site needs a [[case.tag]].
+_MEMORY_SITE_TAGS = (
+    ("global_", "global", "GlobalMemoryRace"),
+    ("buffer_", "global", "GlobalMemoryRace"),
+    ("ds_", "lds", "LocalMemoryRace"),
+)
 
 
 class ExitCode(enum.IntEnum):
@@ -117,150 +128,6 @@ class MutantRow:
 # --- Tagging -----------------------------------------------------------------
 
 
-# Which counter family a wait drains. Two eras have to be handled: gfx12-era
-# targets use split mnemonics, while CDNA and earlier put everything on the
-# combined `s_waitcnt` and name the counters in the operand. gfx950 emits only
-# the latter, so keying on the mnemonic alone tags the entire corpus `vgpr`.
-_SPLIT_COUNTER = {
-    "s_wait_loadcnt": "vm",
-    "s_wait_storecnt": "vm",
-    "s_wait_samplecnt": "vm",
-    "s_wait_bvhcnt": "vm",
-    "s_wait_expcnt": "vm",
-    "s_wait_kmcnt": "smem",
-    "s_wait_dscnt": "lds",
-    "s_wait_tensorcnt": "tensor",
-    "s_wait_asynccnt": "tensor",
-}
-
-# What each kind of in-flight operation leaves unguarded when its wait is gone.
-_INFLIGHT_RESOURCE = (
-    ("ds_", "lds"),  # LDS read/write: the slot and its ordering
-    ("s_load", "sgpr"),  # scalar memory: destination SGPR
-    ("s_buffer_load", "sgpr"),
-    ("tensor_load", "lds"),  # tensor DMA lands in LDS
-    ("tensor_store", "lds"),
-    ("scratch_", "vgpr"),  # scratch load: destination VGPR
-    ("buffer_load", "vgpr"),
-    ("global_load", "vgpr"),
-    ("flat_load", "vgpr"),
-    ("global_store", "vgpr"),  # store: the source VGPR may be overwritten
-    ("flat_store", "vgpr"),
-    ("buffer_store", "vgpr"),
-)
-
-_INFLIGHT_SCAN_LINES = 40
-
-# The memory a load rewritten as a store races, from the load's address space.
-# flat_ is deliberately absent: a flat address can resolve to global memory,
-# LDS or scratch, so a case with a flat memory site must say which with
-# `resource = "..."`.
-_MEMORY_SITE_RESOURCE = (
-    ("global_", "global"),
-    ("buffer_", "global"),
-    ("scratch_", "scratch"),
-    ("ds_", "lds"),
-)
-
-
-def _counter_family(site: "mutate.WaitSite") -> str:
-    """Which counter the wait drains, from the mnemonic or the legacy operand."""
-    if split := _SPLIT_COUNTER.get(site.mnemonic):
-        return split
-    operand = site.full_line
-    has_lgkm = "lgkmcnt" in operand
-    has_vm = "vmcnt" in operand or "vscnt" in operand
-    if has_lgkm and not has_vm:
-        return "lgkm"
-    if has_vm and not has_lgkm:
-        return "vm"
-    if has_lgkm and has_vm:
-        return "both"
-    return "unknown"
-
-
-def _nearest_inflight(
-    lines: list[str], line_number: int, families: tuple[str, ...]
-) -> str | None:
-    """
-    Resource of the nearest preceding operation this wait could be draining.
-
-    Scanning backwards is what disambiguates the legacy combined counter:
-    `lgkmcnt` retires scalar memory and LDS as one sequence, so the mnemonic
-    says nothing, but the instruction actually in flight does.
-    """
-    start = max(0, line_number - _INFLIGHT_SCAN_LINES)
-    for idx in range(line_number - 1, start - 1, -1):
-        stripped = lines[idx].strip()
-        if not stripped or stripped.startswith((";", ".")):
-            continue
-        for prefix, resource in _INFLIGHT_RESOURCE:
-            if stripped.startswith(prefix) and resource in families:
-                return resource
-    return None
-
-
-def derive_resource(
-    case: inventory.Case,
-    site: mutate.WaitSite | mutate.MemorySite,
-    lines: list[str],
-) -> str:
-    """
-    Best guess at the resource a mutation races, with the case free to override.
-
-    The wait counter is not the resource. Removing a ``vmcnt`` wait on a global
-    load leaves an unguarded *register* -- the load's destination VGPR -- even
-    though the data came from global memory, which is why a global-memory-only
-    detector correctly sees nothing there.
-
-    And on CDNA the counter is not even a family: ``lgkmcnt`` retires scalar
-    memory and LDS as a single sequence, so the same mnemonic guards a kernarg
-    ``s_load`` in one place and a ``ds_write`` a few lines later. The nearest
-    preceding memory operation is what actually says which, so that is what is
-    consulted.
-
-    A load rewritten as a store races the memory itself rather than a
-    register, so a ``memory`` site takes the address space of the load.
-
-    A case may still pin its resource with ``resource = "..."`` in cases.toml.
-    Tags are committed and reviewable precisely so a wrong guess is corrected
-    once and stays corrected. Where a site cannot be attributed at all,
-    generation fails rather than guessing.
-    """
-    if case.rules.resource is not None:
-        return case.rules.resource
-    if isinstance(site, mutate.MemorySite):
-        for prefix, resource in _MEMORY_SITE_RESOURCE:
-            if site.load_mnemonic.startswith(prefix):
-                return resource
-        raise GenerationError(
-            f"{case.id}: memory site {site.ordinal} ({site.load_mnemonic}) does not say "
-            f'which memory it touches; pin it with resource = "..." in cases.toml'
-        )
-
-    family = _counter_family(site)
-    if family == "tensor":
-        return "lds"
-    if family == "lds":
-        return _nearest_inflight(lines, site.line_number, ("lds", "vgpr")) or "lds"
-    if family == "smem":
-        return "sgpr"
-    if family == "vm":
-        return _nearest_inflight(lines, site.line_number, ("vgpr",)) or "vgpr"
-    if family in ("lgkm", "both"):
-        # The ambiguous case: scalar memory and LDS share this counter.
-        found = _nearest_inflight(lines, site.line_number, ("lds", "sgpr", "vgpr"))
-        if found is not None:
-            return found
-        raise GenerationError(
-            f"{case.id}: cannot tell what wait {site.ordinal} ({site.signature}) "
-            f"guards: no scalar, DS or vector memory operation within the "
-            f'{_INFLIGHT_SCAN_LINES} lines before it. Pin it with resource = "..." '
-            f"in cases.toml."
-        )
-    return "vgpr"
-
-
 def site_tag(
     case: inventory.Case,
     kind: str,
@@ -269,11 +136,39 @@ def site_tag(
     target: str,
 ) -> tuple[str, str]:
     """
-    The (resource, hazard) of a mutation of *site*: the resource derived from
-    the site, and the hazard the kernel is written around.
+    The (resource, hazard) a mutation of *site* exposes.
+
+    A ``[[case.tag]]`` for the site gives it. Otherwise a load rewritten as a
+    store races other threads' reads of its address space, and a removed wait
+    exposes the first dependency on what it retired; see exposure.py. Raises
+    GenerationError where neither applies.
     """
-    del kind, target
-    return derive_resource(case, site, lines), case.rules.hazard
+    where = f"{case.id} ({target}): {kind} ordinal {site.ordinal} ({site.signature})"
+    if (override := case.rules.tag_for(kind, site.ordinal, target)) is not None:
+        return override.resource, override.hazard
+    if isinstance(site, mutate.MemorySite):
+        return _memory_site_tag(where, site)
+    try:
+        tag = exposure.expose(lines, site.line_number, target)
+    except exposure.AttributionError as error:
+        raise GenerationError(f"{where}: {error}") from error
+    if tag is None:
+        raise GenerationError(
+            f"{where}: removing the wait exposes nothing a later instruction depends "
+            f"on. Exempt it with [[case.exempt]] if that is right, and give its tag "
+            f"with [[case.tag]]."
+        )
+    return tag.resource, tag.hazard
+
+
+def _memory_site_tag(where: str, site: mutate.MemorySite) -> tuple[str, str]:
+    for prefix, resource, hazard in _MEMORY_SITE_TAGS:
+        if site.load_mnemonic.startswith(prefix):
+            return resource, hazard
+    raise GenerationError(
+        f"{where}: {site.load_mnemonic} does not say which memory it touches; give "
+        f"the site's tag with [[case.tag]] in cases.toml"
+    )
 
 
 # --- Generation --------------------------------------------------------------
@@ -431,11 +326,10 @@ def _toml_escape(text: str) -> str:
 def render_manifest(rows: list[MutantRow], targets: list[str]) -> str:
     """Emit mutants.toml. Written by hand so the output stays diff-friendly."""
     lines = [
-        "# GENERATED by corpus/race/scripts/generate.py -- do not hand-edit,",
-        "# but DO correct a wrong `resource` or `hazard` tag: the derivation is a",
-        "# best guess (see derive_resource) and a mis-tag silently moves a case in",
-        "# or out of a detector's scope. Pin a correction in cases.toml so it",
-        "# survives the next regeneration.",
+        "# GENERATED by corpus/race/scripts/generate.py -- do not edit by hand.",
+        "# Each mutant's `resource` and `hazard` tag is derived from its site,",
+        "# and a mis-tag silently moves it in or out of a detector's scope, so",
+        "# correct one with a [[case.tag]] in cases.toml and regenerate.",
         "#",
         "# Each entry is a recipe, not assembly: `ordinal` names the Nth mutation",
         "# site of its kind in asm/<target>/<kernel>.s, counted in emission order,",

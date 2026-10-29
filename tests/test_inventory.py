@@ -42,6 +42,7 @@ def test_load_gives_named_case_records(tmp_path: Path) -> None:
         inventory.Inventory,
         inventory.MutationRules,
         inventory.Exemption,
+        inventory.TagOverride,
     ],
 )
 def test_records_are_frozen_dataclasses(record: type) -> None:
@@ -55,10 +56,13 @@ def test_records_are_frozen_dataclasses(record: type) -> None:
 def test_case_fields_are_the_fields_of_case_and_its_rules() -> None:
     # A field added to Case or MutationRules is accepted in cases.toml without
     # a second list to update, as recipe.FIELDS is derived from Recipe. Case's
-    # rules field holds the mutation fields, and is not itself a manifest field.
+    # rules field holds the mutation fields, and is not itself a manifest field;
+    # MutationRules.tags is the [[case.tag]] array.
     case_fields = {field.name for field in dataclasses.fields(inventory.Case)}
     rule_fields = {field.name for field in dataclasses.fields(inventory.MutationRules)}
-    assert inventory.CASE_FIELDS == (case_fields - {"rules"}) | rule_fields
+    assert inventory.CASE_FIELDS == (case_fields - {"rules"}) | (
+        rule_fields - {"tags"}
+    ) | {"tag"}
     assert inventory.CASE_FIELDS == {
         "id",
         "kernel",
@@ -67,20 +71,22 @@ def test_case_fields_are_the_fields_of_case_and_its_rules() -> None:
         "mutate",
         "hazard",
         "description",
-        "resource",
         "waits",
         "exempt",
+        "tag",
     }
 
 
 MUTATING = (
     '[[case]]\nid = "m"\nkernel = "m"\ntargets = ["gfx1250"]\n'
     'mutate = ["wait", "memory"]\nhazard = "RAW"\ndescription = "LDS RAW"\n'
-    'resource = "lds"\nwaits = { gfx1250 = ["dscnt", "kmcnt"] }\n'
+    'waits = { gfx1250 = ["dscnt", "kmcnt"] }\n'
     '[[case.exempt]]\nkind = "wait"\nordinal = 3\nsite = "s_wait_kmcnt 0x0"\n'
     'reason = "already satisfied"\n'
     '[[case.exempt]]\nkind = "wait"\nordinal = 0\nsite = "s_wait_dscnt 0x0"\n'
     'reason = "own slot"\ntarget = "gfx1250"\n'
+    '[[case.tag]]\nkind = "wait"\nordinal = 3\nsite = "s_wait_kmcnt 0x0"\n'
+    'resource = "sgpr"\nhazard = "RAW"\nreason = "retires nothing"\n'
 )
 
 
@@ -90,7 +96,6 @@ def test_mutation_rules_are_read_into_a_record(tmp_path: Path) -> None:
         mutate=("wait", "memory"),
         hazard="RAW",
         description="LDS RAW",
-        resource="lds",
         waits={"gfx1250": ("dscnt", "kmcnt")},
         exempt=(
             inventory.Exemption(
@@ -107,6 +112,16 @@ def test_mutation_rules_are_read_into_a_record(tmp_path: Path) -> None:
                 target="gfx1250",
             ),
         ),
+        tags=(
+            inventory.TagOverride(
+                kind="wait",
+                ordinal=3,
+                site="s_wait_kmcnt 0x0",
+                resource="sgpr",
+                hazard="RAW",
+                reason="retires nothing",
+            ),
+        ),
     )
     assert case.rules.declared()
 
@@ -119,7 +134,9 @@ def test_pins_are_found_by_site_and_target(tmp_path: Path) -> None:
     assert rules.exemption_for("wait", 0, "gfx1250").reason == "own slot"
     assert rules.exemption_for("wait", 0, "gfx950") is None
     assert rules.exemption_for("memory", 3, "gfx1250") is None
-    assert rules.pins() == rules.exempt
+    assert rules.tag_for("wait", 3, "gfx1250").resource == "sgpr"
+    assert rules.tag_for("wait", 0, "gfx1250") is None
+    assert rules.pins() == rules.exempt + rules.tags
 
 
 def test_case_without_mutation_fields_has_no_rules(tmp_path: Path) -> None:
@@ -276,6 +293,34 @@ BAD_MANIFESTS = {
         '[[case]]\nid = "a"\nkernel = "a"\n'
         '[[case.exempt]]\nkind = "load"\nordinal = 0\nsite = "s"\nreason = "r"\n',
         "cases.toml [a]: exempt kind 'load' is not one of memory, wait",
+    ),
+    "case-wide resource": (
+        '[[case]]\nid = "a"\nkernel = "a"\nresource = "vgpr"\n',
+        "cases.toml [a]: unknown field 'resource'",
+    ),
+    "tag not a list of tables": (
+        '[[case]]\nid = "a"\nkernel = "a"\ntag = "vgpr"\n',
+        "cases.toml [a]: tag must be a list of [[case.tag]] tables",
+    ),
+    "tag missing its hazard": (
+        '[[case]]\nid = "a"\nkernel = "a"\n'
+        '[[case.tag]]\nkind = "wait"\nordinal = 0\nsite = "s"\n'
+        'resource = "vgpr"\nreason = "r"\n',
+        "cases.toml [a]: tag hazard must be a non-empty string",
+    ),
+    "tag unknown resource": (
+        '[[case]]\nid = "a"\nkernel = "a"\n'
+        '[[case.tag]]\nkind = "wait"\nordinal = 0\nsite = "s"\n'
+        'resource = "register"\nhazard = "RAW"\nreason = "r"\n',
+        "cases.toml [a]: tag resource 'register' is not one of agpr, global, lds, "
+        "scratch, sgpr, vgpr",
+    ),
+    "tag unknown hazard": (
+        '[[case]]\nid = "a"\nkernel = "a"\n'
+        '[[case.tag]]\nkind = "wait"\nordinal = 0\nsite = "s"\n'
+        'resource = "vgpr"\nhazard = "race"\nreason = "r"\n',
+        "cases.toml [a]: tag hazard 'race' is not one of GlobalMemoryRace, "
+        "LocalMemoryRace, RAW, WAR, WAW",
     ),
 }
 

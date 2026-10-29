@@ -24,8 +24,8 @@ assembly is regenerated: an edit that shifts code around without changing the
 number of waits leaves every recipe still pointing at the same instruction.
 
 A site is pinned by its **signature**: the instruction without its comment,
-whitespace collapsed, such as ``s_waitcnt lgkmcnt(0)``. Exemptions in
-``cases.toml`` name the signature they were checked against, and
+whitespace collapsed, such as ``s_waitcnt lgkmcnt(0)``. Exemptions and tag
+overrides in ``cases.toml`` name the signature they were checked against, and
 ``pin_mismatch`` is the one check both ``check_cases.py`` and ``generate.py``
 apply to them, so an ordinal that moves onto a different instruction -- even
 one with the same mnemonic -- is caught.

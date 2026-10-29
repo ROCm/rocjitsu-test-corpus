@@ -46,8 +46,8 @@ the other fields ``generate.py`` reads), it also checks that:
 * ``waits`` has exactly one entry per target the case builds for, and that
   entry lists exactly the counters the target's assembly waits on (see
   ``wait_counters``);
-* each ``[[case.exempt]]`` names, at its ordinal, the instruction its
-  ``site`` signature says it does. Sites are counted, and pins
+* each ``[[case.exempt]]`` and ``[[case.tag]]`` names, at its ordinal, the
+  instruction its ``site`` signature says it does. Sites are counted, and pins
   matched, by ``mutate``, as ``generate.py`` counts and matches them.
 """
 
@@ -233,7 +233,8 @@ def _pin_problems(
             continue
         sites = mutate.find_sites(asm, pin.kind)
         if mismatch := mutate.pin_mismatch(sites, pin.ordinal, pin.site, listing):
-            problems.append(f"{where}: exempt {pin.kind} {mismatch}")
+            label = "exempt" if isinstance(pin, inventory.Exemption) else "tag"
+            problems.append(f"{where}: {label} {pin.kind} {mismatch}")
     return problems
 
 

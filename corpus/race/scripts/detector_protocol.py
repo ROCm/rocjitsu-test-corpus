@@ -58,6 +58,11 @@ HAZARD_KINDS = frozenset(
         "GlobalMemoryRace",  # cross-workgroup race on global memory
     }
 )
+# RAW, WAR and WAW are dependencies inside one wave, on a register or on LDS.
+# LocalMemoryRace is a dependency between waves of a workgroup: an LDS access
+# still in flight at a workgroup barrier, which another wave's access after
+# the barrier can race. GlobalMemoryRace is between workgroups. exposure.py
+# assigns them to wait mutations, and generate.py to memory mutations.
 
 
 def capability(

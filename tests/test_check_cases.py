@@ -759,6 +759,29 @@ def test_memory_exemption_is_checked_against_the_assembly(
         assert f"cases.toml [w]: {problem}" in out
 
 
+def test_tag_override_is_checked_against_the_assembly(
+    corpus: BuildCorpus, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    tag = (
+        '[[case.tag]]\nkind = "wait"\nordinal = 1\nsite = "s_wait_loadcnt 0x0"\n'
+        'resource = "vgpr"\nhazard = "RAW"\nreason = "r"\n'
+    )
+    corpus(
+        targets=["gfx1250"],
+        cases=mutating_case(
+            '["gfx1250"]', '{ gfx1250 = ["dscnt", "kmcnt", "loadcnt"] }', tag
+        ),
+        asm=["gfx1250/w"],
+    )
+    write_waits(tmp_path, "gfx1250", GFX1250_WAITS)
+    code, out = run(capsys)
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
+    assert (
+        "cases.toml [w]: tag wait ordinal 1 is 's_wait_kmcnt 0x0' at "
+        "asm/gfx1250/w.s:5, not 's_wait_loadcnt 0x0'"
+    ) in out
+
+
 def test_committed_pins_use_the_sites_generate_uses() -> None:
     # check_cases has no wait parser of its own: the sites it counts are the
     # mutation engine's, so its ordinals are the manifest's.

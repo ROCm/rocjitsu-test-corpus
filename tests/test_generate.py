@@ -23,9 +23,7 @@ LISTINGS = {
     "gfx1250": "\tglobal_load_b32 v1, v0, s[0:1]\n\ts_wait_loadcnt 0x0\n"
     "\tv_add_nc_u32_e32 v2, v1, v1\n",
 }
-GFX1250_ONLY = PORTABLE.replace(
-    'mutate = ["wait"]', 'targets = ["gfx1250"]\nmutate = ["wait"]'
-)
+GFX1250_ONLY = PORTABLE.replace('hazard = "RAW"', 'targets = ["gfx1250"]')
 
 
 @pytest.fixture
@@ -133,6 +131,51 @@ def test_untargeted_pin_must_match_on_every_target(scratch: Path) -> None:
         rows_of(scratch, ["gfx950", "gfx1250"])
 
 
+def test_tag_override_replaces_the_derived_tag(scratch: Path) -> None:
+    override = pin(
+        "tag", "s_wait_loadcnt 0x0", "gfx1250", 'resource = "lds"\nhazard = "WAR"\n'
+    )
+    write_corpus(scratch, PORTABLE + override, LISTINGS)
+    rows = rows_of(scratch, ["gfx950", "gfx1250"])
+    assert {row.target: (row.resource, row.hazard) for row in rows} == {
+        "gfx950": ("vgpr", "RAW"),
+        "gfx1250": ("lds", "WAR"),
+    }
+
+
+def test_wait_that_exposes_nothing_must_be_settled(scratch: Path) -> None:
+    # The second wait retires nothing: the first one already did.
+    listing = (
+        "\ts_load_b32 s2, s[0:1], 0x24\n\ts_wait_kmcnt 0x0\n"
+        "\ts_and_b32 s3, s2, 0xffff\n\ts_wait_kmcnt 0x0\n"
+    )
+    write_corpus(scratch, GFX1250_ONLY, {"gfx1250": listing})
+    with pytest.raises(
+        generate.GenerationError,
+        match=r"only \(gfx1250\): wait ordinal 1 \(s_wait_kmcnt 0x0\): removing the "
+        r"wait exposes nothing",
+    ):
+        rows_of(scratch, ["gfx1250"])
+
+
+def test_settled_wait_takes_its_override(scratch: Path) -> None:
+    listing = (
+        "\ts_load_b32 s2, s[0:1], 0x24\n\ts_wait_kmcnt 0x0\n"
+        "\ts_and_b32 s3, s2, 0xffff\n\ts_wait_kmcnt 0x0\n"
+    )
+    exempt = pin("exempt", "s_wait_kmcnt 0x0").replace("ordinal = 0", "ordinal = 1")
+    tag = pin(
+        "tag", "s_wait_kmcnt 0x0", extra='resource = "sgpr"\nhazard = "RAW"\n'
+    ).replace("ordinal = 0", "ordinal = 1")
+    write_corpus(scratch, GFX1250_ONLY + exempt + tag, {"gfx1250": listing})
+    second = rows_of(scratch, ["gfx1250"])[1]
+    assert (second.resource, second.hazard, second.exempt_reason) == (
+        "sgpr",
+        "RAW",
+        "r",
+    )
+
+
 # --- Memory sites ----------------------------------------------------------------
 
 MEMORY_CASE = GFX1250_ONLY.replace('mutate = ["wait"]', 'mutate = ["memory"]')
@@ -141,7 +184,7 @@ MEMORY_CASE = GFX1250_ONLY.replace('mutate = ["wait"]', 'mutate = ["memory"]')
 @pytest.mark.parametrize(
     "load, tag",
     [
-        ("global_load_u8 v1, v0, s[0:1]", ("global", "RAW")),
+        ("global_load_u8 v1, v0, s[0:1]", ("global", "GlobalMemoryRace")),
         ("ds_load_u8 v1, v0", None),
     ],
 )
@@ -157,7 +200,7 @@ def test_memory_site_takes_its_address_space(
 def test_flat_memory_site_needs_a_tag(scratch: Path) -> None:
     write_corpus(scratch, MEMORY_CASE, {"gfx1250": "\tflat_load_u8 v1, v[0:1]\n"})
     with pytest.raises(
-        generate.GenerationError, match=r"\(flat_load_u8\) does not say which memory"
+        generate.GenerationError, match=r"flat_load_u8 does not say which memory"
     ):
         rows_of(scratch, ["gfx1250"])
 
@@ -242,6 +285,45 @@ def committed_mutants() -> dict[tuple[str, str], dict[str, object]]:
     return {(mutant["target"], mutant["id"]): mutant for mutant in mutants}
 
 
+# Pinned sites whose tags follow from their own dependency, not their case's
+# declared hazard: (target, id) -> (resource, hazard, site).
+PINNED_TAGS = {
+    # The prologue's kernarg load, read by SALU: SGPR RAW, though the case
+    # is a WAW (or WAR) kernel.
+    ("gfx1250", "waw_pattern.wait000"): ("sgpr", "RAW", "s_wait_kmcnt 0x0"),
+    ("gfx1250", "war_pattern.wait000"): ("sgpr", "RAW", "s_wait_kmcnt 0x0"),
+    # The waw_pattern load's result is stored: VGPR RAW.
+    ("gfx1250", "waw_pattern.wait002"): ("vgpr", "RAW", "s_wait_loadcnt 0x0"),
+    # A DS read consumed by a VALU op: the register, not LDS.
+    ("gfx1250", "lds_reduce.wait003"): ("vgpr", "RAW", "s_wait_dscnt 0x0"),
+    # A combined counter, attributed to the flat load it retires.
+    ("gfx1250", "pointer_chase.wait003"): ("vgpr", "RAW", "s_wait_loadcnt_dscnt 0x0"),
+    # A DS store in flight at a barrier: another wave's read races it.
+    ("gfx1250", "fa_barrier_epoch.wait002"): (
+        "lds",
+        "LocalMemoryRace",
+        "s_wait_dscnt 0",
+    ),
+    ("gfx950", "lds_reduce.wait002"): (
+        "lds",
+        "LocalMemoryRace",
+        "s_waitcnt lgkmcnt(0)",
+    ),
+    # The tensor load into LDS, read by a DS load.
+    ("gfx1250", "tensor_lds.wait003"): ("lds", "RAW", "s_wait_tensorcnt 0"),
+    # s_mov writes s11 while the dwordx8 load into s[4:11] is in flight.
+    ("gfx950", "add_buffer.wait000"): ("sgpr", "WAW", "s_waitcnt lgkmcnt(0)"),
+    # Retires nothing, so its tag is given by a [[case.tag]].
+    ("gfx1250", "wmma_rocwmma.wait003"): ("sgpr", "RAW", "s_wait_kmcnt 0x0"),
+}
+
+
+@pytest.mark.parametrize("key, tag", PINNED_TAGS.items(), ids=lambda k: str(k))
+def test_committed_site_tag(key: tuple[str, str], tag: tuple[str, str, str]) -> None:
+    mutant = committed_mutants()[key]
+    assert (mutant["resource"], mutant["hazard"], mutant["site"]) == tag
+
+
 def test_committed_memory_sites_race_between_workgroups() -> None:
     memory = [m for m in committed_mutants().values() if m["kind"] == "memory"]
     assert memory and all(
@@ -260,6 +342,32 @@ def test_committed_exemptions() -> None:
         ("gfx1250", "lds_war_pattern.wait004"),
         ("gfx1250", "wmma_rocwmma.wait003"),
     }
+
+
+class RegisterOnlyDetector:
+    """A detector of register hazards inside a wave, and nothing on LDS."""
+
+    name = "registers"
+    supports = protocol.capability({"sgpr", "vgpr", "agpr"}, {"RAW", "WAR", "WAW"})
+    needs_execution = False
+
+
+@pytest.mark.parametrize(
+    "key, in_scope",
+    [
+        (("gfx1250", "lds_reduce.wait003"), True),
+        (("gfx1250", "lds_reduce.wait002"), False),
+        (("gfx1250", "waw_pattern.wait000"), True),
+        (("gfx1250", "tensor_lds.wait003"), False),
+        (("gfx950", "add_buffer.wait000"), True),
+    ],
+)
+def test_committed_tags_decide_scope(key: tuple[str, str], in_scope: bool) -> None:
+    mutant = committed_mutants()[key]
+    reason = protocol.out_of_scope_reason(
+        RegisterOnlyDetector(), mutant["resource"], mutant["hazard"]
+    )
+    assert (reason is None) == in_scope
 
 
 def test_committed_manifest_has_unique_keys() -> None:
