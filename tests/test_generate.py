@@ -1,11 +1,13 @@
 # Copyright (c) 2026 Advanced Micro Devices, Inc.
 # SPDX-License-Identifier: MIT
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
 import pytest
 
-from support.race_corpus import corpus_table, load_script
+from support.race_corpus import CORPUS_DIR, SCRIPTS_DIR, corpus_table, load_script
 
 generate = load_script("generate")
 
@@ -170,3 +172,24 @@ def test_committed_lds_war_pattern_exempts_its_unprotected_waits() -> None:
         for target in ("gfx950", "gfx1250")
         for ordinal in (2, 4)
     }
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        [SCRIPTS_DIR / "generate.py", "--check"],
+        [SCRIPTS_DIR / "check_cases.py"],
+    ],
+    ids=["generate.py --check", "check_cases.py"],
+)
+def test_committed_corpus_passes_its_command_line_checks(command: list[Path]) -> None:
+    # Run as a user runs them, from the repository root, so a stale manifest
+    # or inventory fails the suite.
+    result = subprocess.run(
+        [sys.executable, *map(str, command)],
+        cwd=CORPUS_DIR.parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
