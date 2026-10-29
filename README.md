@@ -15,6 +15,7 @@ corpus/
   llama/      llama.cpp test-backend-ops cases and vendored GGML sources.
   vulkan/     Pinned Vulkan compute and texel-buffer CTS selections.
   runtime-cts/ Direct-KFD aql/ and capability-gated pm4/ suites.
+  runtime/    HIP runtime integration, including the file-limit matrix.
   race/       Race-detector integration programs and standalone mutation kernels.
   tensile/    gfx1250 TensileLite configs and generated artifacts.
   race/       Race-detection kernels and their pinned per-target assembly.
@@ -632,3 +633,10 @@ changed diagnostic, timeout of the wrong object, or successful translation of
 an xfailed object fails the suite. Only expected and unexpected failures write
 diagnostic logs. Successful output stays file-backed during validation and is
 deleted afterward.
+
+### HIP file-size limits
+
+The standalone [file-limit matrix](corpus/runtime/file-limits/README.md) runs
+18 local/daemon scenarios against a supplied rocjitsu build. It covers limits
+changed before or after HIP initialization, inherited limits, and post-fork
+initialization, with default and host-sanitized build instructions.
