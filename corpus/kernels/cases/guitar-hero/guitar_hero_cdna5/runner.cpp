@@ -1,5 +1,7 @@
 #include "runner.hpp"
 
+#include <iterator>
+
 namespace {
 constexpr const char *checkpoints[] = {
 #include "checkpoints.inc"

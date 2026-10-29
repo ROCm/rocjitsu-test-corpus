@@ -1,7 +1,10 @@
 #include "resource_pressure.hpp"
 #include "test_support.hpp"
 
+#include <hip/hip_runtime.h>
+
 #include <cstdint>
+#include <vector>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Winline-asm"

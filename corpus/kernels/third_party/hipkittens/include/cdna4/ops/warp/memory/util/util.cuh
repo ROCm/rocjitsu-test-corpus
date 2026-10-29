@@ -8,6 +8,8 @@
 #include <hip/hip_runtime.h>
 #include <hip/amd_detail/amd_hip_runtime.h>
 #include <hip/amd_detail/hip_ldg.h>
+#include <cstdint>
+#include <type_traits>
 
 namespace kittens {
 

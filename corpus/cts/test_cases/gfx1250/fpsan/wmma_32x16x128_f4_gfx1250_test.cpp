@@ -22,6 +22,7 @@
 #include "fpsan/amdgcn_matrix.hpp"
 #include "fpsan/detail/fp8.hpp"
 #include "fpsan/fpsan.hpp"
+#include "test_utils.hpp"
 
 #include "fpsan_semantics.hpp"
 #include "hip_test_utils.hpp"
@@ -32,7 +33,10 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <random>
 #include <vector>
 
 using fpsan::Conversions;

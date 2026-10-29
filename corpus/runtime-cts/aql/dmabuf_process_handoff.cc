@@ -23,18 +23,26 @@
 #include <linux/kfd_ioctl.h>
 #include <signal.h>
 #include <spawn.h>
+#include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <thread>
+#include <vector>
 
+#include "support/aql.h"
 #include "support/aql_payload.h"
 #include "support/dmabuf.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 extern char** environ;
 static size_t SharedBytes(uint32_t rounds) {

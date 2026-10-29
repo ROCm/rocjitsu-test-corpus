@@ -1,7 +1,14 @@
 #include "kittens.cuh"
+#include <hip/hip_runtime.h>
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
 #include <random>
 #include <omp.h>
 #include <chrono>
+#include <ratio>
+#include <vector>
 
 using namespace kittens;
 

@@ -21,9 +21,13 @@
 // https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/chip/gfx9_plus_merged_enum.h
 // https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/chip/gfx12_merged_f32_mec_pm4_packets.h
 #include <algorithm>
+#include <cstdint>
+#include <iterator>
 #include <vector>
 
 #include "pm4.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 int main(int argc, char** argv) {
   Start(argc, argv, "pm4_atomic_operations");

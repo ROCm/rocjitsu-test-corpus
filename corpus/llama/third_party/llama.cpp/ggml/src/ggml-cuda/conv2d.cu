@@ -1,5 +1,6 @@
 #include "conv2d.cuh"
 #include "convert.cuh"
+#include <cstdint>
 
 struct conv_params {
     const int64_t IW, IH;

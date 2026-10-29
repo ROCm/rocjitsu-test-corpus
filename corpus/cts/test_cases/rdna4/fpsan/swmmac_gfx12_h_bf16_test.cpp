@@ -1,8 +1,16 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
+#include "fpsan_semantics.hpp"
 #include "hip_test_utils.hpp"
 #include "swmmac_gfx12_parts.hpp"
+
+#include <hip/hip_runtime.h>
+
+#include <gtest/gtest.h>
+
+#include <cstdint>
+#include <vector>
 
 __global__ void k_swmmac_bf16_float(const float *A, const float *B, const float *C, const int *p0,
                                     const int *p1, const std::uint16_t *idx, float *D) {

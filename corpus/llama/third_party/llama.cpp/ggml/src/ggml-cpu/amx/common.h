@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <memory>
 #include <type_traits>
+#include <vector>
 
 #if defined(GGML_USE_OPENMP)
 #include <omp.h>

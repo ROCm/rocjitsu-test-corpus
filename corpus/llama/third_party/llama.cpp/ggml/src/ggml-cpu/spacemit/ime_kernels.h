@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstddef>
 #include <functional>
+#include <stdint.h>
 
 namespace spacemit_kernels {
 

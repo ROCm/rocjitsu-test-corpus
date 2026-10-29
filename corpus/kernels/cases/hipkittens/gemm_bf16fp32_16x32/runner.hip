@@ -1,5 +1,7 @@
 #define KERNEL_CORPUS_HIPKITTENS_STANDALONE
 #include "../../../third_party/hipkittens/include/kittens.cuh"
+
+#include <hip/hip_runtime.h>
 #ifndef KERNEL_CORPUS_HIPKITTENS_STANDALONE
 #include "../../../third_party/hipkittens/include/pyutils/pyutils.cuh"
 #endif
@@ -345,6 +347,8 @@ PYBIND11_MODULE(tk_kernel, m) {
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <vector>

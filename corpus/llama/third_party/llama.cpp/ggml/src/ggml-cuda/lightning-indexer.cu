@@ -3,6 +3,9 @@
 #include "fattn-common.cuh"
 #include "convert.cuh"
 
+#include <cstddef>
+#include <cstdint>
+
 #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
 #if defined(TURING_MMA_AVAILABLE)
 

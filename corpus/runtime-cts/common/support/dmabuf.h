@@ -5,6 +5,8 @@
 
 #include "common/test.h"
 
+#include <cstddef>
+
 namespace cts {
 inline void* ReserveDmabufImport(size_t bytes, int fd, bool aql) {
   // Metadata publication reads completion-signal event IDs on the CPU.

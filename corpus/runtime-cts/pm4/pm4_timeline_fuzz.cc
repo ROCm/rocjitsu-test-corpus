@@ -23,11 +23,16 @@
 // https://github.com/tinygrad/tinygrad/blob/c509335eaa34f60718a121a8ca1c1953777731b7/test/external/external_fuzz_hcq_signals.py
 // https://github.com/tinygrad/tinygrad/blob/c509335eaa34f60718a121a8ca1c1953777731b7/test/external/external_test_amd.py
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <memory>
 #include <thread>
+#include <vector>
 
 #include "pm4.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 
 int main(int argc, char** argv) {

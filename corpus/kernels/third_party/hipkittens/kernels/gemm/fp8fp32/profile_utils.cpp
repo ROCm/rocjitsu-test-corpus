@@ -1,6 +1,12 @@
 
 
 
+#include <cstdio>
+#include <hip/hip_runtime.h>
+#include <cstdlib>
+#include <random>
+#include <vector>
+
 // Timing result structure
 struct TimingResult {
     float best_time_ms;

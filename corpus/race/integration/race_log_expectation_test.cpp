@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include <stdlib.h>
+
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -12,6 +14,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 

@@ -6,6 +6,7 @@
 #include <sys/auxv.h>
 #endif
 
+#include <cctype>
 #include <string>
 
 struct powerpc_features {

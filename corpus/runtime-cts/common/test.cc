@@ -5,10 +5,12 @@
 #include "common/test.h"
 
 #include <signal.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <cerrno>
 #include <cstdarg>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

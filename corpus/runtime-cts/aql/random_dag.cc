@@ -28,13 +28,17 @@
 // https://github.com/ROCm/hip-tests/blob/99d824ccba3dade7ddd5b267cc420db3f42ba9b7/catch/perftests/graph/parallelGraph.cc
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <memory>
 #include <thread>
+#include <vector>
 
 #include "dag_kernel.inc"
 #include "support/aql.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 struct DagArgs {
   uint64_t parents[5], target;

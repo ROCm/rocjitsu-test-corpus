@@ -5,6 +5,7 @@
 #pragma once
 
 #include <thrust/host_vector.h>
+#include <hip/hip_runtime.h>
 #include <thrust/device_vector.h>
 
 #include <streamk/schedule/streamk.hpp>
@@ -14,6 +15,7 @@
 #include <streamk/utils/mfma.hpp>
 #include <streamk/kernel/kernel_simple_streamk.hpp>
 #include "../../benchmarks/timing.hpp"
+#include <cstdint>
 
 namespace streamk {
 

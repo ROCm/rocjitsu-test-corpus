@@ -17,9 +17,14 @@
 // Inspiration: independent native-KFD adaptation of these public test patterns.
 // https://gitlab.freedesktop.org/drm/igt-gpu-tools/-/blob/26513be3e0f711ed835ec50d5cdcb723ef224105/tests/amdgpu/amd_cp_dma_misc.c
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <vector>
 
 #include "pm4.h"
+#include "support/kfd.h"
+#include "test.h"
 using namespace cts;
 
 int main(int argc, char** argv) {

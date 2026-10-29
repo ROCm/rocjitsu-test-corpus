@@ -9,8 +9,14 @@
 #include "vec.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cfloat>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <type_traits>
+#include <utility>
 
 // ggml_compute_forward_dup
 

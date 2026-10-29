@@ -13,9 +13,12 @@
 // Inspiration/encoding: public ROCr BuildPoll64bCommand / BuildFence64bCommand.
 // https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_blit_sdma.cpp
 // https://github.com/ROCm/rocm-systems/blob/5668fbb3ab72cf4a88b13077804dc2db0676f974/projects/rocr-runtime/runtime/hsa-runtime/core/inc/sdma_registers.h
+#include <cstdint>
 #include <thread>
 
+#include "support/kfd.h"
 #include "support/sdma.h"
+#include "test.h"
 using namespace cts;
 int main(int argc, char** argv) {
   Start(argc, argv, "sdma_signal64");

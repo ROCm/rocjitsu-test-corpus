@@ -14,9 +14,12 @@
 // Inspiration: independent native-KFD adaptation of these public test patterns.
 // https://github.com/torvalds/linux/blob/551c722f40809618230001baccf219193e22fc5a/drivers/gpu/drm/amd/amdgpu/amdgpu_ib.c
 // https://gitlab.freedesktop.org/drm/igt-gpu-tools/-/blob/26513be3e0f711ed835ec50d5cdcb723ef224105/tests/amdgpu/amd_cs_nop.c
+#include <cstdint>
 #include <cstring>
 
 #include "pm4.h"
+#include "support/kfd.h"
+#include "test.h"
 
 using namespace cts;
 

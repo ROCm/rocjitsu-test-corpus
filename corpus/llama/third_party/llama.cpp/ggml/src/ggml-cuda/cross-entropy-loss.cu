@@ -3,6 +3,7 @@
 #include "sum.cuh"
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 
 template <bool use_shared>

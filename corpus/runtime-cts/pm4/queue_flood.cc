@@ -23,12 +23,16 @@
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocr-runtime/libhsakmt/tests/kfdtest/src/KFDHWSTest.cpp
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/hip-tests/catch/unit/stream/hipStreamCreateWithPriority.cc
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <thread>
+#include <vector>
 
 #include "pm4.h"
 #include "support/aql_payload.h"
+#include "support/kfd.h"
 #include "support/process_group.h"
+#include "test.h"
 using namespace cts;
 
 static int RunPm4(int argc, char** argv) {

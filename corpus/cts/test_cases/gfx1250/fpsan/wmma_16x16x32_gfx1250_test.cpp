@@ -19,6 +19,7 @@
 // Requires gfx1250 hardware; built only under the gfx1250 test tier.
 #include "fpsan/amdgcn_matrix.hpp"
 #include "fpsan/fpsan.hpp"
+#include "test_utils.hpp"
 
 #include "fpsan_semantics.hpp"
 #include "hip_test_utils.hpp"
@@ -30,6 +31,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <random>
 #include <vector>
 
 using fpsan::Conversions;

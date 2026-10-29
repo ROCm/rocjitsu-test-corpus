@@ -22,12 +22,16 @@
 // https://gitlab.freedesktop.org/drm/igt-gpu-tools/-/blob/26513be3e0f711ed835ec50d5cdcb723ef224105/tests/amdgpu/amd_cs_nop.c
 // https://github.com/tinygrad/tinygrad/blob/c509335eaa34f60718a121a8ca1c1953777731b7/test/external/external_test_hcq.py
 // https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/runtime/src/iree/hal/cts/queue/queue_dispatch_concurrency_test.cc
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <memory>
 #include <thread>
+#include <vector>
 
 #include "support/aql.h"
+#include "support/kfd.h"
+#include "test.h"
 #include "work_kernel.inc"
 
 using namespace cts;

@@ -1,7 +1,10 @@
 #include "resource_pressure.hpp"
 #include "test_support.hpp"
 
+#include <hip/hip_runtime.h>
+
 #include <cstdint>
+#include <vector>
 
 constexpr uint32_t kAddtidLanes = 32;
 constexpr uint32_t kAddtidOffset = 64;

@@ -42,7 +42,9 @@
 
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <ios>
 #include <vector>
 
 using fpsan::Conversions;

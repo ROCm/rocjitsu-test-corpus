@@ -1,7 +1,12 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
+#include "fpsan/amdgcn_matrix.hpp"
 #include "wmma_gfx12_parts.hpp"
+
+#include <gtest/gtest.h>
+
+#include <type_traits>
 
 using fpsan::v8e4m3_native;
 using fpsan::v8e5m2_native;

@@ -12,6 +12,8 @@
  */
 
 #include "common.h"
+#include <hip/hip_runtime.h>
+#include <cstddef>
 
 using namespace kittens;
 using namespace gfx1250_gemm;

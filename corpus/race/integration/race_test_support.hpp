@@ -3,10 +3,11 @@
 
 #pragma once
 
-#include <gtest/gtest.h>
+#include "race_log_expectation.hpp"
+
 #include <hip/hip_runtime.h>
 
-#include "race_log_expectation.hpp"
+#include <gtest/gtest.h>
 
 #include <cstdint>
 #include <cstdio>

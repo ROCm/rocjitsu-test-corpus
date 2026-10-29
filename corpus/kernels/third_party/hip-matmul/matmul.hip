@@ -5,12 +5,20 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include "common.hip"
+#include <hip/hip_runtime.h>
 
+#include <algorithm>
+#include <array>
+#include <bit>
 #include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cxxabi.h>
 #include <optional>
 #include <random>
+#include <tuple>
 #include <typeinfo>
 #include <vector>
 #include <cstring>

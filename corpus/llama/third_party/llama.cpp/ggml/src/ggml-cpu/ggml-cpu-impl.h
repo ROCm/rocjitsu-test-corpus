@@ -5,6 +5,8 @@
 #include "ggml.h"
 #include "ggml-impl.h"
 
+#include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h> // load `stdlib.h` before other headers to work around MinGW bug: https://sourceforge.net/p/mingw-w64/bugs/192/
 //#include <stddef.h>
 #include <stdbool.h>

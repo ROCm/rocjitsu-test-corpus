@@ -18,13 +18,17 @@
 // https://github.com/ROCm/hrx-system/blob/10b32fbacefe73b1a8a246a779bec17a411ca8cc/runtime/src/iree/hal/cts/queue/semaphore_submission_test.cc
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/rocprofiler-sdk/tests/bin/hsa-queue-dependency/multiqueue_app.cpp
 // https://github.com/ROCm/rocm-systems/blob/fa643819f9139a3af5223e57686d07df1c560b64/projects/clr/opencl/tests/ocltst/module/runtime/OCLMemDependency.cpp
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <vector>
 
 #include "pipeline_kernel.inc"
 #include "support/aql.h"
+#include "support/kfd.h"
 #include "support/sdma.h"
+#include "test.h"
 
 using namespace cts;
 struct PipelineArguments {

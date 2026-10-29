@@ -10,3 +10,7 @@ This directory contains sources extracted from `nod-ai/hip-matmul`:
 The extracted HIP sources provide self-contained executable runners. The
 `matmul.hip` and `matvec.hip` programs allocate inputs, launch the upstream
 `__global__` kernels, validate results, and benchmark the kernels.
+
+The corpus adds direct standard-library and HIP includes for the declarations used by
+these sources and headers, including platform-specific code. These local
+include edits leave the extracted implementations unchanged.

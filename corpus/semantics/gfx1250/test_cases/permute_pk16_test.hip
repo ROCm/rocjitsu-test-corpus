@@ -1,6 +1,9 @@
 #include "test_support.hpp"
 
+#include <hip/hip_runtime.h>
+
 #include <cstdint>
+#include <vector>
 
 using u32x2 = unsigned __attribute__((ext_vector_type(2)));
 using u32x3 = unsigned __attribute__((ext_vector_type(3)));

@@ -1,5 +1,6 @@
 #include "ggml-cuda/common.cuh"
 #include "roll.cuh"
+#include <cstdint>
 
 static __forceinline__ __device__ int64_t wrap_index(const int64_t idx, const int64_t ne) {
     if (idx < 0) {

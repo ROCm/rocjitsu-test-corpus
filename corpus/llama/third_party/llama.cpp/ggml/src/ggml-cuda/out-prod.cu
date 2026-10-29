@@ -1,6 +1,8 @@
 #include "out-prod.cuh"
 
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 
 static __global__ void k_compute_out_prod_ptrs(
         const float * src0_d, const float * src1_d, float * dst_d,

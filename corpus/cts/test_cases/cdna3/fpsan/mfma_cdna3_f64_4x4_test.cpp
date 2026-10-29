@@ -1,8 +1,20 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
+#include "fpsan_semantics.hpp"
 #include "hip_test_utils.hpp"
 #include "mfma_cdna3_parts.hpp"
+#include "test_random.hpp"
+#include "test_utils.hpp"
+
+#include <hip/hip_runtime.h>
+
+#include <gtest/gtest.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <random>
+#include <vector>
 
 struct F64Data {
   std::vector<double> A, B, C;

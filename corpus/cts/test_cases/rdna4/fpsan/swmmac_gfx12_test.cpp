@@ -20,6 +20,7 @@
 //
 // Requires real gfx1201 hardware; built only under FPSAN_ENABLE_HIP with a
 // gfx12 architecture.
+#include "fpsan/amdgcn_matrix.hpp"
 #include "fpsan/amdgcn_swmmac_gfx12.hpp"
 #include "fpsan/fpsan.hpp"
 #include "fpsan_semantics.hpp"
@@ -29,6 +30,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <random>

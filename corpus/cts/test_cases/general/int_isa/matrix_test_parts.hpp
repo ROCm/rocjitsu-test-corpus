@@ -12,9 +12,11 @@
 #include "hip_test_utils.hpp"
 #include "int_isa_test_utils.hpp"
 
-#include <gtest/gtest.h>
 #include <hip/hip_runtime.h>
 
+#include <gtest/gtest.h>
+
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>

@@ -20,6 +20,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #ifdef __APPLE__

@@ -8,6 +8,8 @@
 #include "../../common/common.cuh"
 #include "sv.cuh"
 #include "st_shape.cuh"
+#include <cstdint>
+#include <type_traits>
 
 /* ----------  MAIN TILE STRUCT  ---------- */
 

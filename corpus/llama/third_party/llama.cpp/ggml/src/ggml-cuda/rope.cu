@@ -2,6 +2,10 @@
 #include "ggml-cuda/common.cuh"
 #include "ggml.h"
 #include "rope.cuh"
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <type_traits>
 
 struct rope_corr_dims {
     float v[2];

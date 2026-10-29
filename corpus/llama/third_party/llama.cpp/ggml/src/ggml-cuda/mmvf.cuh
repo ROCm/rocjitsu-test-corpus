@@ -1,4 +1,6 @@
 #include "common.cuh"
+#include <cstddef>
+#include <cstdint>
 
 #define MMVF_MAX_BATCH_SIZE 8 // Max. batch size for which to use MMVF kernels.
 

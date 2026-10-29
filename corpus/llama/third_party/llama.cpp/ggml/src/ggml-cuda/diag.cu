@@ -1,6 +1,7 @@
 #include "convert.cuh"
 #include "diag.cuh"
 #include "ggml.h"
+#include <cstdint>
 
 template <typename T>
 static __global__ void diag_kernel(T * __restrict__ dst,

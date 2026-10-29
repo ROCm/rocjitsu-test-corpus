@@ -9,6 +9,9 @@
  */
 
 #include "kittens.cuh"
+#include <hip/hip_runtime.h>
+#include <cstddef>
+#include <cstdint>
 #include <random>
 #include <omp.h>
 #include <chrono>

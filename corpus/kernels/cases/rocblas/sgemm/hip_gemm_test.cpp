@@ -14,13 +14,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <random>
+#include <string>
 #include <vector>
 
 #include <hip/hip_runtime.h>
+
 #include <rocblas/rocblas.h>
 
 #include <gtest/gtest.h>

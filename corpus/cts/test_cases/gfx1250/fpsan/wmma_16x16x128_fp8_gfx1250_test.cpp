@@ -23,6 +23,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <random>
 #include <vector>
 
 using fpsan::Conversions;

@@ -15,6 +15,7 @@
 
 
 #include "../../../common/common.cuh"
+#include <cstdint>
 
 namespace kittens {
 namespace sync {

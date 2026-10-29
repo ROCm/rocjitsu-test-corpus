@@ -5,6 +5,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstdint>
 
 #include <hip/hip_ext.h>
 #include <hip/hip_fp16.h>

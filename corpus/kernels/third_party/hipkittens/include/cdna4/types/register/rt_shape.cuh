@@ -6,6 +6,7 @@
 #pragma once
 
 #include <concepts>
+#include <type_traits>
 
 namespace kittens {
 namespace ducks {
