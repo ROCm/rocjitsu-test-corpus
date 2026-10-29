@@ -42,10 +42,16 @@ corpus/race/
   kernels/<kernel>.hip    HIP source for each case.
   asm/<target>/<kernel>.s Pinned device assembly, one file per case and target.
   asm/<target>/recipe.toml How that target's assembly was regenerated.
+  mutants.toml            Every mutant: its recipe and scoring tag. Generated.
   scripts/
     regenerate_asm.py     Regenerates asm/ from kernels/, or checks it for drift.
     check_cases.py        Checks cases.toml against kernels/ and asm/ (no compiler).
-    inventory.py          Reads and validates cases.toml for both scripts.
+    generate.py           Writes mutants.toml from asm/, or checks it for drift.
+    mutate.py             Finds mutation sites in a listing, and applies one.
+    exposure.py           Derives the scoring tag of a removed wait.
+    build.py              Assembles and links a mutant into an executable.
+    detector_protocol.py  The interface a detector implements, and scoring.
+    inventory.py          Reads and validates cases.toml for the scripts.
     recipe.py             Reads, validates and writes recipe.toml for both scripts.
 ```
 
@@ -68,6 +74,11 @@ Each `[[case]]` names one independently buildable kernel:
 | `kernel` | Basename under `kernels/`, without `.hip`. |
 | `targets` | The corpus targets the kernel builds for. Empty or absent means every corpus target. |
 | `headers` | Optional. Headers outside ROCm's defaults that the kernel includes, such as `rocwmma/rocwmma.hpp`. |
+| `mutate`, `hazard`, `description`, `waits` | The case's mutation rules: which mutation kinds it opts into, the hazard pattern it is written around, and the wait counters its assembly uses. |
+| `[[case.exempt]]`, `[[case.tag]]` | Optional. Mutants exempt from scoring, and mutants whose scoring tag is given rather than derived, each pinned to the instruction at its site. |
+
+The comments at the top of `cases.toml` describe each field, how each mutant's
+scoring tag is derived from its site, and how a site is pinned.
 
 ## Why the assembly is pinned
 
@@ -293,7 +304,10 @@ kernels and compares the result, so run it after changing a kernel.
 ## Adding a kernel or a target
 
 - **A kernel:** add `kernels/<kernel>.hip` and a `[[case]]` entry, regenerate,
-  and run `check_cases.py`.
+  run `python corpus/race/scripts/generate.py` to add its mutants to
+  `mutants.toml`, and run `check_cases.py`. Review the derived tags; a site
+  `generate.py` cannot tag fails until `cases.toml` settles it.
 - **A target:** add it to `[corpus] targets`, regenerate with
-  `--target <target>`, and run `check_cases.py`. Until `asm/<target>/` exists
-  and is complete, the inventory check fails.
+  `--target <target>`, run `python corpus/race/scripts/generate.py --target
+  <target>` to add its mutants, and run `check_cases.py`. Until
+  `asm/<target>/` exists and is complete, the inventory check fails.
