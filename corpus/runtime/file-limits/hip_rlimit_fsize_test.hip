@@ -5,11 +5,14 @@
 #include <hip/hip_runtime.h>
 
 #include <cerrno>
+#include <charconv>
 #include <csignal>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <poll.h>
+#include <string_view>
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
@@ -17,6 +20,59 @@
 #include <vector>
 
 namespace {
+struct TestOptions {
+  std::string_view mode;
+  std::string_view phase;
+  std::string_view limit;
+  rlimit expected_inherited;
+};
+TestOptions options{};
+
+bool parse_limit(std::string_view text, rlim_t &value) {
+  if (text == "unlimited") {
+    value = RLIM_INFINITY;
+    return true;
+  }
+  const auto [end, error] =
+      std::from_chars(text.data(), text.data() + text.size(), value);
+  return error == std::errc{} && end == text.data() + text.size();
+}
+
+bool parse_options(int argc, char **argv) {
+  if (argc != 4 && argc != 6)
+    return false;
+  options.mode = argv[1];
+  options.phase = argv[2];
+  options.limit = argv[3];
+  if (options.mode != "local" && options.mode != "daemon")
+    return false;
+  if (options.phase == "inherited") {
+    return argc == 6 && (options.limit == "hard" || options.limit == "soft") &&
+           parse_limit(argv[4], options.expected_inherited.rlim_cur) &&
+           parse_limit(argv[5], options.expected_inherited.rlim_max);
+  }
+  if (argc != 4)
+    return false;
+  if (options.phase == "fork")
+    return options.limit == "soft-zero";
+  return (options.phase == "early" || options.phase == "late") &&
+         (options.limit == "zero" || options.limit == "hard" ||
+          options.limit == "soft");
+}
+
+void expect_default_signal() {
+  struct sigaction action{};
+  ASSERT_EQ(sigaction(SIGXFSZ, nullptr, &action), 0);
+  ASSERT_EQ(action.sa_handler, SIG_DFL);
+}
+
+void expect_limit(const rlimit &expected) {
+  rlimit observed{};
+  ASSERT_EQ(getrlimit(RLIMIT_FSIZE, &observed), 0);
+  ASSERT_EQ(observed.rlim_cur, expected.rlim_cur);
+  ASSERT_EQ(observed.rlim_max, expected.rlim_max);
+}
+
 volatile sig_atomic_t file_size_signal = 0;
 void on_file_size_signal(int) { file_size_signal = 1; }
 
@@ -76,7 +132,7 @@ void check_daemon_host_mapping(size_t bytes, bool can_dispatch) {
   CHECK_HIP(hipHostFree(host));
 }
 
-void check_vmm(size_t bytes, bool allow_rejection) {
+void check_vmm(size_t bytes, bool can_dispatch) {
   hipMemAllocationProp property{};
   property.type = hipMemAllocationTypePinned;
   property.location.type = hipMemLocationTypeDevice;
@@ -88,38 +144,79 @@ void check_vmm(size_t bytes, bool allow_rejection) {
   const size_t allocation_size =
       (bytes + granularity - 1) / granularity * granularity;
   hipMemGenericAllocationHandle_t allocation{}, imported{};
-  const auto created = hipMemCreate(&allocation, allocation_size, &property, 0);
-  if (created != hipSuccess) {
-    EXPECT_TRUE(allow_rejection) << hipGetErrorString(created);
+  const hipError_t created =
+      hipMemCreate(&allocation, allocation_size, &property, 0);
+  if (options.mode == "daemon") {
+    // The daemon cannot transfer dma-buf export descriptors. Update this
+    // expectation and enable mapping coverage when that support is added.
+    EXPECT_NE(created, hipSuccess) << "Daemon VMM export is now supported";
+    if (created == hipSuccess)
+      CHECK_HIP(hipMemRelease(allocation));
     return;
   }
+  ASSERT_EQ(created, hipSuccess) << hipGetErrorString(created);
   int shared_fd = -1;
-  const auto exported = hipMemExportToShareableHandle(
-      &shared_fd, allocation, hipMemHandleTypePosixFileDescriptor, 0);
-  if (exported != hipSuccess) {
-    EXPECT_TRUE(allow_rejection) << hipGetErrorString(exported);
-    CHECK_HIP(hipMemRelease(allocation));
-    return;
-  }
+  CHECK_HIP(hipMemExportToShareableHandle(
+      &shared_fd, allocation, hipMemHandleTypePosixFileDescriptor, 0));
   EXPECT_EQ(lseek(shared_fd, 0, SEEK_END), allocation_size);
   EXPECT_EQ(lseek64(shared_fd, 0, SEEK_END), allocation_size);
   EXPECT_EQ(lseek(shared_fd, 0, SEEK_SET), 0);
   CHECK_HIP(hipMemImportFromShareableHandle(
       &imported, reinterpret_cast<void *>(static_cast<intptr_t>(shared_fd)),
       hipMemHandleTypePosixFileDescriptor));
+  void *original_address = nullptr;
+  void *imported_address = nullptr;
+  CHECK_HIP(
+      hipMemAddressReserve(&original_address, allocation_size, 0, nullptr, 0));
+  CHECK_HIP(
+      hipMemAddressReserve(&imported_address, allocation_size, 0, nullptr, 0));
+  CHECK_HIP(hipMemMap(original_address, allocation_size, 0, allocation, 0));
+  CHECK_HIP(hipMemMap(imported_address, allocation_size, 0, imported, 0));
+  hipMemAccessDesc access{};
+  access.location = property.location;
+  access.flags = hipMemAccessFlagsProtReadWrite;
+  CHECK_HIP(hipMemSetAccess(original_address, allocation_size, &access, 1));
+  CHECK_HIP(hipMemSetAccess(imported_address, allocation_size, &access, 1));
+  if (can_dispatch) {
+    // Distinct values across the whole allocation detect broken aliases and
+    // offsets, including the System V token path under inherited hard limits.
+    std::vector<unsigned char> source(allocation_size), result(allocation_size);
+    for (size_t index = 0; index < allocation_size; ++index)
+      source[index] = static_cast<unsigned char>(index * 17 + index / 4096);
+    CHECK_HIP(hipMemcpy(original_address, source.data(), allocation_size,
+                        hipMemcpyHostToDevice));
+    CHECK_HIP(hipMemcpy(result.data(), imported_address, allocation_size,
+                        hipMemcpyDeviceToHost));
+    EXPECT_EQ(result, source);
+    write_cookie<<<1, 1>>>(static_cast<unsigned char *>(imported_address));
+    CHECK_HIP(hipGetLastError());
+    CHECK_HIP(hipDeviceSynchronize());
+    CHECK_HIP(hipMemcpy(result.data(), original_address, allocation_size,
+                        hipMemcpyDeviceToHost));
+    source[0] = 0x37;
+    EXPECT_EQ(result, source);
+  }
+  CHECK_HIP(hipMemUnmap(imported_address, allocation_size));
+  CHECK_HIP(hipMemUnmap(original_address, allocation_size));
+  CHECK_HIP(hipMemAddressFree(imported_address, allocation_size));
+  CHECK_HIP(hipMemAddressFree(original_address, allocation_size));
   CHECK_HIP(hipMemRelease(imported));
   CHECK_HIP(hipMemRelease(allocation));
   close(shared_fd);
 }
 
 void check_application_limit() {
-  const char *phase = std::getenv("RJ_TEST_PHASE");
-  if (phase && std::strcmp(phase, "late") == 0) {
+  ASSERT_NO_FATAL_FAILURE(expect_default_signal());
+  rlimit startup_limit{};
+  ASSERT_EQ(getrlimit(RLIMIT_FSIZE, &startup_limit), 0);
+  if (options.phase == "late") {
     void *warmup = nullptr;
     CHECK_HIP(hipMalloc(&warmup, 4096));
     CHECK_HIP(hipMemset(warmup, 0, 4096));
     CHECK_HIP(hipDeviceSynchronize());
     CHECK_HIP(hipFree(warmup));
+    ASSERT_NO_FATAL_FAILURE(expect_limit(startup_limit));
+    ASSERT_NO_FATAL_FAILURE(expect_default_signal());
   }
   char path[] = "/tmp/rocjitsu-fsize-XXXXXX";
   const int file = mkstemp(path);
@@ -145,17 +242,15 @@ void check_application_limit() {
   sigemptyset(&action.sa_mask);
   ASSERT_EQ(sigaction(SIGXFSZ, &action, nullptr), 0);
 
-  rlimit limit{};
-  ASSERT_EQ(getrlimit(RLIMIT_FSIZE, &limit), 0);
-  const char *kind = std::getenv("RJ_TEST_LIMIT");
-  limit.rlim_cur = kind && (std::strcmp(kind, "zero") == 0 ||
-                            std::strcmp(kind, "soft-zero") == 0)
-                       ? 0
-                       : 2 * 1024 * 1024;
-  if (!kind ||
-      (std::strcmp(kind, "soft") != 0 && std::strcmp(kind, "soft-zero") != 0))
-    limit.rlim_max = limit.rlim_cur;
-  ASSERT_EQ(setrlimit(RLIMIT_FSIZE, &limit), 0);
+  rlimit limit = startup_limit;
+  if (options.phase != "inherited") {
+    limit.rlim_cur = options.limit == "zero" || options.limit == "soft-zero"
+                         ? 0
+                         : 2 * 1024 * 1024;
+    if (options.limit != "soft" && options.limit != "soft-zero")
+      limit.rlim_max = limit.rlim_cur;
+    ASSERT_EQ(setrlimit(RLIMIT_FSIZE, &limit), 0);
+  }
 
   constexpr size_t bytes = 4 * 1024 * 1024;
   unsigned char *device = nullptr;
@@ -163,8 +258,7 @@ void check_application_limit() {
   // COMGR's first-use compilation of HIP copy builtins writes temporary files,
   // independently of rocjitsu. Exercise startup/allocation under early zero;
   // late zero covers copies and dispatch after the runtime's compiler warmup.
-  const bool can_dispatch =
-      limit.rlim_cur != 0 || (phase && std::strcmp(phase, "late") == 0);
+  const bool can_dispatch = limit.rlim_cur != 0 || options.phase == "late";
   if (can_dispatch) {
     std::vector<unsigned char> source(bytes, 0xA5), result(bytes);
     CHECK_HIP(hipMemcpy(device, source.data(), bytes, hipMemcpyHostToDevice));
@@ -176,11 +270,9 @@ void check_application_limit() {
     EXPECT_EQ(result, source);
   }
   CHECK_HIP(hipFree(device));
-  const char *mode = std::getenv("RJ_TEST_MODE");
-  if (mode && std::strcmp(mode, "daemon") == 0)
+  if (options.mode == "daemon")
     check_daemon_host_mapping(bytes, can_dispatch);
-  const char *vmm = std::getenv("RJ_TEST_VMM");
-  check_vmm(bytes, vmm && std::strcmp(vmm, "allow-rejection") == 0);
+  check_vmm(bytes, can_dispatch);
   CHECK_HIP(hipDeviceReset());
   EXPECT_EQ(file_size_signal, 0);
 
@@ -201,8 +293,10 @@ void check_application_limit() {
   close(file);
 }
 TEST(HipFileSizeLimitTest, PreservesApplicationLimit) {
-  const char *phase = std::getenv("RJ_TEST_PHASE");
-  if (!phase || std::strcmp(phase, "fork") != 0) {
+  ASSERT_NO_FATAL_FAILURE(expect_default_signal());
+  if (options.phase == "inherited")
+    ASSERT_NO_FATAL_FAILURE(expect_limit(options.expected_inherited));
+  if (options.phase != "fork") {
     check_application_limit();
     return;
   }
@@ -218,12 +312,24 @@ TEST(HipFileSizeLimitTest, PreservesApplicationLimit) {
   }
   int status = 0;
   ASSERT_EQ(waitpid(child, &status, 0), child);
-  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_TRUE(WIFEXITED(status))
+      << "Child status: " << status << ", terminating signal: "
+      << (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
   EXPECT_EQ(WEXITSTATUS(status), 0);
 }
 } // namespace
 
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
+  if (!parse_options(argc, argv)) {
+    std::fprintf(
+        stderr,
+        "Usage: %s <local|daemon> <early|late|inherited|fork> "
+        "<zero|hard|soft|soft-zero> [<expected-soft> <expected-hard>]\n"
+        "Inherited requires hard/soft and two byte limits (or unlimited); "
+        "fork requires soft-zero; early/late require zero/hard/soft.\n",
+        argv[0]);
+    return 2;
+  }
   return RUN_ALL_TESTS();
 }
