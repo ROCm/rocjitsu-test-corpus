@@ -37,7 +37,12 @@ def test_load_gives_named_case_records(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "record",
-    [inventory.Case, inventory.Inventory, inventory.MutationRules, inventory.Exemption],
+    [
+        inventory.Case,
+        inventory.Inventory,
+        inventory.MutationRules,
+        inventory.Exemption,
+    ],
 )
 def test_records_are_frozen_dataclasses(record: type) -> None:
     # Every inventory record is represented the same way: immutable fields,
@@ -72,9 +77,9 @@ MUTATING = (
     '[[case]]\nid = "m"\nkernel = "m"\ntargets = ["gfx1250"]\n'
     'mutate = ["wait", "memory"]\nhazard = "RAW"\ndescription = "LDS RAW"\n'
     'resource = "lds"\nwaits = { gfx1250 = ["dscnt", "kmcnt"] }\n'
-    '[[case.exempt]]\nkind = "wait"\nordinal = 3\nsite = "s_wait_kmcnt"\n'
+    '[[case.exempt]]\nkind = "wait"\nordinal = 3\nsite = "s_wait_kmcnt 0x0"\n'
     'reason = "already satisfied"\n'
-    '[[case.exempt]]\nkind = "wait"\nordinal = 0\nsite = "s_wait_dscnt"\n'
+    '[[case.exempt]]\nkind = "wait"\nordinal = 0\nsite = "s_wait_dscnt 0x0"\n'
     'reason = "own slot"\ntarget = "gfx1250"\n'
 )
 
@@ -89,18 +94,32 @@ def test_mutation_rules_are_read_into_a_record(tmp_path: Path) -> None:
         waits={"gfx1250": ("dscnt", "kmcnt")},
         exempt=(
             inventory.Exemption(
-                kind="wait", ordinal=3, site="s_wait_kmcnt", reason="already satisfied"
+                kind="wait",
+                ordinal=3,
+                site="s_wait_kmcnt 0x0",
+                reason="already satisfied",
             ),
             inventory.Exemption(
                 kind="wait",
                 ordinal=0,
-                site="s_wait_dscnt",
+                site="s_wait_dscnt 0x0",
                 reason="own slot",
                 target="gfx1250",
             ),
         ),
     )
     assert case.rules.declared()
+
+
+def test_pins_are_found_by_site_and_target(tmp_path: Path) -> None:
+    (case,) = inventory.load(write_manifest(tmp_path / "cases.toml", MUTATING)).cases
+    rules = case.rules
+    # An untargeted pin applies on every target; a targeted one on its own.
+    assert rules.exemption_for("wait", 3, "gfx950").reason == "already satisfied"
+    assert rules.exemption_for("wait", 0, "gfx1250").reason == "own slot"
+    assert rules.exemption_for("wait", 0, "gfx950") is None
+    assert rules.exemption_for("memory", 3, "gfx1250") is None
+    assert rules.pins() == rules.exempt
 
 
 def test_case_without_mutation_fields_has_no_rules(tmp_path: Path) -> None:
@@ -252,6 +271,11 @@ BAD_MANIFESTS = {
         '[[case.exempt]]\nkind = "wait"\nordinal = 0\nsite = "s"\nreason = "r"\n'
         'note = "x"\n',
         "cases.toml [a]: unknown [[case.exempt]] key 'note'",
+    ),
+    "exempt unknown kind": (
+        '[[case]]\nid = "a"\nkernel = "a"\n'
+        '[[case.exempt]]\nkind = "load"\nordinal = 0\nsite = "s"\nreason = "r"\n',
+        "cases.toml [a]: exempt kind 'load' is not one of memory, wait",
     ),
 }
 

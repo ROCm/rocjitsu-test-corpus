@@ -528,22 +528,6 @@ def write_waits(tmp_path: Path, target: str, body: str) -> Path:
     return path
 
 
-def test_wait_sites_follow_the_counting_rule(tmp_path: Path) -> None:
-    (tmp_path / "asm" / "gfx1250").mkdir(parents=True)
-    sites = check_cases.wait_sites(write_waits(tmp_path, "gfx1250", GFX1250_WAITS))
-    assert sites == [
-        check_cases.WaitSite(
-            ordinal=0,
-            line=2,
-            mnemonic="s_wait_loadcnt_dscnt",
-            counters=frozenset({"loadcnt", "dscnt"}),
-        ),
-        check_cases.WaitSite(
-            ordinal=1, line=5, mnemonic="s_wait_kmcnt", counters=frozenset({"kmcnt"})
-        ),
-    ]
-
-
 def test_combined_legacy_wait_names_its_counters_in_the_operand(
     tmp_path: Path,
 ) -> None:
@@ -664,18 +648,24 @@ def test_case_with_mutation_rules_but_no_waits_is_reported(
 
 
 EXEMPTIONS = {
-    "names its site": ('ordinal = 1\nsite = "s_wait_kmcnt"\n', None),
+    "names its site": ('ordinal = 1\nsite = "s_wait_kmcnt 0x0"\n', None),
     "names another site": (
-        'ordinal = 0\nsite = "s_wait_kmcnt"\n',
-        "exempt wait ordinal 0 is s_wait_loadcnt_dscnt at asm/gfx1250/w.s:2, "
-        "not s_wait_kmcnt",
+        'ordinal = 0\nsite = "s_wait_kmcnt 0x0"\n',
+        "exempt wait ordinal 0 is 's_wait_loadcnt_dscnt 0x0' at asm/gfx1250/w.s:2, "
+        "not 's_wait_kmcnt 0x0'",
+    ),
+    # The mnemonic alone does not pin the site.
+    "names only the mnemonic": (
+        'ordinal = 1\nsite = "s_wait_kmcnt"\n',
+        "exempt wait ordinal 1 is 's_wait_kmcnt 0x0' at asm/gfx1250/w.s:5, "
+        "not 's_wait_kmcnt'",
     ),
     "out of range": (
-        'ordinal = 2\nsite = "s_wait_kmcnt"\n',
-        "exempt wait ordinal 2 is out of range; asm/gfx1250/w.s has 2 wait sites",
+        'ordinal = 2\nsite = "s_wait_kmcnt 0x0"\n',
+        "exempt wait ordinal 2 is out of range; asm/gfx1250/w.s has 2 such sites",
     ),
     "for another target": (
-        'ordinal = 9\nsite = "s_wait_kmcnt"\ntarget = "gfx950"\n',
+        'ordinal = 9\nsite = "s_wait_kmcnt 0x0"\ntarget = "gfx950"\n',
         None,
     ),
 }
@@ -706,27 +696,74 @@ def test_exemption_ordinal_is_checked_against_the_assembly(
         assert f"cases.toml [w]: {problem}" in out
 
 
-def test_exemption_of_another_kind_cannot_be_verified(
+def test_pin_matches_the_operands_not_just_the_mnemonic(
     corpus: BuildCorpus, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
+    # On gfx950 every wait is s_waitcnt: an ordinal that moves from an lgkmcnt
+    # wait to a vmcnt wait keeps its mnemonic, and must still fail its pin.
     exemption = (
-        '[[case.exempt]]\nkind = "memory"\nordinal = 0\nsite = "global_load"\n'
+        '[[case.exempt]]\nkind = "wait"\nordinal = 0\n'
+        'site = "s_waitcnt lgkmcnt(0)"\nreason = "r"\n'
+    )
+    corpus(
+        targets=["gfx950"],
+        cases=mutating_case('["gfx950"]', '{ gfx950 = ["vmcnt"] }', exemption),
+        asm=["gfx950/w"],
+    )
+    write_waits(tmp_path, "gfx950", "\ts_waitcnt vmcnt(0)\n")
+    code, out = run(capsys)
+    assert code == check_cases.ExitCode.PROBLEMS_FOUND
+    assert (
+        "cases.toml [w]: exempt wait ordinal 0 is 's_waitcnt vmcnt(0)' at "
+        "asm/gfx950/w.s:2, not 's_waitcnt lgkmcnt(0)'"
+    ) in out
+
+
+MEMORY_LISTING = "\tglobal_load_u8 v1, v0, s[0:1] offset:1\n"
+
+
+@pytest.mark.parametrize(
+    "site, problem",
+    [
+        ("global_load_u8 v1, v0, s[0:1] offset:1", None),
+        (
+            "global_load_u8 v1, v0, s[0:1]",
+            "exempt memory ordinal 0 is 'global_load_u8 v1, v0, s[0:1] offset:1' at "
+            "asm/gfx1250/w.s:2, not 'global_load_u8 v1, v0, s[0:1]'",
+        ),
+    ],
+    ids=["names its site", "names another site"],
+)
+def test_memory_exemption_is_checked_against_the_assembly(
+    corpus: BuildCorpus,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    site: str,
+    problem: str | None,
+) -> None:
+    exemption = (
+        f'[[case.exempt]]\nkind = "memory"\nordinal = 0\nsite = "{site}"\n'
         'reason = "r"\n'
     )
     corpus(
         targets=["gfx1250"],
-        cases=mutating_case(
-            '["gfx1250"]', '{ gfx1250 = ["dscnt", "kmcnt", "loadcnt"] }', exemption
-        ),
+        cases=mutating_case('["gfx1250"]', "{ gfx1250 = [] }", exemption),
         asm=["gfx1250/w"],
     )
-    write_waits(tmp_path, "gfx1250", GFX1250_WAITS)
+    write_waits(tmp_path, "gfx1250", MEMORY_LISTING)
     code, out = run(capsys)
-    assert code == check_cases.ExitCode.PROBLEMS_FOUND
-    assert (
-        "cases.toml [w]: cannot verify a 'memory' exemption; only wait ordinals "
-        "are checked"
-    ) in out
+    if problem is None:
+        assert code == check_cases.ExitCode.SUCCESS, out
+    else:
+        assert code == check_cases.ExitCode.PROBLEMS_FOUND
+        assert f"cases.toml [w]: {problem}" in out
+
+
+def test_committed_pins_use_the_sites_generate_uses() -> None:
+    # check_cases has no wait parser of its own: the sites it counts are the
+    # mutation engine's, so its ordinals are the manifest's.
+    assert not hasattr(check_cases, "wait_sites")
+    assert not hasattr(check_cases, "EXCLUDED_WAITS")
 
 
 def test_suggest_prints_the_waits_each_listing_implies(

@@ -5,9 +5,10 @@
 # survives the next regeneration.
 #
 # Each entry is a recipe, not assembly: `ordinal` names the Nth mutation
-# site of its kind in asm/<target>/<kernel>.s, counted in emission order.
-# That assembly is committed and frozen, so this manifest only changes
-# when regenerate_asm.py is run or cases.toml is edited.
+# site of its kind in asm/<target>/<kernel>.s, counted in emission order,
+# and `site` is the instruction found there. That assembly is committed
+# and frozen, so this manifest only changes when regenerate_asm.py is run
+# or cases.toml is edited.
 #
 # A mutant is identified by (target, id), which is unique in this file.
 # `id` is target-local: the same id names a different instruction on
@@ -26,7 +27,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "add_checked.wait001"
@@ -37,7 +38,7 @@ kind = "wait"
 ordinal = 1
 resource = "vgpr"
 hazard = "RAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "add_buffer.wait000"
@@ -48,7 +49,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "add_buffer.wait001"
@@ -59,7 +60,7 @@ kind = "wait"
 ordinal = 1
 resource = "vgpr"
 hazard = "RAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "double_unsafe.wait000"
@@ -70,7 +71,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "double_unsafe.wait001"
@@ -81,7 +82,7 @@ kind = "wait"
 ordinal = 1
 resource = "vgpr"
 hazard = "RAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "collatz.wait000"
@@ -92,7 +93,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "collatz.wait001"
@@ -103,7 +104,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "collatz.wait002"
@@ -114,7 +115,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "RAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "atomic_inc.wait000"
@@ -125,7 +126,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "atomic_inc.wait001"
@@ -136,7 +137,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "atomic_inc.wait002"
@@ -147,7 +148,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "RAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "pointer_chase.wait000"
@@ -158,7 +159,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "pointer_chase.wait001"
@@ -169,7 +170,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "pointer_chase.wait002"
@@ -180,7 +181,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "RAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "pointer_chase.wait003"
@@ -191,7 +192,7 @@ kind = "wait"
 ordinal = 3
 resource = "vgpr"
 hazard = "RAW"
-site = "s_wait_loadcnt_dscnt"
+site = "s_wait_loadcnt_dscnt 0x0"
 
 [[mutant]]
 id = "war_pattern.wait000"
@@ -202,7 +203,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "WAR"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "war_pattern.wait001"
@@ -213,7 +214,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "WAR"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "war_pattern.wait002"
@@ -224,7 +225,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "WAR"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "waw_pattern.wait000"
@@ -235,7 +236,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "WAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "waw_pattern.wait001"
@@ -246,7 +247,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "WAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "waw_pattern.wait002"
@@ -257,7 +258,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "WAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "waw_pattern.wait003"
@@ -268,7 +269,7 @@ kind = "wait"
 ordinal = 3
 resource = "vgpr"
 hazard = "WAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "scratch_access.wait000"
@@ -279,7 +280,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "scratch_access.wait001"
@@ -290,7 +291,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "scratch_access.wait002"
@@ -301,7 +302,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "RAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "scratch_access.wait003"
@@ -312,7 +313,7 @@ kind = "wait"
 ordinal = 3
 resource = "vgpr"
 hazard = "RAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "lds_reduce.wait000"
@@ -323,7 +324,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "lds_reduce.wait001"
@@ -334,7 +335,7 @@ kind = "wait"
 ordinal = 1
 resource = "vgpr"
 hazard = "RAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "lds_reduce.wait002"
@@ -345,7 +346,7 @@ kind = "wait"
 ordinal = 2
 resource = "lds"
 hazard = "RAW"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0x0"
 
 [[mutant]]
 id = "lds_reduce.wait003"
@@ -356,7 +357,7 @@ kind = "wait"
 ordinal = 3
 resource = "lds"
 hazard = "RAW"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0x0"
 
 [[mutant]]
 id = "lds_reduce.wait004"
@@ -367,7 +368,7 @@ kind = "wait"
 ordinal = 4
 resource = "lds"
 hazard = "RAW"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0x0"
 
 [[mutant]]
 id = "lds_war_pattern.wait000"
@@ -378,7 +379,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "WAR"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "lds_war_pattern.wait001"
@@ -389,7 +390,7 @@ kind = "wait"
 ordinal = 1
 resource = "vgpr"
 hazard = "WAR"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "lds_war_pattern.wait002"
@@ -400,7 +401,7 @@ kind = "wait"
 ordinal = 2
 resource = "lds"
 hazard = "WAR"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0x0"
 exempt = true
 exempt_reason = "drains the DS store before the first barrier; afterwards each thread reads back only its own sdata slot, which its own in-order DS store already wrote"
 
@@ -413,7 +414,7 @@ kind = "wait"
 ordinal = 3
 resource = "lds"
 hazard = "WAR"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0x0"
 
 [[mutant]]
 id = "lds_war_pattern.wait004"
@@ -424,7 +425,7 @@ kind = "wait"
 ordinal = 4
 resource = "lds"
 hazard = "WAR"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0x0"
 exempt = true
 exempt_reason = "drains the DS store before the second barrier; afterwards only thread 0 reads, and only its own slot sdata[0]"
 
@@ -437,7 +438,7 @@ kind = "wait"
 ordinal = 5
 resource = "lds"
 hazard = "WAR"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0x0"
 
 [[mutant]]
 id = "trans_lds.wait000"
@@ -448,7 +449,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "trans_lds.wait001"
@@ -459,7 +460,7 @@ kind = "wait"
 ordinal = 1
 resource = "vgpr"
 hazard = "RAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "trans_lds.wait002"
@@ -470,7 +471,7 @@ kind = "wait"
 ordinal = 2
 resource = "lds"
 hazard = "RAW"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0x0"
 
 [[mutant]]
 id = "trans_lds.wait003"
@@ -481,7 +482,7 @@ kind = "wait"
 ordinal = 3
 resource = "lds"
 hazard = "RAW"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0x0"
 
 [[mutant]]
 id = "trans_lds.wait004"
@@ -492,7 +493,7 @@ kind = "wait"
 ordinal = 4
 resource = "lds"
 hazard = "RAW"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0x0"
 
 [[mutant]]
 id = "tensor_lds.wait000"
@@ -503,7 +504,7 @@ kind = "wait"
 ordinal = 0
 resource = "lds"
 hazard = "RAW"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0x0"
 
 [[mutant]]
 id = "tensor_lds.wait001"
@@ -514,7 +515,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "tensor_lds.wait002"
@@ -525,7 +526,7 @@ kind = "wait"
 ordinal = 2
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "tensor_lds.wait003"
@@ -536,7 +537,7 @@ kind = "wait"
 ordinal = 3
 resource = "lds"
 hazard = "RAW"
-site = "s_wait_tensorcnt"
+site = "s_wait_tensorcnt 0"
 
 [[mutant]]
 id = "tensor_lds.wait004"
@@ -547,7 +548,7 @@ kind = "wait"
 ordinal = 4
 resource = "lds"
 hazard = "RAW"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0x0"
 
 [[mutant]]
 id = "tensor_lds.wait005"
@@ -558,7 +559,7 @@ kind = "wait"
 ordinal = 5
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "tensor_lds_offset.wait000"
@@ -569,7 +570,7 @@ kind = "wait"
 ordinal = 0
 resource = "lds"
 hazard = "RAW"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0x0"
 
 [[mutant]]
 id = "tensor_lds_offset.wait001"
@@ -580,7 +581,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "tensor_lds_offset.wait002"
@@ -591,7 +592,7 @@ kind = "wait"
 ordinal = 2
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "tensor_lds_offset.wait003"
@@ -602,7 +603,7 @@ kind = "wait"
 ordinal = 3
 resource = "lds"
 hazard = "RAW"
-site = "s_wait_tensorcnt"
+site = "s_wait_tensorcnt 0"
 
 [[mutant]]
 id = "tensor_lds_offset.wait004"
@@ -613,7 +614,7 @@ kind = "wait"
 ordinal = 4
 resource = "lds"
 hazard = "RAW"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0x0"
 
 [[mutant]]
 id = "tensor_lds_offset.wait005"
@@ -624,7 +625,7 @@ kind = "wait"
 ordinal = 5
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "fa_barrier_epoch.wait000"
@@ -635,7 +636,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "fa_barrier_epoch.wait001"
@@ -646,7 +647,7 @@ kind = "wait"
 ordinal = 1
 resource = "vgpr"
 hazard = "RAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "fa_barrier_epoch.wait002"
@@ -657,7 +658,7 @@ kind = "wait"
 ordinal = 2
 resource = "lds"
 hazard = "RAW"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0"
 
 [[mutant]]
 id = "fa_barrier_epoch.wait003"
@@ -668,7 +669,7 @@ kind = "wait"
 ordinal = 3
 resource = "lds"
 hazard = "RAW"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0"
 
 [[mutant]]
 id = "fa_barrier_epoch.wait004"
@@ -679,7 +680,7 @@ kind = "wait"
 ordinal = 4
 resource = "lds"
 hazard = "RAW"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0"
 
 [[mutant]]
 id = "fa_barrier_epoch.wait005"
@@ -690,7 +691,7 @@ kind = "wait"
 ordinal = 5
 resource = "lds"
 hazard = "RAW"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0"
 
 [[mutant]]
 id = "fa_barrier_epoch.wait006"
@@ -701,7 +702,7 @@ kind = "wait"
 ordinal = 6
 resource = "lds"
 hazard = "RAW"
-site = "s_wait_dscnt"
+site = "s_wait_dscnt 0"
 
 [[mutant]]
 id = "trans_sin_cos.wait000"
@@ -712,7 +713,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "trans_sin_cos.wait001"
@@ -723,7 +724,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "trans_sin_cos.wait002"
@@ -734,7 +735,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "RAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "trans_rcp_sqrt.wait000"
@@ -745,7 +746,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "trans_rcp_sqrt.wait001"
@@ -756,7 +757,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "trans_rcp_sqrt.wait002"
@@ -767,7 +768,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "RAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "trans_chain.wait000"
@@ -778,7 +779,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "trans_chain.wait001"
@@ -789,7 +790,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "trans_chain.wait002"
@@ -800,7 +801,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "RAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "wmma_exp.wait000"
@@ -811,7 +812,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "wmma_exp.wait001"
@@ -822,7 +823,7 @@ kind = "wait"
 ordinal = 1
 resource = "vgpr"
 hazard = "RAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "wmma_rocwmma.wait000"
@@ -833,7 +834,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "wmma_rocwmma.wait001"
@@ -844,7 +845,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 
 [[mutant]]
 id = "wmma_rocwmma.wait002"
@@ -855,7 +856,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "RAW"
-site = "s_wait_loadcnt"
+site = "s_wait_loadcnt 0x0"
 
 [[mutant]]
 id = "wmma_rocwmma.wait003"
@@ -866,7 +867,7 @@ kind = "wait"
 ordinal = 3
 resource = "sgpr"
 hazard = "RAW"
-site = "s_wait_kmcnt"
+site = "s_wait_kmcnt 0x0"
 exempt = true
 exempt_reason = "epilogue wait already satisfied by an earlier s_wait_kmcnt on the K > 0 path the kernel takes, so removing it has no effect"
 
@@ -879,7 +880,7 @@ kind = "memory"
 ordinal = 0
 resource = "global"
 hazard = "GlobalMemoryRace"
-site = "global_load_u8"
+site = "global_load_u8 v0, v0, s[0:1]"
 
 [[mutant]]
 id = "global_byte_eviction.memory001"
@@ -890,7 +891,7 @@ kind = "memory"
 ordinal = 1
 resource = "global"
 hazard = "GlobalMemoryRace"
-site = "global_load_u8"
+site = "global_load_u8 v0, v0, s[0:1] offset:1"
 
 [[mutant]]
 id = "global_byte_eviction.memory002"
@@ -901,7 +902,7 @@ kind = "memory"
 ordinal = 2
 resource = "global"
 hazard = "GlobalMemoryRace"
-site = "global_load_u8"
+site = "global_load_u8 v0, v0, s[0:1]"
 
 [[mutant]]
 id = "global_byte_eviction.memory003"
@@ -912,7 +913,7 @@ kind = "memory"
 ordinal = 3
 resource = "global"
 hazard = "GlobalMemoryRace"
-site = "global_load_u8"
+site = "global_load_u8 v0, v0, s[0:1] offset:1"
 
 [[mutant]]
 id = "add_checked.wait000"
@@ -923,7 +924,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "add_checked.wait001"
@@ -934,7 +935,7 @@ kind = "wait"
 ordinal = 1
 resource = "vgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0)"
 
 [[mutant]]
 id = "add_buffer.wait000"
@@ -945,7 +946,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "add_buffer.wait001"
@@ -956,7 +957,7 @@ kind = "wait"
 ordinal = 1
 resource = "vgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0)"
 
 [[mutant]]
 id = "double_unsafe.wait000"
@@ -967,7 +968,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "double_unsafe.wait001"
@@ -978,7 +979,7 @@ kind = "wait"
 ordinal = 1
 resource = "vgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0)"
 
 [[mutant]]
 id = "collatz.wait000"
@@ -989,7 +990,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "collatz.wait001"
@@ -1000,7 +1001,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "collatz.wait002"
@@ -1011,7 +1012,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0)"
 
 [[mutant]]
 id = "atomic_inc.wait000"
@@ -1022,7 +1023,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "atomic_inc.wait001"
@@ -1033,7 +1034,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "atomic_inc.wait002"
@@ -1044,7 +1045,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0)"
 
 [[mutant]]
 id = "pointer_chase.wait000"
@@ -1055,7 +1056,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "pointer_chase.wait001"
@@ -1066,7 +1067,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "pointer_chase.wait002"
@@ -1077,7 +1078,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0)"
 
 [[mutant]]
 id = "pointer_chase.wait003"
@@ -1088,7 +1089,7 @@ kind = "wait"
 ordinal = 3
 resource = "vgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0) lgkmcnt(0)"
 
 [[mutant]]
 id = "war_pattern.wait000"
@@ -1099,7 +1100,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "WAR"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "war_pattern.wait001"
@@ -1110,7 +1111,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "WAR"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "war_pattern.wait002"
@@ -1121,7 +1122,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "WAR"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0)"
 
 [[mutant]]
 id = "waw_pattern.wait000"
@@ -1132,7 +1133,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "WAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "waw_pattern.wait001"
@@ -1143,7 +1144,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "WAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "waw_pattern.wait002"
@@ -1154,7 +1155,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "WAW"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0)"
 
 [[mutant]]
 id = "waw_pattern.wait003"
@@ -1165,7 +1166,7 @@ kind = "wait"
 ordinal = 3
 resource = "vgpr"
 hazard = "WAW"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0)"
 
 [[mutant]]
 id = "scratch_access.wait000"
@@ -1176,7 +1177,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "scratch_access.wait001"
@@ -1187,7 +1188,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "scratch_access.wait002"
@@ -1198,7 +1199,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0)"
 
 [[mutant]]
 id = "scratch_access.wait003"
@@ -1209,7 +1210,7 @@ kind = "wait"
 ordinal = 3
 resource = "vgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0)"
 
 [[mutant]]
 id = "lds_reduce.wait000"
@@ -1220,7 +1221,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "lds_reduce.wait001"
@@ -1231,7 +1232,7 @@ kind = "wait"
 ordinal = 1
 resource = "vgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0)"
 
 [[mutant]]
 id = "lds_reduce.wait002"
@@ -1242,7 +1243,7 @@ kind = "wait"
 ordinal = 2
 resource = "lds"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "lds_reduce.wait003"
@@ -1253,7 +1254,7 @@ kind = "wait"
 ordinal = 3
 resource = "lds"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "lds_reduce.wait004"
@@ -1264,7 +1265,7 @@ kind = "wait"
 ordinal = 4
 resource = "lds"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "lds_war_pattern.wait000"
@@ -1275,7 +1276,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "WAR"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "lds_war_pattern.wait001"
@@ -1286,7 +1287,7 @@ kind = "wait"
 ordinal = 1
 resource = "vgpr"
 hazard = "WAR"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0)"
 
 [[mutant]]
 id = "lds_war_pattern.wait002"
@@ -1297,7 +1298,7 @@ kind = "wait"
 ordinal = 2
 resource = "lds"
 hazard = "WAR"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 exempt = true
 exempt_reason = "drains only the DS store before the first barrier (no scalar load is outstanding); afterwards each thread reads back only its own sdata slot, which its own in-order DS store already wrote"
 
@@ -1310,7 +1311,7 @@ kind = "wait"
 ordinal = 3
 resource = "lds"
 hazard = "WAR"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "lds_war_pattern.wait004"
@@ -1321,7 +1322,7 @@ kind = "wait"
 ordinal = 4
 resource = "lds"
 hazard = "WAR"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 exempt = true
 exempt_reason = "drains only the DS store before the second barrier (no scalar load is outstanding); afterwards only thread 0 reads, and only its own slot sdata[0]"
 
@@ -1334,7 +1335,7 @@ kind = "wait"
 ordinal = 5
 resource = "lds"
 hazard = "WAR"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "trans_lds.wait000"
@@ -1345,7 +1346,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "trans_lds.wait001"
@@ -1356,7 +1357,7 @@ kind = "wait"
 ordinal = 1
 resource = "vgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0)"
 
 [[mutant]]
 id = "trans_lds.wait002"
@@ -1367,7 +1368,7 @@ kind = "wait"
 ordinal = 2
 resource = "lds"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "trans_lds.wait003"
@@ -1378,7 +1379,7 @@ kind = "wait"
 ordinal = 3
 resource = "lds"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(1)"
 
 [[mutant]]
 id = "trans_lds.wait004"
@@ -1389,7 +1390,7 @@ kind = "wait"
 ordinal = 4
 resource = "lds"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "trans_sin_cos.wait000"
@@ -1400,7 +1401,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "trans_sin_cos.wait001"
@@ -1411,7 +1412,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "trans_sin_cos.wait002"
@@ -1422,7 +1423,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0)"
 
 [[mutant]]
 id = "trans_rcp_sqrt.wait000"
@@ -1433,7 +1434,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "trans_rcp_sqrt.wait001"
@@ -1444,7 +1445,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "trans_rcp_sqrt.wait002"
@@ -1455,7 +1456,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0)"
 
 [[mutant]]
 id = "trans_chain.wait000"
@@ -1466,7 +1467,7 @@ kind = "wait"
 ordinal = 0
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "trans_chain.wait001"
@@ -1477,7 +1478,7 @@ kind = "wait"
 ordinal = 1
 resource = "sgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt lgkmcnt(0)"
 
 [[mutant]]
 id = "trans_chain.wait002"
@@ -1488,7 +1489,7 @@ kind = "wait"
 ordinal = 2
 resource = "vgpr"
 hazard = "RAW"
-site = "s_waitcnt"
+site = "s_waitcnt vmcnt(0)"
 
 [[mutant]]
 id = "global_byte_eviction.memory000"
@@ -1499,7 +1500,7 @@ kind = "memory"
 ordinal = 0
 resource = "global"
 hazard = "GlobalMemoryRace"
-site = "global_load_ubyte"
+site = "global_load_ubyte v0, v0, s[4:5]"
 
 [[mutant]]
 id = "global_byte_eviction.memory001"
@@ -1510,7 +1511,7 @@ kind = "memory"
 ordinal = 1
 resource = "global"
 hazard = "GlobalMemoryRace"
-site = "global_load_ubyte"
+site = "global_load_ubyte v0, v0, s[4:5] offset:1"
 
 [[mutant]]
 id = "global_byte_eviction.memory002"
@@ -1521,7 +1522,7 @@ kind = "memory"
 ordinal = 2
 resource = "global"
 hazard = "GlobalMemoryRace"
-site = "global_load_ubyte"
+site = "global_load_ubyte v0, v0, s[4:5]"
 
 [[mutant]]
 id = "global_byte_eviction.memory003"
@@ -1532,4 +1533,4 @@ kind = "memory"
 ordinal = 3
 resource = "global"
 hazard = "GlobalMemoryRace"
-site = "global_load_ubyte"
+site = "global_load_ubyte v0, v0, s[4:5] offset:1"

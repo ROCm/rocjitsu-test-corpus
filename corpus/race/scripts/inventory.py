@@ -46,31 +46,53 @@ class InventoryError(ValueError):
 # The mutation kinds a case may opt into with ``mutate``.
 MUTATION_KINDS = frozenset({"wait", "memory"})
 
-# The keys a [[case.exempt]] table may have; all but ``target`` are required.
+# The keys of a [[case.exempt]] table. All but ``target`` are required.
 EXEMPTION_KEYS = frozenset({"kind", "ordinal", "site", "reason", "target"})
 
 
-@dataclass(frozen=True)
-class Exemption:
+@dataclass(frozen=True, kw_only=True)
+class SitePin:
     """
-    A mutation of a case that provably introduces no race, so its mutant is
-    exempt from scoring.
+    One mutation site of a case, pinned to the instruction found there.
 
     Attributes:
         kind: The mutation kind, such as ``"wait"``.
         ordinal: Which site of that kind, 0-based, counted as
-            ``check_cases.wait_sites`` counts them.
-        site: The instruction the ordinal names, such as ``"s_wait_kmcnt"``.
-        reason: Why the mutation introduces no race.
-        target: The one target the exemption applies to, or None for every
-            target the case builds for.
+            ``mutate.find_sites`` counts them.
+        site: The instruction's signature, such as ``"s_wait_dscnt 0x0"``;
+            see ``mutate.signature``. A site whose ordinal now names a
+            different instruction, even one with the same mnemonic, no longer
+            matches, so the pin cannot drift onto it.
+        target: The one target the pin applies to, or None for every target
+            the case builds for. The instruction at an ordinal differs between
+            targets, so a portable case's pin usually names one.
     """
 
     kind: str
     ordinal: int
     site: str
-    reason: str
     target: str | None = None
+
+    def names(self, kind: str, ordinal: int, target: str) -> bool:
+        """Whether this pin is for site *ordinal* of *kind* on *target*."""
+        return (
+            self.kind == kind
+            and self.ordinal == ordinal
+            and self.target in (None, target)
+        )
+
+
+@dataclass(frozen=True, kw_only=True)
+class Exemption(SitePin):
+    """
+    A mutation that provably introduces no race, so its mutant is exempt from
+    scoring.
+
+    Attributes:
+        reason: Why the mutation introduces no race.
+    """
+
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -99,6 +121,14 @@ class MutationRules:
     def declared(self) -> bool:
         """Whether the manifest gives the case any mutation rule."""
         return self != MutationRules()
+
+    def exemption_for(self, kind: str, ordinal: int, target: str) -> Exemption | None:
+        """The exemption of site *ordinal* of *kind* on *target*, if any."""
+        return next((e for e in self.exempt if e.names(kind, ordinal, target)), None)
+
+    def pins(self) -> tuple[SitePin, ...]:
+        """Every site this case pins."""
+        return self.exempt
 
 
 @dataclass(frozen=True)
@@ -276,12 +306,9 @@ def _cases(
             problem=f"{where}: kernel {kernel} is already used by another case",
             problems=problems,
         )
+        rules = _mutation_rules(where=where, entry=entry, problems=problems)
         yield Case(
-            id=case_id,
-            kernel=kernel,
-            targets=targets,
-            headers=headers,
-            rules=_mutation_rules(where=where, entry=entry, problems=problems),
+            id=case_id, kernel=kernel, targets=targets, headers=headers, rules=rules
         )
 
 
@@ -304,15 +331,14 @@ def _mutation_rules(
         )
         for name in ("hazard", "description", "resource")
     )
+    exempt = _site_pins(where, entry.get("exempt", []), "exempt", problems)
     return MutationRules(
         mutate=mutate,
         hazard=hazard,
         description=description,
         resource=resource,
         waits=_waits(where=where, value=entry.get("waits"), problems=problems),
-        exempt=_exemptions(
-            where=where, value=entry.get("exempt", []), problems=problems
-        ),
+        exempt=tuple(Exemption(**table) for table in exempt),
     )
 
 
@@ -342,47 +368,47 @@ def _waits(
     }
 
 
-def _exemptions(
-    where: str, value: object, problems: list[str]
-) -> tuple[Exemption, ...]:
-    """The [[case.exempt]] tables, each with every required key of the right type."""
-    if not isinstance(value, list) or not all(isinstance(e, dict) for e in value):
-        problems.append(f"{where}: exempt must be a list of [[case.exempt]] tables")
-        return ()
-    exemptions = []
+def _site_pins(
+    where: str, value: object, name: str, problems: list[str]
+) -> list[dict[str, object]]:
+    """
+    The valid [[case.<name>]] tables in *value*, with a problem for each
+    invalid one.
+    """
+    if not isinstance(value, list) or not all(isinstance(t, dict) for t in value):
+        problems.append(f"{where}: {name} must be a list of [[case.{name}]] tables")
+        return []
+    valid = []
     for table in value:
-        if (
-            exemption := _exemption(where=where, table=table, problems=problems)
-        ) is not None:
-            exemptions.append(exemption)
-    return tuple(exemptions)
+        if table_problems := _site_pin_problems(where, table, name):
+            problems.extend(table_problems)
+        else:
+            valid.append(table)
+    return valid
 
 
-def _exemption(
-    where: str, table: dict[str, object], problems: list[str]
-) -> Exemption | None:
-    """One [[case.exempt]] table, or None, with a problem, if it is invalid."""
-    count = len(problems)
-    for key in sorted(set(table) - EXEMPTION_KEYS):
-        problems.append(f"{where}: unknown [[case.exempt]] key {key!r}")
-    for key in ("kind", "site", "reason"):
+def _site_pin_problems(where: str, table: dict[str, object], name: str) -> list[str]:
+    """What is wrong with one [[case.<name>]] table."""
+    keys = EXEMPTION_KEYS
+    problems = [
+        f"{where}: unknown [[case.{name}]] key {key!r}"
+        for key in sorted(set(table) - keys)
+    ]
+    for key in sorted(keys - {"ordinal", "target"}):
         if not _is_name(table.get(key)):
-            problems.append(f"{where}: exempt {key} must be a non-empty string")
+            problems.append(f"{where}: {name} {key} must be a non-empty string")
     ordinal = table.get("ordinal")
     if not isinstance(ordinal, int) or isinstance(ordinal, bool) or ordinal < 0:
-        problems.append(f"{where}: exempt ordinal must be a non-negative integer")
-    target = _optional_string(
-        where=where, name="exempt target", value=table.get("target"), problems=problems
-    )
-    if len(problems) > count:
-        return None
-    return Exemption(
-        kind=table["kind"],
-        ordinal=ordinal,
-        site=table["site"],
-        reason=table["reason"],
-        target=target,
-    )
+        problems.append(f"{where}: {name} ordinal must be a non-negative integer")
+    if table.get("target") is not None and not _is_name(table.get("target")):
+        problems.append(f"{where}: {name} target must be a non-empty string")
+    kind = table.get("kind")
+    if _is_name(kind) and kind not in MUTATION_KINDS:
+        problems.append(
+            f"{where}: {name} kind {kind!r} is not one of "
+            f"{', '.join(sorted(MUTATION_KINDS))}"
+        )
+    return problems
 
 
 def _field_problems(where: str, entry: dict[str, object]) -> list[str]:

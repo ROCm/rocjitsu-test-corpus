@@ -53,10 +53,10 @@ def gfx950(tmp_path: Path) -> Path:
 def test_wait_sites_are_enumerated_in_order(gfx1250: Path) -> None:
     sites = mutate.find_wait_sites(gfx1250)
     # s_wait_xcnt is out of scope, and a wait in a comment is not code.
-    assert [(s.ordinal, s.line_number, s.mnemonic, s.operand) for s in sites] == [
-        (0, 3, "s_wait_kmcnt", "0x0"),
-        (1, 7, "s_wait_loadcnt_dscnt", "0x0"),
-        (2, 9, "s_wait_loadcnt", "0x1"),
+    assert [(s.ordinal, s.line_number, s.signature) for s in sites] == [
+        (0, 3, "s_wait_kmcnt 0x0"),
+        (1, 7, "s_wait_loadcnt_dscnt 0x0"),
+        (2, 9, "s_wait_loadcnt 0x1"),
     ]
 
 
@@ -68,6 +68,37 @@ def test_excluded_waits_can_be_included(gfx1250: Path) -> None:
         "s_wait_loadcnt_dscnt",
         "s_wait_loadcnt",
     ]
+
+
+def test_wait_names_its_counters(gfx1250: Path, gfx950: Path) -> None:
+    assert [s.counters for s in mutate.find_wait_sites(gfx1250)] == [
+        {"kmcnt"},
+        {"loadcnt", "dscnt"},
+        {"loadcnt"},
+    ]
+    legacy = mutate.find_wait_sites(gfx950)
+    assert [s.counters for s in legacy] == [{"vmcnt", "lgkmcnt"}, {"lgkmcnt"}]
+    # The whole operand is kept, not its first counter.
+    assert legacy[0].operand == "vmcnt(0) lgkmcnt(0)"
+
+
+@pytest.mark.parametrize(
+    "instruction, limits",
+    [
+        ("s_wait_loadcnt 0x0", {"loadcnt": 0}),
+        ("s_wait_loadcnt_dscnt 0x2", {"loadcnt": 2, "dscnt": 2}),
+        ("s_wait_tensorcnt 1", {"tensorcnt": 1}),
+        ("s_waitcnt vmcnt(0) lgkmcnt(1)", {"vmcnt": 0, "lgkmcnt": 1}),
+        ("s_waitcnt_vscnt null, 0x0", {"vscnt": 0}),
+        ("s_wait_kmcnt 0x0 ; comment", {"kmcnt": 0}),
+    ],
+)
+def test_wait_limits(instruction: str, limits: dict[str, int]) -> None:
+    assert mutate.wait_limits(instruction) == limits
+
+
+def test_signature_drops_the_comment_and_collapses_whitespace() -> None:
+    assert mutate.signature("\ts_waitcnt   vmcnt(0)  ; note") == "s_waitcnt vmcnt(0)"
 
 
 # --- Memory sites ----------------------------------------------------------------
@@ -82,6 +113,7 @@ def test_memory_sites_rewrite_the_load_as_a_store(gfx1250: Path, gfx950: Path) -
     (flat,) = mutate.find_memory_sites(gfx950)
     # A flat store's address comes first; cache flags follow the last operand.
     assert flat.rewritten_line == "flat_store_byte v[0:1], v0 offset:1 sc0 sc1"
+    assert flat.signature == "flat_load_ubyte v0, v[0:1] offset:1 sc0 sc1"
 
 
 def test_full_dword_loads_are_not_memory_sites(gfx1250: Path) -> None:
@@ -97,7 +129,7 @@ def test_wait_mutation_replaces_one_wait_with_a_nop(
 ) -> None:
     out = tmp_path / "mutant.s"
     site = mutate.apply_mutation(gfx1250, "wait", 1, out)
-    assert site.mnemonic == "s_wait_loadcnt_dscnt"
+    assert site.signature == "s_wait_loadcnt_dscnt 0x0"
     original, mutant = GFX1250.splitlines(), out.read_text().splitlines()
     assert [i for i, (a, b) in enumerate(zip(original, mutant)) if a != b] == [7]
     assert mutant[7] == (
@@ -134,3 +166,17 @@ def test_unknown_kind_is_rejected(gfx1250: Path, tmp_path: Path) -> None:
         mutate.find_sites(gfx1250, "swap")
     with pytest.raises(ValueError, match="unknown mutation kind 'swap'"):
         mutate.apply_mutation(gfx1250, "swap", 0, tmp_path / "mutant.s")
+
+
+# --- Pinning a site --------------------------------------------------------------
+
+
+def test_pin_matches_the_whole_instruction(gfx950: Path) -> None:
+    sites = mutate.find_wait_sites(gfx950)
+    assert mutate.pin_mismatch(sites, 1, "s_waitcnt lgkmcnt(1)", "w.s") is None
+    assert mutate.pin_mismatch(sites, 1, "s_waitcnt lgkmcnt(0)", "w.s") == (
+        "ordinal 1 is 's_waitcnt lgkmcnt(1)' at w.s:4, not 's_waitcnt lgkmcnt(0)'"
+    )
+    assert mutate.pin_mismatch(sites, 2, "s_waitcnt", "w.s") == (
+        "ordinal 2 is out of range; w.s has 2 such sites"
+    )

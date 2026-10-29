@@ -46,18 +46,19 @@ the other fields ``generate.py`` reads), it also checks that:
 * ``waits`` has exactly one entry per target the case builds for, and that
   entry lists exactly the counters the target's assembly waits on (see
   ``wait_counters``);
-* each ``[[case.exempt]]`` ordinal names, under the counting rule in
-  ``wait_sites``, the instruction its ``site`` says it does.
+* each ``[[case.exempt]]`` names, at its ordinal, the instruction its
+  ``site`` signature says it does. Sites are counted, and pins
+  matched, by ``mutate``, as ``generate.py`` counts and matches them.
 """
 
 import argparse
 import enum
 import re
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 import inventory
+import mutate
 import recipe
 
 
@@ -82,85 +83,15 @@ _AMDGCN_TARGET_RE = re.compile(
     r'^\s*\.amdgcn_target\s+"[^"]*-([^-":]+)(?::[^"]*)?"', re.MULTILINE
 )
 
-# s_wait_xcnt is out of the corpus's scope, as in mutate.DEFAULT_EXCLUDED_WAITS,
-# which explains the replay-dependent hazard it guards. It is never a mutation
-# site and never counts as a wait the kernel exercises.
-EXCLUDED_WAITS = frozenset({"s_wait_xcnt"})
-
-# Matches a wait mnemonic and its first operand on a stripped line. Kept in
-# step with mutate.find_wait_sites, so an ordinal means the same instruction
-# here and when a mutant is built.
-_WAIT_RE = re.compile(r"(s_wait\w+)\s+(\S+)")
-
-# Counter fields named inside a gfx9-era combined s_waitcnt operand.
-_LEGACY_FIELD_RE = re.compile(r"\b(vmcnt|lgkmcnt|expcnt|vscnt)\(")
-
-
-@dataclass(frozen=True)
-class WaitSite:
-    """
-    One wait mutation site in a listing.
-
-    Attributes:
-        ordinal: Its position among the listing's wait sites, 0-based; see
-            wait_sites.
-        line: Its 1-based line in the ``.s`` file, for messages.
-        mnemonic: The wait instruction, such as ``s_wait_kmcnt``.
-        counters: The counters it drains, spelled as the target spells them.
-    """
-
-    ordinal: int
-    line: int
-    mnemonic: str
-    counters: frozenset[str]
-
-
-def _site_counters(mnemonic: str, stripped_line: str) -> frozenset[str]:
-    """
-    The counters one wait instruction drains, spelled as the target spells them.
-
-    gfx9 names its counters in the operand of a combined ``s_waitcnt``; gfx10+
-    names one in the mnemonic (``s_waitcnt_vscnt``, ``s_wait_loadcnt``) or two
-    (``s_wait_loadcnt_dscnt``). A wait naming two counters drains both.
-    """
-    if mnemonic == "s_waitcnt":
-        return frozenset(_LEGACY_FIELD_RE.findall(stripped_line))
-    suffix = mnemonic.removeprefix("s_waitcnt_").removeprefix("s_wait_")
-    return frozenset(part for part in suffix.split("_") if part.endswith("cnt"))
-
-
-def wait_sites(asm: Path) -> list[WaitSite]:
-    """
-    Every wait mutation site in *asm*, with its ordinal.
-
-    The counting rule: one domain for all counters (a ``kmcnt`` wait and a
-    ``loadcnt`` wait share it), in file order, starting at 0. Comment and
-    directive lines are skipped, and so is ``s_wait_xcnt``. A wait naming two
-    counters is one site.
-    """
-    sites: list[WaitSite] = []
-    lines = asm.read_text(encoding="utf-8", errors="replace").splitlines()
-    for number, line in enumerate(lines, start=1):
-        stripped = line.strip()
-        if stripped.startswith((";", ".")):
-            continue
-        match = _WAIT_RE.match(stripped)
-        if not match or match.group(1) in EXCLUDED_WAITS:
-            continue
-        sites.append(
-            WaitSite(
-                ordinal=len(sites),
-                line=number,
-                mnemonic=match.group(1),
-                counters=_site_counters(match.group(1), stripped),
-            )
-        )
-    return sites
-
 
 def wait_counters(asm: Path) -> set[str]:
-    """Every counter some wait site in *asm* drains."""
-    return {counter for site in wait_sites(asm) for counter in site.counters}
+    """
+    Every counter some wait site in *asm* drains, with sites counted as
+    mutate.find_wait_sites counts them, so excluding what it excludes.
+    """
+    return {
+        counter for site in mutate.find_wait_sites(asm) for counter in site.counters
+    }
 
 
 def asm_targets() -> list[str]:
@@ -266,9 +197,7 @@ def _case_mutation_problems(
                     where, target=target, declared=waits.get(target), asm=asm
                 )
             )
-            problems.extend(
-                _exemption_problems(where, case=case, target=target, asm=asm)
-            )
+            problems.extend(_pin_problems(where, case=case, target=target, asm=asm))
     return problems
 
 
@@ -293,31 +222,18 @@ def _wait_problems(
     return [f"{where}: waits.{target} {list(declared)}: {'; '.join(detail)}"]
 
 
-def _exemption_problems(
+def _pin_problems(
     where: str, case: inventory.Case, target: str, asm: Path
 ) -> list[str]:
-    """Whether each of *case*'s exemptions for *target* names the site it says."""
+    """Whether each of *case*'s pins for *target* names the instruction it says."""
     problems: list[str] = []
-    sites = wait_sites(asm)
     listing = f"asm/{target}/{case.kernel}.s"
-    for exemption in case.rules.exempt:
-        if exemption.target not in (None, target):
+    for pin in case.rules.pins():
+        if pin.target not in (None, target):
             continue
-        if exemption.kind != "wait":
-            problems.append(
-                f"{where}: cannot verify a {exemption.kind!r} exemption; "
-                f"only wait ordinals are checked"
-            )
-        elif exemption.ordinal >= len(sites):
-            problems.append(
-                f"{where}: exempt wait ordinal {exemption.ordinal} is out of range; "
-                f"{listing} has {len(sites)} wait sites"
-            )
-        elif (site := sites[exemption.ordinal]).mnemonic != exemption.site:
-            problems.append(
-                f"{where}: exempt wait ordinal {exemption.ordinal} is {site.mnemonic} "
-                f"at {listing}:{site.line}, not {exemption.site}"
-            )
+        sites = mutate.find_sites(asm, pin.kind)
+        if mismatch := mutate.pin_mismatch(sites, pin.ordinal, pin.site, listing):
+            problems.append(f"{where}: exempt {pin.kind} {mismatch}")
     return problems
 
 
@@ -368,7 +284,7 @@ def check(corpus: inventory.Inventory) -> list[str]:
     return errors
 
 
-def main(argv: list[str]) -> ExitCode:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Check cases.toml against kernels/ and the committed asm/, without a compiler."
     )
@@ -378,7 +294,11 @@ def main(argv: list[str]) -> ExitCode:
         default=False,
         help="Print the waits table each case's committed assembly implies, and exit.",
     )
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str]) -> ExitCode:
+    args = _build_parser().parse_args(argv)
     try:
         corpus = inventory.load(CASES_PATH)
     except inventory.InventoryError as error:

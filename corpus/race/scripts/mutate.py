@@ -23,6 +23,13 @@ frozen. The ordinal is kept because it degrades more gracefully when the
 assembly is regenerated: an edit that shifts code around without changing the
 number of waits leaves every recipe still pointing at the same instruction.
 
+A site is pinned by its **signature**: the instruction without its comment,
+whitespace collapsed, such as ``s_waitcnt lgkmcnt(0)``. Exemptions in
+``cases.toml`` name the signature they were checked against, and
+``pin_mismatch`` is the one check both ``check_cases.py`` and ``generate.py``
+apply to them, so an ordinal that moves onto a different instruction -- even
+one with the same mnemonic -- is caught.
+
 This module is deliberately free of any simulator, detector, or ROCm dependency:
 it reads text and writes text. The interface a detector implements is in
 ``detector_protocol.py``.
@@ -50,7 +57,34 @@ VALID_MUTATION_KINDS = frozenset({MUTATION_KIND_WAIT, MUTATION_KIND_MEMORY})
 # mutation sites. Pass an empty set to include them.
 DEFAULT_EXCLUDED_WAITS = frozenset({"s_wait_xcnt"})
 
-_WAIT_RE = re.compile(r"(s_wait\w+)\s+(\S+)")
+_WAIT_RE = re.compile(r"(s_wait\w+)\s+(\S.*)")
+
+# Counter fields named inside a gfx9-era combined s_waitcnt operand.
+_LEGACY_FIELD_RE = re.compile(r"\b(vmcnt|lgkmcnt|expcnt|vscnt)\((\d+)\)")
+
+
+def signature(line: str) -> str:
+    """*line*'s instruction without its comment, whitespace collapsed."""
+    return " ".join(line.split(";", 1)[0].split())
+
+
+def wait_limits(instruction: str) -> dict[str, int]:
+    """
+    Each counter the wait *instruction* waits on, and the count it waits for.
+
+    gfx9 names its counters in the operand of a combined ``s_waitcnt``
+    (``vmcnt(0) lgkmcnt(1)``); gfx10+ names one in the mnemonic
+    (``s_wait_loadcnt 0x0``) or two (``s_wait_loadcnt_dscnt 0x0``), which share
+    the one count. Counters are spelled as the target spells them.
+    """
+    text = signature(instruction)
+    mnemonic, _, operand = text.partition(" ")
+    if mnemonic == "s_waitcnt":
+        return {name: int(count) for name, count in _LEGACY_FIELD_RE.findall(operand)}
+    suffix = mnemonic.removeprefix("s_waitcnt_").removeprefix("s_wait_")
+    counters = [part for part in suffix.split("_") if part.endswith("cnt")]
+    count = operand.split(",")[-1].strip()
+    return {counter: int(count, 0) for counter in counters}
 
 
 @dataclass(frozen=True)
@@ -60,8 +94,18 @@ class WaitSite:
     ordinal: int  # index into the file's wait list, the stable identifier
     line_number: int  # 0-based, derived per-compilation
     mnemonic: str  # e.g. "s_wait_loadcnt"
-    operand: str  # e.g. "0x0"
+    operand: str  # e.g. "0x0" or "vmcnt(0) lgkmcnt(0)", without its comment
     full_line: str  # original line text, without trailing newline
+
+    @property
+    def signature(self) -> str:
+        """The instruction, as an exemption or tag override pins it."""
+        return signature(self.full_line)
+
+    @property
+    def counters(self) -> frozenset[str]:
+        """The counters this wait drains; a wait naming two drains both."""
+        return frozenset(wait_limits(self.full_line))
 
 
 @dataclass(frozen=True)
@@ -74,6 +118,11 @@ class MemorySite:
     store_mnemonic: str  # e.g. "flat_store_byte"
     full_line: str  # original line text, without trailing newline
     rewritten_line: str  # the store that replaces it, without indent or newline
+
+    @property
+    def signature(self) -> str:
+        """The load, as an exemption or tag override pins it."""
+        return signature(self.full_line)
 
 
 # Sub-dword (byte / short) load mnemonics mapped to the store that writes the
@@ -135,7 +184,7 @@ def find_wait_sites(
                 ordinal=len(sites),
                 line_number=idx,
                 mnemonic=match.group(1),
-                operand=match.group(2),
+                operand=signature(match.group(2)),
                 full_line=line.rstrip(),
             )
         )
@@ -225,7 +274,9 @@ class StaleOrdinalError(LookupError):
     """
 
 
-def _site_at(sites: list, ordinal: int, kind: str, asm_path: Path):
+def _site_at(
+    sites: list[WaitSite] | list[MemorySite], ordinal: int, kind: str, asm_path: Path
+) -> WaitSite | MemorySite:
     if ordinal < len(sites):
         return sites[ordinal]
     raise StaleOrdinalError(
@@ -233,6 +284,26 @@ def _site_at(sites: list, ordinal: int, kind: str, asm_path: Path):
         f"has {len(sites)} {kind} site(s), so it and mutants.toml disagree. "
         f"Regenerate the manifest with python corpus/race/scripts/generate.py."
     )
+
+
+def pin_mismatch(
+    sites: list[WaitSite] | list[MemorySite], ordinal: int, pinned: str, listing: str
+) -> str | None:
+    """
+    Why the site *ordinal* of *sites*, from *listing*, is not the instruction
+    *pinned*, a signature; or None if it is.
+    """
+    if ordinal >= len(sites):
+        return (
+            f"ordinal {ordinal} is out of range; {listing} has {len(sites)} such sites"
+        )
+    site = sites[ordinal]
+    if site.signature != pinned:
+        return (
+            f"ordinal {ordinal} is {site.signature!r} at {listing}:"
+            f"{site.line_number + 1}, not {pinned!r}"
+        )
+    return None
 
 
 def apply_wait_mutation(asm_path: Path, ordinal: int, output: Path) -> WaitSite:
