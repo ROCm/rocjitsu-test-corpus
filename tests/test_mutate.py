@@ -116,9 +116,14 @@ def test_memory_mutation_rewrites_one_load(gfx1250: Path, tmp_path: Path) -> Non
     )
 
 
-def test_ordinal_past_the_sites_is_stale(gfx1250: Path, tmp_path: Path) -> None:
+def test_ordinal_past_the_sites_is_a_disagreement_with_the_manifest(
+    gfx1250: Path, tmp_path: Path
+) -> None:
     with pytest.raises(
-        mutate.StaleOrdinalError, match="wait ordinal 3 is out of range"
+        mutate.StaleOrdinalError,
+        match=r"wait ordinal 3 is out of range; the assembly has 3 wait site\(s\), so "
+        r"it and mutants.toml disagree. Regenerate the manifest with python "
+        r"corpus/race/scripts/generate.py",
     ):
         mutate.apply_mutation(gfx1250, "wait", 3, tmp_path / "mutant.s")
     assert not (tmp_path / "mutant.s").exists()

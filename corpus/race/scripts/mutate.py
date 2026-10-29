@@ -24,8 +24,8 @@ assembly is regenerated: an edit that shifts code around without changing the
 number of waits leaves every recipe still pointing at the same instruction.
 
 This module is deliberately free of any simulator, detector, or ROCm dependency:
-it reads text and writes text. Everything that knows about a particular tool
-lives in ``adapters/``.
+it reads text and writes text. The interface a detector implements is in
+``detector_protocol.py``.
 """
 
 import re
@@ -216,12 +216,12 @@ def find_sites(
 
 class StaleOrdinalError(LookupError):
     """
-    A recipe names a site that freshly generated assembly does not contain.
+    A recipe names a site that the committed assembly does not contain.
 
-    Raised when a committed ordinal outruns what the current toolchain emits --
-    a compiler that emits fewer waits than when the recipe was written. Callers
-    skip the case and report that the manifest needs regenerating, rather than
-    failing: a toolchain bump should degrade gracefully, not break the suite.
+    The recipes in ``mutants.toml`` are generated from the committed assembly,
+    so an ordinal out of range means the two disagree: the assembly was
+    regenerated, or the manifest edited, without the other. That is a corpus
+    defect, and a caller fails on it rather than skipping the mutant.
     """
 
 
@@ -229,8 +229,9 @@ def _site_at(sites: list, ordinal: int, kind: str, asm_path: Path):
     if ordinal < len(sites):
         return sites[ordinal]
     raise StaleOrdinalError(
-        f"{asm_path.name}: {kind} ordinal {ordinal} is out of range; the current "
-        f"toolchain emits {len(sites)} {kind} site(s). Re-run generate.py --generate."
+        f"{asm_path.name}: {kind} ordinal {ordinal} is out of range; the assembly "
+        f"has {len(sites)} {kind} site(s), so it and mutants.toml disagree. "
+        f"Regenerate the manifest with python corpus/race/scripts/generate.py."
     )
 
 
