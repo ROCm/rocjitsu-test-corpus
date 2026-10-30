@@ -79,7 +79,7 @@ uses target `gfx1201` and selects the first three; the other suites are opt-in.
 
 ### RocJITsu race-detector integration
 
-`corpus/race/integration/` owns the gfx942, gfx950 and gfx1151 GoogleTest programs,
+`corpus/race/integration/` owns the gfx942, gfx950, gfx1151 and gfx1250 GoogleTest programs,
 their shared fixture, race-log matcher, CMake build, and case-list configs.
 The opt-in `--suite race` adapter builds these integration programs with the
 corpus HIP toolchain and runs each GoogleTest case separately. It covers this
@@ -99,7 +99,8 @@ launcher or base simulator config and may select multiple suites.
 The base config must match `--target`. For gfx950 use
 `emulation/rocjitsu/tests/race-detector/race_test_config.json` from rocm-systems:
 its 1-XCD/4-CU topology avoids the memory cost of a full MI350X simulation for
-each parallel test. For gfx1151 use `emulation/rocjitsu/configs/gfx1151.json`.
+each parallel test. For gfx1151 use `emulation/rocjitsu/configs/gfx1151.json`,
+and for gfx1250 use `emulation/rocjitsu/configs/gfx1250_mi455x.json`.
 For gfx942 use
 `emulation/rocjitsu/tests/race-detector/race_test_gfx942_config.json`, supplied
 by the [systems companion](https://github.com/ROCm/rocm-systems/pull/12583).
@@ -118,7 +119,7 @@ pytest tests/test_corpus.py \
 Set `ROCJITSU_RACE_BUILD_ROOT` to keep the CMake build outside the checkout.
 Returning-atomic tests cover compiler-generated and explicit VM-only waits,
 with no-wait and EXP-only controls. FLAT-to-LDS exchanges check both a
-synchronized barrier and a missing-barrier control on all three targets. The
+synchronized barrier and a missing-barrier control on gfx942, gfx950 and gfx1151. The
 gfx950 suite also keeps full-wave and lane-zero atomic controls separate.
 The ordering pair issues a returning GLOBAL atomic followed by a GLOBAL load
 into the same VGPR, without an intervening wait; a final `vmcnt(0)` precedes
@@ -131,6 +132,16 @@ Select the ordering pair with
 `--case RaceTest.vmem_gfx942_atomic_global_same_vgpr` and
 `--case RaceTest.vmem_gfx942_atomic_valu_overwrite_race`, substituting gfx950 or
 gfx1151 to test those targets.
+
+The gfx1250 program covers tensor DMA (`tensor_load_to_lds`,
+`tensor_store_from_lds`). Each race case is a synchronized case with one step
+removed: the issuing wave's `s_wait_tensorcnt`, another wave's barrier, the DS
+wait before a store, or one transfer from a partial wait in a double-buffered
+pipeline. Further cases check that a NULL tensor, a NOP tile and a store
+outside the tensor still occupy a TENSORcnt slot; that zero-filled elements
+are tracked and padding is not; and that a tile extending past the LDS
+allocation transfers its in-range part. The gfx1250 program does not build the
+shared VMEM cases, which use pre-GFX12 waits.
 
 Before entering each private case directory, the adapter resolves relative
 launcher paths and plain arguments naming existing files against the corpus
@@ -188,7 +199,8 @@ jq --arg sink "$race_case_dir/plugins" \
 
 The pytest adapter sets up this contract and verifies GoogleTest completion and
 test-kernel dispatch automatically; the direct command is useful for debugging
-one case. The same layout applies to gfx1151 with its matching config and binary.
+one case. The same layout applies to gfx1151 and gfx1250 with their matching
+configs and binaries.
 
 The target configs in `corpus/race/integration/configs/` accept `skip_compile_tests` to omit
 cases from discovery and `skip_run_tests` to build without launching those cases.
