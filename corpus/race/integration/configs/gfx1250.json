@@ -1,0 +1,32 @@
+{
+  "config_name": "gfx1250",
+  "target": "gfx1250",
+  "cases": [
+    "vgpr_loadcnt",
+    "vgpr_loadcnt_race",
+    "tensor_load_tensorcnt",
+    "tensor_load_missing_tensorcnt_race",
+    "tensor_load_other_counters_race",
+    "tensor_load_cross_wave",
+    "tensor_load_cross_wave_no_barrier_race",
+    "tensor_load_cross_wave_no_tensorcnt_race",
+    "tensor_load_pipeline_oldest",
+    "tensor_load_pipeline_newest_race",
+    "tensor_store_source_overwrite",
+    "tensor_store_source_overwrite_race",
+    "tensor_store_dscnt",
+    "tensor_store_missing_dscnt_race",
+    "tensor_store_then_load_same_wave",
+    "tensor_load_null_tensor_counts",
+    "tensor_load_null_tensor_uncounted_race",
+    "tensor_load_empty_tile_counts",
+    "tensor_store_outside_tensor_counts",
+    "tensor_load_zero_fill",
+    "tensor_load_zero_fill_cross_wave_race",
+    "tensor_load_padding_gap",
+    "tensor_load_padding_data_race",
+    "tensor_load_past_lds_allocation",
+    "tensor_store_past_lds_allocation",
+    "tensor_load_builtin"
+  ]
+}

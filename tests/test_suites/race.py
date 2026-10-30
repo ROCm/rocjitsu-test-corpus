@@ -49,6 +49,10 @@ TARGET_LAYOUT = {
         "binary": "hip_race_tests_gfx1151",
         "fixture": "Gfx1151RaceTest",
     },
+    "gfx1250": {
+        "binary": "hip_race_tests_gfx1250",
+        "fixture": "Gfx1250RaceTest",
+    },
 }
 
 
