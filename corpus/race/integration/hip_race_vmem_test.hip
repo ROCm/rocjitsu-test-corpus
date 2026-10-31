@@ -11,7 +11,8 @@
 
 namespace {
 
-// Cases ending in _race must report a race; all other cases must remain clean.
+// Cases ending in _race must report an LDS race or a memory-wait diagnostic;
+// all other cases must remain clean.
 using VmemRaceTest = rocjitsu::test::RaceTestBase;
 
 __global__ void compiler_atomic_kernel(unsigned *values, unsigned *output) {
@@ -42,7 +43,8 @@ __global__ void explicit_atomic_kernel(unsigned *values, unsigned *output) {
 
 template <bool CheckResult, typename Launch> void check_atomic_values(Launch launch) {
   // One full wave32 or half a wave64. Every case has one independently checked
-  // dispatch; only unsafe callers expect a race report for the result use.
+  // dispatch; only unsafe callers expect a memory-wait diagnostic for the
+  // result use.
   constexpr unsigned lanes = 32;
   std::vector<unsigned> input(lanes), result(lanes);
   for (unsigned lane = 0; lane < lanes; ++lane)
@@ -85,22 +87,12 @@ TEST_F(VmemRaceTest, vmcnt_only) {
   ExpectNoRace();
 }
 
-static constexpr rocjitsu::test::RaceExpectation kMissingVmWait{
-    .kernel = "explicit_atomic_kernel",
-    .type = "VGPR",
-    .access = "read",
-    .wave = 0,
-    .lane = 0,
-    .producer = "global_atomic_add",
-    .consumer = "v_mov_b32",
-};
-
 TEST_F(VmemRaceTest, no_wait_race) {
   ASSERT_NO_FATAL_FAILURE(
       check_atomic_values<false>([](unsigned *values, unsigned *output, unsigned lanes) {
         explicit_atomic_kernel<false, false><<<1, lanes>>>(values, output);
       }));
-  ExpectRace(kMissingVmWait);
+  ExpectNoLdsRace();
 }
 
 TEST_F(VmemRaceTest, expcnt_only_race) {
@@ -108,7 +100,7 @@ TEST_F(VmemRaceTest, expcnt_only_race) {
       check_atomic_values<false>([](unsigned *values, unsigned *output, unsigned lanes) {
         explicit_atomic_kernel<false, true><<<1, lanes>>>(values, output);
       }));
-  ExpectRace(kMissingVmWait);
+  ExpectNoLdsRace();
 }
 
 // Keep both writes to the same VGPR inside one asm block. The atomic result
@@ -186,13 +178,7 @@ TEST_F(VmemRaceTest, atomic_global_same_vgpr) {
 
 TEST_F(VmemRaceTest, atomic_valu_overwrite_race) {
   ASSERT_NO_FATAL_FAILURE(check_atomic_waw_values<false>());
-  ExpectRace({.kernel = "atomic_waw_kernel",
-              .type = "VGPR",
-              .access = "write",
-              .wave = 0,
-              .lane = 0,
-              .producer = "global_atomic_add",
-              .consumer = "v_mov_b32"});
+  ExpectNoLdsRace();
 }
 
 // Exchange data across waves through generic FLAT accesses. Drain the memory

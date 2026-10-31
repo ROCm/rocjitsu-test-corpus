@@ -32,7 +32,7 @@ def test_configs_preserve_every_moved_gtest() -> None:
         assert len(cases) == expected_count
         assert {case.metadata["test_filter"] for case in cases} == _source_gtests(
             target
-        )
+        ).keys()
         assert all(
             (
                 f"RaceTest.vmem_{target}_{case.metadata['name'].removeprefix('vmem_')}"
@@ -44,9 +44,28 @@ def test_configs_preserve_every_moved_gtest() -> None:
         )
 
 
+def test_register_cases_expect_core_memory_wait() -> None:
+    configs = race.load_target_configs(race.default_config_files())
+    expected_counts = {"gfx942": 3, "gfx950": 33, "gfx1151": 13}
+
+    for target, expected_count in expected_counts.items():
+        cases = race.discover(make_target_spec(target), configs)
+        expected = {
+            case.metadata["test_filter"]
+            for case in cases
+            if case.metadata["memory_wait"]
+        }
+        assert len(expected) == expected_count
+        assert expected == {
+            test_filter
+            for test_filter, body in _source_gtests(target).items()
+            if "ExpectNoLdsRace();" in body
+        }
+
+
 @pytest.mark.parametrize("target", ["gfx950", "gfx1151"])
 def test_discover_honors_compile_exclusions(tmp_path: Path, target: str) -> None:
-    configs = _configs_with_exclusions(
+    configs = _target_configs(
         tmp_path,
         target,
         skip_compile_tests=["vgpr_waitcnt"],
@@ -61,9 +80,7 @@ def test_discover_honors_compile_exclusions(tmp_path: Path, target: str) -> None
 
 @pytest.mark.parametrize("target", ["gfx950", "gfx1151"])
 def test_run_honors_run_exclusions(tmp_path: Path, monkeypatch, target: str) -> None:
-    configs = _configs_with_exclusions(
-        tmp_path, target, skip_run_tests=["vgpr_waitcnt"]
-    )
+    configs = _target_configs(tmp_path, target, skip_run_tests=["vgpr_waitcnt"])
     excluded, control = race.discover(make_target_spec(target), configs)
     base = tmp_path / "base.json"
     _write_base_config(base, target)
@@ -173,6 +190,7 @@ def test_run_can_bind_private_daemon_socket_under_long_artifact_directory(
 
     monkeypatch.setattr(race, "_run_command", bind_daemon_socket)
     monkeypatch.setattr(race, "_validate_gtest_report", lambda *args: None)
+    monkeypatch.setattr(race, "_validate_memory_wait", lambda *args: None)
     build_result = BuildResult(build_dir=None, executable_path=tmp_path / "race-test")
     for case in cases:
         race.run(case, build_result, context)
@@ -237,12 +255,12 @@ def test_run_requires_the_requested_gtest_to_pass(
             )
         )
         if outcome == "missing":
-            return
+            return ""
         report_arg = next(arg for arg in command if arg.startswith("--gtest_output="))
         report = Path(report_arg.removeprefix("--gtest_output=xml:"))
         if outcome == "malformed":
             report.write_text("broken XML", encoding="utf-8")
-            return
+            return ""
         count = {"empty": 0, "multiple": 2}.get(outcome, 1)
         root = ET.Element(
             "testsuites", tests=str(count), failures="0", errors="0", disabled="0"
@@ -261,6 +279,7 @@ def test_run_requires_the_requested_gtest_to_pass(
             if outcome == "failed":
                 ET.SubElement(result, "failure")
         ET.ElementTree(root).write(report)
+        return ""
 
     monkeypatch.setattr(race, "_run_command", successful_process)
     build_result = BuildResult(build_dir=None, executable_path=tmp_path / "race-test")
@@ -271,7 +290,7 @@ def test_run_requires_the_requested_gtest_to_pass(
         race.run(case, build_result, context)
 
 
-def _configs_with_exclusions(tmp_path: Path, target: str, **exclusions) -> list[dict]:
+def _target_configs(tmp_path: Path, target: str, **fields) -> list[dict]:
     path = tmp_path / "target.json"
     path.write_text(
         json.dumps(
@@ -279,7 +298,7 @@ def _configs_with_exclusions(tmp_path: Path, target: str, **exclusions) -> list[
                 "config_name": target,
                 "target": target,
                 "cases": ["vgpr_waitcnt", "vgpr_waitcnt_race"],
-                **exclusions,
+                **fields,
             }
         ),
         encoding="utf-8",
@@ -287,16 +306,18 @@ def _configs_with_exclusions(tmp_path: Path, target: str, **exclusions) -> list[
     return race.load_target_configs([str(path)])
 
 
-def _source_gtests(target: str) -> set[str]:
+def _source_gtests(target: str) -> dict[str, str]:
     layout = race.TARGET_LAYOUT[target]
     sources = [
         race.RACE_SOURCE_DIR / f"hip_race_{target}_test.hip",
         race.RACE_SOURCE_DIR / "hip_race_vmem_test.hip",
     ]
-    pattern = re.compile(r"^TEST_F\(([^,]+),\s*([^)]+)\)", re.MULTILINE)
+    pattern = re.compile(
+        r"^TEST_F\(([^,]+),\s*([^)]+)\) \{\n(.*?)^\}", re.MULTILINE | re.DOTALL
+    )
     return {
-        f"{fixture.strip()}.{name.strip()}"
-        for fixture, name in pattern.findall(
+        f"{fixture.strip()}.{name.strip()}": body
+        for fixture, name, body in pattern.findall(
             "\n".join(source.read_text(encoding="utf-8") for source in sources)
         )
         if fixture.strip() in (layout["fixture"], "VmemRaceTest")
@@ -364,6 +385,179 @@ def test_copy_dispatch_alone_cannot_pass(
     else:
         with pytest.raises(RuntimeError, match="did not dispatch a test kernel"):
             race._validate_kernel_dispatch(report)
+
+
+_SUPPRESSED_LINE = (
+    "[rj warn] memory-wait: further diagnostics on this CU are suppressed"
+)
+_READ_VGPR = {"access": "read", "register": "VGPR", "counter": "vmcnt", "count": 1}
+
+
+def _memory_wait_line(access: str, register: str, counter: str = "vmcnt") -> str:
+    return (
+        "[rj warn] memory-wait: soc.xcd0.se0.cu1 wg=3 wave=1 pc=0x7f0000000010: "
+        f"{access} of {register} before memory result from pc=0x7f0000000008 is "
+        f"known ready ({counter}). A wait threshold <= 0 is required; set top-level "
+        'wait_checking to "off" (rocjitsu --wait-checking=off) to disable wait checking.'
+    )
+
+
+def test_memory_wait_findings_classify_access_register_and_counter() -> None:
+    lines = [
+        _memory_wait_line("read", "v8"),
+        _memory_wait_line("overwrite", "s12", "lgkmcnt"),
+        _memory_wait_line("read", "ttmp3"),
+        _memory_wait_line("overwrite", "exec"),
+        _SUPPRESSED_LINE,
+        "[rj warn] xcnt-wait: soc.xcd0.se0.cu0 wg=0 wave=0 pc=0x10: overwrite of v1",
+        "[rj warn] memory-wait: a format this parser does not know",
+        '[rocjitsu] Kernel dispatch: "test_kernel" symbol="test_kernel"',
+    ]
+
+    assert race._memory_wait_findings("\n".join(lines)) == [
+        (lines[0], ("read", "VGPR", "vmcnt")),
+        (lines[1], ("overwrite", "SGPR", "lgkmcnt")),
+        (lines[2], ("read", "TTMP", "vmcnt")),
+        (lines[3], ("overwrite", None, "vmcnt")),
+        (lines[4], race._MEMORY_WAIT_SUPPRESSED),
+        (lines[6], None),
+    ]
+
+
+@pytest.mark.parametrize(
+    "expected,lines,passes",
+    [
+        (None, [], True),
+        (None, [_memory_wait_line("read", "v8")], False),
+        (_READ_VGPR, [_memory_wait_line("read", "v8")], True),
+        (_READ_VGPR, [], False),
+        (_READ_VGPR, [_memory_wait_line("read", "s8")], False),
+        (_READ_VGPR, [_memory_wait_line("overwrite", "v8")], False),
+        (_READ_VGPR, [_memory_wait_line("read", "v8", "lgkmcnt")], False),
+        (_READ_VGPR, [_memory_wait_line("read", "v8")] * 2, False),
+        ({**_READ_VGPR, "count": 2}, [_memory_wait_line("read", "v8")] * 2, True),
+        (
+            {**_READ_VGPR, "count": 16},
+            [_memory_wait_line("read", "v8")] * 16 + [_SUPPRESSED_LINE],
+            False,
+        ),
+        (
+            {**_READ_VGPR, "count": "capped"},
+            [_memory_wait_line("read", "v8")] * 16 + [_SUPPRESSED_LINE],
+            True,
+        ),
+        ({**_READ_VGPR, "count": "capped"}, [_memory_wait_line("read", "v8")], True),
+        ({**_READ_VGPR, "count": "capped"}, [_SUPPRESSED_LINE], False),
+        (
+            {**_READ_VGPR, "count": "capped"},
+            [
+                _memory_wait_line("read", "v8"),
+                _memory_wait_line("read", "v8", "lgkmcnt"),
+            ],
+            False,
+        ),
+    ],
+)
+def test_memory_wait_diagnostics_must_match_the_expectation(
+    tmp_path: Path, expected: dict | None, lines: list[str], passes: bool
+) -> None:
+    log = tmp_path / "run.log"
+    if passes:
+        race._validate_memory_wait("\n".join(lines), expected, "Fixture.case", log)
+        return
+    with pytest.raises(RuntimeError, match="Race test Fixture.case expected") as error:
+        race._validate_memory_wait("\n".join(lines), expected, "Fixture.case", log)
+    assert str(log) in str(error.value)
+    assert all(line in str(error.value) for line in lines)
+
+
+@pytest.mark.parametrize(
+    "memory_wait,error",
+    [
+        ([], "must map case names"),
+        ({"unlisted": _READ_VGPR}, "unknown case"),
+        ({"vgpr_waitcnt_race": "read VGPR"}, "must have an 'access'"),
+        ({"vgpr_waitcnt_race": {**_READ_VGPR, "access": "write"}}, "'access'"),
+        ({"vgpr_waitcnt_race": {**_READ_VGPR, "register": "v8"}}, "'access'"),
+        ({"vgpr_waitcnt_race": {**_READ_VGPR, "counter": "lgkm"}}, "'access'"),
+        ({"vgpr_waitcnt_race": {**_READ_VGPR, "count": 0}}, "'access'"),
+        ({"vgpr_waitcnt_race": {**_READ_VGPR, "count": True}}, "'access'"),
+        ({"vgpr_waitcnt_race": {**_READ_VGPR, "count": "all"}}, "'access'"),
+        ({"vgpr_waitcnt_race": {"access": "read", "register": "VGPR"}}, "'access'"),
+        ({"vgpr_waitcnt_race": {**_READ_VGPR, "pc": 16}}, "'access'"),
+    ],
+)
+def test_memory_wait_expectations_are_validated(
+    tmp_path: Path, memory_wait, error: str
+) -> None:
+    with pytest.raises(ValueError, match=error):
+        _target_configs(tmp_path, "gfx950", memory_wait=memory_wait)
+
+
+@pytest.mark.parametrize(
+    "name,stderr,error",
+    [
+        ("vgpr_waitcnt", "", None),
+        ("vgpr_waitcnt", _memory_wait_line("read", "v8"), "expected no memory-wait"),
+        ("vgpr_waitcnt_race", _memory_wait_line("read", "v8"), None),
+        ("vgpr_waitcnt_race", "", "only for read of VGPR"),
+    ],
+)
+def test_run_checks_core_memory_wait_findings(
+    tmp_path: Path, monkeypatch, name: str, stderr: str, error: str | None
+) -> None:
+    case = next(
+        case
+        for case in race.discover(
+            make_target_spec("gfx950"),
+            race.load_target_configs(race.default_config_files()),
+        )
+        if case.metadata["name"] == name
+    )
+    base = tmp_path / "base.json"
+    _write_base_config(base, "gfx950")
+    monkeypatch.setenv("ROCJITSU_RACE_CONFIG", str(base))
+    context = RunContext(
+        repo_root=race.REPO_ROOT,
+        artifact_directory=tmp_path / "artifacts",
+        skip_all_runs=False,
+        run_wrapper="rocjitsu --config {config} --",
+    )
+
+    def passing_process(command, *, cwd, log_path, phase, env, timeout):
+        fixture, test = case.metadata["test_filter"].split(".")
+        report_arg = next(arg for arg in command if arg.startswith("--gtest_output="))
+        Path(report_arg.removeprefix("--gtest_output=xml:")).write_text(
+            '<testsuites tests="1" failures="0" errors="0" disabled="0"><testsuite>'
+            f'<testcase classname="{fixture}" name="{test}" status="run" '
+            'result="completed"/></testsuite></testsuites>',
+            encoding="utf-8",
+        )
+        (Path(env["RJ_SINK_DIR"]) / "race.log").write_text(
+            '[rocjitsu] Kernel dispatch: "test_kernel" symbol="test_kernel"\n'
+        )
+        return stderr
+
+    monkeypatch.setattr(race, "_run_command", passing_process)
+    build_result = BuildResult(build_dir=None, executable_path=tmp_path / "race-test")
+    if error:
+        with pytest.raises(RuntimeError, match=error):
+            race.run(case, build_result, context)
+    else:
+        race.run(case, build_result, context)
+
+
+@pytest.mark.parametrize("wait_checking", ["off", "on", "all"])
+def test_base_config_must_keep_wait_checking(
+    tmp_path: Path, wait_checking: str
+) -> None:
+    base = tmp_path / "base.json"
+    _write_base_config(base, "gfx950", wait_checking=wait_checking)
+    if wait_checking == "off":
+        with pytest.raises(RuntimeError, match="must not disable wait checking"):
+            race._load_base_config(base, target="gfx950")
+    else:
+        race._load_base_config(base, target="gfx950")
 
 
 @pytest.mark.parametrize("prefix", ["", "env "])

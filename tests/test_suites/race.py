@@ -2,8 +2,10 @@
 
 The integration programs preserve the original functional and race assertions,
 check HIP operations, and run through a caller-supplied RocJITsu wrapper. Each
-filtered test gets a private plugin config and sink directory. The standalone
-mutation kernels in corpus/race/kernels are outside this suite.
+filtered test gets a private plugin config and sink directory. The race plugin
+reports LDS races; register hazards come from the simulator core's memory-wait
+diagnostics, which each case's config entry predicts. The standalone mutation
+kernels in corpus/race/kernels are outside this suite.
 """
 
 from __future__ import annotations
@@ -36,6 +38,18 @@ RACE_SOURCE_DIR = REPO_ROOT / "corpus" / "race" / "integration"
 CONFIGS_ROOT = RACE_SOURCE_DIR / "configs"
 CASE_TIMEOUT_SECONDS = 30
 CASE_TIMEOUT_ENV = "ROCJITSU_RACE_CASE_TIMEOUT"
+MEMORY_WAIT_ACCESSES = ("read", "overwrite")
+MEMORY_WAIT_REGISTERS = ("VGPR", "SGPR", "TTMP")
+MEMORY_WAIT_COUNTERS = ("vmcnt", "vscnt", "lgkmcnt", "expcnt")
+# For example: "[rj warn] memory-wait: soc.xcd0.se0.cu0 wg=0 wave=0 pc=0x...:
+# read of v8 before memory result from pc=0x... is known ready (vmcnt). ..."
+_MEMORY_WAIT_DIAGNOSTIC = re.compile(r"\bmemory-wait: (.*)")
+_MEMORY_WAIT_HAZARD = re.compile(
+    r"\S+ wg=\S+ wave=\S+ pc=0x[0-9a-fA-F]+: (read|overwrite) of ([a-z_]+)\d* "
+    r"before memory result from pc=0x[0-9a-fA-F]+ is known ready \((\w+)\)"
+)
+_MEMORY_WAIT_SUPPRESSED = "further diagnostics on this CU are suppressed"
+_REGISTER_CLASSES = {"v": "VGPR", "s": "SGPR", "ttmp": "TTMP"}
 TARGET_LAYOUT = {
     "gfx942": {
         "binary": "hip_race_tests_gfx942",
@@ -61,7 +75,7 @@ def load_target_configs(config_files: tuple[str, ...] | list[str]) -> list[dict]
         config_files,
         repo_root=REPO_ROOT,
         required_fields=("cases",),
-        allowed_fields=("cases",),
+        allowed_fields=("cases", "memory_wait"),
     )
     for config in configs:
         cases = config["cases"]
@@ -75,7 +89,38 @@ def load_target_configs(config_files: tuple[str, ...] | list[str]) -> list[dict]
             )
         if len(cases) != len(set(cases)):
             raise ValueError(f"{config['_path']} field 'cases' contains duplicates")
+        _validate_memory_wait_expectations(config)
     return configs
+
+
+def _validate_memory_wait_expectations(config: dict) -> None:
+    expectations = config.get("memory_wait", {})
+    if not isinstance(expectations, dict):
+        raise ValueError(
+            f"{config['_path']} field 'memory_wait' must map case names to expectations"
+        )
+    for name, expected in expectations.items():
+        if name not in config["cases"]:
+            raise ValueError(
+                f"{config['_path']} field 'memory_wait' names unknown case {name!r}"
+            )
+        if (
+            not isinstance(expected, dict)
+            or set(expected) != {"access", "register", "counter", "count"}
+            or expected["access"] not in MEMORY_WAIT_ACCESSES
+            or expected["register"] not in MEMORY_WAIT_REGISTERS
+            or expected["counter"] not in MEMORY_WAIT_COUNTERS
+            or not (
+                expected["count"] == "capped"
+                or (type(expected["count"]) is int and expected["count"] > 0)
+            )
+        ):
+            raise ValueError(
+                f"{config['_path']} field 'memory_wait' entry {name!r} must have an "
+                f"'access' in {MEMORY_WAIT_ACCESSES}, a 'register' in "
+                f"{MEMORY_WAIT_REGISTERS}, a 'counter' in {MEMORY_WAIT_COUNTERS}, "
+                "and a 'count' that is a positive integer or 'capped'"
+            )
 
 
 def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]:
@@ -117,6 +162,7 @@ def discover(target: TargetSpec, target_configs: list[dict]) -> list[CorpusCase]
                         "name": name,
                         "test_filter": test_filter,
                         "target_config": target_config,
+                        "memory_wait": target_config.get("memory_wait", {}).get(name),
                     },
                     selector_names=(test_filter, legacy_name),
                 )
@@ -244,10 +290,11 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     # Each case runs from its own directory. Keep the socket path relative so
     # runtime/<pid>/daemon.sock fits even under a long artifact directory.
     environment["ROCJITSU_RUNTIME_DIR"] = "runtime"
-    _run_command(
+    log_path = case_dir / "run.log"
+    stderr = _run_command(
         command,
         cwd=case_dir,
-        log_path=case_dir / "run.log",
+        log_path=log_path,
         phase="run",
         env=environment,
         timeout=timeout,
@@ -257,6 +304,9 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     if not report.is_file():
         raise RuntimeError(f"Race test did not produce {report}")
     _validate_kernel_dispatch(report)
+    _validate_memory_wait(
+        stderr, case.metadata["memory_wait"], case.metadata["test_filter"], log_path
+    )
 
 
 def validate_execution(run_wrapper: str | None, target: str) -> None:
@@ -280,6 +330,75 @@ def _validate_kernel_dispatch(path: Path) -> None:
             ):
                 return
     raise RuntimeError(f"Race test did not dispatch a test kernel: {path}")
+
+
+def _memory_wait_findings(stderr: str) -> list[tuple[str, tuple | str | None]]:
+    """Return each memory-wait line with its (access, register class, counter).
+
+    A per-CU suppression notice keeps its text as the kind, so only capped
+    expectations accept it. The kind is None for a line this parser does not
+    recognize, so a changed diagnostic format fails every case instead of
+    passing the no-finding cases.
+    """
+    findings = []
+    for line in stderr.splitlines():
+        diagnostic = _MEMORY_WAIT_DIAGNOSTIC.search(line)
+        if diagnostic is None:
+            continue
+        hazard = _MEMORY_WAIT_HAZARD.match(diagnostic.group(1))
+        kind = None
+        if diagnostic.group(1) == _MEMORY_WAIT_SUPPRESSED:
+            kind = _MEMORY_WAIT_SUPPRESSED
+        elif hazard:
+            access, register, counter = hazard.groups()
+            kind = (access, _REGISTER_CLASSES.get(register), counter)
+        findings.append((line, kind))
+    return findings
+
+
+def _validate_memory_wait(
+    stderr: str, expected: dict | None, test_filter: str, log_path: Path
+) -> None:
+    # Every finding must be the expected hazard, and the case must print the
+    # expected number of them. Capped cases instead reach the core's per-CU limit
+    # by design, so their totals and suppression notices are not checked. Cases
+    # without an expectation must have none, which also guards against core
+    # false positives.
+    findings = _memory_wait_findings(stderr)
+    if expected is None:
+        if not findings:
+            return
+        problem = "expected no memory-wait diagnostics"
+    else:
+        kind = (expected["access"], expected["register"], expected["counter"])
+        capped = expected["count"] == "capped"
+        kinds = [
+            found
+            for _, found in findings
+            if not (capped and found == _MEMORY_WAIT_SUPPRESSED)
+        ]
+        if (
+            kinds
+            and all(found == kind for found in kinds)
+            and (capped or len(kinds) == expected["count"])
+        ):
+            return
+        problem = (
+            f"expected memory-wait diagnostics only for {kind[0]} of {kind[1]} "
+            f"({kind[2]})"
+        )
+        if not capped:
+            problem += f", {expected['count']} in total"
+    raise RuntimeError(
+        "\n".join(
+            [
+                f"Race test {test_filter} {problem}.",
+                f"log: {log_path}",
+                "memory-wait diagnostics:",
+                *([line for line, _ in findings] or ["<none>"]),
+            ]
+        )
+    )
 
 
 def _validate_gtest_report(path: Path, expected_filter: str) -> None:
@@ -356,6 +475,11 @@ def _load_base_config(base_path: Path, *, target: str) -> dict:
             "Race simulator base config must not enable plugins or sinks: "
             f"{base_path}"
         )
+    if value.get("wait_checking") == "off":
+        raise RuntimeError(
+            "Race simulator base config must not disable wait checking, which "
+            f"reports the register hazards: {base_path}"
+        )
     try:
         version = value["vm"]["gpu"]["device"]["gfx_target_version"]
     except (KeyError, TypeError) as error:
@@ -424,7 +548,8 @@ def _run_command(
     phase: str,
     env: dict[str, str] | None = None,
     timeout: float | None = None,
-) -> None:
+) -> str:
+    """Run a phase, record its output in log_path, and return its stderr."""
     executable = command[0]
     if os.sep not in executable:
         resolved = shutil.which(executable)
@@ -497,6 +622,7 @@ def _run_command(
                 ]
             )
         )
+    return errors
 
 
 def _kill_process_tree(pid: int) -> None:

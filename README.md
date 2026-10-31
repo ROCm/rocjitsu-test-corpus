@@ -96,7 +96,20 @@ fixed configuration rather than per-case substitution. Collection with
 `--collect-only` and build-only use with `--skip-all-runs` do not require a
 launcher or base simulator config and may select multiple suites.
 
-The base config must match `--target`. For gfx950 use
+The race plugin reports LDS races, which each GoogleTest case checks in its
+report. Register hazards, such as reading or overwriting a VGPR before the
+memory result that writes it arrives, come from the simulator core's
+memory-wait diagnostics instead. A case's `memory_wait` entry in its target
+config gives the access kind (`read` or `overwrite`), register class (`VGPR`,
+`SGPR` or `TTMP`) and wait counter (such as `vmcnt`) that every diagnostic must
+match, and how many diagnostics the case prints (`count`). The simulator stops
+printing diagnostics on a CU after a fixed limit and prints a notice instead.
+Stress cases that reach the limit have a `count` of `"capped"`, because their
+total depends on the topology; the notice fails any other case. Cases without
+an entry must print no diagnostics.
+
+The base config must match `--target` and leave `wait_checking` enabled.
+For gfx950 use
 `emulation/rocjitsu/tests/race-detector/race_test_config.json` from rocm-systems:
 its 1-XCD/4-CU topology avoids the memory cost of a full MI350X simulation for
 each parallel test. For gfx1151 use `emulation/rocjitsu/configs/gfx1151.json`.
@@ -122,11 +135,12 @@ synchronized barrier and a missing-barrier control on all three targets. The
 gfx950 suite also keeps full-wave and lane-zero atomic controls separate.
 The ordering pair issues a returning GLOBAL atomic followed by a GLOBAL load
 into the same VGPR, without an intervening wait; a final `vmcnt(0)` precedes
-checking the loaded value. Replacing that load with a VALU overwrite must report
-a VGPR write race. These cases distinguish same-class writeback ordering from
-result readiness. Numerical checks verify atomic side effects in every atomic
-case and final output values in the safe variants. Raced VGPR values are
-unconstrained; untouched masked lanes retain their exact-value checks.
+checking the loaded value. Replacing that load with a VALU overwrite must
+produce a memory-wait diagnostic for the VGPR overwrite. These cases distinguish
+same-class writeback ordering from result readiness. Numerical checks verify
+atomic side effects in every atomic case and final output values in the safe
+variants. Raced VGPR values are unconstrained; untouched masked lanes retain
+their exact-value checks.
 Select the ordering pair with
 `--case RaceTest.vmem_gfx942_atomic_global_same_vgpr` and
 `--case RaceTest.vmem_gfx942_atomic_valu_overwrite_race`, substituting gfx950 or
@@ -143,10 +157,10 @@ Parallel workers share one successful build and matcher result per target for
 the current pytest invocation; a new
 invocation reruns the incremental build. Set `CMAKE_BUILD_PARALLEL_LEVEL` to
 control compiler concurrency (otherwise the pytest worker count is used).
-The HIP programs retain their functional and race-report assertions and reject
-allocation, copy, launch, and synchronization errors, including in deliberately
-racy tests. The same build runs the host-only race-log parser and matcher
-tests, plus GPU-free fixture tests that inject HIP failures.
+The HIP programs retain their functional and LDS race-report assertions and
+reject allocation, copy, launch, and synchronization errors, including in
+deliberately racy tests. The same build runs the host-only race-log parser and
+matcher tests, plus GPU-free fixture tests that inject HIP failures.
 Each invocation records a GoogleTest XML report and requires the selected case
 to complete successfully; empty selections and skipped cases fail the corpus test.
 The race log must also contain a test-kernel dispatch; a runtime copy dispatch
@@ -186,9 +200,11 @@ jq --arg sink "$race_case_dir/plugins" \
 )
 ```
 
-The pytest adapter sets up this contract and verifies GoogleTest completion and
-test-kernel dispatch automatically; the direct command is useful for debugging
-one case. The same layout applies to gfx1151 with its matching config and binary.
+The pytest adapter sets up this contract and verifies GoogleTest completion,
+test-kernel dispatch and memory-wait diagnostics automatically. The direct
+command is useful for debugging one case; it does not check memory-wait
+diagnostics, so look for them on stderr. The same layout applies to gfx1151
+with its matching config and binary.
 
 The target configs in `corpus/race/integration/configs/` accept `skip_compile_tests` to omit
 cases from discovery and `skip_run_tests` to build without launching those cases.

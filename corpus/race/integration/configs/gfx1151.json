@@ -31,5 +31,20 @@
     "vmem_expcnt_only_race",
     "vmem_flat_lds_exchange",
     "vmem_flat_lds_exchange_race"
-  ]
+  ],
+  "memory_wait": {
+    "vgpr_waitcnt_race": {"access": "read", "register": "VGPR", "counter": "vmcnt", "count": 1},
+    "standalone_vmcnt_does_not_wait_for_lds": {"access": "read", "register": "VGPR", "counter": "lgkmcnt", "count": 1},
+    "standalone_lgkmcnt_does_not_wait_for_vmem": {"access": "read", "register": "VGPR", "counter": "vmcnt", "count": 1},
+    "vmcnt_below_capacity_race": {"access": "read", "register": "VGPR", "counter": "vmcnt", "count": 1},
+    "vscnt_pressure_does_not_advance_vmcnt": {"access": "read", "register": "VGPR", "counter": "vmcnt", "count": 1},
+    "lgkmcnt_below_capacity_race": {"access": "read", "register": "VGPR", "counter": "lgkmcnt", "count": 1},
+    "mixed_lgkmcnt_below_capacity_race": {"access": "read", "register": "VGPR", "counter": "lgkmcnt", "count": 1},
+    "wide_scalar_lgkmcnt_below_capacity_race": {"access": "read", "register": "VGPR", "counter": "lgkmcnt", "count": 1},
+    "d16_global_load_missing_waitcnt_race": {"access": "read", "register": "VGPR", "counter": "vmcnt", "count": 1},
+    "waw_global_load_then_wmma": {"access": "overwrite", "register": "VGPR", "counter": "vmcnt", "count": 1},
+    "vmem_atomic_valu_overwrite_race": {"access": "overwrite", "register": "VGPR", "counter": "vmcnt", "count": 1},
+    "vmem_no_wait_race": {"access": "read", "register": "VGPR", "counter": "vmcnt", "count": 1},
+    "vmem_expcnt_only_race": {"access": "read", "register": "VGPR", "counter": "vmcnt", "count": 1}
+  }
 }
