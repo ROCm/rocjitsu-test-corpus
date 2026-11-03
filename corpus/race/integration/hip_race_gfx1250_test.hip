@@ -145,7 +145,9 @@ __device__ inline void barrier() {
                "s_barrier_wait -1" ::: "memory");
 }
 
-/// Let other waves run first, so a missing barrier shows a fixed interleaving.
+/// Let other waves run first, so a race is reported in a fixed direction, with
+/// the transfer as producer. Detection does not depend on wave order, but the
+/// expectations name the producer and consumer, which do.
 __device__ inline void yieldToOtherWaves() { asm volatile("s_sleep 4" ::: "memory"); }
 
 /// Read an int from LDS and wait for it, so a case reports only the LDS race
