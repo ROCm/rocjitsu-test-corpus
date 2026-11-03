@@ -38,10 +38,14 @@ namespace {
 using rocjitsu::test::FindingCount;
 using rocjitsu::test::RaceExpectation;
 
-constexpr int kWave = 32;     // gfx1250 runs wave32.
-constexpr int kElements = 32; // One int per lane; one tile is one row of this.
-constexpr int kTileBytes = kElements * static_cast<int>(sizeof(int));
-constexpr int kSentinel = -7;
+constexpr int kWave = 32; // gfx1250 runs wave32.
+/// The ints in one tile: a single row with one int per lane. The tests' tensors
+/// are this wide too, unless a case narrows them.
+constexpr int kTileElements = kWave;
+constexpr int kTileBytes = kTileElements * static_cast<int>(sizeof(int));
+/// A value no transfer in these tests produces. Memory filled with it shows
+/// whether a transfer wrote there.
+constexpr int kUnwrittenValue = -7;
 
 class Gfx1250RaceTest : public rocjitsu::test::RaceTestBase {
 protected:
@@ -61,7 +65,7 @@ protected:
 };
 
 /// `count` consecutive ints starting at `first`.
-std::vector<int> range(int first, int count = kElements) {
+std::vector<int> range(int first, int count = kTileElements) {
   std::vector<int> values(count);
   for (int index = 0; index < count; ++index)
     values[index] = first + index;
@@ -84,8 +88,8 @@ struct TensorDesc {
 struct Tile {
   const void *global = nullptr;
   uint32_t lds_offset = 0;
-  uint32_t tensor_elements = kElements; ///< Elements past this are out of the tensor.
-  uint32_t tile_elements = kElements;   ///< Zero makes the tile a NOP.
+  uint32_t tensor_elements = kTileElements; ///< Elements past this are out of the tensor.
+  uint32_t tile_elements = kTileElements;   ///< Zero makes the tile a NOP.
   uint32_t count = 1;                   ///< Zero makes this a NULL tensor.
   bool pad = false;
   uint32_t pad_interval = 0; ///< 2 << pad_interval dwords between pads.
@@ -105,7 +109,7 @@ TensorDesc describe(const Tile &tile) {
   words[6] = (tile.tensor_elements >> 16) | (1u << 16);        // tensor_dim1 = 1.
   words[7] = (tile.tile_elements & 0xffffu) << 16;             // tile_dim0.
   words[8] = 1;                                                // tile_dim1.
-  words[9] = kElements;                                        // tensor_dim0_stride.
+  words[9] = kTileElements;                                        // tensor_dim0_stride.
   TensorDesc desc;
   std::memcpy(&desc.group0, &words[0], sizeof(desc.group0));
   std::memcpy(&desc.group1, &words[4], sizeof(desc.group1));
@@ -245,7 +249,7 @@ template <Wait W> __global__ void tensor_load_same_wave_kernel(TensorDesc desc, 
 }
 
 TEST_F(Gfx1250RaceTest, tensor_load_tensorcnt) {
-  auto *src = allocWithData<int>(kElements);
+  auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
   tensor_load_same_wave_kernel<Wait::Tensorcnt><<<1, kWave, kTileBytes>>>(describe({.global = src}),
                                                                           dst);
@@ -256,7 +260,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_tensorcnt) {
 }
 
 TEST_F(Gfx1250RaceTest, tensor_load_missing_tensorcnt_race) {
-  auto *src = allocWithData<int>(kElements);
+  auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
   tensor_load_same_wave_kernel<Wait::None><<<1, kWave, kTileBytes>>>(describe({.global = src}),
                                                                      dst);
@@ -267,7 +271,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_missing_tensorcnt_race) {
 
 // LOADcnt and DScnt waits do not cover tensor DMA.
 TEST_F(Gfx1250RaceTest, tensor_load_other_counters_race) {
-  auto *src = allocWithData<int>(kElements);
+  auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
   tensor_load_same_wave_kernel<Wait::OtherCounters>
       <<<1, kWave, kTileBytes>>>(describe({.global = src}), dst);
@@ -301,7 +305,7 @@ tensor_load_cross_wave_kernel(TensorDesc desc, int *dst) {
 }
 
 TEST_F(Gfx1250RaceTest, tensor_load_cross_wave) {
-  auto *src = allocWithData<int>(kElements);
+  auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
   tensor_load_cross_wave_kernel<Sync::WaitAndBarrier>
       <<<1, 2 * kWave, kTileBytes>>>(describe({.global = src}), dst);
@@ -312,7 +316,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_cross_wave) {
 }
 
 TEST_F(Gfx1250RaceTest, tensor_load_cross_wave_no_barrier_race) {
-  auto *src = allocWithData<int>(kElements);
+  auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
   tensor_load_cross_wave_kernel<Sync::WaitOnly>
       <<<1, 2 * kWave, kTileBytes>>>(describe({.global = src}), dst);
@@ -323,7 +327,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_cross_wave_no_barrier_race) {
 
 // A barrier retires only transfers their wave has already waited for.
 TEST_F(Gfx1250RaceTest, tensor_load_cross_wave_no_tensorcnt_race) {
-  auto *src = allocWithData<int>(kElements);
+  auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
   tensor_load_cross_wave_kernel<Sync::BarrierOnly>
       <<<1, 2 * kWave, kTileBytes>>>(describe({.global = src}), dst);
@@ -353,8 +357,8 @@ tensor_load_pipeline_kernel(TensorDesc older, TensorDesc newer, int *dst) {
 }
 
 TEST_F(Gfx1250RaceTest, tensor_load_pipeline_oldest) {
-  auto *older = allocWithData<int>(kElements);
-  auto *newer = allocWithData<int>(kElements);
+  auto *older = allocWithData<int>(kTileElements);
+  auto *newer = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
   tensor_load_pipeline_kernel<0><<<1, 2 * kWave, 2 * kTileBytes>>>(
       describe({.global = older}), describe({.global = newer, .lds_offset = kTileBytes}), dst);
@@ -365,8 +369,8 @@ TEST_F(Gfx1250RaceTest, tensor_load_pipeline_oldest) {
 }
 
 TEST_F(Gfx1250RaceTest, tensor_load_pipeline_newest_race) {
-  auto *older = allocWithData<int>(kElements);
-  auto *newer = allocWithData<int>(kElements);
+  auto *older = allocWithData<int>(kTileElements);
+  auto *newer = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
   tensor_load_pipeline_kernel<kTileBytes><<<1, 2 * kWave, 2 * kTileBytes>>>(
       describe({.global = older}), describe({.global = newer, .lds_offset = kTileBytes}), dst);
@@ -399,7 +403,7 @@ tensor_store_source_overwrite_kernel(TensorDesc desc) {
 }
 
 TEST_F(Gfx1250RaceTest, tensor_store_source_overwrite) {
-  auto *dst = alloc<int>(kElements);
+  auto *dst = alloc<int>(kTileElements);
   tensor_store_source_overwrite_kernel<true>
       <<<1, 2 * kWave, kTileBytes>>>(describe({.global = dst}));
   RACE_HIP_CHECK(hipGetLastError());
@@ -409,7 +413,7 @@ TEST_F(Gfx1250RaceTest, tensor_store_source_overwrite) {
 }
 
 TEST_F(Gfx1250RaceTest, tensor_store_source_overwrite_race) {
-  auto *dst = alloc<int>(kElements);
+  auto *dst = alloc<int>(kTileElements);
   tensor_store_source_overwrite_kernel<false>
       <<<1, 2 * kWave, kTileBytes>>>(describe({.global = dst}));
   RACE_HIP_CHECK(hipGetLastError());
@@ -428,7 +432,7 @@ template <bool WaitDscnt> __global__ void tensor_store_after_ds_write_kernel(Ten
 }
 
 TEST_F(Gfx1250RaceTest, tensor_store_dscnt) {
-  auto *dst = alloc<int>(kElements);
+  auto *dst = alloc<int>(kTileElements);
   tensor_store_after_ds_write_kernel<true><<<1, kWave, kTileBytes>>>(describe({.global = dst}));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
@@ -437,7 +441,7 @@ TEST_F(Gfx1250RaceTest, tensor_store_dscnt) {
 }
 
 TEST_F(Gfx1250RaceTest, tensor_store_missing_dscnt_race) {
-  auto *dst = alloc<int>(kElements);
+  auto *dst = alloc<int>(kTileElements);
   tensor_store_after_ds_write_kernel<false><<<1, kWave, kTileBytes>>>(describe({.global = dst}));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
@@ -458,8 +462,8 @@ __global__ void tensor_store_then_load_same_wave_kernel(TensorDesc store, Tensor
 }
 
 TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave) {
-  auto *stored = alloc<int>(kElements);
-  auto *src = allocWithData<int>(kElements);
+  auto *stored = alloc<int>(kTileElements);
+  auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
   tensor_store_then_load_same_wave_kernel<<<1, kWave, kTileBytes>>>(
       describe({.global = stored}), describe({.global = src}), dst);
@@ -479,7 +483,7 @@ TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave) {
 template <int WaitCount>
 __global__ void tensor_load_then_empty_kernel(TensorDesc real, TensorDesc empty, int *loaded,
                                               int *untouched) {
-  ldsFill(kTileBytes, kSentinel);
+  ldsFill(kTileBytes, kUnwrittenValue);
   tensorLoad(real);
   tensorLoad(empty);
   waitTensorcnt<WaitCount>();
@@ -490,7 +494,7 @@ __global__ void tensor_load_then_empty_kernel(TensorDesc real, TensorDesc empty,
 
 // count = 0: a NULL tensor (CDNA5 ISA, Table 79).
 TEST_F(Gfx1250RaceTest, tensor_load_null_tensor_counts) {
-  auto *src = allocWithData<int>(kElements);
+  auto *src = allocWithData<int>(kTileElements);
   auto *loaded = alloc<int>(kWave);
   auto *untouched = alloc<int>(kWave);
   tensor_load_then_empty_kernel<1><<<1, kWave, 2 * kTileBytes>>>(
@@ -500,12 +504,12 @@ TEST_F(Gfx1250RaceTest, tensor_load_null_tensor_counts) {
   sync();
   ExpectNoRace();
   ExpectValues(loaded, range(0));
-  ExpectValues(untouched, std::vector<int>(kWave, kSentinel));
+  ExpectValues(untouched, std::vector<int>(kWave, kUnwrittenValue));
 }
 
 // With two transfers outstanding, waiting for two leaves the real load pending.
 TEST_F(Gfx1250RaceTest, tensor_load_null_tensor_uncounted_race) {
-  auto *src = allocWithData<int>(kElements);
+  auto *src = allocWithData<int>(kTileElements);
   auto *loaded = alloc<int>(kWave);
   auto *untouched = alloc<int>(kWave);
   tensor_load_then_empty_kernel<2><<<1, kWave, 2 * kTileBytes>>>(
@@ -518,7 +522,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_null_tensor_uncounted_race) {
 
 // tile_dim0 = 0: a NOP tile (CDNA5 ISA, Table 80).
 TEST_F(Gfx1250RaceTest, tensor_load_empty_tile_counts) {
-  auto *src = allocWithData<int>(kElements);
+  auto *src = allocWithData<int>(kTileElements);
   auto *loaded = alloc<int>(kWave);
   auto *untouched = alloc<int>(kWave);
   tensor_load_then_empty_kernel<1><<<1, kWave, 2 * kTileBytes>>>(
@@ -529,7 +533,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_empty_tile_counts) {
   sync();
   ExpectNoRace();
   ExpectValues(loaded, range(0));
-  ExpectValues(untouched, std::vector<int>(kWave, kSentinel));
+  ExpectValues(untouched, std::vector<int>(kWave, kUnwrittenValue));
 }
 
 // A store whose tile lies wholly outside the tensor writes nothing to global
@@ -544,8 +548,8 @@ __global__ void tensor_load_then_empty_store_kernel(TensorDesc real, TensorDesc 
 }
 
 TEST_F(Gfx1250RaceTest, tensor_store_outside_tensor_counts) {
-  auto *src = allocWithData<int>(kElements);
-  auto *untouched = allocFilled(kElements, kSentinel);
+  auto *src = allocWithData<int>(kTileElements);
+  auto *untouched = allocFilled(kTileElements, kUnwrittenValue);
   auto *loaded = alloc<int>(kWave);
   tensor_load_then_empty_store_kernel<<<1, kWave, 2 * kTileBytes>>>(
       describe({.global = src}),
@@ -554,22 +558,22 @@ TEST_F(Gfx1250RaceTest, tensor_store_outside_tensor_counts) {
   sync();
   ExpectNoRace();
   ExpectValues(loaded, range(0));
-  ExpectValues(untouched, std::vector<int>(kElements, kSentinel));
+  ExpectValues(untouched, std::vector<int>(kTileElements, kUnwrittenValue));
 }
 
 // --- Elements outside the tensor are zero-filled in LDS ---
 
-constexpr uint32_t kTensorHalf = kElements / 2;
+constexpr uint32_t kTensorHalf = kTileElements / 2;
 
 // The tile is twice as wide as the tensor; the second half reads as zero
-// (CDNA5 ISA 4.10.7). Wave 1 reads the zero-filled half. The sentinel fill is
-// synchronized first, so it cannot race with that read.
+// (CDNA5 ISA 4.10.7). Wave 1 reads the zero-filled half. The kUnwrittenValue
+// fill is synchronized first, so it cannot race with that read.
 template <bool Synchronized>
 __global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
 tensor_load_zero_fill_kernel(TensorDesc desc, int *dst) {
   const int wave = waveIndex();
   if (wave == 0)
-    ldsFill(0, kSentinel);
+    ldsFill(0, kUnwrittenValue);
   barrier();
   if (wave == 0) {
     tensorLoad(desc);
@@ -587,7 +591,7 @@ tensor_load_zero_fill_kernel(TensorDesc desc, int *dst) {
 }
 
 TEST_F(Gfx1250RaceTest, tensor_load_zero_fill) {
-  auto *src = allocWithData<int>(kElements);
+  auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
   tensor_load_zero_fill_kernel<true><<<1, 2 * kWave, kTileBytes>>>(
       describe({.global = src, .tensor_elements = kTensorHalf}), dst);
@@ -595,12 +599,12 @@ TEST_F(Gfx1250RaceTest, tensor_load_zero_fill) {
   sync();
   ExpectNoRace();
   std::vector<int> expected = range(0, kTensorHalf);
-  expected.resize(kElements, 0);
+  expected.resize(kTileElements, 0);
   ExpectValues(dst, expected);
 }
 
 TEST_F(Gfx1250RaceTest, tensor_load_zero_fill_cross_wave_race) {
-  auto *src = allocWithData<int>(kElements);
+  auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
   tensor_load_zero_fill_kernel<false><<<1, 2 * kWave, kTileBytes>>>(
       describe({.global = src, .tensor_elements = kTensorHalf}), dst);
@@ -634,7 +638,7 @@ tensor_load_padding_kernel(TensorDesc desc, int *loaded, int *concurrent) {
 }
 
 TEST_F(Gfx1250RaceTest, tensor_load_padding_gap) {
-  auto *src = allocWithData<int>(kElements);
+  auto *src = allocWithData<int>(kTileElements);
   auto *loaded = alloc<int>(kWave);
   auto *concurrent = alloc<int>(kWave);
   tensor_load_padding_kernel<kPadOffset><<<1, 2 * kWave, kTileBytes + kPadBytes>>>(
@@ -647,7 +651,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_padding_gap) {
 }
 
 TEST_F(Gfx1250RaceTest, tensor_load_padding_data_race) {
-  auto *src = allocWithData<int>(kElements);
+  auto *src = allocWithData<int>(kTileElements);
   auto *loaded = alloc<int>(kWave);
   auto *concurrent = alloc<int>(kWave);
   tensor_load_padding_kernel<kPadOffset + kPadBytes><<<1, 2 * kWave, kTileBytes + kPadBytes>>>(
@@ -674,14 +678,14 @@ __global__ void tensor_load_past_lds_allocation_kernel(TensorDesc desc, int *dst
 }
 
 TEST_F(Gfx1250RaceTest, tensor_load_past_lds_allocation) {
-  auto *src = allocWithData<int>(kElements);
-  auto *dst = allocFilled(kElements / 2, kSentinel);
+  auto *src = allocWithData<int>(kTileElements);
+  auto *dst = allocFilled(kTileElements / 2, kUnwrittenValue);
   tensor_load_past_lds_allocation_kernel<<<1, kWave, kLdsAllocation>>>(
       describe({.global = src, .lds_offset = kStraddlingOffset}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
-  ExpectValues(dst, range(0, kElements / 2));
+  ExpectValues(dst, range(0, kTileElements / 2));
 }
 
 __global__ void tensor_store_past_lds_allocation_kernel(TensorDesc desc) {
@@ -693,17 +697,17 @@ __global__ void tensor_store_past_lds_allocation_kernel(TensorDesc desc) {
 }
 
 TEST_F(Gfx1250RaceTest, tensor_store_past_lds_allocation) {
-  auto *dst = alloc<int>(kElements);
+  auto *dst = alloc<int>(kTileElements);
   tensor_store_past_lds_allocation_kernel<<<1, kWave, kLdsAllocation>>>(
       describe({.global = dst, .lds_offset = kStraddlingOffset}));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
   // The guide does not define the global values written from out-of-range LDS.
-  std::vector<int> stored(kElements);
+  std::vector<int> stored(kTileElements);
   RACE_HIP_CHECK(hipMemcpy(stored.data(), dst, kTileBytes, hipMemcpyDeviceToHost));
-  stored.resize(kElements / 2);
-  EXPECT_EQ(stored, range(100, kElements / 2));
+  stored.resize(kTileElements / 2);
+  EXPECT_EQ(stored, range(100, kTileElements / 2));
 }
 
 // --- Compiler-generated tensor load ---
@@ -711,8 +715,8 @@ TEST_F(Gfx1250RaceTest, tensor_store_past_lds_allocation) {
 // The builtin issues the load; the compiler emits no s_wait_tensorcnt for it,
 // so the kernel adds one, and schedules the LDS accesses and their waits.
 __global__ void tensor_load_builtin_kernel(TensorDesc desc, int *dst) {
-  __shared__ int tile[kElements];
-  tile[threadIdx.x] = kSentinel;
+  __shared__ int tile[kTileElements];
+  tile[threadIdx.x] = kUnwrittenValue;
   __syncthreads();
   const v4i zero4 = {0, 0, 0, 0};
   const v8i zero8 = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -722,7 +726,7 @@ __global__ void tensor_load_builtin_kernel(TensorDesc desc, int *dst) {
 }
 
 TEST_F(Gfx1250RaceTest, tensor_load_builtin) {
-  auto *src = allocWithData<int>(kElements);
+  auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
   // `tile` is the kernel's only LDS allocation, so it starts at offset 0.
   tensor_load_builtin_kernel<<<1, kWave>>>(describe({.global = src}), dst);
