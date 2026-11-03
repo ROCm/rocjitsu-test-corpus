@@ -7,10 +7,12 @@
 ///
 /// A tensor load writes LDS and a tensor store reads it, asynchronously, until
 /// s_wait_tensorcnt retires the transfer. Transfers from one wave complete in
-/// issue order and independently of DS operations; other waves see their LDS
-/// effects only after the issuing wave waits and the workgroup passes a
-/// barrier. Each race case is its clean partner with one step removed. Clean
-/// cases also check the data moved; raced values are unconstrained.
+/// issue order and independently of DS operations, but may access LDS out of
+/// order, so overlapping transfers from one wave also need a TENSORcnt wait
+/// between them. Other waves see their LDS effects only after the issuing wave
+/// waits and the workgroup passes a barrier. Each race case is its clean
+/// partner with one step removed. Clean cases also check the data moved; raced
+/// values are unconstrained.
 
 #include <gtest/gtest.h>
 #include <hip/hip_runtime.h>
@@ -196,6 +198,14 @@ static constexpr RaceExpectation kDsWriteThenTensorStoreRace{
     .access = "read",
     .producer = "ds_store_b32",
     .consumer = "tensor_store_from_lds",
+};
+
+static constexpr RaceExpectation kTensorStoreThenTensorLoadRace{
+    .findings = FindingCount::OneOrMore,
+    .type = "LDS",
+    .access = "write",
+    .producer = "tensor_store_from_lds",
+    .consumer = "tensor_load_to_lds",
 };
 
 // --- GFX12 split wait counters ---
@@ -451,14 +461,19 @@ TEST_F(Gfx1250RaceTest, tensor_store_missing_dscnt_race) {
   ExpectRace(kDsWriteThenTensorStoreRace);
 }
 
-// --- Same-wave tensor transfers stay in issue order ---
+// --- Same-wave tensor transfers complete in order but access LDS unordered ---
 
-// A load may overwrite the LDS tile an earlier store from the same wave is
-// still reading: tensor loads and stores stay in order (CDNA5 ISA 4.10.1).
+// A load into the LDS tile an earlier store from the same wave is still
+// reading may overwrite bytes the store has not read yet: tensor transfers
+// complete in issue order, but their LDS accesses are not ordered. A TENSORcnt
+// wait between the two retires the store first.
+template <bool WaitTensorcnt>
 __global__ void tensor_store_then_load_same_wave_kernel(TensorDesc store, TensorDesc load,
                                                         int *dst) {
   ldsFill(0, 100 + lane());
   tensorStore(store);
+  if (WaitTensorcnt)
+    waitTensorcnt<0>();
   tensorLoad(load);
   waitTensorcnt<0>();
   dst[lane()] = ldsRead(lane() * 4);
@@ -468,13 +483,24 @@ TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave) {
   auto *stored = alloc<int>(kTileElements);
   auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
-  tensor_store_then_load_same_wave_kernel<<<1, kWave, kTileBytes>>>(
+  tensor_store_then_load_same_wave_kernel<true><<<1, kWave, kTileBytes>>>(
       describe({.global = stored}), describe({.global = src}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
   ExpectValues(stored, range(100));
   ExpectValues(dst, range(0));
+}
+
+TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave_race) {
+  auto *stored = alloc<int>(kTileElements);
+  auto *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kWave);
+  tensor_store_then_load_same_wave_kernel<false><<<1, kWave, kTileBytes>>>(
+      describe({.global = stored}), describe({.global = src}), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kTensorStoreThenTensorLoadRace);
 }
 
 // --- Tensor instructions that move no data still count on TENSORCNT ---
