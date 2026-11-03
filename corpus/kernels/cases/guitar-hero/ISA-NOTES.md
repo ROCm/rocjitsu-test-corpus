@@ -28,7 +28,7 @@ exercise packed-dot DPP permutations. The shipped smoke has no hardware oracle.
 
 ## RDNA2
 
-Runtime qualification: hardware-qualified; simulator unqualified.
+Runtime qualification: Hardware smoke passed on RX 6800 XT; simulator unqualified.
 
 The gfx1030 variant is an independent wave32 source port of the gfx1100 case,
 audited against the RDNA2 manual and instruction inventory and assembled with

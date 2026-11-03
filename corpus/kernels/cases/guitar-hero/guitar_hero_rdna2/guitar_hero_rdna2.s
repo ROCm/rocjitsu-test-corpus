@@ -419,7 +419,7 @@ s_mov_b32 exec_lo, -1
 .endm
 
 .macro checkpoint id
-; The same binary performs validation, recording, timing and diagnosis.
+; The same binary supports smoke checks, timing and checkpoint dumps.
 s_cmp_eq_u32 s9, \id+1
 s_cbranch_scc0 .Lno_trace\@
 v_lshlrev_b32 v62, 6, v0
