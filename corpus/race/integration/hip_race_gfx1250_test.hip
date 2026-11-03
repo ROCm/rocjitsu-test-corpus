@@ -147,7 +147,9 @@ __device__ inline void barrier() {
 
 /// Let other waves run first, so a race is reported in a fixed direction, with
 /// the transfer as producer. Detection does not depend on wave order, but the
-/// expectations name the producer and consumer, which do.
+/// expectations name the producer and consumer, which do. Cases that may use a
+/// barrier order the waves with one instead; this is for a case that must race
+/// without a barrier.
 __device__ inline void yieldToOtherWaves() { asm volatile("s_sleep 4" ::: "memory"); }
 
 /// Read an int from LDS and wait for it, so a case reports only the LDS race
@@ -383,7 +385,9 @@ TEST_F(Gfx1250RaceTest, tensor_load_pipeline_newest_race) {
 
 // --- A tensor store's LDS source ---
 
-// Wave 0 stores the tile; wave 1 then overwrites it in LDS.
+// Wave 0 stores the tile; wave 1 then overwrites it in LDS. The barrier orders
+// the overwrite after the store issues. Without the wait, it does not retire
+// the store, so the overwrite races with it.
 template <bool Synchronized>
 __global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
 tensor_store_source_overwrite_kernel(TensorDesc desc) {
@@ -394,10 +398,7 @@ tensor_store_source_overwrite_kernel(TensorDesc desc) {
     if (Synchronized)
       waitTensorcnt<0>();
   }
-  if (Synchronized)
-    barrier();
-  else if (wave == 1)
-    yieldToOtherWaves();
+  barrier();
   if (wave == 1)
     ldsFill(0, -1);
   if (wave == 0)
@@ -569,7 +570,9 @@ constexpr uint32_t kTensorHalf = kTileElements / 2;
 
 // The tile is twice as wide as the tensor; the second half reads as zero
 // (CDNA5 ISA 4.10.7). Wave 1 reads the zero-filled half. The kUnwrittenValue
-// fill is synchronized first, so it cannot race with that read.
+// fill is synchronized first, so it cannot race with that read. The second
+// barrier orders the read after the load issues; without the wait, it does not
+// retire the load, so the read races with it.
 template <bool Synchronized>
 __global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
 tensor_load_zero_fill_kernel(TensorDesc desc, int *dst) {
@@ -582,10 +585,7 @@ tensor_load_zero_fill_kernel(TensorDesc desc, int *dst) {
     if (Synchronized)
       waitTensorcnt<0>();
   }
-  if (Synchronized)
-    barrier();
-  else if (wave == 1)
-    yieldToOtherWaves();
+  barrier();
   if (wave == 1)
     dst[lane()] = ldsRead(lane() * 4);
   if (wave == 0)
@@ -622,16 +622,17 @@ constexpr uint32_t kPadOffset = 64;
 constexpr uint32_t kPadBytes = 16;
 
 // Wave 1 reads LDS at `ReadOffset` while wave 0's padded load is outstanding.
+// The barrier orders the read after the load issues; with no wait before it, it
+// does not retire the load.
 template <uint32_t ReadOffset>
 __global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
 tensor_load_padding_kernel(TensorDesc desc, int *loaded, int *concurrent) {
   const int wave = waveIndex();
   if (wave == 0)
     tensorLoad(desc);
-  else {
-    yieldToOtherWaves();
+  barrier();
+  if (wave == 1)
     concurrent[lane()] = ldsRead(ReadOffset);
-  }
   if (wave == 0) {
     waitTensorcnt<0>();
     const uint32_t offset = lane() * 4 + (lane() < 16 ? 0 : kPadBytes);
