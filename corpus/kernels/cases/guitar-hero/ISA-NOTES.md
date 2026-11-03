@@ -59,6 +59,14 @@ corpus revision `ef209c2de01c1701ef5bdc0aeef28f5baba8af51`. Both runs passed
 the harness checks. The smoke retains no saved outputs or independent hardware
 oracle.
 
+The current source additionally folds gfx10-specific operand-selector chains,
+raw-buffer byte-boundary cases, unsigned vector/immediate scratch offsets and
+48-bit PC transfer corners into existing checkpoints 115, 313, 418 and 484.
+It retains the gfx10 buffer descriptor layout and DWORD-width mnemonics; it does
+not import CDNA5 IDXEN kind 3, signed/scaled scratch, GFX12 atomic hints, scalar
+F16/BF16 or 57-bit address behavior. These additions assemble for gfx1030 but
+postdate the hardware captures above.
+
 Store completion uses `s_waitcnt_vscnt`; VMEM, LDS and scalar observations use
 the applicable VM/LGKM waits. The split VM, LGKM, EXP and dependency waits and
 `buffer_gl0_inv`, `buffer_gl1_inv` and `s_gl1_inv` cache operations are retained
@@ -95,14 +103,27 @@ corrected prologue, but that simulator revision treated
 `0x100000000` address.
 
 Neither audit covers the subsequent compare/store correction, restored
-low-half DPP8 and legacy-FMAC probes, populated VOP3 checkpoint, or restored
-packed conversions in the current 490-checkpoint stream. A clean rerun of both
+low-half DPP8 and legacy-FMAC probes, populated VOP3 checkpoint, restored
+packed conversions or dependent corner chains in the current 490-checkpoint
+stream. A clean rerun of both
 registered cases from corpus revision
 `aaac2c7924033ca3dfac2023dffe5bba5809ff5d` with RocJITsu revision
 `b6fc339bc3b6e63db65192c1130f0c3ea942338f` and `configs/gfx1030.json` still
 aborted before kernel launch with `Unsupported encoding value for scalar write:
 125`; no current Guitar Hero probe executed. No clean simulator run of the
 current instruction stream has completed.
+An attempted run of the corner-chain source with RocJITsu revision
+`ea2afe4413c68e78ad6dd8180e6eb7dbdb3cd7ae` likewise stopped in the HIP
+fill-buffer helper on its gfx10 null scalar-destination `v_mad_u64_u32`, before
+Guitar Hero launched.
+A diagnostic rerun omitted the two host memsets, replaced the rejected
+`v_movrels_b32_e64`, `v_movrelsd_b32_e64` and `v_movrelsd_2_b32_e64` probes
+with width-preserving no-ops, and branched around checkpoints 270–312 containing
+the previously unqualified flat operations. Under those temporary bypasses,
+all three seeds completed through checkpoint 484 with seven groups and matching
+group hashes. This executes the new operand, buffer-boundary, scratch-offset and
+PC chains, but it remains simulator self-consistency rather than an ISA oracle;
+the simulator also continued to warn that `HW_REG_FLAT_SCR_LO/HI` are read-only.
 [Pull request 75](https://github.com/ROCm/rocjitsu-test-corpus/pull/75) retains
 the detailed audit history.
 

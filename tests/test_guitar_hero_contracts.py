@@ -251,6 +251,31 @@ def test_rdna2_buffer_resource_word3_uses_gfx10_layout():
         assert setup in body
 
 
+def test_rdna2_corner_chains_use_gfx10_contracts():
+    assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
+    for invocation in [
+        "gh_rdna2_operand_corners",
+        "gh_rdna2_buffer_bounds",
+        "gh_rdna2_scratch_offsets",
+        "gh_rdna2_pc_corners",
+    ]:
+        # One definition and one checkpoint hook.
+        assert len(re.findall(rf"^(?:\.macro )?{invocation}$", assembly, re.MULTILINE)) == 2
+
+    assert "s_mov_b32 s19, 0x3104dfac" in assembly
+    assert "buffer_load_dwordx4" in assembly
+    assert "buffer_store_dwordx4" in assembly
+    assert "gh_rdna2_buffer_case \\width, \\remaining, 3" not in assembly
+    assert "gh_corner_gfx12_atomic" not in assembly
+
+    # gfx10 has unsigned vector/immediate scratch addressing here; do not
+    # import gfx12 signed or scale_offset cases.
+    assert "scratch_load_dword v16, v54, off offset:\\immediate" in assembly
+    assert "scale_offset" not in assembly
+    assert "gh_rdna2_pc_poison s17" in assembly
+    assert "s_swappc_b64 s[16:17], s[16:17]" in assembly
+
+
 def test_rdna2_legacy_accumulators():
     assembly = (CASES / "guitar_hero_rdna2/guitar_hero_rdna2.s").read_text()
     e32 = assembly.split(

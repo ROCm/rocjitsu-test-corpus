@@ -25,6 +25,312 @@ v_xor_b32 v61, 0x9e3779b9, v61
 .endr
 .endm
 
+; RDNA2 boundary-probe helpers. These fold into nearby existing checkpoints,
+; preserving the 490-entry inventory. They use s16:s23, v16:v31 and v54:v56
+; as scratch and restore full EXEC.
+
+.set GH_RDNA2_SRC_VGPR, 256
+.set GH_RDNA2_OP_ADD_NC_U16, 771
+.set GH_RDNA2_OP_CVT_F16_U16, 464
+
+.macro gh_rdna2_vop3 opcode, dst, src0, src1=128, src2=128
+.long 0xd4000000 | ((\opcode) << 16) | (\dst)
+.long (\src0) | ((\src1) << 9) | ((\src2) << 18)
+.endm
+
+; Floating inline selectors have distinct integer16 interpretations. LLVM
+; cannot spell every integer use, so raw VOP3 encodings feed dependent integer
+; and conversion consumers. The scalar family independently covers the same
+; selector namespace without importing gfx11 true16 or B16-only instructions.
+.macro gh_rdna2_operand_corners
+fold_results
+clear_results
+.irp value,0.5,-0.5,1.0,-1.0,2.0,-2.0,4.0,-4.0,0.15915494
+s_sext_i32_i16 s16, \value
+s_nop 1
+s_pack_ll_b32_b16 s17, \value, \value
+s_nop 1
+s_pack_lh_b32_b16 s18, \value, \value
+s_nop 1
+s_pack_hh_b32_b16 s19, \value, \value
+s_nop 1
+s_xor_b32 s20, s17, s19
+s_nop 1
+v_mov_b32 v16, s16
+v_mov_b32 v17, s17
+v_mov_b32 v18, s18
+v_mov_b32 v19, s19
+v_mov_b32 v20, s20
+fold_results
+.endr
+.irp selector,240,241,242,243,244,245,246,247,248
+clear_results
+v_mov_b32 v24, 0
+gh_rdna2_vop3 GH_RDNA2_OP_ADD_NC_U16, 16, \selector, GH_RDNA2_SRC_VGPR+24
+v_nop
+v_and_b32 v17, 0xffff, v16
+v_add_nc_u32 v18, 1, v17
+gh_rdna2_vop3 GH_RDNA2_OP_CVT_F16_U16, 20, \selector
+v_nop
+v_cvt_f32_f16_e64 v21, v20
+v_nop
+v_add_f32 v22, 1.0, v21
+fold_results
+.endr
+s_mov_b32 exec_lo, -1
+.endm
+
+.macro gh_rdna2_memory_base
+s_mov_b32 exec_lo, -1
+v_readfirstlane_b32 s21, v0
+s_waitcnt_depctr 0
+s_lshl_b32 s21, s21, 6
+s_add_u32 s22, s14, s21
+s_addc_u32 s23, s15, 0
+.endm
+
+.macro gh_rdna2_memory_wait
+s_waitcnt vmcnt(0)
+s_waitcnt_vscnt null, 0
+.endm
+
+.macro gh_rdna2_memory_initialize
+s_mov_b32 exec_lo, -1
+clear_results
+v_mov_b32 v24, 0x10203004
+v_mov_b32 v25, 0x21314108
+v_mov_b32 v26, 0x3242520c
+v_mov_b32 v27, 0x43536300
+v_mov_b32 v54, 0
+s_mov_b32 exec_lo, 1
+global_store_dwordx4 v54, v[24:27], s[22:23] offset:0
+global_store_dwordx4 v54, v[24:27], s[22:23] offset:16
+global_store_dwordx4 v54, v[24:27], s[22:23] offset:32
+global_store_dwordx4 v54, v[24:27], s[22:23] offset:48
+gh_rdna2_memory_wait
+.endm
+
+.macro gh_rdna2_buffer_descriptor bound, stride=0
+s_mov_b32 s16, s22
+s_and_b32 s17, s23, 0xffff
+s_or_b32 s17, s17, (\stride << 16)
+s_mov_b32 s18, \bound
+; gfx10 resource word 3: NUM_FORMAT=FLOAT, DATA_FORMAT=32, OOB_SELECT=3.
+s_mov_b32 s19, 0x3104dfac
+.endm
+
+.macro gh_rdna2_buffer_issue opcode, data, kind
+.if \kind == 1
+\opcode \data, v54, s[16:19], s20 offen offset:12
+.else
+\opcode \data, v54, s[16:19], s20 offen
+.endif
+.endm
+
+.macro gh_rdna2_buffer_load width, kind
+.if \width == 64
+gh_rdna2_buffer_issue buffer_load_dwordx2, v[16:17], \kind
+.elseif \width == 96
+gh_rdna2_buffer_issue buffer_load_dwordx3, v[16:18], \kind
+.else
+gh_rdna2_buffer_issue buffer_load_dwordx4, v[16:19], \kind
+.endif
+.endm
+
+.macro gh_rdna2_buffer_store width, kind
+.if \width == 64
+gh_rdna2_buffer_issue buffer_store_dwordx2, v[24:25], \kind
+.elseif \width == 96
+gh_rdna2_buffer_issue buffer_store_dwordx3, v[24:26], \kind
+.else
+gh_rdna2_buffer_issue buffer_store_dwordx4, v[24:27], \kind
+.endif
+.endm
+
+.macro gh_rdna2_buffer_case width, remaining, kind
+gh_rdna2_memory_initialize
+.if \kind == 1
+; SOFFSET 4 + VOFFSET 8 + immediate 12 selects byte 24.
+gh_rdna2_buffer_descriptor (24 + \remaining)
+s_mov_b32 s20, 4
+v_mov_b32 v54, 8
+.else
+.if \kind == 2
+; Descriptor stride is ignored without IDXEN on this raw access.
+gh_rdna2_buffer_descriptor \remaining, 16
+.else
+gh_rdna2_buffer_descriptor \remaining
+.endif
+s_mov_b32 s20, 0
+v_mov_b32 v54, 0
+.endif
+gh_rdna2_buffer_load \width, \kind
+gh_rdna2_memory_wait
+v_xor_b32 v56, 0x10203004, v16
+v_and_b32 v56, 12, v56
+v_add_nc_u32 v56, 48, v56
+global_load_dword v20, v56, s[22:23]
+gh_rdna2_memory_wait
+s_mov_b32 exec_lo, -1
+fold_results
+s_mov_b32 exec_lo, 1
+v_xor_b32 v24, 0x01010101, v16
+v_xor_b32 v25, 0x02020202, v17
+v_xor_b32 v26, 0x03030303, v18
+v_xor_b32 v27, 0x04040404, v19
+gh_rdna2_buffer_store \width, \kind
+gh_rdna2_memory_wait
+.if \kind == 1
+v_mov_b32 v56, 24
+.else
+v_mov_b32 v56, 0
+.endif
+global_load_dwordx4 v[28:31], v56, s[22:23]
+gh_rdna2_memory_wait
+s_mov_b32 exec_lo, -1
+fold_results
+.endm
+
+.macro gh_rdna2_buffer_bounds
+gh_rdna2_memory_base
+; Cover exact fits and every residual byte around DWORD/payload boundaries.
+.irp width,64,96,128
+.irp remaining,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20
+gh_rdna2_buffer_case \width, \remaining, 0
+gh_rdna2_buffer_case \width, \remaining, 1
+gh_rdna2_buffer_case \width, \remaining, 2
+.endr
+.endr
+.endm
+
+.macro gh_rdna2_scratch_case vector, immediate=0
+s_mov_b32 exec_lo, -1
+clear_results
+v_mov_b32 v24, 0x5a5a0020
+v_mov_b32 v25, 0x6b6b0024
+v_mov_b32 v26, 0x7c7c0028
+v_mov_b32 v27, 0x8d8d002c
+scratch_store_dwordx4 off, v[24:27], off offset:0
+scratch_store_dwordx4 off, v[24:27], off offset:16
+scratch_store_dwordx4 off, v[24:27], off offset:32
+scratch_store_dwordx4 off, v[24:27], off offset:48
+gh_rdna2_memory_wait
+v_mov_b32 v54, \vector
+scratch_load_dword v16, v54, off offset:\immediate
+gh_rdna2_memory_wait
+v_xor_b32 v55, 0x5a5a0020, v16
+v_and_b32 v55, 28, v55
+v_add_nc_u32 v55, 32, v55
+scratch_load_dword v20, v55, off
+gh_rdna2_memory_wait
+v_xor_b32 v24, 0x01010101, v20
+scratch_store_dword v55, v24, off
+gh_rdna2_memory_wait
+scratch_load_dword v28, v55, off
+gh_rdna2_memory_wait
+fold_results
+.endm
+
+.macro gh_rdna2_scratch_offsets
+; gfx10's vector and immediate offsets are unsigned; both sums select byte 32.
+gh_rdna2_scratch_case 32, 0
+gh_rdna2_scratch_case 16, 16
+.endm
+
+; PC import and return-address dependency chains. Only differences and fixed
+; markers enter the hash; raw code addresses remain internal.
+.macro gh_rdna2_pc_poison high
+s_and_b32 \high, \high, 0x0000ffff
+s_or_b32 \high, \high, 0xa5a50000
+.endm
+
+.macro gh_rdna2_pc_corners
+s_mov_b32 exec_lo, -1
+fold_results
+clear_results
+
+s_getpc_b64 s[16:17]
+.Lgh_rdna2_set_anchor\@:
+s_nop 1
+s_add_u32 s16, s16, .Lgh_rdna2_set_body\@-.Lgh_rdna2_set_anchor\@
+s_addc_u32 s17, s17, 0
+gh_rdna2_pc_poison s17
+s_nop 1
+s_setpc_b64 s[16:17]
+v_mov_b32 v16, 0xbad00001
+s_branch .Lgh_rdna2_set_done\@
+.Lgh_rdna2_set_body\@:
+v_mov_b32 v16, 0x13579bdf
+.Lgh_rdna2_set_done\@:
+fold_results
+clear_results
+
+; Aliased SWAPPC must read its target before exporting the return PC.
+s_getpc_b64 s[16:17]
+.Lgh_rdna2_alias_anchor\@:
+s_nop 1
+s_add_u32 s18, s16, .Lgh_rdna2_alias_return\@-.Lgh_rdna2_alias_anchor\@
+s_addc_u32 s19, s17, 0
+s_add_u32 s16, s16, .Lgh_rdna2_alias_body\@-.Lgh_rdna2_alias_anchor\@
+s_addc_u32 s17, s17, 0
+gh_rdna2_pc_poison s17
+s_mov_b32 s20, 0
+s_nop 1
+s_swappc_b64 s[16:17], s[16:17]
+.Lgh_rdna2_alias_return\@:
+s_nop 1
+s_add_u32 s20, s20, 29
+s_branch .Lgh_rdna2_alias_done\@
+.Lgh_rdna2_alias_body\@:
+s_nop 1
+s_add_u32 s20, s20, 7
+s_nop 1
+s_setpc_b64 s[16:17]
+.Lgh_rdna2_alias_done\@:
+s_xor_b32 s21, s16, s18
+s_xor_b32 s22, s17, s19
+s_nop 1
+v_mov_b32 v16, s20
+v_mov_b32 v17, s21
+v_mov_b32 v18, s22
+fold_results
+clear_results
+
+; CALL's exported pair controls its return and is checked independently.
+s_getpc_b64 s[16:17]
+.Lgh_rdna2_call_anchor\@:
+s_nop 1
+s_add_u32 s16, s16, .Lgh_rdna2_call_return\@-.Lgh_rdna2_call_anchor\@
+s_addc_u32 s17, s17, 0
+s_mov_b32 s20, 0
+s_nop 1
+s_call_b64 s[18:19], .Lgh_rdna2_call_body\@
+.Lgh_rdna2_call_return\@:
+s_nop 1
+s_add_u32 s20, s20, 43
+s_branch .Lgh_rdna2_call_done\@
+.Lgh_rdna2_call_body\@:
+s_nop 1
+s_cmp_eq_u64 s[16:17], s[18:19]
+s_cbranch_scc0 .Lgh_rdna2_call_bad\@
+s_add_u32 s20, s20, 11
+s_nop 1
+s_setpc_b64 s[18:19]
+.Lgh_rdna2_call_bad\@:
+s_mov_b32 s20, 0xbad00002
+s_nop 1
+s_setpc_b64 s[16:17]
+.Lgh_rdna2_call_done\@:
+s_xor_b32 s21, s16, s18
+s_xor_b32 s22, s17, s19
+s_nop 1
+v_mov_b32 v16, s20
+v_mov_b32 v17, s21
+v_mov_b32 v18, s22
+fold_results
+s_mov_b32 exec_lo, -1
+.endm
+
 ; A deterministic avalanche hash selects different masks for each seed,
 ; region and iteration.
 ; s72=iteration, s73=limit, s74:75=mask, s76:77=scratch, s78:79=previous.
@@ -3786,6 +4092,7 @@ sweep_inputs int
 v_mov_b32 v30, 0xa5a5a5a5
 v_alignbyte_b32_e64 v30, v8, v9, v10
 masked_end 115
+gh_rdna2_operand_corners
 checkpoint 115
 
 ; Checkpoint 116: vop3_plain_01
@@ -10331,6 +10638,7 @@ s_mov_b32 s26, 4096
 s_mov_b32 s27, 0x3104dfac
 s_mov_b32 s28, 0
 ; Checkpoint 313: buffer_operations_00
+gh_rdna2_buffer_bounds
 clear_results
 global_store_dwordx4 v53, v[8:11], s[14:15]
 s_waitcnt_vscnt null, 0
@@ -14944,6 +15252,7 @@ masked_end 417
 checkpoint 417
 
 ; Checkpoint 418: private_memory_00
+gh_rdna2_scratch_offsets
 clear_results
 v_mov_b32 v8, 0x89abcdef
 v_mov_b32 v9, 0x12345678
@@ -16723,6 +17032,7 @@ s_round_mode 0
 s_denorm_mode 15
 s_getreg_b32 s17, hwreg(HW_REG_MODE, 0, 8)
 v_mov_b32 v21, s17
+gh_rdna2_pc_corners
 checkpoint 484
 
 ; Checkpoint 485: scalar_literal_slots
