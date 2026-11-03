@@ -84,18 +84,17 @@ BF16_TRANS_KERNEL(amdgcn_tanh_bf16, tanh)
 
 #define BF16_TRANS_TEST(name)                                                                      \
   TEST(AmdgcnBf16Trans, name##_FloatForwardsAndFpsanRoutes) {                                      \
+    DeviceAllocations device_allocations;                                                          \
     int ndev = 0;                                                                                  \
     if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)                                       \
       GTEST_SKIP() << "no HIP device";                                                             \
     auto in = make_inputs();                                                                       \
     const int N = static_cast<int>(in.size());                                                     \
-    __bf16 *dIn = to_dev(in);                                                                      \
-    __bf16 *dDirect, *dWrap;                                                                       \
-    std::uint16_t *dPdir, *dPwrap;                                                                 \
-    HIP_CHECK(hipMalloc(&dDirect, N * sizeof(__bf16)));                                            \
-    HIP_CHECK(hipMalloc(&dWrap, N * sizeof(__bf16)));                                              \
-    HIP_CHECK(hipMalloc(&dPdir, N * sizeof(std::uint16_t)));                                       \
-    HIP_CHECK(hipMalloc(&dPwrap, N * sizeof(std::uint16_t)));                                      \
+    __bf16 *dIn = device_allocations.to_dev(in);                                                   \
+    __bf16 *dDirect = device_allocations.allocate<__bf16>(N);                                      \
+    __bf16 *dWrap = device_allocations.allocate<__bf16>(N);                                        \
+    std::uint16_t *dPdir = device_allocations.allocate<std::uint16_t>(N);                          \
+    std::uint16_t *dPwrap = device_allocations.allocate<std::uint16_t>(N);                         \
     k_##name##_pair<Semantics::Triton><<<1, N>>>(dIn, dDirect, dWrap, dPdir, dPwrap);              \
     HIP_CHECK(hipDeviceSynchronize());                                                             \
     std::vector<__bf16> direct(N), wrap(N);                                                        \
@@ -118,11 +117,6 @@ BF16_TRANS_KERNEL(amdgcn_tanh_bf16, tanh)
       for (int i = 0; i < N; ++i)                                                                  \
         EXPECT_EQ(pwrap[i], pdir[i]) << fpsan::semantics_name(S) << " lane " << i;                 \
     });                                                                                            \
-    (void)hipFree(dIn);                                                                            \
-    (void)hipFree(dDirect);                                                                        \
-    (void)hipFree(dWrap);                                                                          \
-    (void)hipFree(dPdir);                                                                          \
-    (void)hipFree(dPwrap);                                                                         \
   }
 
 BF16_TRANS_TEST(amdgcn_rcp_bf16)

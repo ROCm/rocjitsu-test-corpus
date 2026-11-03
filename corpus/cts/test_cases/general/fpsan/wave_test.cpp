@@ -188,19 +188,19 @@ template <class T> void run_float_matches_host_butterfly() {
       lane_vals[i] = F{in[i]};
     F ref = T::template host_butterfly<Semantics::Native>(lane_vals.data(), W);
 
-    FT *dIn = to_dev(in), *dOut;
-    HIP_CHECK(hipMalloc(&dOut, sizeof(FT)));
+    DeviceAllocations device_allocations;
+    FT *dIn = device_allocations.to_dev(in);
+    FT *dOut = device_allocations.allocate<FT>(1);
     k_wave_float<T, 0><<<1, W>>>(dIn, dOut);
     HIP_CHECK(hipDeviceSynchronize());
     FT got = FT(0);
     HIP_CHECK(hipMemcpy(&got, dOut, sizeof(FT), hipMemcpyDeviceToHost));
     EXPECT_EQ(bits_of(got), bits_of(static_cast<FT>(ref)));
-    (void)hipFree(dIn);
-    (void)hipFree(dOut);
   }
 }
 
 template <class T, Semantics S> void run_fpsan_matches_host_butterfly() {
+  DeviceAllocations device_allocations;
   const int W = device_wave_size();
   if (W == 0)
     GTEST_SKIP() << "no HIP device";
@@ -213,16 +213,13 @@ template <class T, Semantics S> void run_fpsan_matches_host_butterfly() {
     lane_vals[i] = F{in[i]};
   F ref = T::template host_butterfly<S>(lane_vals.data(), W);
 
-  FT *dIn = to_dev(in);
-  Bits *dOut;
-  HIP_CHECK(hipMalloc(&dOut, sizeof(Bits)));
+  FT *dIn = device_allocations.to_dev(in);
+  Bits *dOut = device_allocations.allocate<Bits>(1);
   k_wave_fpsan<T, 0, S><<<1, W>>>(dIn, dOut);
   HIP_CHECK(hipDeviceSynchronize());
   Bits got = Bits(0);
   HIP_CHECK(hipMemcpy(&got, dOut, sizeof(Bits), hipMemcpyDeviceToHost));
   EXPECT_EQ(got, ref.fpsan_payload());
-  (void)hipFree(dIn);
-  (void)hipFree(dOut);
 }
 
 // Independent oracle: a left-to-right sequential fold of the lane payloads,
@@ -246,29 +243,27 @@ template <class T, Semantics S> void run_fpsan_matches_seq_fold() {
       lane_vals[i] = F{in[i]};
     F ref = T::template host_seq_fold<S>(lane_vals.data(), W);
 
-    FT *dIn = to_dev(in);
-    Bits *dOut;
-    HIP_CHECK(hipMalloc(&dOut, sizeof(Bits)));
+    DeviceAllocations device_allocations;
+    FT *dIn = device_allocations.to_dev(in);
+    Bits *dOut = device_allocations.allocate<Bits>(1);
     k_wave_fpsan<T, 0, S><<<1, W>>>(dIn, dOut);
     HIP_CHECK(hipDeviceSynchronize());
     Bits got = Bits(0);
     HIP_CHECK(hipMemcpy(&got, dOut, sizeof(Bits), hipMemcpyDeviceToHost));
     EXPECT_EQ(got, ref.fpsan_payload());
-    (void)hipFree(dIn);
-    (void)hipFree(dOut);
   }
 }
 
 template <class T, Semantics S> void run_fpsan_strategy_invariant() {
+  DeviceAllocations device_allocations;
   const int W = device_wave_size();
   if (W == 0)
     GTEST_SKIP() << "no HIP device";
   using FT = typename T::FT;
   using Bits = typename T::Bits;
   auto in = make_lane_inputs<FT>(W);
-  FT *dIn = to_dev(in);
-  Bits *dOut;
-  HIP_CHECK(hipMalloc(&dOut, sizeof(Bits)));
+  FT *dIn = device_allocations.to_dev(in);
+  Bits *dOut = device_allocations.allocate<Bits>(1);
   k_wave_fpsan<T, 0, S><<<1, W>>>(dIn, dOut);
   HIP_CHECK(hipDeviceSynchronize());
   Bits got0 = Bits(0);
@@ -278,8 +273,6 @@ template <class T, Semantics S> void run_fpsan_strategy_invariant() {
   Bits got1 = Bits(0);
   HIP_CHECK(hipMemcpy(&got1, dOut, sizeof(Bits), hipMemcpyDeviceToHost));
   EXPECT_EQ(got0, got1);
-  (void)hipFree(dIn);
-  (void)hipFree(dOut);
 }
 
 // ---------------------------------------------------------------------------

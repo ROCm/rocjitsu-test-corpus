@@ -6,7 +6,8 @@
 // Runs Value arithmetic on the GPU and checks that device results match
 // the host bit-for-bit (the payload algebra is constexpr host/device, so they
 // must agree exactly), plus that FPSan associativity holds on device. Only
-// built/registered when FPSAN_ENABLE_HIP is ON.
+// built/registered when FPSAN_ENABLE_HIP is ON. Also checks the host-only
+// HIP_CHECK_EXC support helper.
 #include "fpsan/amdgcn_matrix.hpp"
 #include "fpsan/detail/subbyte_widen.hpp"
 #include "fpsan/fpsan.hpp"
@@ -21,6 +22,8 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 static constexpr fpsan::Conversions kCC = fpsan::Conversions::Explicit;
@@ -228,6 +231,23 @@ __global__ void fpsan_kernel(const float *a, const float *b, const float *c,
   embed_payload[i] = A.fpsan_payload();
   assoc_ok[i] = ((A + B) + C == A + (B + C)) ? 1u : 0u;
   exp_hom_ok[i] = (fpsan::exp(A + B) == fpsan::exp(A) * fpsan::exp(B)) ? 1u : 0u;
+}
+
+TEST(HipCheckExc, EvaluatesOnceAndReportsFailure) {
+  int calls = 0;
+  EXPECT_NO_THROW(HIP_CHECK_EXC((++calls, hipSuccess)));
+  EXPECT_EQ(calls, 1);
+
+  try {
+    HIP_CHECK_EXC((++calls, hipErrorInvalidValue));
+    FAIL() << "expected a HIP error exception";
+  } catch (const std::runtime_error &error) {
+    const std::string message = error.what();
+    EXPECT_NE(message.find("++calls"), std::string::npos);
+    EXPECT_NE(message.find(__FILE__), std::string::npos);
+    EXPECT_NE(message.find(hipGetErrorString(hipErrorInvalidValue)), std::string::npos);
+  }
+  EXPECT_EQ(calls, 2);
 }
 
 TEST(HipDevice, MatchesHostAndPreservesIdentities) {

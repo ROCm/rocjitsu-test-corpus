@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
+#include "hip_test_utils.hpp"
 #include "mfma_cdna3_parts.hpp"
 
 // ---------------------------------------------------------------------------
@@ -70,6 +71,7 @@ __global__ void k_f64_16x16x4(const double *A, const double *B, const double *C,
 }
 
 TEST(MfmaF64_16x16x4, LayoutMatchesHardware) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   auto d = make_f64_16_inputs();
@@ -81,18 +83,15 @@ TEST(MfmaF64_16x16x4, LayoutMatchesHardware) {
         acc += d.A[i * F64_K + k] * d.B[k * F64_N + j];
       ref[i * F64_N + j] = acc;
     }
-  double *dA = to_dev(d.A), *dB = to_dev(d.B), *dC = to_dev(d.C), *dD;
-  HIP_CHECK(hipMalloc(&dD, ref.size() * sizeof(double)));
+  double *dA = device_allocations.to_dev(d.A), *dB = device_allocations.to_dev(d.B),
+         *dC = device_allocations.to_dev(d.C);
+  double *dD = device_allocations.allocate<double>(ref.size());
   k_f64_16x16x4<Semantics::Native, double><<<1, WAVE>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<double> got(ref.size());
   HIP_CHECK(hipMemcpy(got.data(), dD, got.size() * sizeof(double), hipMemcpyDeviceToHost));
   for (std::size_t i = 0; i < got.size(); ++i)
     EXPECT_EQ(bits_of(got[i]), bits_of(ref[i])) << "elem " << i;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 TEST(MfmaF64_16x16x4, FpsanMatchesScalarReference) {
@@ -110,23 +109,21 @@ TEST(MfmaF64_16x16x4, FpsanMatchesScalarReference) {
           acc = acc + VD(d.A[i * F64_K + k]) * VD(d.B[k * F64_N + j]);
         ref[i * F64_N + j] = acc.fpsan_payload();
       }
-    double *dA = to_dev(d.A), *dB = to_dev(d.B), *dC = to_dev(d.C);
-    std::uint64_t *dD;
-    HIP_CHECK(hipMalloc(&dD, ref.size() * sizeof(std::uint64_t)));
+    DeviceAllocations device_allocations;
+    double *dA = device_allocations.to_dev(d.A), *dB = device_allocations.to_dev(d.B),
+           *dC = device_allocations.to_dev(d.C);
+    std::uint64_t *dD = device_allocations.allocate<std::uint64_t>(ref.size());
     k_f64_16x16x4<S, std::uint64_t><<<1, WAVE>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint64_t> got(ref.size());
     HIP_CHECK(hipMemcpy(got.data(), dD, got.size() * sizeof(std::uint64_t), hipMemcpyDeviceToHost));
     for (std::size_t i = 0; i < got.size(); ++i)
       EXPECT_EQ(got[i], ref[i]) << "elem " << i;
-    (void)hipFree(dA);
-    (void)hipFree(dB);
-    (void)hipFree(dC);
-    (void)hipFree(dD);
   });
 }
 
 TEST(MfmaF64_16x16x4_NEG5, LayoutMatchesHardware) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   constexpr int NEG = 5;
@@ -140,18 +137,15 @@ TEST(MfmaF64_16x16x4_NEG5, LayoutMatchesHardware) {
                host_neg_if(d.B[k * F64_N + j], (NEG & 2) != 0);
       ref[i * F64_N + j] = acc;
     }
-  double *dA = to_dev(d.A), *dB = to_dev(d.B), *dC = to_dev(d.C), *dD;
-  HIP_CHECK(hipMalloc(&dD, ref.size() * sizeof(double)));
+  double *dA = device_allocations.to_dev(d.A), *dB = device_allocations.to_dev(d.B),
+         *dC = device_allocations.to_dev(d.C);
+  double *dD = device_allocations.allocate<double>(ref.size());
   k_f64_16x16x4<Semantics::Native, double, NEG><<<1, WAVE>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<double> got(ref.size());
   HIP_CHECK(hipMemcpy(got.data(), dD, got.size() * sizeof(double), hipMemcpyDeviceToHost));
   for (std::size_t i = 0; i < got.size(); ++i)
     EXPECT_EQ(bits_of(got[i]), bits_of(ref[i])) << "elem " << i;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 TEST(MfmaF64_16x16x4_NEG5, FpsanMatchesScalarReference) {
@@ -171,18 +165,15 @@ TEST(MfmaF64_16x16x4_NEG5, FpsanMatchesScalarReference) {
                           host_neg_if(VD(d.B[k * F64_N + j]), (NEG & 2) != 0);
         ref[i * F64_N + j] = acc.fpsan_payload();
       }
-    double *dA = to_dev(d.A), *dB = to_dev(d.B), *dC = to_dev(d.C);
-    std::uint64_t *dD;
-    HIP_CHECK(hipMalloc(&dD, ref.size() * sizeof(std::uint64_t)));
+    DeviceAllocations device_allocations;
+    double *dA = device_allocations.to_dev(d.A), *dB = device_allocations.to_dev(d.B),
+           *dC = device_allocations.to_dev(d.C);
+    std::uint64_t *dD = device_allocations.allocate<std::uint64_t>(ref.size());
     k_f64_16x16x4<S, std::uint64_t, NEG><<<1, WAVE>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint64_t> got(ref.size());
     HIP_CHECK(hipMemcpy(got.data(), dD, got.size() * sizeof(std::uint64_t), hipMemcpyDeviceToHost));
     for (std::size_t i = 0; i < got.size(); ++i)
       EXPECT_EQ(got[i], ref[i]) << "elem " << i;
-    (void)hipFree(dA);
-    (void)hipFree(dB);
-    (void)hipFree(dC);
-    (void)hipFree(dD);
   });
 }

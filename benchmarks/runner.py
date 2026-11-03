@@ -916,6 +916,20 @@ def run_suite(
             "wall_time_s": 0.0,
         }
         run: dict[str, Any] = {
+            "schema_version": 1,
+            "publication": {
+                "id": None,
+                "source": {
+                    "branch": None,
+                    "message": None,
+                    "base": None,
+                    "pull_request": None,
+                },
+                "trigger": None,
+                "machine_label": None,
+                "workflow_commit_sha": None,
+                "tensile_commit_sha": None,
+            },
             "execution_summary": summary,
             "provenance": {
                 "machine": {

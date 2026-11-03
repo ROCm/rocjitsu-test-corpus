@@ -170,17 +170,16 @@ AMDGCN_MATH_FMED3_KERNEL(amdgcn_fmed3h, _Float16, __builtin_amdgcn_fmed3h)
 
 #define AMDGCN_MATH_UNARY_TEST(NAME, FT, INPUTS)                                                   \
   TEST(AmdgcnMath, NAME) {                                                                         \
+    DeviceAllocations device_allocations;                                                          \
     if (!have_device())                                                                            \
       GTEST_SKIP() << "no HIP device";                                                             \
     using Bits = typename Value<FT, Semantics::Triton, kCC>::bits_type;                            \
     auto inputs = INPUTS<FT>();                                                                    \
-    FT *dIn = to_dev(inputs);                                                                      \
-    FT *dDirect, *dWrapper;                                                                        \
-    Bits *dPayDirect, *dPayWrapper;                                                                \
-    HIP_CHECK(hipMalloc(&dDirect, kScalarN * sizeof(FT)));                                         \
-    HIP_CHECK(hipMalloc(&dWrapper, kScalarN * sizeof(FT)));                                        \
-    HIP_CHECK(hipMalloc(&dPayDirect, kScalarN * sizeof(Bits)));                                    \
-    HIP_CHECK(hipMalloc(&dPayWrapper, kScalarN * sizeof(Bits)));                                   \
+    FT *dIn = device_allocations.to_dev(inputs);                                                   \
+    FT *dDirect = device_allocations.allocate<FT>(kScalarN);                                       \
+    FT *dWrapper = device_allocations.allocate<FT>(kScalarN);                                      \
+    Bits *dPayDirect = device_allocations.allocate<Bits>(kScalarN);                                \
+    Bits *dPayWrapper = device_allocations.allocate<Bits>(kScalarN);                               \
     fpsan_test::for_each_fpsan_semantics([&](auto sem) {                                           \
       k_##NAME<decltype(sem)::value>                                                               \
           <<<1, kScalarN>>>(dIn, dDirect, dWrapper, dPayDirect, dPayWrapper);                      \
@@ -199,11 +198,6 @@ AMDGCN_MATH_FMED3_KERNEL(amdgcn_fmed3h, _Float16, __builtin_amdgcn_fmed3h)
         EXPECT_EQ(pay_wrapper[i], pay_direct[i]) << "FPSan lane " << i;                            \
       }                                                                                            \
     });                                                                                            \
-    (void)hipFree(dIn);                                                                            \
-    (void)hipFree(dDirect);                                                                        \
-    (void)hipFree(dWrapper);                                                                       \
-    (void)hipFree(dPayDirect);                                                                     \
-    (void)hipFree(dPayWrapper);                                                                    \
   }
 
 AMDGCN_MATH_UNARY_TEST(amdgcn_rcpf, float, make_positive_inputs)
@@ -220,19 +214,19 @@ AMDGCN_MATH_UNARY_TEST(amdgcn_fractf, float, make_signed_inputs)
 
 #define AMDGCN_MATH_FMED3_TEST(NAME, FT)                                                           \
   TEST(AmdgcnMath, NAME) {                                                                         \
+    DeviceAllocations device_allocations;                                                          \
     if (!have_device())                                                                            \
       GTEST_SKIP() << "no HIP device";                                                             \
     using Bits = typename Value<FT, Semantics::Triton, kCC>::bits_type;                            \
     auto a = make_signed_inputs<FT>();                                                             \
     auto b = make_signed_inputs<FT>();                                                             \
     auto c = make_signed_inputs<FT>();                                                             \
-    FT *dA = to_dev(a), *dB = to_dev(b), *dC = to_dev(c);                                          \
-    FT *dDirect, *dWrapper;                                                                        \
-    Bits *dPayDirect, *dPayWrapper;                                                                \
-    HIP_CHECK(hipMalloc(&dDirect, kScalarN * sizeof(FT)));                                         \
-    HIP_CHECK(hipMalloc(&dWrapper, kScalarN * sizeof(FT)));                                        \
-    HIP_CHECK(hipMalloc(&dPayDirect, kScalarN * sizeof(Bits)));                                    \
-    HIP_CHECK(hipMalloc(&dPayWrapper, kScalarN * sizeof(Bits)));                                   \
+    FT *dA = device_allocations.to_dev(a), *dB = device_allocations.to_dev(b),                     \
+       *dC = device_allocations.to_dev(c);                                                         \
+    FT *dDirect = device_allocations.allocate<FT>(kScalarN);                                       \
+    FT *dWrapper = device_allocations.allocate<FT>(kScalarN);                                      \
+    Bits *dPayDirect = device_allocations.allocate<Bits>(kScalarN);                                \
+    Bits *dPayWrapper = device_allocations.allocate<Bits>(kScalarN);                               \
     fpsan_test::for_each_fpsan_semantics([&](auto sem) {                                           \
       k_##NAME<decltype(sem)::value>                                                               \
           <<<1, kScalarN>>>(dA, dB, dC, dDirect, dWrapper, dPayDirect, dPayWrapper);               \
@@ -251,13 +245,6 @@ AMDGCN_MATH_UNARY_TEST(amdgcn_fractf, float, make_signed_inputs)
         EXPECT_EQ(pay_wrapper[i], pay_direct[i]) << "FPSan lane " << i;                            \
       }                                                                                            \
     });                                                                                            \
-    (void)hipFree(dA);                                                                             \
-    (void)hipFree(dB);                                                                             \
-    (void)hipFree(dC);                                                                             \
-    (void)hipFree(dDirect);                                                                        \
-    (void)hipFree(dWrapper);                                                                       \
-    (void)hipFree(dPayDirect);                                                                     \
-    (void)hipFree(dPayWrapper);                                                                    \
   }
 
 #undef AMDGCN_MATH_FMED3_TEST

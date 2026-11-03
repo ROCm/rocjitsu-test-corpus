@@ -13,9 +13,10 @@ tox
 invoke
 numpy
 hip-python
-pytest>=5.4.1
+# pytest 9.2 changes node IDs and breaks loadgroup in pytest-xdist 3.8.
+pytest>=5.4.1,<9.2
 pytest-timeout
-pytest-xdist>=1.32.0
+pytest-xdist>=1.32.0,<3.9
 filelock
 setuptools
 wheel

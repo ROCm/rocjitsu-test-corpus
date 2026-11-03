@@ -76,25 +76,25 @@ __global__ void k_run(const float *in, Out *out) {
 }
 
 template <class FP8, bool WordSel> void run_cvt_pk() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::vector<float> in(2 * LANES);
   std::mt19937 rng = fpsan_test::make_rng();
   for (auto &x : in)
     x = fpsan_test::pick_int_valued<float>(rng, -4, 4); // exact in fp8 + bf8
-  float *dIn = to_dev(in);
+  float *dIn = device_allocations.to_dev(in);
 
   // Float: round-trip is lossless for exact-in-fp8 values.
   {
-    float *dO;
-    HIP_CHECK(hipMalloc(&dO, 2 * LANES * sizeof(float)));
+    DeviceAllocations iteration_allocations;
+    float *dO = iteration_allocations.allocate<float>(2 * LANES);
     k_run<Semantics::Native, FP8, WordSel, float><<<1, LANES>>>(dIn, dO);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<float> got(2 * LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, 2 * LANES * sizeof(float), hipMemcpyDeviceToHost));
     for (int i = 0; i < 2 * LANES; ++i)
       EXPECT_EQ(got[i], in[i]) << "Float round-trip at " << i;
-    (void)hipFree(dO);
   }
   // FPSan: must equal the direct payload-ring composition
   // cast<float>(cast<fp8>), for every FPSan-family semantics.
@@ -104,17 +104,15 @@ template <class FP8, bool WordSel> void run_cvt_pk() {
     std::vector<std::uint32_t> ref(2 * LANES);
     for (int i = 0; i < 2 * LANES; ++i)
       ref[i] = fpsan::cast<float>(fpsan::cast<FP8>(VF(in[i]))).fpsan_payload();
-    std::uint32_t *dO;
-    HIP_CHECK(hipMalloc(&dO, 2 * LANES * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dO = iteration_allocations.allocate<std::uint32_t>(2 * LANES);
     k_run<S, FP8, WordSel, std::uint32_t><<<1, LANES>>>(dIn, dO);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(2 * LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, 2 * LANES * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < 2 * LANES; ++i)
       EXPECT_EQ(got[i], ref[i]) << "FPSan payload at " << i;
-    (void)hipFree(dO);
   });
-  (void)hipFree(dIn);
 }
 
 TEST(CvtPkF32, Fp8_Word0) { run_cvt_pk<fpsan::fp8_e4m3, 0>(); }
@@ -133,19 +131,20 @@ template <Semantics S> __global__ void k_pack_words(const float *in, int *lo, in
 }
 
 TEST(CvtPkF32, PackWritesSameWordInBothModes) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::vector<float> in(2 * LANES);
   std::mt19937 rng = fpsan_test::make_rng();
   for (auto &x : in)
     x = fpsan_test::pick_int_valued<float>(rng, 1, 4); // nonzero fp8 bytes
-  float *dIn = to_dev(in);
+  float *dIn = device_allocations.to_dev(in);
 
   // Float oracle: DstLo touches only the low word, DstHi only the high word.
   {
-    int *dLoF, *dHiF;
-    HIP_CHECK(hipMalloc(&dLoF, LANES * 4));
-    HIP_CHECK(hipMalloc(&dHiF, LANES * 4));
+    DeviceAllocations iteration_allocations;
+    int *dLoF = iteration_allocations.allocate<int>(LANES);
+    int *dHiF = iteration_allocations.allocate<int>(LANES);
     k_pack_words<Semantics::Native><<<1, LANES>>>(dIn, dLoF, dHiF);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<int> loF(LANES), hiF(LANES);
@@ -156,15 +155,13 @@ TEST(CvtPkF32, PackWritesSameWordInBothModes) {
       EXPECT_EQ(static_cast<unsigned>(hiF[l]) & 0x0000FFFFu, 0u) << "Float hi " << l;
       EXPECT_NE(static_cast<unsigned>(loF[l]) & 0x0000FFFFu, 0u);
     }
-    (void)hipFree(dLoF);
-    (void)hipFree(dHiF);
   }
   // The same word-placement invariant must hold in every FPSan-family semantics.
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
-    int *dLoP, *dHiP;
-    HIP_CHECK(hipMalloc(&dLoP, LANES * 4));
-    HIP_CHECK(hipMalloc(&dHiP, LANES * 4));
+    DeviceAllocations iteration_allocations;
+    int *dLoP = iteration_allocations.allocate<int>(LANES);
+    int *dHiP = iteration_allocations.allocate<int>(LANES);
     k_pack_words<S><<<1, LANES>>>(dIn, dLoP, dHiP);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<int> loP(LANES), hiP(LANES);
@@ -175,10 +172,7 @@ TEST(CvtPkF32, PackWritesSameWordInBothModes) {
       EXPECT_EQ(static_cast<unsigned>(hiP[l]) & 0x0000FFFFu, 0u) << "FPSan hi " << l;
       EXPECT_NE(static_cast<unsigned>(loP[l]) & 0x0000FFFFu, 0u);
     }
-    (void)hipFree(dLoP);
-    (void)hipFree(dHiP);
   });
-  (void)hipFree(dIn);
 }
 
 // Exercise the device cvt_pk_f32_fp8 / cvt_pk_f32_bf8 unpack over *every* fp8
@@ -195,14 +189,14 @@ template <class FP8> __global__ void k_unpack_all_bytes(const int *packed, float
 }
 
 template <class FP8> void run_unpack_all_bytes() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::vector<int> packed(256);
   for (int b = 0; b < 256; ++b)
     packed[b] = b; // fp8 byte b in byte0; bytes 1-3 zero, word0 element0 = fp8(b)
-  int *dIn = to_dev(packed);
-  float *dO;
-  HIP_CHECK(hipMalloc(&dO, 256 * sizeof(float)));
+  int *dIn = device_allocations.to_dev(packed);
+  float *dO = device_allocations.allocate<float>(256);
   k_unpack_all_bytes<FP8><<<1, 256>>>(dIn, dO);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> got(256);
@@ -214,8 +208,6 @@ template <class FP8> void run_unpack_all_bytes() {
     else
       EXPECT_EQ(got[b], ref) << "byte 0x" << std::hex << b;
   }
-  (void)hipFree(dIn);
-  (void)hipFree(dO);
 }
 
 TEST(CvtPkF32, Fp8UnpackAllBytes) { run_unpack_all_bytes<fpsan::fp8_e4m3>(); }
@@ -270,23 +262,23 @@ __global__ void k_sr_roundtrip(const float *in, Out *out) {
 }
 
 template <class FP8> void run_cvt_sr() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::vector<float> in(LANES);
   std::mt19937 rng = fpsan_test::make_rng();
   for (auto &x : in)
     x = fpsan_test::pick_int_valued<float>(rng, -4, 4);
-  float *dIn = to_dev(in);
+  float *dIn = device_allocations.to_dev(in);
   {
-    float *dO;
-    HIP_CHECK(hipMalloc(&dO, LANES * sizeof(float)));
+    DeviceAllocations iteration_allocations;
+    float *dO = iteration_allocations.allocate<float>(LANES);
     k_sr_roundtrip<Semantics::Native, FP8, float><<<1, LANES>>>(dIn, dO);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<float> got(LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, LANES * sizeof(float), hipMemcpyDeviceToHost));
     for (int i = 0; i < LANES; ++i)
       EXPECT_EQ(got[i], in[i]) << "sr round-trip " << i;
-    (void)hipFree(dO);
   }
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
@@ -294,17 +286,15 @@ template <class FP8> void run_cvt_sr() {
     std::vector<std::uint32_t> ref(LANES);
     for (int i = 0; i < LANES; ++i)
       ref[i] = fpsan::cast<float>(fpsan::cast<FP8>(VF(in[i]))).fpsan_payload();
-    std::uint32_t *dO;
-    HIP_CHECK(hipMalloc(&dO, LANES * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dO = iteration_allocations.allocate<std::uint32_t>(LANES);
     k_sr_roundtrip<S, FP8, std::uint32_t><<<1, LANES>>>(dIn, dO);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, LANES * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < LANES; ++i)
       EXPECT_EQ(got[i], ref[i]) << "sr FPSan " << i;
-    (void)hipFree(dO);
   });
-  (void)hipFree(dIn);
 }
 
 TEST(CvtSr, Fp8) { run_cvt_sr<fpsan::fp8_e4m3>(); }
@@ -326,6 +316,7 @@ __global__ void k_scalef32_unpack(const float *in, Out *out, float scale) {
 }
 
 template <class FP8> void run_cvt_scalef32_unpack() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const float scale = 4.0f;
@@ -333,17 +324,16 @@ template <class FP8> void run_cvt_scalef32_unpack() {
   std::mt19937 rng = fpsan_test::make_rng();
   for (auto &x : in)
     x = fpsan_test::pick_int_valued<float>(rng, -4, 4);
-  float *dIn = to_dev(in);
+  float *dIn = device_allocations.to_dev(in);
   {
-    float *dO;
-    HIP_CHECK(hipMalloc(&dO, LANES * sizeof(float)));
+    DeviceAllocations iteration_allocations;
+    float *dO = iteration_allocations.allocate<float>(LANES);
     k_scalef32_unpack<Semantics::Native, FP8, float><<<1, LANES>>>(dIn, dO, scale);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<float> got(LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, LANES * sizeof(float), hipMemcpyDeviceToHost));
     for (int i = 0; i < LANES; ++i)
       EXPECT_EQ(got[i], in[i] * scale) << "scalef32 unpack " << i;
-    (void)hipFree(dO);
   }
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
@@ -351,17 +341,15 @@ template <class FP8> void run_cvt_scalef32_unpack() {
     std::vector<std::uint32_t> ref(LANES);
     for (int i = 0; i < LANES; ++i)
       ref[i] = (fpsan::cast<float>(fpsan::cast<FP8>(VF(in[i]))) * VF(scale)).fpsan_payload();
-    std::uint32_t *dO;
-    HIP_CHECK(hipMalloc(&dO, LANES * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dO = iteration_allocations.allocate<std::uint32_t>(LANES);
     k_scalef32_unpack<S, FP8, std::uint32_t><<<1, LANES>>>(dIn, dO, scale);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, LANES * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < LANES; ++i)
       EXPECT_EQ(got[i], ref[i]) << "scalef32 FPSan " << i;
-    (void)hipFree(dO);
   });
-  (void)hipFree(dIn);
 }
 
 TEST(CvtScalef32F32, Fp8) { run_cvt_scalef32_unpack<fpsan::fp8_e4m3>(); }
@@ -412,6 +400,7 @@ __global__ void k_scaled_pack(const float *in, Out *out, float scale) {
 }
 
 template <class FP8> void run_cvt_scalef32_pack() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   const float scale = 2.0f;
@@ -419,17 +408,16 @@ template <class FP8> void run_cvt_scalef32_pack() {
   std::mt19937 rng = fpsan_test::make_rng();
   for (auto &x : in)
     x = fpsan_test::pick_int_valued<float>(rng, -4, 4); // v/2 exact in fp8
-  float *dIn = to_dev(in);
+  float *dIn = device_allocations.to_dev(in);
   {
-    float *dO;
-    HIP_CHECK(hipMalloc(&dO, LANES * sizeof(float)));
+    DeviceAllocations iteration_allocations;
+    float *dO = iteration_allocations.allocate<float>(LANES);
     k_scaled_pack<Semantics::Native, FP8, float><<<1, LANES>>>(dIn, dO, scale);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<float> got(LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, LANES * sizeof(float), hipMemcpyDeviceToHost));
     for (int i = 0; i < LANES; ++i)
       EXPECT_EQ(got[i], in[i]) << "scaled pack/unpack round-trip " << i;
-    (void)hipFree(dO);
   }
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
@@ -438,17 +426,15 @@ template <class FP8> void run_cvt_scalef32_pack() {
     for (int i = 0; i < LANES; ++i)
       ref[i] = static_cast<std::uint32_t>(fpsan::cast<FP8>(VF(in[i]) / VF(scale)).fpsan_payload()) &
                0xFFu;
-    std::uint32_t *dO;
-    HIP_CHECK(hipMalloc(&dO, LANES * sizeof(std::uint32_t)));
+    DeviceAllocations iteration_allocations;
+    std::uint32_t *dO = iteration_allocations.allocate<std::uint32_t>(LANES);
     k_scaled_pack<S, FP8, std::uint32_t><<<1, LANES>>>(dIn, dO, scale);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(LANES);
     HIP_CHECK(hipMemcpy(got.data(), dO, LANES * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (int i = 0; i < LANES; ++i)
       EXPECT_EQ(got[i], ref[i]) << "scaled pack FPSan (divide-by-scale) " << i;
-    (void)hipFree(dO);
   });
-  (void)hipFree(dIn);
 }
 
 TEST(CvtScalef32Pack, Fp8) { run_cvt_scalef32_pack<fpsan::fp8_e4m3>(); }

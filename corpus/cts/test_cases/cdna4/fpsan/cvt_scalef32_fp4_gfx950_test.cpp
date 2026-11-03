@@ -55,14 +55,14 @@ __global__ void k_f32_unpack(const unsigned *packed, float *out) {
 }
 
 TEST(CvtScalef32Fp4Wrap, FloatUnpackAllCodes) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   std::vector<unsigned> in(16);
   for (int c = 0; c < 16; ++c)
     in[c] = unsigned(c) | (unsigned(c) << 4);
-  unsigned *dIn = to_dev(in);
-  float *dO;
-  HIP_CHECK(hipMalloc(&dO, 32 * sizeof(float)));
+  unsigned *dIn = device_allocations.to_dev(in);
+  float *dO = device_allocations.allocate<float>(32);
   k_f32_unpack<<<1, 16>>>(dIn, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 32);
@@ -71,8 +71,6 @@ TEST(CvtScalef32Fp4Wrap, FloatUnpackAllCodes) {
     EXPECT_EQ(got[2 * c], ref) << "code " << c << " elem0";
     EXPECT_EQ(got[2 * c + 1], ref) << "code " << c << " elem1";
   }
-  (void)hipFree(dIn);
-  (void)hipFree(dO);
 }
 
 // Pack pairs of representable fp4 values through the wrapper (Sel=0, scale=1)
@@ -84,10 +82,10 @@ template <int Sel> __global__ void k_f32_pack(unsigned old, float a, float b, un
 }
 
 TEST(CvtScalef32Fp4Wrap, FloatPackExactBitsAndSel) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
-  unsigned *dO;
-  HIP_CHECK(hipMalloc(&dO, sizeof(unsigned)));
+  unsigned *dO = device_allocations.allocate<unsigned>(1);
   const unsigned old = 0xA5A5A5A5u;
   for (int ca = 0; ca < 8; ++ca)
     for (int cb = 0; cb < 8; ++cb) {
@@ -115,7 +113,6 @@ TEST(CvtScalef32Fp4Wrap, FloatPackExactBitsAndSel) {
   run(std::integral_constant<int, 1>{}, 1);
   run(std::integral_constant<int, 2>{}, 2);
   run(std::integral_constant<int, 3>{}, 3);
-  (void)hipFree(dO);
 }
 
 // Scale direction through the wrapper: unpack multiplies, pack divides.
@@ -130,20 +127,17 @@ __global__ void k_f32_scale(unsigned packed, float scale, float *outUnpack, floa
 }
 
 TEST(CvtScalef32Fp4Wrap, FloatScaleDirection) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
-  float *dU;
-  unsigned *dP;
-  HIP_CHECK(hipMalloc(&dU, sizeof(float)));
-  HIP_CHECK(hipMalloc(&dP, sizeof(unsigned)));
+  float *dU = device_allocations.allocate<float>(1);
+  unsigned *dP = device_allocations.allocate<unsigned>(1);
   // packed nibble0 = code 2 (=1.0); unpack scale=4 -> 4.0.
   k_f32_scale<<<1, 1>>>(0x2u, 4.0f, dU, /*a=*/8.0f, /*pscale=*/2.0f, dP);
   HIP_CHECK(hipDeviceSynchronize());
   EXPECT_EQ(from_dev(dU, 1)[0], 4.0f); // 1.0 * 4
   // pack 8.0 / 2 = 4.0 -> code 6.
   EXPECT_EQ(from_dev(dP, 1)[0] & 0xF, unsigned(0x6));
-  (void)hipFree(dU);
-  (void)hipFree(dP);
 }
 
 // ============================ FPSan mode ====================================
@@ -204,19 +198,18 @@ void expect_fp4_pair(const std::vector<unsigned> &got, std::uint32_t c0, std::ui
 }
 
 template <class DstFT, Semantics S, class Launch> void run_fpsan_unpack_canonical(Launch launch) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   constexpr std::uint32_t cases[][2] = {{0x7u, 0xFu}, {0x8u, 0xBu}, {0xEu, 0x1u}};
   constexpr float scale = 2.0f;
-  unsigned *dO;
-  HIP_CHECK(hipMalloc(&dO, 4 * sizeof(unsigned)));
+  unsigned *dO = device_allocations.allocate<unsigned>(4);
   for (const auto &pair : cases) {
     const unsigned packed = (pair[0] << 8) | (pair[1] << 12);
     launch(packed, scale, dO);
     HIP_CHECK(hipDeviceSynchronize());
     expect_fp4_pair<DstFT, S>(from_dev(dO, 4), pair[0], pair[1], scale);
   }
-  (void)hipFree(dO);
 }
 
 TEST(CvtScalef32Fp4Wrap, FpsanUnpackF32CanonicalPayload) {
@@ -253,10 +246,10 @@ template <Semantics S> __global__ void k_fpsan_fp4_roundtrip(unsigned packed, un
 }
 
 template <Semantics S> void run_fpsan_fp4_roundtrip() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
-  unsigned *dO;
-  HIP_CHECK(hipMalloc(&dO, sizeof(unsigned)));
+  unsigned *dO = device_allocations.allocate<unsigned>(1);
   for (unsigned lo = 0; lo < 16; ++lo)
     for (unsigned hi = 0; hi < 16; ++hi) {
       const unsigned packed = lo | (hi << 4);
@@ -269,7 +262,6 @@ template <Semantics S> void run_fpsan_fp4_roundtrip() {
       EXPECT_EQ(from_dev(dO, 1)[0], want_lo | (want_hi << 4))
           << "lo=0x" << std::hex << lo << " hi=0x" << hi << std::dec;
     }
-  (void)hipFree(dO);
 }
 
 TEST(CvtScalef32Fp4Wrap, FpsanFieldWithMulCastsRoundTripAllCodes) {
@@ -293,8 +285,8 @@ TEST(CvtScalef32Fp4Wrap, FpsanPackSelDivideAndPreserve) {
     using VF = Value<float, S, kCC>;
     const unsigned old = 0xDEADBEEFu;
     std::mt19937 rng = fpsan_test::make_rng();
-    unsigned *dO;
-    HIP_CHECK(hipMalloc(&dO, sizeof(unsigned)));
+    DeviceAllocations device_allocations;
+    unsigned *dO = device_allocations.allocate<unsigned>(1);
     for (int t = 0; t < 32; ++t) {
       float a = fpsan_test::pick_int_valued<float>(rng, -6, 6);
       float b = fpsan_test::pick_int_valued<float>(rng, -6, 6);
@@ -323,7 +315,6 @@ TEST(CvtScalef32Fp4Wrap, FpsanPackSelDivideAndPreserve) {
       unsigned mask = 0xFFu << (8 * 2);
       EXPECT_EQ(got, (old & ~mask) | (pair << (8 * 2))) << "non-finite source pack";
     }
-    (void)hipFree(dO);
   });
 }
 
@@ -340,8 +331,8 @@ TEST(CvtScalef32Fp4Wrap, FpsanSrPackMatchesDeterministic) {
   fpsan_test::for_each_fpsan_semantics([&](auto sem) {
     constexpr Semantics S = decltype(sem)::value;
     using VF = Value<float, S, kCC>;
-    unsigned *dO;
-    HIP_CHECK(hipMalloc(&dO, sizeof(unsigned)));
+    DeviceAllocations device_allocations;
+    unsigned *dO = device_allocations.allocate<unsigned>(1);
     for (int ca = 0; ca < 8; ++ca)
       for (int cb = 0; cb < 8; ++cb) {
         float a = narrow_to_f32(unsigned(ca), kFp4E2M1);
@@ -365,7 +356,6 @@ TEST(CvtScalef32Fp4Wrap, FpsanSrPackMatchesDeterministic) {
       unsigned nb = fpsan_test::canonical_subbyte_narrow_code<4>(VF{b});
       EXPECT_EQ(got, na | (nb << 4)) << "non-finite source sr pack";
     }
-    (void)hipFree(dO);
   });
 }
 
@@ -379,10 +369,10 @@ __global__ void k_f16_unpack(unsigned packed, float *out) {
 }
 
 TEST(CvtScalef32Fp4Wrap, FloatF16UnpackAllCodes) {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
-  float *dO;
-  HIP_CHECK(hipMalloc(&dO, 2 * sizeof(float)));
+  float *dO = device_allocations.allocate<float>(2);
   for (int c = 0; c < 16; ++c) {
     unsigned packed = unsigned(c) | (unsigned(c) << 4);
     k_f16_unpack<<<1, 1>>>(packed, dO);
@@ -392,7 +382,6 @@ TEST(CvtScalef32Fp4Wrap, FloatF16UnpackAllCodes) {
     EXPECT_EQ(got[0], ref) << "f16 code " << c;
     EXPECT_EQ(got[1], ref) << "f16 code " << c;
   }
-  (void)hipFree(dO);
 }
 
 #endif // has builtin

@@ -279,8 +279,16 @@ not launch these benchmark kernels again.
 
 ## Results and plugins
 
-`run.json` follows the [raw run schema](raw-run-schema.md): `execution_summary`,
+`run.json` follows the [raw run schema](raw-run-schema.md): corpus-owned
+`schema_version` (currently 1), `publication`, `execution_summary`, flat
 `benchmark_results`, and `provenance`. Raw timing samples are in seconds.
+Publication metadata is present from the initial checkpoint. Corpus leaves all
+publication fields null, including every `publication.source` field,
+`publication.workflow_commit_sha` and `publication.tensile_commit_sha`. The
+workflow fills them later; corpus still records the measured Rocjitsu commit
+SHA and commit timestamp in raw provenance. No external test catalog is required.
+The existing dashboard/publisher is not migrated or verified by this corpus-only
+change; see the schema for the publication metadata contract.
 The schema records cell status, operation, policy, problem parameters,
 package versions, and both rocjitsu and corpus revisions and commit timestamps.
 Each cell retains `workload.json`,

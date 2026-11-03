@@ -198,6 +198,7 @@ template <class Traits> Mats<Traits> make_inputs() {
 } // namespace
 
 template <class Traits> void run_layout_matches_hardware() {
+  DeviceAllocations device_allocations;
   using CE = typename Harness<Traits>::CElem;
   using AE = typename Harness<Traits>::AElem;
   using BE = typename Harness<Traits>::BElem;
@@ -205,13 +206,12 @@ template <class Traits> void run_layout_matches_hardware() {
   if (hipGetDeviceCount(&ndev) != hipSuccess || ndev == 0)
     GTEST_SKIP() << "no HIP device";
   Mats<Traits> m = make_inputs<Traits>();
-  AE *dA = to_dev(m.A);
-  BE *dB = to_dev(m.B);
-  CE *dC = to_dev(m.C);
-  int *dI = to_dev(m.IDX);
-  CE *dHw, *dOurs;
-  HIP_CHECK(hipMalloc(&dHw, M * N * sizeof(CE)));
-  HIP_CHECK(hipMalloc(&dOurs, M * N * sizeof(CE)));
+  AE *dA = device_allocations.to_dev(m.A);
+  BE *dB = device_allocations.to_dev(m.B);
+  CE *dC = device_allocations.to_dev(m.C);
+  int *dI = device_allocations.to_dev(m.IDX);
+  CE *dHw = device_allocations.allocate<CE>(M * N);
+  CE *dOurs = device_allocations.allocate<CE>(M * N);
   k_builtin<Traits><<<1, 32>>>(dA, dB, dC, dI, dHw);
   k_float_dataflow<Traits><<<1, 32>>>(dA, dB, dC, dI, dOurs);
   HIP_CHECK(hipDeviceSynchronize());
@@ -220,15 +220,10 @@ template <class Traits> void run_layout_matches_hardware() {
   HIP_CHECK(hipMemcpy(ours.data(), dOurs, M * N * sizeof(CE), hipMemcpyDeviceToHost));
   for (int i = 0; i < M * N; ++i)
     EXPECT_EQ(bits_of(hw[i]), bits_of(ours[i])) << "mismatch at " << (i / N) << "," << (i % N);
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dI);
-  (void)hipFree(dHw);
-  (void)hipFree(dOurs);
 }
 
 template <class Traits, Semantics S> void run_fpsan_matches_scalar_reference() {
+  DeviceAllocations device_allocations;
   using AE = typename Harness<Traits>::AElem;
   using BE = typename Harness<Traits>::BElem;
   using CE = typename Harness<Traits>::CElem;
@@ -252,23 +247,17 @@ template <class Traits, Semantics S> void run_fpsan_matches_scalar_reference() {
       ref[i * N + j] = acc.fpsan_payload();
     }
 
-  AE *dA = to_dev(m.A);
-  BE *dB = to_dev(m.B);
-  CE *dC = to_dev(m.C);
-  int *dI = to_dev(m.IDX);
-  CBits *dD;
-  HIP_CHECK(hipMalloc(&dD, M * N * sizeof(CBits)));
+  AE *dA = device_allocations.to_dev(m.A);
+  BE *dB = device_allocations.to_dev(m.B);
+  CE *dC = device_allocations.to_dev(m.C);
+  int *dI = device_allocations.to_dev(m.IDX);
+  CBits *dD = device_allocations.allocate<CBits>(M * N);
   k_fpsan<Traits, S><<<1, 32>>>(dA, dB, dC, dI, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<CBits> got(M * N);
   HIP_CHECK(hipMemcpy(got.data(), dD, M * N * sizeof(CBits), hipMemcpyDeviceToHost));
   for (int i = 0; i < M * N; ++i)
     EXPECT_EQ(got[i], ref[i]) << "payload mismatch at " << (i / N) << "," << (i % N);
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dI);
-  (void)hipFree(dD);
 }
 
 #define SWMMAC16_TRAITS(NAME, AVEC, BVEC, CVEC, WRAP)                                              \

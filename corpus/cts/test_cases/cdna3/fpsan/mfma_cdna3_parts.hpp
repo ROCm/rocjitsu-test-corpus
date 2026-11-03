@@ -227,6 +227,7 @@ __global__ void k_dense_vec_fpsan(const typename DenseVecHarness<Traits>::AElem 
 }
 
 template <class Traits> void run_dense_vec_layout() {
+  DeviceAllocations device_allocations;
   using H = DenseVecHarness<Traits>;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
@@ -243,11 +244,10 @@ template <class Traits> void run_dense_vec_layout() {
                      static_cast<float>(host_dense_vec_b_value<Traits>(d.B, blk, k, j)));
         ref[(blk * H::M + i) * H::N + j] = static_cast<typename H::CElem>(static_cast<float>(acc));
       }
-  auto *dA = to_dev(d.A);
-  auto *dB = to_dev(d.B);
-  auto *dC = to_dev(d.C);
-  typename H::CElem *dD;
-  HIP_CHECK(hipMalloc(&dD, ref.size() * sizeof(typename H::CElem)));
+  auto *dA = device_allocations.to_dev(d.A);
+  auto *dB = device_allocations.to_dev(d.B);
+  auto *dC = device_allocations.to_dev(d.C);
+  typename H::CElem *dD = device_allocations.allocate<typename H::CElem>(ref.size());
   k_dense_vec_float<Traits><<<1, WAVE>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<typename H::CElem> got(ref.size());
@@ -255,10 +255,6 @@ template <class Traits> void run_dense_vec_layout() {
       hipMemcpy(got.data(), dD, got.size() * sizeof(typename H::CElem), hipMemcpyDeviceToHost));
   for (std::size_t i = 0; i < got.size(); ++i)
     EXPECT_EQ(bits_of(got[i]), bits_of(ref[i])) << "elem " << i;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 template <class Traits> void run_dense_vec_fpsan() {
@@ -283,11 +279,11 @@ template <class Traits> void run_dense_vec_fpsan() {
                                 VB(host_dense_vec_b_value<Traits>(d.B, blk, k, j)));
           ref[(blk * H::M + i) * H::N + j] = acc.fpsan_payload();
         }
-    auto *dA = to_dev(d.A);
-    auto *dB = to_dev(d.B);
-    auto *dC = to_dev(d.C);
-    typename H::CBits *dD;
-    HIP_CHECK(hipMalloc(&dD, ref.size() * sizeof(typename H::CBits)));
+    DeviceAllocations device_allocations;
+    auto *dA = device_allocations.to_dev(d.A);
+    auto *dB = device_allocations.to_dev(d.B);
+    auto *dC = device_allocations.to_dev(d.C);
+    typename H::CBits *dD = device_allocations.allocate<typename H::CBits>(ref.size());
     k_dense_vec_fpsan<Traits, S><<<1, WAVE>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<typename H::CBits> got(ref.size());
@@ -295,10 +291,6 @@ template <class Traits> void run_dense_vec_fpsan() {
         hipMemcpy(got.data(), dD, got.size() * sizeof(typename H::CBits), hipMemcpyDeviceToHost));
     for (std::size_t i = 0; i < got.size(); ++i)
       EXPECT_EQ(got[i], ref[i]) << "elem " << i;
-    (void)hipFree(dA);
-    (void)hipFree(dB);
-    (void)hipFree(dC);
-    (void)hipFree(dD);
   });
 }
 
@@ -396,6 +388,7 @@ __global__ void k_dense_f32(const float *A, const float *B, const float *C, Out 
 }
 
 template <class Traits> void run_dense_f32_layout() {
+  DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
   auto d = make_dense_f32_inputs<Traits>();
@@ -409,18 +402,15 @@ template <class Traits> void run_dense_f32_layout() {
                  static_cast<double>(d.B[(blk * Traits::K + k) * Traits::N + j]);
         ref[(blk * Traits::M + i) * Traits::N + j] = static_cast<float>(acc);
       }
-  float *dA = to_dev(d.A), *dB = to_dev(d.B), *dC = to_dev(d.C), *dD;
-  HIP_CHECK(hipMalloc(&dD, ref.size() * sizeof(float)));
+  float *dA = device_allocations.to_dev(d.A), *dB = device_allocations.to_dev(d.B),
+        *dC = device_allocations.to_dev(d.C);
+  float *dD = device_allocations.allocate<float>(ref.size());
   k_dense_f32<Traits, Semantics::Native, float><<<1, WAVE>>>(dA, dB, dC, dD);
   HIP_CHECK(hipDeviceSynchronize());
   std::vector<float> got(ref.size());
   HIP_CHECK(hipMemcpy(got.data(), dD, got.size() * sizeof(float), hipMemcpyDeviceToHost));
   for (std::size_t i = 0; i < got.size(); ++i)
     EXPECT_EQ(bits_of(got[i]), bits_of(ref[i])) << "elem " << i;
-  (void)hipFree(dA);
-  (void)hipFree(dB);
-  (void)hipFree(dC);
-  (void)hipFree(dD);
 }
 
 template <class Traits> void run_dense_f32_fpsan() {
@@ -440,19 +430,16 @@ template <class Traits> void run_dense_f32_fpsan() {
                             VF(d.B[(blk * Traits::K + k) * Traits::N + j]);
           ref[(blk * Traits::M + i) * Traits::N + j] = acc.fpsan_payload();
         }
-    float *dA = to_dev(d.A), *dB = to_dev(d.B), *dC = to_dev(d.C);
-    std::uint32_t *dD;
-    HIP_CHECK(hipMalloc(&dD, ref.size() * sizeof(std::uint32_t)));
+    DeviceAllocations device_allocations;
+    float *dA = device_allocations.to_dev(d.A), *dB = device_allocations.to_dev(d.B),
+          *dC = device_allocations.to_dev(d.C);
+    std::uint32_t *dD = device_allocations.allocate<std::uint32_t>(ref.size());
     k_dense_f32<Traits, S, std::uint32_t><<<1, WAVE>>>(dA, dB, dC, dD);
     HIP_CHECK(hipDeviceSynchronize());
     std::vector<std::uint32_t> got(ref.size());
     HIP_CHECK(hipMemcpy(got.data(), dD, got.size() * sizeof(std::uint32_t), hipMemcpyDeviceToHost));
     for (std::size_t i = 0; i < got.size(); ++i)
       EXPECT_EQ(got[i], ref[i]) << "elem " << i;
-    (void)hipFree(dA);
-    (void)hipFree(dB);
-    (void)hipFree(dC);
-    (void)hipFree(dD);
   });
 }
 

@@ -198,6 +198,7 @@ def run_harness(
     plugin_profile: str = "none",
     progress: TextIO | None = None,
     warmups: int | None = None,
+    source_info: Callable[..., dict[str, Any]] | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     output = runner_context.root / name
 
@@ -215,6 +216,7 @@ def run_harness(
     with native_context, mock.patch.object(
         runner,
         "_source_info",
+        side_effect=source_info,
         return_value={
             "commit_sha": "a" * 40,
             "commit_timestamp": "2026-09-01T21:42:10Z",
