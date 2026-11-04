@@ -981,6 +981,110 @@ TEST_F(Gfx950RaceTest, global_to_lds_buffer_race) {
   ExpectRace(kGlobalToLdsBufferRaceExpectation);
 }
 
+// --- Wide GLOBAL loads to LDS ---
+
+// Keep the load, wait and LDS read in one asm block so the compiler cannot
+// insert a wait into the missing-wait case. Each lane owns a 16-byte LDS slot;
+// read its last loaded dword to check the end of each x3/x4 payload.
+// Cross-wave cases always wait for their own loads; the unsafe variant omits
+// the barrier needed before reading the other wave's LDS writes.
+template <unsigned Dwords, bool CrossWave, bool Synchronized>
+__global__ void wide_global_to_lds_kernel(const unsigned *src, unsigned *out) {
+  const unsigned tid = threadIdx.x;
+  const unsigned wave_base = __builtin_amdgcn_readfirstlane((tid / 64) * 64 * 16);
+  const unsigned read_tid = CrossWave ? tid ^ 64u : tid;
+  unsigned value, saved_m0;
+  asm volatile(
+      "s_mov_b32 %[saved_m0], m0\n"
+      "s_mov_b32 m0, %[wave_base]\n"
+      "global_load_lds_dwordx%c[dwords] %[source], off\n"
+      "s_waitcnt vmcnt(%c[vmcnt])\n"
+      ".if %c[barrier]\n"
+      "s_barrier\n"
+      ".endif\n"
+      "ds_read_b32 %[value], %[lds_address]\n"
+      "s_waitcnt vmcnt(0) lgkmcnt(0)\n"
+      "s_mov_b32 m0, %[saved_m0]\n"
+      : [value] "=&v"(value), [saved_m0] "=&s"(saved_m0)
+      : [source] "v"(src + tid * 4), [wave_base] "s"(wave_base),
+        [lds_address] "v"(read_tid * 16 + (Dwords - 1) * 4), [dwords] "n"(Dwords),
+        [vmcnt] "n"(Synchronized || CrossWave ? 0 : 1), [barrier] "n"(Synchronized && CrossWave)
+      : "memory");
+  out[tid] = value;
+}
+
+template <unsigned Dwords, bool CrossWave, bool Synchronized> void check_wide_global_to_lds() {
+  constexpr unsigned lanes = CrossWave ? 128 : 64;
+  std::vector<unsigned> input(lanes * 4), result(lanes);
+  for (unsigned i = 0; i < input.size(); ++i)
+    input[i] = 17 + i;
+  unsigned *src = nullptr, *out = nullptr;
+  RACE_HIP_CHECK(hipMalloc(&src, input.size() * sizeof(unsigned)));
+  RACE_HIP_CHECK(hipMalloc(&out, result.size() * sizeof(unsigned)));
+  RACE_HIP_CHECK(
+      hipMemcpy(src, input.data(), input.size() * sizeof(unsigned), hipMemcpyHostToDevice));
+  // Inline assembly uses LDS directly, so the launch reserves its storage.
+  wide_global_to_lds_kernel<Dwords, CrossWave, Synchronized><<<1, lanes, lanes * 16>>>(src, out);
+  RACE_HIP_CHECK(hipGetLastError());
+  RACE_HIP_CHECK(hipDeviceSynchronize());
+  if constexpr (Synchronized) {
+    RACE_HIP_CHECK(
+        hipMemcpy(result.data(), out, result.size() * sizeof(unsigned), hipMemcpyDeviceToHost));
+    for (unsigned tid = 0; tid < lanes; ++tid) {
+      const unsigned read_tid = CrossWave ? tid ^ 64u : tid;
+      EXPECT_EQ(result[tid], input[read_tid * 4 + Dwords - 1]) << tid;
+    }
+  }
+  RACE_HIP_CHECK(hipFree(out));
+  RACE_HIP_CHECK(hipFree(src));
+}
+
+static constexpr RaceExpectation kGlobalToLdsDwordx3Race{
+    .kernel = "wide_global_to_lds_kernel",
+    .type = "LDS",
+    .access = "read",
+    .producer = "global_load_lds_dwordx3",
+    .consumer = "ds_read_b32",
+};
+
+static constexpr RaceExpectation kGlobalToLdsDwordx4Race{
+    .kernel = "wide_global_to_lds_kernel",
+    .type = "LDS",
+    .access = "read",
+    .producer = "global_load_lds_dwordx4",
+    .consumer = "ds_read_b32",
+};
+
+TEST_F(Gfx950RaceTest, global_to_lds_dwordx3) {
+  ASSERT_NO_FATAL_FAILURE((check_wide_global_to_lds<3, false, true>()));
+  ExpectNoRace();
+}
+
+TEST_F(Gfx950RaceTest, global_to_lds_dwordx3_race) {
+  ASSERT_NO_FATAL_FAILURE((check_wide_global_to_lds<3, false, false>()));
+  ExpectRace(kGlobalToLdsDwordx3Race);
+}
+
+TEST_F(Gfx950RaceTest, global_to_lds_dwordx4) {
+  ASSERT_NO_FATAL_FAILURE((check_wide_global_to_lds<4, false, true>()));
+  ExpectNoRace();
+}
+
+TEST_F(Gfx950RaceTest, global_to_lds_dwordx4_race) {
+  ASSERT_NO_FATAL_FAILURE((check_wide_global_to_lds<4, false, false>()));
+  ExpectRace(kGlobalToLdsDwordx4Race);
+}
+
+TEST_F(Gfx950RaceTest, global_to_lds_dwordx4_cross_wave) {
+  ASSERT_NO_FATAL_FAILURE((check_wide_global_to_lds<4, true, true>()));
+  ExpectNoRace();
+}
+
+TEST_F(Gfx950RaceTest, global_to_lds_dwordx4_cross_wave_race) {
+  ASSERT_NO_FATAL_FAILURE((check_wide_global_to_lds<4, true, false>()));
+  ExpectRace(kGlobalToLdsDwordx4Race);
+}
+
 // --- Partial vmcnt ---
 
 static constexpr RaceExpectation kPartialVmcntRaceExpectation{
