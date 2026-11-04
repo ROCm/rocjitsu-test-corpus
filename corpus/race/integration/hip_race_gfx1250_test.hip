@@ -506,7 +506,9 @@ __global__ void tensor_load_then_empty_kernel(TensorDesc real, TensorDesc empty,
   waitTensorcnt<0>();
 }
 
-// count = 0: a NULL tensor (CDNA5 ISA, Table 79).
+// count = 0: a NULL tensor (CDNA5 ISA, Table 79). That a NULL tensor takes a
+// TENSORcnt slot is a RocJITsu assumption pending hardware validation; only
+// under it does s_wait_tensorcnt 1 retire the real load.
 TEST_F(Gfx1250RaceTest, tensor_load_null_tensor_counts) {
   auto *src = allocWithData<int>(kTileElements);
   auto *loaded = alloc<int>(kWave);
@@ -521,7 +523,8 @@ TEST_F(Gfx1250RaceTest, tensor_load_null_tensor_counts) {
   ExpectValues(untouched, std::vector<int>(kWave, kUnwrittenValue));
 }
 
-// With two transfers outstanding, waiting for two leaves the real load pending.
+// Waiting for two leaves the real load pending whether or not the NULL tensor
+// takes a slot.
 TEST_F(Gfx1250RaceTest, tensor_load_null_tensor_uncounted_race) {
   auto *src = allocWithData<int>(kTileElements);
   auto *loaded = alloc<int>(kWave);

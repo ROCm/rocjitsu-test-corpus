@@ -138,7 +138,8 @@ The gfx1250 program covers tensor DMA (`tensor_load_to_lds`,
 removed: the issuing wave's `s_wait_tensorcnt`, another wave's barrier, the DS
 wait before a store, or one transfer from a partial wait in a double-buffered
 pipeline. Further cases check that a NULL tensor, a NOP tile and a store
-outside the tensor still occupy a TENSORcnt slot; that zero-filled elements
+outside the tensor still occupy a TENSORcnt slot (for a NULL tensor, a RocJITsu
+assumption pending hardware validation); that zero-filled elements
 are tracked and padding is not; and that a tile extending past the LDS
 allocation transfers its in-range part. The gfx1250 program does not build the
 shared VMEM cases, which use pre-GFX12 waits.
