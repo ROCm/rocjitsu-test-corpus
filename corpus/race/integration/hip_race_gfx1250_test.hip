@@ -185,6 +185,14 @@ static constexpr RaceExpectation kDsWriteThenTensorStoreRace{
     .consumer = "tensor_store_from_lds",
 };
 
+static constexpr RaceExpectation kTensorLoadThenTensorStoreRace{
+    .findings = FindingCount::OneOrMore,
+    .type = "LDS",
+    .access = "read",
+    .producer = "tensor_load_to_lds",
+    .consumer = "tensor_store_from_lds",
+};
+
 static constexpr RaceExpectation kTensorStoreThenTensorLoadRace{
     .findings = FindingCount::OneOrMore,
     .type = "LDS",
@@ -446,12 +454,16 @@ TEST_F(Gfx1250RaceTest, tensor_store_missing_dscnt_race) {
   ExpectRace(kDsWriteThenTensorStoreRace);
 }
 
-// --- Same-wave tensor transfers complete in order but access LDS unordered ---
+// --- Same-wave tensor loads and stores over one tile need a TENSORcnt wait ---
 
-// A load into the LDS tile an earlier store from the same wave is still
-// reading may overwrite bytes the store has not read yet: tensor transfers
-// complete in issue order, but their LDS accesses are not ordered. A TENSORcnt
-// wait between the two retires the store first.
+// Tensor transfers from one wave complete on TENSORcnt in issue order (CDNA5 ISA
+// 10.11.1), but the ISA does not specify the relative timing of their LDS reads
+// and writes. The detector therefore conservatively reports a tensor load and a
+// tensor store from the same wave that touch the same bytes, in either order,
+// until a TENSORcnt wait retires the earlier one.
+
+// A load into the tile an earlier store is still reading may overwrite bytes the
+// store has not read yet.
 template <bool WaitTensorcnt>
 __global__ void tensor_store_then_load_same_wave_kernel(TensorDesc store, TensorDesc load,
                                                         int *dst) {
@@ -486,6 +498,39 @@ TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave_race) {
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kTensorStoreThenTensorLoadRace);
+}
+
+// A store of the tile an earlier load is still writing may read bytes the load
+// has not written yet.
+template <bool WaitTensorcnt>
+__global__ void tensor_load_then_store_same_wave_kernel(TensorDesc load, TensorDesc store) {
+  tensorLoad(load);
+  if (WaitTensorcnt)
+    waitTensorcnt<0>();
+  tensorStore(store);
+  waitTensorcnt<0>();
+}
+
+TEST_F(Gfx1250RaceTest, tensor_load_then_store_same_wave) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *stored = allocFilled(kTileElements, kUnwrittenValue);
+  tensor_load_then_store_same_wave_kernel<true><<<1, kWave, kTileBytes>>>(
+      describe({.global = src}), describe({.global = stored}));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  // The store copies the tile the load wrote.
+  ExpectValues(stored, range(0));
+}
+
+TEST_F(Gfx1250RaceTest, tensor_load_then_store_same_wave_race) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *stored = allocFilled(kTileElements, kUnwrittenValue);
+  tensor_load_then_store_same_wave_kernel<false><<<1, kWave, kTileBytes>>>(
+      describe({.global = src}), describe({.global = stored}));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kTensorLoadThenTensorStoreRace);
 }
 
 // --- Tensor instructions that move no data still count on TENSORCNT ---
