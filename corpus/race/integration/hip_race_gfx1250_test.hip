@@ -554,13 +554,15 @@ TEST_F(Gfx1250RaceTest, tensor_load_empty_tile_counts) {
 }
 
 // A store whose tile lies wholly outside the tensor writes nothing to global
-// memory, but still counts.
+// memory, but still counts. It reads no LDS either, so overwriting its tile
+// while it is still pending is safe.
 __global__ void tensor_load_then_empty_store_kernel(TensorDesc real, TensorDesc empty,
                                                     int *loaded) {
   tensorLoad(real);
   tensorStore(empty);
   waitTensorcnt<1>();
   loaded[lane()] = ldsRead(lane() * 4);
+  ldsFill(kTileBytes, 100 + lane());
   waitTensorcnt<0>();
 }
 
