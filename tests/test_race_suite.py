@@ -290,10 +290,7 @@ def _configs_with_exclusions(tmp_path: Path, target: str, **exclusions) -> list[
 
 def _source_gtests(target: str) -> set[str]:
     layout = race.TARGET_LAYOUT[target]
-    sources = [race.RACE_SOURCE_DIR / f"hip_race_{target}_test.hip"]
-    # The shared VMEM cases use pre-GFX12 waits and are not built for gfx1250.
-    if target != "gfx1250":
-        sources.append(race.RACE_SOURCE_DIR / "hip_race_vmem_test.hip")
+    sources = [race.RACE_SOURCE_DIR / source for source in layout["sources"]]
     pattern = re.compile(r"^TEST_F\(([^,]+),\s*([^)]+)\)", re.MULTILINE)
     return {
         f"{fixture.strip()}.{name.strip()}"
