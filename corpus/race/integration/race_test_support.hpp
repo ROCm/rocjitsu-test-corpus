@@ -132,6 +132,22 @@ protected:
     return pointer;
   }
 
+  /// Allocate `count` elements, each set to `value`.
+  template <typename T> T *allocFilled(int count, T value) {
+    T *pointer = alloc<T>(count);
+    std::vector<T> host(count, value);
+    RACE_HIP_CHECK(hipMemcpy(pointer, host.data(), count * sizeof(T), hipMemcpyHostToDevice));
+    return pointer;
+  }
+
+  /// Copy `expected.size()` elements back from `device` and compare them.
+  template <typename T> void ExpectValues(const T *device, const std::vector<T> &expected) {
+    std::vector<T> host(expected.size());
+    RACE_HIP_CHECK(
+        hipMemcpy(host.data(), device, host.size() * sizeof(T), hipMemcpyDeviceToHost));
+    EXPECT_EQ(host, expected);
+  }
+
   void sync() { RACE_HIP_CHECK(hipDeviceSynchronize()); }
 
   void ExpectNoRace() {

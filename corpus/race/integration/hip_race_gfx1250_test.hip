@@ -49,22 +49,7 @@ constexpr int kTileBytes = kTileElements * static_cast<int>(sizeof(int));
 /// whether a transfer wrote there.
 constexpr int kUnwrittenValue = -7;
 
-class Gfx1250RaceTest : public rocjitsu::test::RaceTestBase {
-protected:
-  void ExpectValues(const int *device, const std::vector<int> &expected) {
-    std::vector<int> host(expected.size());
-    RACE_HIP_CHECK(
-        hipMemcpy(host.data(), device, host.size() * sizeof(int), hipMemcpyDeviceToHost));
-    EXPECT_EQ(host, expected);
-  }
-
-  int *allocFilled(int count, int value) {
-    std::vector<int> host(count, value);
-    int *device = alloc<int>(count);
-    RACE_HIP_CHECK(hipMemcpy(device, host.data(), count * sizeof(int), hipMemcpyHostToDevice));
-    return device;
-  }
-};
+using Gfx1250RaceTest = rocjitsu::test::RaceTestBase;
 
 /// `count` consecutive ints starting at `first`.
 std::vector<int> range(int first, int count = kTileElements) {
