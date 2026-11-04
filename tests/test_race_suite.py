@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import json
 import re
 import os
@@ -304,17 +305,7 @@ def _source_gtests(target: str) -> set[str]:
 
 
 @pytest.mark.parametrize(
-    "target,base_target",
-    [
-        ("gfx942", "gfx950"),
-        ("gfx942", "gfx1151"),
-        ("gfx950", "gfx942"),
-        ("gfx950", "gfx1151"),
-        ("gfx1151", "gfx942"),
-        ("gfx1151", "gfx950"),
-        ("gfx1250", "gfx1151"),
-        ("gfx1151", "gfx1250"),
-    ],
+    "target,base_target", list(itertools.permutations(race.TARGET_LAYOUT, 2))
 )
 def test_mismatched_simulator_target_fails_before_launch(
     tmp_path: Path, monkeypatch, target: str, base_target: str
