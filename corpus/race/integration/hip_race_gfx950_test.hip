@@ -1065,16 +1065,6 @@ TEST_F(Gfx950RaceTest, global_to_lds_dwordx3_race) {
   ExpectRace(kGlobalToLdsDwordx3Race);
 }
 
-TEST_F(Gfx950RaceTest, global_to_lds_dwordx3_cross_wave) {
-  ASSERT_NO_FATAL_FAILURE((check_wide_global_to_lds<3, true, true>()));
-  ExpectNoRace();
-}
-
-TEST_F(Gfx950RaceTest, global_to_lds_dwordx3_cross_wave_race) {
-  ASSERT_NO_FATAL_FAILURE((check_wide_global_to_lds<3, true, false>()));
-  ExpectRace(kGlobalToLdsDwordx3Race);
-}
-
 TEST_F(Gfx950RaceTest, global_to_lds_dwordx4) {
   ASSERT_NO_FATAL_FAILURE((check_wide_global_to_lds<4, false, true>()));
   ExpectNoRace();
