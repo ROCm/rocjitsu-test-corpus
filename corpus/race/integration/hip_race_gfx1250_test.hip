@@ -457,10 +457,11 @@ TEST_F(Gfx1250RaceTest, tensor_store_missing_dscnt_race) {
 // --- Same-wave tensor loads and stores over one tile need a TENSORcnt wait ---
 
 // Tensor transfers from one wave complete on TENSORcnt in issue order (CDNA5 ISA
-// 10.11.1), but the ISA does not specify the relative timing of their LDS reads
-// and writes. The detector therefore conservatively reports a tensor load and a
-// tensor store from the same wave that touch the same bytes, in either order,
-// until a TENSORcnt wait retires the earlier one.
+// 10.11.1), but that orders completion, not LDS access. A tensor load moves its
+// data with async loads (10.11.3), and async loads and stores may access LDS out
+// of order, even relative to each other (10.8). The detector therefore reports a
+// tensor load and a tensor store from the same wave that touch the same bytes,
+// in either order, until a TENSORcnt wait retires the earlier one.
 
 // A load into the tile an earlier store is still reading may overwrite bytes the
 // store has not read yet.
