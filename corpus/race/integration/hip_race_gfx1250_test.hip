@@ -631,11 +631,12 @@ TEST_F(Gfx1250RaceTest, tensor_store_outside_tensor_counts) {
 constexpr uint32_t kTensorHalf = kTileElements / 2;
 
 // The tile is twice as wide as the tensor; the second half reads as zero
-// (CDNA5 ISA 4.10.7). Wave 1 reads the zero-filled half. The kUnwrittenValue
-// fill is synchronized first, so it cannot race with that read. The second
-// barrier orders the read after the load issues; without the wait, it does not
-// retire the load, so the read races with it.
-template <bool Synchronized>
+// (CDNA5 ISA 4.10.7). Wave 1 reads the whole tile, or with ZeroFilledHalfOnly
+// only the zero-filled half, so a race found there cannot come from the copied
+// half. The kUnwrittenValue fill is synchronized first, so it cannot race with
+// that read. The second barrier orders the read after the load issues; without
+// the wait, it does not retire the load, so the read races with it.
+template <bool Synchronized, bool ZeroFilledHalfOnly>
 __global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
 tensor_load_zero_fill_kernel(TensorDesc desc, int *dst) {
   const int wave = waveIndex();
@@ -648,8 +649,10 @@ tensor_load_zero_fill_kernel(TensorDesc desc, int *dst) {
       waitTensorcnt<0>();
   }
   barrier();
-  if (wave == 1)
-    dst[lane()] = ldsRead(lane() * 4);
+  if (wave == 1) {
+    const uint32_t element = ZeroFilledHalfOnly ? kTensorHalf + lane() % kTensorHalf : lane();
+    dst[lane()] = ldsRead(element * 4);
+  }
   if (wave == 0)
     waitTensorcnt<0>();
 }
@@ -657,8 +660,9 @@ tensor_load_zero_fill_kernel(TensorDesc desc, int *dst) {
 TEST_F(Gfx1250RaceTest, tensor_load_zero_fill) {
   auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
-  tensor_load_zero_fill_kernel<true><<<1, 2 * kWave, kTileBytes>>>(
-      describe({.global = src, .tensor_elements = kTensorHalf}), dst);
+  tensor_load_zero_fill_kernel</*Synchronized=*/true, /*ZeroFilledHalfOnly=*/false>
+      <<<1, 2 * kWave, kTileBytes>>>(
+          describe({.global = src, .tensor_elements = kTensorHalf}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
@@ -670,8 +674,9 @@ TEST_F(Gfx1250RaceTest, tensor_load_zero_fill) {
 TEST_F(Gfx1250RaceTest, tensor_load_zero_fill_cross_wave_race) {
   auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
-  tensor_load_zero_fill_kernel<false><<<1, 2 * kWave, kTileBytes>>>(
-      describe({.global = src, .tensor_elements = kTensorHalf}), dst);
+  tensor_load_zero_fill_kernel</*Synchronized=*/false, /*ZeroFilledHalfOnly=*/true>
+      <<<1, 2 * kWave, kTileBytes>>>(
+          describe({.global = src, .tensor_elements = kTensorHalf}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kTensorLoadThenReadRace);
