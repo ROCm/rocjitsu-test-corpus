@@ -132,13 +132,6 @@ __device__ inline void barrier() {
                "s_barrier_wait -1" ::: "memory");
 }
 
-/// Let other waves run first, so a race is reported in a fixed direction, with
-/// the transfer as producer. Detection does not depend on wave order, but the
-/// expectations name the producer and consumer, which do. Cases that may use a
-/// barrier order the waves with one instead; this is for a case that must race
-/// without a barrier.
-__device__ inline void yieldToOtherWaves() { asm volatile("s_sleep 4" ::: "memory"); }
-
 /// Read an int from LDS and wait for it, so a case reports only the LDS race
 /// it is about and never a race on the destination register.
 __device__ inline int ldsRead(uint32_t byte_offset) {
@@ -167,6 +160,14 @@ static constexpr RaceExpectation kTensorLoadThenReadRace{
     .access = "read",
     .producer = "tensor_load_to_lds",
     .consumer = "ds_load_b32",
+};
+
+static constexpr RaceExpectation kReadThenTensorLoadRace{
+    .findings = FindingCount::OneOrMore,
+    .type = "LDS",
+    .access = "write",
+    .producer = "ds_load_b32",
+    .consumer = "tensor_load_to_lds",
 };
 
 static constexpr RaceExpectation kTensorStoreThenWriteRace{
@@ -303,8 +304,6 @@ tensor_load_cross_wave_kernel(TensorDesc desc, int *dst) {
   }
   if (S != Sync::WaitOnly)
     barrier();
-  else if (wave == 1)
-    yieldToOtherWaves();
   if (wave == 1)
     dst[lane()] = ldsRead(lane() * 4);
   if (wave == 0)
@@ -329,7 +328,9 @@ TEST_F(Gfx1250RaceTest, tensor_load_cross_wave_no_barrier_race) {
       <<<1, 2 * kWave, kTileBytes>>>(describe({.global = src}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenReadRace);
+  // Without a barrier the waves run in either order, so the race may be
+  // reported in either direction.
+  ExpectAnyRace({kTensorLoadThenReadRace, kReadThenTensorLoadRace});
 }
 
 // A barrier retires only transfers their wave has already waited for.

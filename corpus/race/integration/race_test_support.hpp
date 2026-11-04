@@ -10,6 +10,8 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <initializer_list>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -168,6 +170,16 @@ protected:
     const RaceLogParseResult parsed = parseRaceLogFromEnvironment();
     ASSERT_TRUE(parsed.ok()) << parsed.error;
     const RaceExpectationMatchResult matched = matchRaceExpectation(parsed.records, expected);
+    EXPECT_TRUE(matched.ok()) << matched.message();
+  }
+
+  /// Expect a race matching any of `alternatives`, for a race whose reported
+  /// direction depends on the order the waves run in.
+  void ExpectAnyRace(std::initializer_list<RaceExpectation> alternatives) {
+    const RaceLogParseResult parsed = parseRaceLogFromEnvironment();
+    ASSERT_TRUE(parsed.ok()) << parsed.error;
+    const std::span<const RaceExpectation> choices(alternatives.begin(), alternatives.size());
+    const RaceExpectationMatchResult matched = matchAnyRaceExpectation(parsed.records, choices);
     EXPECT_TRUE(matched.ok()) << matched.message();
   }
 };
