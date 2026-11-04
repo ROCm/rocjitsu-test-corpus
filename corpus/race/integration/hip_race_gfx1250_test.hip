@@ -481,6 +481,78 @@ TEST_F(Gfx1250RaceTest, tensor_store_missing_dscnt_race) {
   ExpectRace(kDsWriteThenTensorStoreRace);
 }
 
+// The DS write and the tensor store share only one interior word: either a
+// single DS-written word inside the full tile the store reads, or a one-word
+// store inside the full tile the DS writes. Races are reported at that word.
+constexpr int kInteriorElement = 13;
+constexpr int kInteriorByte = kInteriorElement * 4;
+constexpr int kInteriorValue = 500;
+
+/// Expect every reported race to be at LDS byte `byte`.
+void ExpectEveryRaceAtLdsByte(int byte) {
+  const auto parsed = rocjitsu::test::parseRaceLogFromEnvironment();
+  ASSERT_TRUE(parsed.ok()) << parsed.error;
+  for (const auto &record : parsed.records)
+    EXPECT_EQ(record.reg, byte);
+}
+
+// The rest of the store's source is written and waited for first, so only the
+// interior word's write can be pending.
+template <bool WaitDscnt>
+__global__ void tensor_store_after_interior_ds_write_kernel(TensorDesc desc) {
+  ldsFillAndWait(0, 100 + lane());
+  if (lane() == kInteriorElement)
+    ldsWrite(kInteriorByte, kInteriorValue);
+  if (WaitDscnt)
+    waitDscnt();
+  tensorStore(desc);
+  waitTensorcnt<0>();
+}
+
+TEST_F(Gfx1250RaceTest, tensor_store_dscnt_interior_ds_write) {
+  auto *dst = alloc<int>(kTileElements);
+  tensor_store_after_interior_ds_write_kernel<true>
+      <<<1, kWave, kTileBytes>>>(describe({.global = dst}));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  std::vector<int> expected = range(100);
+  expected[kInteriorElement] = kInteriorValue;
+  ExpectValues(dst, expected);
+}
+
+TEST_F(Gfx1250RaceTest, tensor_store_missing_dscnt_interior_ds_write_race) {
+  auto *dst = alloc<int>(kTileElements);
+  tensor_store_after_interior_ds_write_kernel<false>
+      <<<1, kWave, kTileBytes>>>(describe({.global = dst}));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kDsWriteThenTensorStoreRace);
+  ExpectEveryRaceAtLdsByte(kInteriorByte);
+}
+
+TEST_F(Gfx1250RaceTest, tensor_store_one_word_dscnt) {
+  auto *dst = allocFilled(kTileElements, kUnwrittenValue);
+  tensor_store_after_ds_write_kernel<true><<<1, kWave, kTileBytes>>>(
+      describe({.global = dst, .lds_offset = kInteriorByte, .tile_elements = 1}));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  std::vector<int> expected(kTileElements, kUnwrittenValue);
+  expected[0] = 100 + kInteriorElement;
+  ExpectValues(dst, expected);
+}
+
+TEST_F(Gfx1250RaceTest, tensor_store_one_word_missing_dscnt_race) {
+  auto *dst = allocFilled(kTileElements, kUnwrittenValue);
+  tensor_store_after_ds_write_kernel<false><<<1, kWave, kTileBytes>>>(
+      describe({.global = dst, .lds_offset = kInteriorByte, .tile_elements = 1}));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kDsWriteThenTensorStoreRace);
+  ExpectEveryRaceAtLdsByte(kInteriorByte);
+}
+
 // --- Same-wave tensor loads and stores over one tile need a TENSORcnt wait ---
 
 // Tensor transfers from one wave complete on TENSORcnt in issue order (CDNA5 ISA
