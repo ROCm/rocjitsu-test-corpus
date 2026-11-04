@@ -12,6 +12,7 @@
     "tensor_load_cross_wave_no_tensorcnt_race",
     "tensor_load_pipeline_oldest",
     "tensor_load_pipeline_newest_race",
+    "tensor_load_pipeline_straddling_race",
     "tensor_store_source_overwrite",
     "tensor_store_source_overwrite_race",
     "tensor_store_dscnt",
