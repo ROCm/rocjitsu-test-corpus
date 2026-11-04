@@ -64,7 +64,7 @@ std::vector<int> range(int first, int count = kTileElements) {
 typedef int v4i __attribute__((ext_vector_type(4)));
 typedef int v8i __attribute__((ext_vector_type(8)));
 
-/// Descriptor groups 0 and 1 (CDNA5 ISA, Tables 79 and 80). Kernels take them
+/// Descriptor groups 0 and 1 (CDNA5 ISA 10.11.4, Tables 62 and 63). Kernels take them
 /// by value, so they arrive in SGPRs; groups 2 and 3 are NULL.
 struct TensorDesc {
   v4i group0;
@@ -555,7 +555,7 @@ __global__ void tensor_load_then_empty_kernel(TensorDesc real, TensorDesc empty,
   waitTensorcnt<0>();
 }
 
-// count = 0: a NULL tensor (CDNA5 ISA, Table 79). That a NULL tensor takes a
+// count = 0: a NULL tensor (CDNA5 ISA 10.11.4, Table 62). That a NULL tensor takes a
 // TENSORcnt slot is a RocJITsu assumption pending hardware validation; only
 // under it does s_wait_tensorcnt 1 retire the real load.
 TEST_F(Gfx1250RaceTest, tensor_load_null_tensor_counts) {
@@ -586,7 +586,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_null_tensor_uncounted_race) {
   ExpectRace(kTensorLoadThenReadRace);
 }
 
-// tile_dim0 = 0: a NOP tile (CDNA5 ISA, Table 80).
+// tile_dim0 = 0: a NOP tile (CDNA5 ISA 10.11.4, Table 63).
 TEST_F(Gfx1250RaceTest, tensor_load_empty_tile_counts) {
   auto *src = allocWithData<int>(kTileElements);
   auto *loaded = alloc<int>(kWave);
@@ -634,7 +634,7 @@ TEST_F(Gfx1250RaceTest, tensor_store_outside_tensor_counts) {
 constexpr uint32_t kTensorHalf = kTileElements / 2;
 
 // The tile is twice as wide as the tensor; the second half reads as zero
-// (CDNA5 ISA 4.10.7). Wave 1 reads the whole tile, or with ZeroFilledHalfOnly
+// (CDNA5 ISA 10.11.6). Wave 1 reads the whole tile, or with ZeroFilledHalfOnly
 // only the zero-filled half, so a race found there cannot come from the copied
 // half. The kUnwrittenValue fill is synchronized first, so it cannot race with
 // that read. The second barrier orders the read after the load issues; without
@@ -738,8 +738,12 @@ TEST_F(Gfx1250RaceTest, tensor_load_padding_data_race) {
 // --- LDS addresses past the workgroup's allocation ---
 
 // A 2048-byte allocation, one LDS block, with the tile's second half past it.
-// Out-of-range LDS addresses do not abort a tensor operation (CDNA5 ISA
-// 4.10.7); the in-range half transfers normally.
+// The TDM keeps processing the whole descriptor past an out-of-range LDS
+// address, so the in-range half transfers normally (CDNA5 ISA 10.11.6). With
+// LDS_CONFIG.ADDR_OUT_OF_RANGE_REPORTING set, hardware also reports MEMVIOL to
+// the wave once the descriptor completes; RocJITsu does not model that report.
+// The ISA leaves the global values a store writes from out-of-range LDS
+// undefined, so the store case checks only its in-range half.
 constexpr int kLdsAllocation = 2048;
 constexpr uint32_t kStraddlingOffset = kLdsAllocation - kTileBytes / 2;
 
@@ -776,7 +780,7 @@ TEST_F(Gfx1250RaceTest, tensor_store_past_lds_allocation) {
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
-  // The guide does not define the global values written from out-of-range LDS.
+  // The CDNA5 ISA does not define the global values written from out-of-range LDS.
   std::vector<int> stored(kTileElements);
   RACE_HIP_CHECK(hipMemcpy(stored.data(), dst, kTileBytes, hipMemcpyDeviceToHost));
   stored.resize(kTileElements / 2);
