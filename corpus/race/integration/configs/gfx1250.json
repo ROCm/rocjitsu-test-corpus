@@ -37,6 +37,8 @@
     "tensor_load_null_tensor_uncounted_race",
     "tensor_load_empty_tile_counts",
     "tensor_store_outside_tensor_counts",
+    "tensor_store_between_empty_stores_counts",
+    "tensor_store_between_empty_stores_wait_two_race",
     "tensor_load_zero_fill",
     "tensor_load_zero_fill_cross_wave_race",
     "tensor_load_padding_gap",

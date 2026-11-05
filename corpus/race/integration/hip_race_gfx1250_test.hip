@@ -867,6 +867,54 @@ TEST_F(Gfx1250RaceTest, tensor_store_outside_tensor_counts) {
   ExpectValues(untouched, std::vector<int>(kTileElements, kUnwrittenValue));
 }
 
+// A real store between two stores wholly outside the tensor, all from one LDS
+// tile, then a DS overwrite of that tile. Waiting until at most one transfer is
+// outstanding leaves only the trailing empty store pending, so the overwrite is
+// safe; at most two leaves the real store pending, so it races. The empty
+// stores read no LDS, so their sharing the tile cannot race either. This does
+// not show that the leading empty store counts; the load case above does.
+template <int Remaining>
+__global__ void tensor_store_between_empty_stores_kernel(TensorDesc first_empty, TensorDesc real,
+                                                         TensorDesc last_empty) {
+  ldsFillAndWait(0, 100 + lane());
+  tensorStore(first_empty);
+  tensorStore(real);
+  tensorStore(last_empty);
+  waitTensorcnt<Remaining>();
+  ldsFillAndWait(0, -1);
+  waitTensorcnt<0>();
+}
+
+TEST_F(Gfx1250RaceTest, tensor_store_between_empty_stores_counts) {
+  auto *first_untouched = allocFilled(kTileElements, kUnwrittenValue);
+  auto *stored = allocFilled(kTileElements, kUnwrittenValue);
+  auto *last_untouched = allocFilled(kTileElements, kUnwrittenValue);
+  tensor_store_between_empty_stores_kernel<1><<<1, kWave, kTileBytes>>>(
+      describe({.global = first_untouched, .tensor_elements = 0}), describe({.global = stored}),
+      describe({.global = last_untouched, .tensor_elements = 0}));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(stored, range(100));
+  ExpectValues(first_untouched, std::vector<int>(kTileElements, kUnwrittenValue));
+  ExpectValues(last_untouched, std::vector<int>(kTileElements, kUnwrittenValue));
+}
+
+TEST_F(Gfx1250RaceTest, tensor_store_between_empty_stores_wait_two_race) {
+  auto *first_untouched = allocFilled(kTileElements, kUnwrittenValue);
+  auto *stored = allocFilled(kTileElements, kUnwrittenValue);
+  auto *last_untouched = allocFilled(kTileElements, kUnwrittenValue);
+  tensor_store_between_empty_stores_kernel<2><<<1, kWave, kTileBytes>>>(
+      describe({.global = first_untouched, .tensor_elements = 0}), describe({.global = stored}),
+      describe({.global = last_untouched, .tensor_elements = 0}));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kTensorStoreThenWriteRace);
+  // Raced values are unconstrained, but the empty stores still write nothing.
+  ExpectValues(first_untouched, std::vector<int>(kTileElements, kUnwrittenValue));
+  ExpectValues(last_untouched, std::vector<int>(kTileElements, kUnwrittenValue));
+}
+
 // --- Elements outside the tensor are zero-filled in LDS ---
 
 constexpr uint32_t kTensorHalf = kTileElements / 2;
