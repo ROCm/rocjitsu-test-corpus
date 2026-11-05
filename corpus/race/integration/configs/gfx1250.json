@@ -51,6 +51,8 @@
     "tensor_store_outside_tensor_counts",
     "tensor_store_between_empty_stores_counts",
     "tensor_store_between_empty_stores_wait_two_race",
+    "tensor_store_holes",
+    "tensor_store_holes_adjacent_data_race",
     "tensor_load_zero_fill",
     "tensor_load_zero_fill_cross_wave_race",
     "tensor_load_zero_fill_full_tile",
