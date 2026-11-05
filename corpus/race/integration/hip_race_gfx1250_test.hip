@@ -920,12 +920,12 @@ TEST_F(Gfx1250RaceTest, tensor_store_between_empty_stores_wait_two_race) {
 constexpr uint32_t kTensorHalf = kTileElements / 2;
 
 // The tile is twice as wide as the tensor; the second half reads as zero
-// (CDNA5 ISA 10.11.6). Wave 1 reads the whole tile, or with ZeroFilledHalfOnly
-// only the zero-filled half, so a race found there cannot come from the copied
-// half. The kUnwrittenValue fill is synchronized first, so it cannot race with
-// that read. The second barrier orders the read after the load issues; without
-// the wait, it does not retire the load, so the read races with it.
-template <bool Synchronized, bool ZeroFilledHalfOnly>
+// (CDNA5 ISA 10.11.6). Wave 1 reads only the zero-filled half, so a race found
+// there cannot come from the copied half. The kUnwrittenValue fill is
+// synchronized first, so it cannot race with that read. The second barrier
+// orders the read after the load issues; without the wait, it does not retire
+// the load, so the read races with it.
+template <bool Synchronized>
 __global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
 tensor_load_zero_fill_kernel(TensorDesc desc, int *dst) {
   const int wave = waveIndex();
@@ -938,10 +938,8 @@ tensor_load_zero_fill_kernel(TensorDesc desc, int *dst) {
       waitTensorcnt<0>();
   }
   barrier();
-  if (wave == 1) {
-    const uint32_t element = ZeroFilledHalfOnly ? kTensorHalf + lane() % kTensorHalf : lane();
-    dst[lane()] = ldsReadAndWait(element * 4);
-  }
+  if (wave == 1)
+    dst[lane()] = ldsReadAndWait((kTensorHalf + lane() % kTensorHalf) * 4);
   if (wave == 0)
     waitTensorcnt<0>();
 }
@@ -949,26 +947,46 @@ tensor_load_zero_fill_kernel(TensorDesc desc, int *dst) {
 TEST_F(Gfx1250RaceTest, tensor_load_zero_fill) {
   auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
-  tensor_load_zero_fill_kernel</*Synchronized=*/true, /*ZeroFilledHalfOnly=*/false>
-      <<<1, 2 * kWave, kTileBytes>>>(
-          describe({.global = src, .tensor_elements = kTensorHalf}), dst);
+  tensor_load_zero_fill_kernel<true><<<1, 2 * kWave, kTileBytes>>>(
+      describe({.global = src, .tensor_elements = kTensorHalf}), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, std::vector<int>(kWave, 0));
+}
+
+TEST_F(Gfx1250RaceTest, tensor_load_zero_fill_cross_wave_race) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kWave);
+  tensor_load_zero_fill_kernel<false><<<1, 2 * kWave, kTileBytes>>>(
+      describe({.global = src, .tensor_elements = kTensorHalf}), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kTensorLoadThenReadRace);
+}
+
+// The issuing wave, waiting for its load, reads the whole tile: the copied half
+// then the zero-filled half. This keeps the value check that the cross-wave
+// pair gives up by reading only zero-filled bytes. The tile starts as
+// kUnwrittenValue, so a skipped zero-fill cannot pass for one.
+__global__ void tensor_load_zero_fill_full_tile_kernel(TensorDesc desc, int *dst) {
+  ldsFillAndWait(0, kUnwrittenValue);
+  tensorLoad(desc);
+  waitTensorcnt<0>();
+  dst[lane()] = ldsReadAndWait(lane() * 4);
+}
+
+TEST_F(Gfx1250RaceTest, tensor_load_zero_fill_full_tile) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kWave);
+  tensor_load_zero_fill_full_tile_kernel<<<1, kWave, kTileBytes>>>(
+      describe({.global = src, .tensor_elements = kTensorHalf}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
   std::vector<int> expected = range(0, kTensorHalf);
   expected.resize(kTileElements, 0);
   ExpectValues(dst, expected);
-}
-
-TEST_F(Gfx1250RaceTest, tensor_load_zero_fill_cross_wave_race) {
-  auto *src = allocWithData<int>(kTileElements);
-  auto *dst = alloc<int>(kWave);
-  tensor_load_zero_fill_kernel</*Synchronized=*/false, /*ZeroFilledHalfOnly=*/true>
-      <<<1, 2 * kWave, kTileBytes>>>(
-          describe({.global = src, .tensor_elements = kTensorHalf}), dst);
-  RACE_HIP_CHECK(hipGetLastError());
-  sync();
-  ExpectRace(kTensorLoadThenReadRace);
 }
 
 // --- LDS padding is not written ---

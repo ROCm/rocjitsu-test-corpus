@@ -41,6 +41,7 @@
     "tensor_store_between_empty_stores_wait_two_race",
     "tensor_load_zero_fill",
     "tensor_load_zero_fill_cross_wave_race",
+    "tensor_load_zero_fill_full_tile",
     "tensor_load_padding_gap",
     "tensor_load_padding_data_race",
     "tensor_load_padding_interleaved_stripes",
