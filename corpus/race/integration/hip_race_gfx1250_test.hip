@@ -562,42 +562,184 @@ TEST_F(Gfx1250RaceTest, tensor_store_one_word_missing_dscnt_race) {
 // tensor load and a tensor store from the same wave that touch the same bytes,
 // in either order, until a TENSORcnt wait retires the earlier one.
 
-// A load into the tile an earlier store is still reading may overwrite bytes the
-// store has not read yet.
+// A load into a tile an earlier store is still reading may overwrite bytes the
+// store has not read yet. The footprints are in dwords of a two-tile LDS
+// allocation whose dword i starts as 100 + i; after both transfers the kernel
+// reads back all of it.
+struct SameWaveFootprint {
+  int store_first;
+  int store_count;
+  int load_first;
+  int load_count;
+};
+
+constexpr int kSameWaveLdsElements = 2 * kTileElements;
+
+constexpr SameWaveFootprint kSameTile{
+    .store_first = 0, .store_count = kTileElements, .load_first = 0, .load_count = kTileElements};
+constexpr SameWaveFootprint kLoadInsideStore{
+    .store_first = 0, .store_count = kTileElements, .load_first = 8, .load_count = 16};
+constexpr SameWaveFootprint kStoreInsideLoad{
+    .store_first = 8, .store_count = 16, .load_first = 0, .load_count = kTileElements};
+constexpr SameWaveFootprint kLoadOverlapsStoreStart{
+    .store_first = 16, .store_count = kTileElements, .load_first = 0, .load_count = kTileElements};
+constexpr SameWaveFootprint kLoadOverlapsStoreEnd{
+    .store_first = 0, .store_count = kTileElements, .load_first = 16, .load_count = kTileElements};
+
 template <bool WaitTensorcnt>
 __global__ void tensor_store_then_load_same_wave_kernel(TensorDesc store, TensorDesc load,
                                                         int *dst) {
   ldsFillAndWait(0, 100 + lane());
+  ldsFillAndWait(kTileBytes, 100 + kWave + lane());
   tensorStore(store);
   if (WaitTensorcnt)
     waitTensorcnt<0>();
   tensorLoad(load);
   waitTensorcnt<0>();
   dst[lane()] = ldsReadAndWait(lane() * 4);
+  dst[kWave + lane()] = ldsReadAndWait(kTileBytes + lane() * 4);
+}
+
+/// Launch the store-then-load kernel over `footprint`: the store copies LDS to
+/// `stored`, the load copies `src` to LDS, and `dst` receives all of LDS.
+template <bool WaitTensorcnt>
+void launchStoreThenLoad(const SameWaveFootprint &footprint, int *stored, const int *src,
+                         int *dst) {
+  tensor_store_then_load_same_wave_kernel<WaitTensorcnt>
+      <<<1, kWave, kSameWaveLdsElements * static_cast<int>(sizeof(int))>>>(
+          describe({.global = stored,
+                    .lds_offset = static_cast<uint32_t>(footprint.store_first * 4),
+                    .tile_elements = static_cast<uint32_t>(footprint.store_count)}),
+          describe({.global = src,
+                    .lds_offset = static_cast<uint32_t>(footprint.load_first * 4),
+                    .tile_elements = static_cast<uint32_t>(footprint.load_count)}),
+          dst);
+  RACE_HIP_CHECK(hipGetLastError());
+}
+
+/// The LDS a synchronized store-then-load leaves: the initial values, with the
+/// load's footprint replaced by `src`, which holds 0, 1, 2, ...
+std::vector<int> expectedLdsAfterStoreThenLoad(const SameWaveFootprint &footprint) {
+  std::vector<int> lds = range(100, kSameWaveLdsElements);
+  for (int i = 0; i < footprint.load_count; ++i)
+    lds[footprint.load_first + i] = i;
+  return lds;
+}
+
+/// What a store-then-load writes to global memory: the store's footprint of the
+/// initial LDS values.
+std::vector<int> expectedStoreOutput(const SameWaveFootprint &footprint) {
+  return range(100 + footprint.store_first, footprint.store_count);
+}
+
+/// The first LDS byte the store and the load share.
+constexpr int firstSharedByte(const SameWaveFootprint &footprint) {
+  return 4 * (footprint.store_first > footprint.load_first ? footprint.store_first
+                                                           : footprint.load_first);
 }
 
 TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave) {
   auto *stored = alloc<int>(kTileElements);
   auto *src = allocWithData<int>(kTileElements);
-  auto *dst = alloc<int>(kWave);
-  tensor_store_then_load_same_wave_kernel<true><<<1, kWave, kTileBytes>>>(
-      describe({.global = stored}), describe({.global = src}), dst);
-  RACE_HIP_CHECK(hipGetLastError());
+  auto *dst = alloc<int>(kSameWaveLdsElements);
+  launchStoreThenLoad<true>(kSameTile, stored, src, dst);
   sync();
   ExpectNoRace();
   ExpectValues(stored, range(100));
-  ExpectValues(dst, range(0));
+  ExpectValues(dst, expectedLdsAfterStoreThenLoad(kSameTile));
 }
 
 TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave_race) {
   auto *stored = alloc<int>(kTileElements);
   auto *src = allocWithData<int>(kTileElements);
-  auto *dst = alloc<int>(kWave);
-  tensor_store_then_load_same_wave_kernel<false><<<1, kWave, kTileBytes>>>(
-      describe({.global = stored}), describe({.global = src}), dst);
-  RACE_HIP_CHECK(hipGetLastError());
+  auto *dst = alloc<int>(kSameWaveLdsElements);
+  launchStoreThenLoad<false>(kSameTile, stored, src, dst);
   sync();
   ExpectRace(kTensorStoreThenTensorLoadRace);
+}
+
+TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave_load_inside_store) {
+  auto *stored = alloc<int>(kLoadInsideStore.store_count);
+  auto *src = allocWithData<int>(kLoadInsideStore.load_count);
+  auto *dst = alloc<int>(kSameWaveLdsElements);
+  launchStoreThenLoad<true>(kLoadInsideStore, stored, src, dst);
+  sync();
+  ExpectNoRace();
+  ExpectValues(stored, expectedStoreOutput(kLoadInsideStore));
+  ExpectValues(dst, expectedLdsAfterStoreThenLoad(kLoadInsideStore));
+}
+
+TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave_load_inside_store_race) {
+  auto *stored = alloc<int>(kLoadInsideStore.store_count);
+  auto *src = allocWithData<int>(kLoadInsideStore.load_count);
+  auto *dst = alloc<int>(kSameWaveLdsElements);
+  launchStoreThenLoad<false>(kLoadInsideStore, stored, src, dst);
+  sync();
+  ExpectRace(kTensorStoreThenTensorLoadRace);
+  ExpectEveryRaceAtLdsByte(firstSharedByte(kLoadInsideStore));
+}
+
+TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave_store_inside_load) {
+  auto *stored = alloc<int>(kStoreInsideLoad.store_count);
+  auto *src = allocWithData<int>(kStoreInsideLoad.load_count);
+  auto *dst = alloc<int>(kSameWaveLdsElements);
+  launchStoreThenLoad<true>(kStoreInsideLoad, stored, src, dst);
+  sync();
+  ExpectNoRace();
+  ExpectValues(stored, expectedStoreOutput(kStoreInsideLoad));
+  ExpectValues(dst, expectedLdsAfterStoreThenLoad(kStoreInsideLoad));
+}
+
+TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave_store_inside_load_race) {
+  auto *stored = alloc<int>(kStoreInsideLoad.store_count);
+  auto *src = allocWithData<int>(kStoreInsideLoad.load_count);
+  auto *dst = alloc<int>(kSameWaveLdsElements);
+  launchStoreThenLoad<false>(kStoreInsideLoad, stored, src, dst);
+  sync();
+  ExpectRace(kTensorStoreThenTensorLoadRace);
+  ExpectEveryRaceAtLdsByte(firstSharedByte(kStoreInsideLoad));
+}
+
+TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave_load_overlaps_store_start) {
+  auto *stored = alloc<int>(kLoadOverlapsStoreStart.store_count);
+  auto *src = allocWithData<int>(kLoadOverlapsStoreStart.load_count);
+  auto *dst = alloc<int>(kSameWaveLdsElements);
+  launchStoreThenLoad<true>(kLoadOverlapsStoreStart, stored, src, dst);
+  sync();
+  ExpectNoRace();
+  ExpectValues(stored, expectedStoreOutput(kLoadOverlapsStoreStart));
+  ExpectValues(dst, expectedLdsAfterStoreThenLoad(kLoadOverlapsStoreStart));
+}
+
+TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave_load_overlaps_store_start_race) {
+  auto *stored = alloc<int>(kLoadOverlapsStoreStart.store_count);
+  auto *src = allocWithData<int>(kLoadOverlapsStoreStart.load_count);
+  auto *dst = alloc<int>(kSameWaveLdsElements);
+  launchStoreThenLoad<false>(kLoadOverlapsStoreStart, stored, src, dst);
+  sync();
+  ExpectRace(kTensorStoreThenTensorLoadRace);
+  ExpectEveryRaceAtLdsByte(firstSharedByte(kLoadOverlapsStoreStart));
+}
+
+TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave_load_overlaps_store_end) {
+  auto *stored = alloc<int>(kLoadOverlapsStoreEnd.store_count);
+  auto *src = allocWithData<int>(kLoadOverlapsStoreEnd.load_count);
+  auto *dst = alloc<int>(kSameWaveLdsElements);
+  launchStoreThenLoad<true>(kLoadOverlapsStoreEnd, stored, src, dst);
+  sync();
+  ExpectNoRace();
+  ExpectValues(stored, expectedStoreOutput(kLoadOverlapsStoreEnd));
+  ExpectValues(dst, expectedLdsAfterStoreThenLoad(kLoadOverlapsStoreEnd));
+}
+
+TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave_load_overlaps_store_end_race) {
+  auto *stored = alloc<int>(kLoadOverlapsStoreEnd.store_count);
+  auto *src = allocWithData<int>(kLoadOverlapsStoreEnd.load_count);
+  auto *dst = alloc<int>(kSameWaveLdsElements);
+  launchStoreThenLoad<false>(kLoadOverlapsStoreEnd, stored, src, dst);
+  sync();
+  ExpectRace(kTensorStoreThenTensorLoadRace);
+  ExpectEveryRaceAtLdsByte(firstSharedByte(kLoadOverlapsStoreEnd));
 }
 
 // A store of the tile an earlier load is still writing may read bytes the load
