@@ -866,6 +866,51 @@ TEST_F(Gfx1250RaceTest, tensor_load_then_store_same_wave_race) {
   ExpectRace(kTensorLoadThenTensorStoreRace);
 }
 
+// Tensor stores and loads from one wave share TENSORcnt and complete in issue
+// order. After a store from tile 0 and then a load into tile 1, waiting until at
+// most one is outstanding completes the store: overwriting its source is safe,
+// but the load may still be pending, so reading its tile races.
+template <bool ReadNewer>
+__global__ void tensor_mixed_partial_wait_kernel(TensorDesc store, TensorDesc load, int *dst) {
+  ldsFillAndWait(0, 100 + lane());
+  tensorStore(store);
+  tensorLoad(load);
+  waitTensorcnt<1>();
+  if constexpr (ReadNewer) {
+    // The load can still be pending even though the older store is complete.
+    dst[lane()] = ldsReadAndWait(kTileBytes + lane() * 4);
+  } else {
+    // Only the completed store read this tile; the younger load uses another.
+    ldsFillAndWait(0, 200 + lane());
+  }
+  waitTensorcnt<0>();
+  if constexpr (!ReadNewer)
+    dst[lane()] = ldsReadAndWait(kTileBytes + lane() * 4);
+}
+
+TEST_F(Gfx1250RaceTest, tensor_mixed_partial_wait_oldest_store) {
+  auto *stored = alloc<int>(kTileElements), *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kTileElements);
+  tensor_mixed_partial_wait_kernel<false><<<1, kWave, 2 * kTileBytes>>>(
+      describe({.global = stored}), describe({.global = src, .lds_offset = kTileBytes}), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(stored, range(100));
+  ExpectValues(dst, range(0));
+}
+
+TEST_F(Gfx1250RaceTest, tensor_mixed_partial_wait_newest_load_race) {
+  auto *stored = alloc<int>(kTileElements), *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kTileElements);
+  tensor_mixed_partial_wait_kernel<true><<<1, kWave, 2 * kTileBytes>>>(
+      describe({.global = stored}), describe({.global = src, .lds_offset = kTileBytes}), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kTensorLoadThenReadRace);
+  ExpectValues(stored, range(100));
+}
+
 // --- Tensor instructions that move no data still count on TENSORCNT ---
 
 // A real load, then an instruction that moves nothing, then a wait that lets
