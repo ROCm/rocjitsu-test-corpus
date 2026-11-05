@@ -1021,6 +1021,98 @@ TEST_F(Gfx1250RaceTest, tensor_load_padding_data_race) {
   ExpectRace(kTensorLoadThenReadRace);
 }
 
+// Three waves each load kStripeElements dwords per stripe, kStripesPerWave
+// stripes, with padding that skips the other two waves' stripes, so together
+// they fill 000011112222 repeated. Every load issues before the first barrier;
+// each wave then waits for its own. Reading its own stripes is safe even while
+// its peers' loads are pending, because their padded footprints are disjoint
+// from its; a detector that tracked a padded load as one solid interval would
+// report it. Reading the next wave's stripes instead races with that wave's
+// pending load.
+constexpr int kStripeWaves = 3;
+constexpr int kStripeElements = 4;
+constexpr int kStripesPerWave = 3;
+constexpr int kStripeLoadElements = kStripeElements * kStripesPerWave;
+constexpr int kStripedElements = kStripeLoadElements * kStripeWaves;
+
+/// The LDS dword where `wave`'s load puts its element `lane`.
+__device__ inline uint32_t stripeDword(int wave, int lane) {
+  const int stripe = lane / kStripeElements;
+  return (stripe * kStripeWaves + wave) * kStripeElements + lane % kStripeElements;
+}
+
+template <bool PeerStripes>
+__global__ __attribute__((amdgpu_flat_work_group_size(kStripeWaves * kWave,
+                                                     kStripeWaves * kWave))) void
+tensor_load_interleaved_stripes_kernel(TensorDesc wave0, TensorDesc wave1, TensorDesc wave2,
+                                       int *own, int *assembled) {
+  const int wave = waveIndex();
+  if (wave == 0)
+    tensorLoad(wave0);
+  else if (wave == 1)
+    tensorLoad(wave1);
+  else
+    tensorLoad(wave2);
+  barrier();
+  waitTensorcnt<0>();
+  const int read_wave = PeerStripes ? (wave + 1) % kStripeWaves : wave;
+  if (lane() < kStripeLoadElements)
+    own[wave * kStripeLoadElements + lane()] = ldsReadAndWait(stripeDword(read_wave, lane()) * 4);
+  barrier();
+  if (wave == 0) {
+    assembled[lane()] = ldsReadAndWait(lane() * 4);
+    if (lane() < kStripedElements - kWave)
+      assembled[kWave + lane()] = ldsReadAndWait((kWave + lane()) * 4);
+  }
+}
+
+/// Launch the interleaved-stripe kernel: wave w loads src[w * 12 .. w * 12 + 11].
+template <bool PeerStripes>
+void launchInterleavedStripes(const int *src, int *own, int *assembled) {
+  auto stripes = [&](int wave) {
+    return describe({.global = src + wave * kStripeLoadElements,
+                     .lds_offset = static_cast<uint32_t>(wave * kStripeElements * 4),
+                     .tile_elements = kStripeLoadElements,
+                     .pad = true,
+                     .pad_interval = 1, // A pad after every 4 dwords.
+                     .pad_amount = 7}); // 8 dwords: the other two waves' stripes.
+  };
+  tensor_load_interleaved_stripes_kernel<PeerStripes>
+      <<<1, kStripeWaves * kWave, 2 * kTileBytes>>>(stripes(0), stripes(1), stripes(2), own,
+                                                    assembled);
+  RACE_HIP_CHECK(hipGetLastError());
+}
+
+TEST_F(Gfx1250RaceTest, tensor_load_padding_interleaved_stripes) {
+  auto *src = allocWithData<int>(kStripedElements);
+  auto *own = alloc<int>(kStripedElements);
+  auto *assembled = alloc<int>(kStripedElements);
+  launchInterleavedStripes<false>(src, own, assembled);
+  sync();
+  ExpectNoRace();
+  // Each wave read back exactly what it loaded.
+  ExpectValues(own, range(0, kStripedElements));
+  // LDS dword d holds element d % 4 of stripe d / 4, loaded by wave
+  // (d / 4) % 3 as its stripe (d / 4) / 3.
+  std::vector<int> expected(kStripedElements);
+  for (int d = 0; d < kStripedElements; ++d) {
+    const int stripe = d / kStripeElements;
+    const int wave = stripe % kStripeWaves;
+    expected[d] = wave * kStripeLoadElements + (stripe / kStripeWaves) * kStripeElements +
+                  d % kStripeElements;
+  }
+  ExpectValues(assembled, expected);
+}
+
+TEST_F(Gfx1250RaceTest, tensor_load_padding_peer_stripe_race) {
+  auto *src = allocWithData<int>(kStripedElements);
+  auto *own = alloc<int>(kStripedElements);
+  auto *assembled = alloc<int>(kStripedElements);
+  launchInterleavedStripes<true>(src, own, assembled);
+  sync();
+  ExpectRace(kTensorLoadThenReadRace);
+}
+
 // --- LDS addresses past the workgroup's allocation ---
 
 // A 2048-byte allocation, one LDS block, with the tile's second half past it.

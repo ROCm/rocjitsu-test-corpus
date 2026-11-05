@@ -43,6 +43,8 @@
     "tensor_load_zero_fill_cross_wave_race",
     "tensor_load_padding_gap",
     "tensor_load_padding_data_race",
+    "tensor_load_padding_interleaved_stripes",
+    "tensor_load_padding_peer_stripe_race",
     "tensor_load_past_lds_allocation",
     "tensor_store_past_lds_allocation",
     "tensor_load_builtin"
