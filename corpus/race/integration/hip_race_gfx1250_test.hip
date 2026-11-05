@@ -413,6 +413,97 @@ TEST_F(Gfx1250RaceTest, tensor_load_pipeline_straddling_race) {
   ExpectValues(dst, range(kTileElements / 2, kWave / 2));
 }
 
+// --- Iterations and disjoint ranges still belong to one tensor instruction ---
+
+// One wave issues two tensor instructions, which fill three separate LDS rows:
+//   multi:  copy the input row into A at byte 0 and B at byte 2 * kTileBytes.
+//   single: copy the input row into C at byte 4 * kTileBytes.
+// Each row occupies kTileBytes; the gaps between them remain untouched.
+// Although multi performs two copies, it contributes only one TENSORcnt entry.
+// Instructions complete in issue order, so waiting to one guarantees that the
+// older instruction has finished, including every row it writes.
+// MultiFirst chooses the issue order, WaitCount is the maximum outstanding count
+// allowed by the wait, and Probe is the byte offset of the row to read afterward.
+template <bool MultiFirst, int WaitCount, uint32_t Probe>
+__global__ void tensor_iteration_count_kernel(TensorDesc multi, TensorDesc single, int *dst) {
+  // Global increment zero copies the same input row. LDS advances by two rows.
+  // The encoded iteration count in the last word's high half is 1 for two copies.
+  const v4i iteration = {0, 2 * kTileElements, 0, 1 << 16};
+  const v4i unused = {0, 0, 0, 0};
+  if constexpr (!MultiFirst)
+    tensorLoad(single);
+  asm volatile("tensor_load_to_lds %0, %1, %2, %3"
+               :: "s"(multi.group0), "s"(multi.group1), "s"(iteration), "s"(unused) : "memory");
+  if constexpr (MultiFirst)
+    tensorLoad(single);
+  waitTensorcnt<WaitCount>();
+  dst[lane()] = ldsReadAndWait(Probe + lane() * 4);
+  waitTensorcnt<0>();
+}
+
+// multi -> single -> wait<=1 -> read B: safe.
+// Completing the older multi instruction must make both A and B ready. Reading
+// its second row checks that all iterations complete with the instruction.
+TEST_F(Gfx1250RaceTest, tensor_iterations_oldest_all_ranges) {
+  auto *src = allocWithData<int>(kTileElements), *dst = alloc<int>(kTileElements);
+  auto multi = describe({.global = src});
+  multi.group1[0] |= 1u << 19; // Enable the iteration descriptor.
+  tensor_iteration_count_kernel<true, 1, 2 * kTileBytes>
+      <<<1, kWave, 5 * kTileBytes>>>(
+          multi, describe({.global = src, .lds_offset = 4 * kTileBytes}), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0));
+}
+
+// multi -> single -> wait<=1 -> read C: race.
+// The wait gives no completion guarantee for the younger single instruction.
+TEST_F(Gfx1250RaceTest, tensor_iterations_newest_single_race) {
+  auto *src = allocWithData<int>(kTileElements), *dst = alloc<int>(kTileElements);
+  auto multi = describe({.global = src});
+  multi.group1[0] |= 1u << 19; // Enable the iteration descriptor.
+  tensor_iteration_count_kernel<true, 1, 4 * kTileBytes>
+      <<<1, kWave, 5 * kTileBytes>>>(
+          multi, describe({.global = src, .lds_offset = 4 * kTileBytes}), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kTensorLoadThenReadRace);
+}
+
+// single -> multi -> wait<=1 -> read A: race.
+// The wait guarantees that single has completed, but even the first row of the
+// younger multi instruction remains unprotected.
+TEST_F(Gfx1250RaceTest, tensor_iterations_newest_first_range_race) {
+  auto *src = allocWithData<int>(kTileElements), *dst = alloc<int>(kTileElements);
+  auto multi = describe({.global = src});
+  multi.group1[0] |= 1u << 19; // Enable the iteration descriptor.
+  tensor_iteration_count_kernel<false, 1, 0>
+      <<<1, kWave, 5 * kTileBytes>>>(
+          multi, describe({.global = src, .lds_offset = 4 * kTileBytes}), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kTensorLoadThenReadRace);
+}
+
+// single -> multi -> wait<=2 -> read C: race.
+// Only two instructions were issued, so this wait requires no progress at all.
+// Incorrectly counting multi's copies separately would give three entries,
+// causing the detector to retire single when waiting to two and miss this race.
+TEST_F(Gfx1250RaceTest, tensor_iterations_do_not_add_counter_tokens_race) {
+  auto *src = allocWithData<int>(kTileElements), *dst = alloc<int>(kTileElements);
+  auto multi = describe({.global = src});
+  multi.group1[0] |= 1u << 19; // Enable the iteration descriptor.
+  tensor_iteration_count_kernel<false, 2, 4 * kTileBytes>
+      <<<1, kWave, 5 * kTileBytes>>>(
+          multi, describe({.global = src, .lds_offset = 4 * kTileBytes}), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kTensorLoadThenReadRace);
+}
+
+// --- LDS addresses past the workgroup's allocation ---
+
 // --- A tensor store's LDS source ---
 
 // Wave 0 stores the tile; wave 1 then overwrites it in LDS. The barrier orders
