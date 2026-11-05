@@ -196,6 +196,14 @@ static constexpr RaceExpectation kTensorLoadThenTensorStoreRace{
     .consumer = "tensor_store_from_lds",
 };
 
+static constexpr RaceExpectation kAsyncLoadThenTensorStoreRace{
+    .findings = FindingCount::OneOrMore,
+    .type = "LDS",
+    .access = "read",
+    .producer = "global_load_async_to_lds_b32",
+    .consumer = "tensor_store_from_lds",
+};
+
 static constexpr RaceExpectation kTensorStoreThenTensorLoadRace{
     .findings = FindingCount::OneOrMore,
     .type = "LDS",
@@ -642,6 +650,44 @@ TEST_F(Gfx1250RaceTest, tensor_store_one_word_missing_dscnt_race) {
   sync();
   ExpectRace(kDsWriteThenTensorStoreRace);
   ExpectEveryRaceAtLdsByte(kInteriorByte);
+}
+
+// An ordinary async load into LDS completes on ASYNCcnt, independently of
+// tensor DMA, so a tensor store of the loaded tile needs s_wait_asynccnt first;
+// s_wait_tensorcnt does not complete the load.
+template <bool WaitForAsync>
+__global__ void async_load_then_tensor_store_kernel(const int *src, TensorDesc store) {
+  asm volatile("global_load_async_to_lds_b32 %[lds], %[offset], %[base]\n"
+               :
+               : [lds] "v"(lane() * 4), [offset] "v"(lane() * 4), [base] "s"(src)
+               : "memory");
+  if constexpr (WaitForAsync)
+    asm volatile("s_wait_asynccnt 0" ::: "memory");
+  else
+    // Waiting for tensor DMA must not complete an ordinary async LDS load.
+    waitTensorcnt<0>();
+  tensorStore(store);
+  waitTensorcnt<0>();
+  asm volatile("s_wait_asynccnt 0" ::: "memory");
+}
+
+TEST_F(Gfx1250RaceTest, async_load_then_tensor_store) {
+  auto *src = allocWithData<int>(kTileElements), *stored = alloc<int>(kTileElements);
+  async_load_then_tensor_store_kernel<true><<<1, kWave, kTileBytes>>>(
+      src, describe({.global = stored}));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(stored, range(0));
+}
+
+TEST_F(Gfx1250RaceTest, async_load_then_tensor_store_wrong_wait_race) {
+  auto *src = allocWithData<int>(kTileElements), *stored = alloc<int>(kTileElements);
+  async_load_then_tensor_store_kernel<false><<<1, kWave, kTileBytes>>>(
+      src, describe({.global = stored}));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsyncLoadThenTensorStoreRace);
 }
 
 // --- Same-wave tensor loads and stores over one tile need a TENSORcnt wait ---
