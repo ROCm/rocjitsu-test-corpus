@@ -931,6 +931,64 @@ TEST_F(Gfx1250RaceTest, tensor_load_empty_tile_counts) {
   ExpectValues(untouched, std::vector<int>(kWave, kUnwrittenValue));
 }
 
+// Empty gathers use the same counter slot as dense NOPs. The two shapes
+// exercise zero valid rows and zero row width independently (CDNA5 ISA 10.11.4).
+TensorDesc describeEmptyGather(const void *global, bool zero_width) {
+  auto desc = describe({.global = global, .lds_offset = kTileBytes,
+                        .tile_elements = zero_width ? 0u : uint32_t{kTileElements}});
+  desc.group0[0] |= (1u << 30) | (1u << 31);
+  desc.group1[4] = zero_width ? 2 : 0;
+  return desc;
+}
+
+TEST_F(Gfx1250RaceTest, tensor_load_empty_gather_zero_indices_counts) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *loaded = alloc<int>(kWave);
+  auto *untouched = alloc<int>(kWave);
+  tensor_load_then_empty_kernel<1><<<1, kWave, 2 * kTileBytes>>>(
+      describe({.global = src}), describeEmptyGather(src, false), loaded, untouched);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(loaded, range(0));
+  ExpectValues(untouched, std::vector<int>(kWave, kUnwrittenValue));
+}
+
+TEST_F(Gfx1250RaceTest, tensor_load_empty_gather_zero_indices_race) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *loaded = alloc<int>(kWave);
+  auto *untouched = alloc<int>(kWave);
+  tensor_load_then_empty_kernel<2><<<1, kWave, 2 * kTileBytes>>>(
+      describe({.global = src}), describeEmptyGather(src, false), loaded, untouched);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kTensorLoadThenReadRace);
+}
+
+TEST_F(Gfx1250RaceTest, tensor_load_empty_gather_zero_width_counts) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *loaded = alloc<int>(kWave);
+  auto *untouched = alloc<int>(kWave);
+  tensor_load_then_empty_kernel<1><<<1, kWave, 2 * kTileBytes>>>(
+      describe({.global = src}), describeEmptyGather(src, true), loaded, untouched);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(loaded, range(0));
+  ExpectValues(untouched, std::vector<int>(kWave, kUnwrittenValue));
+}
+
+TEST_F(Gfx1250RaceTest, tensor_load_empty_gather_zero_width_race) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *loaded = alloc<int>(kWave);
+  auto *untouched = alloc<int>(kWave);
+  tensor_load_then_empty_kernel<2><<<1, kWave, 2 * kTileBytes>>>(
+      describe({.global = src}), describeEmptyGather(src, true), loaded, untouched);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kTensorLoadThenReadRace);
+}
+
 // A store whose tile lies wholly outside the tensor writes nothing to global
 // memory, but still counts. It reads no LDS either, so overwriting its tile
 // while it is still pending is safe.
