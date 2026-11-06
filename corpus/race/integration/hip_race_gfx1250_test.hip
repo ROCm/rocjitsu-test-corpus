@@ -494,6 +494,21 @@ TEST_F(Gfx1250RaceTest, tensor_iterations_newest_first_range_race) {
   ExpectRace(kTensorLoadThenReadRace);
 }
 
+// single -> multi -> wait<=1 -> read B: race.
+// Likewise for the younger multi instruction's second row, so the detector must
+// track every row of a pending iterated load, not only the first.
+TEST_F(Gfx1250RaceTest, tensor_iterations_newest_second_range_race) {
+  auto *src = allocWithData<int>(kTileElements), *dst = alloc<int>(kTileElements);
+  auto multi = describe({.global = src});
+  multi.group1[0] |= 1u << 19; // Enable the iteration descriptor.
+  tensor_iteration_count_kernel<false, 1, 2 * kTileBytes>
+      <<<1, kWave, 5 * kTileBytes>>>(
+          multi, describe({.global = src, .lds_offset = 4 * kTileBytes}), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kTensorLoadThenReadRace);
+}
+
 // single -> multi -> wait<=2 -> read C: race.
 // Only two instructions were issued, so this wait requires no progress at all.
 // Incorrectly counting multi's copies separately would give three entries,

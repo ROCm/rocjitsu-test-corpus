@@ -16,6 +16,7 @@
     "tensor_iterations_oldest_all_ranges",
     "tensor_iterations_newest_single_race",
     "tensor_iterations_newest_first_range_race",
+    "tensor_iterations_newest_second_range_race",
     "tensor_iterations_do_not_add_counter_tokens_race",
     "tensor_store_source_overwrite",
     "tensor_store_source_overwrite_race",
