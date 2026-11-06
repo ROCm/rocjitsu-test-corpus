@@ -8,6 +8,7 @@
 
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 hipError_t allocation_status = hipSuccess;
@@ -18,7 +19,9 @@ int storage;
 
 class FixtureProbe : public rocjitsu::test::RaceTestBase {
 public:
+  using RaceTestBase::allocFilled;
   using RaceTestBase::allocWithData;
+  using RaceTestBase::ExpectValues;
   using RaceTestBase::sync;
   void TestBody() override {}
 };
@@ -56,6 +59,20 @@ TEST(RaceFixtureHipErrors, FailedCopyStopsDependentUse) {
     EXPECT_NE(std::string(error.what()).find("hipMemcpy"), std::string::npos);
   }
   EXPECT_FALSE(used_result);
+  copy_status = hipSuccess;
+}
+
+TEST(RaceFixtureHipErrors, FailedFillCopyStopsDependentUse) {
+  copy_status = hipErrorInvalidValue;
+  FixtureProbe fixture;
+  EXPECT_THROW((void)fixture.allocFilled<int>(1, 7), std::runtime_error);
+  copy_status = hipSuccess;
+}
+
+TEST(RaceFixtureHipErrors, FailedReadbackCannotReachValueComparison) {
+  copy_status = hipErrorInvalidValue;
+  FixtureProbe fixture;
+  EXPECT_THROW(fixture.ExpectValues(&storage, std::vector<int>{0}), std::runtime_error);
   copy_status = hipSuccess;
 }
 

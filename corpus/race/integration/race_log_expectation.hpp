@@ -12,6 +12,7 @@
 #include <fstream>
 #include <istream>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -422,6 +423,25 @@ inline RaceExpectationMatchResult matchRaceExpectation(const std::vector<RaceRec
                         "none of " + std::to_string(records.size()) +
                             " races matched the expectation; closest record:");
   return closest;
+}
+
+/// Match records against alternative expectations, such as the two directions
+/// in which a race between unordered waves can be reported. Succeeds if any
+/// alternative matches; otherwise reports each alternative's mismatches.
+inline RaceExpectationMatchResult
+matchAnyRaceExpectation(const std::vector<RaceRecord> &records,
+                        std::span<const RaceExpectation> alternatives) {
+  if (alternatives.empty())
+    return RaceExpectationMatchResult{.errors = {"no race expectations to match"}};
+  RaceExpectationMatchResult combined;
+  for (std::size_t index = 0; index < alternatives.size(); ++index) {
+    RaceExpectationMatchResult matched = matchRaceExpectation(records, alternatives[index]);
+    if (matched.ok())
+      return matched;
+    combined.errors.push_back("alternative " + std::to_string(index + 1) + " did not match:");
+    combined.errors.insert(combined.errors.end(), matched.errors.begin(), matched.errors.end());
+  }
+  return combined;
 }
 
 } // namespace rocjitsu::test

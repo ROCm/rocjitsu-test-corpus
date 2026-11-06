@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import json
 import re
 import os
@@ -25,7 +26,7 @@ def _isolate_case_timeout(monkeypatch) -> None:
 
 def test_configs_preserve_every_moved_gtest() -> None:
     configs = race.load_target_configs(race.default_config_files())
-    expected_counts = {"gfx942": 8, "gfx950": 79, "gfx1151": 29}
+    expected_counts = {"gfx942": 8, "gfx950": 79, "gfx1151": 29, "gfx1250": 62}
 
     for target, expected_count in expected_counts.items():
         cases = race.discover(make_target_spec(target), configs)
@@ -289,10 +290,7 @@ def _configs_with_exclusions(tmp_path: Path, target: str, **exclusions) -> list[
 
 def _source_gtests(target: str) -> set[str]:
     layout = race.TARGET_LAYOUT[target]
-    sources = [
-        race.RACE_SOURCE_DIR / f"hip_race_{target}_test.hip",
-        race.RACE_SOURCE_DIR / "hip_race_vmem_test.hip",
-    ]
+    sources = [race.RACE_SOURCE_DIR / source for source in layout["sources"]]
     pattern = re.compile(r"^TEST_F\(([^,]+),\s*([^)]+)\)", re.MULTILINE)
     return {
         f"{fixture.strip()}.{name.strip()}"
@@ -304,15 +302,7 @@ def _source_gtests(target: str) -> set[str]:
 
 
 @pytest.mark.parametrize(
-    "target,base_target",
-    [
-        ("gfx942", "gfx950"),
-        ("gfx942", "gfx1151"),
-        ("gfx950", "gfx942"),
-        ("gfx950", "gfx1151"),
-        ("gfx1151", "gfx942"),
-        ("gfx1151", "gfx950"),
-    ],
+    "target,base_target", list(itertools.permutations(race.TARGET_LAYOUT, 2))
 )
 def test_mismatched_simulator_target_fails_before_launch(
     tmp_path: Path, monkeypatch, target: str, base_target: str
@@ -665,7 +655,7 @@ def _run_entrypoint(
 
 
 def _write_base_config(path: Path, target: str, **fields) -> None:
-    version = {"gfx942": 90402, "gfx950": 90500, "gfx1151": 110501}[target]
+    version = {"gfx942": 90402, "gfx950": 90500, "gfx1151": 110501, "gfx1250": 120500}[target]
     path.write_text(
         json.dumps(
             {"vm": {"gpu": {"device": {"gfx_target_version": version}}}, **fields}

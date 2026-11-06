@@ -36,18 +36,29 @@ RACE_SOURCE_DIR = REPO_ROOT / "corpus" / "race" / "integration"
 CONFIGS_ROOT = RACE_SOURCE_DIR / "configs"
 CASE_TIMEOUT_SECONDS = 30
 CASE_TIMEOUT_ENV = "ROCJITSU_RACE_CASE_TIMEOUT"
+# "sources" lists the test sources each target's binary is built from, matching
+# corpus/race/integration/CMakeLists.txt.
 TARGET_LAYOUT = {
     "gfx942": {
         "binary": "hip_race_tests_gfx942",
         "fixture": "VmemRaceTest",
+        "sources": ("hip_race_gfx942_test.hip", "hip_race_vmem_test.hip"),
     },
     "gfx950": {
         "binary": "hip_race_tests_gfx950",
         "fixture": "Gfx950RaceTest",
+        "sources": ("hip_race_gfx950_test.hip", "hip_race_vmem_test.hip"),
     },
     "gfx1151": {
         "binary": "hip_race_tests_gfx1151",
         "fixture": "Gfx1151RaceTest",
+        "sources": ("hip_race_gfx1151_test.hip", "hip_race_vmem_test.hip"),
+    },
+    "gfx1250": {
+        "binary": "hip_race_tests_gfx1250",
+        "fixture": "Gfx1250RaceTest",
+        # The shared VMEM cases use pre-GFX12 waits, so gfx1250 does not build them.
+        "sources": ("hip_race_gfx1250_test.hip",),
     },
 }
 

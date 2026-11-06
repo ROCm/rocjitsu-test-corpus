@@ -134,8 +134,14 @@ elseif(CMAKE_HIP_ARCHITECTURES STREQUAL "gfx1151")
         "${CMAKE_CURRENT_LIST_DIR}/hip_race_gfx1151_test.hip"
         "${CMAKE_CURRENT_LIST_DIR}/hip_race_vmem_test.hip"
     )
+elseif(CMAKE_HIP_ARCHITECTURES STREQUAL "gfx1250")
+    # The shared VMEM cases use pre-GFX12 s_waitcnt encodings.
+    add_rocjitsu_race_test(
+        hip_race_tests_gfx1250
+        "${CMAKE_CURRENT_LIST_DIR}/hip_race_gfx1250_test.hip"
+    )
 else()
     message(FATAL_ERROR
-        "RocJITsu race tests support gfx942, gfx950 and gfx1151, got "
+        "RocJITsu race tests support gfx942, gfx950, gfx1151 and gfx1250, got "
         "'${CMAKE_HIP_ARCHITECTURES}'")
 endif()

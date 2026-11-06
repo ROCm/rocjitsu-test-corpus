@@ -319,6 +319,32 @@ TEST(RaceLogExpectationTest, OneOrMoreFindsMatchingRecordAfterMismatch) {
   expectMatchError(matchRaceExpectation(records, exactly_one), "expected exactly one race, got 2");
 }
 
+TEST(RaceLogExpectationTest, MatchesAnyAlternative) {
+  const std::vector<RaceRecord> records = validRaceRecords();
+  const RaceExpectation alternatives[] = {{.type = "SGPR"}, {.type = "VGPR"}};
+
+  const RaceExpectationMatchResult matched = matchAnyRaceExpectation(records, alternatives);
+
+  EXPECT_TRUE(matched.ok()) << matched.message();
+}
+
+TEST(RaceLogExpectationTest, ReportsEveryAlternativeWhenNoneMatches) {
+  const std::vector<RaceRecord> records = validRaceRecords();
+  const RaceExpectation alternatives[] = {{.type = "SGPR"}, {.type = "LDS"}};
+
+  const RaceExpectationMatchResult matched = matchAnyRaceExpectation(records, alternatives);
+
+  expectMatchError(matched, "alternative 1 did not match:");
+  expectMatchError(matched, "alternative 2 did not match:");
+  expectMatchError(matched, "SGPR");
+  expectMatchError(matched, "LDS");
+}
+
+TEST(RaceLogExpectationTest, RejectsEmptyAlternatives) {
+  expectMatchError(matchAnyRaceExpectation(validRaceRecords(), {}),
+                   "no race expectations to match");
+}
+
 TEST(RaceLogExpectationTest, RejectsInvalidDispatchIdentity) {
   std::vector<RaceRecord> records = validRaceRecords();
   ASSERT_EQ(records.size(), 1u);

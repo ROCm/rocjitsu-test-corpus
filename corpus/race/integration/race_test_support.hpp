@@ -10,6 +10,8 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <initializer_list>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -132,6 +134,22 @@ protected:
     return pointer;
   }
 
+  /// Allocate `count` elements, each set to `value`.
+  template <typename T> T *allocFilled(int count, T value) {
+    T *pointer = alloc<T>(count);
+    std::vector<T> host(count, value);
+    RACE_HIP_CHECK(hipMemcpy(pointer, host.data(), count * sizeof(T), hipMemcpyHostToDevice));
+    return pointer;
+  }
+
+  /// Copy `expected.size()` elements back from `device` and compare them.
+  template <typename T> void ExpectValues(const T *device, const std::vector<T> &expected) {
+    std::vector<T> host(expected.size());
+    RACE_HIP_CHECK(
+        hipMemcpy(host.data(), device, host.size() * sizeof(T), hipMemcpyDeviceToHost));
+    EXPECT_EQ(host, expected);
+  }
+
   void sync() { RACE_HIP_CHECK(hipDeviceSynchronize()); }
 
   void ExpectNoRace() {
@@ -152,6 +170,16 @@ protected:
     const RaceLogParseResult parsed = parseRaceLogFromEnvironment();
     ASSERT_TRUE(parsed.ok()) << parsed.error;
     const RaceExpectationMatchResult matched = matchRaceExpectation(parsed.records, expected);
+    EXPECT_TRUE(matched.ok()) << matched.message();
+  }
+
+  /// Expect a race matching any of `alternatives`, for a race whose reported
+  /// direction depends on the order the waves run in.
+  void ExpectAnyRace(std::initializer_list<RaceExpectation> alternatives) {
+    const RaceLogParseResult parsed = parseRaceLogFromEnvironment();
+    ASSERT_TRUE(parsed.ok()) << parsed.error;
+    const std::span<const RaceExpectation> choices(alternatives.begin(), alternatives.size());
+    const RaceExpectationMatchResult matched = matchAnyRaceExpectation(parsed.records, choices);
     EXPECT_TRUE(matched.ok()) << matched.message();
   }
 };
