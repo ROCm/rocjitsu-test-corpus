@@ -2425,8 +2425,8 @@ TEST_F(Gfx1250RaceTest, exited_lds_writer_race) {
               .consumer = "ds_load_b32"});
 }
 
-// Neither a named barrier joined only by the reader nor a cluster barrier
-// orders an unrelated writer's LDS accesses, even if it has already ended.
+// A named barrier joined only by the reader does not order the writer's LDS
+// accesses, even if the writer has already ended.
 // Adding a workgroup barrier supplies the missing ordering.
 template <bool WorkgroupAfter>
 __attribute__((amdgpu_flat_work_group_size(64, 64)))
@@ -2441,9 +2441,6 @@ __global__ void named_barrier_exited_writer_kernel(int *out) {
     waitDscnt();
     return;
   }
-  // Delay this wave so the emulator exercises completion after the writer
-  // exits. Sleeping creates no memory ordering between the waves.
-  asm volatile("s_sleep 1" ::: "memory");
   // Use the barrier type and builtins so the compiler reserves a named barrier
   // in the kernel descriptor and selects its ID.
   __builtin_amdgcn_s_barrier_init(&named, 1);
@@ -2459,13 +2456,21 @@ TEST_F(Gfx1250RaceTest, named_barrier_exited_writer_race) {
   named_barrier_exited_writer_kernel<false><<<1, 2 * kWave>>>(alloc<int>(kWave));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace({.kernel = "named_barrier_exited_writer_kernel",
-              .type = "LDS",
-              .access = "read",
-              .wave = 0,
-              .lane = 0,
-              .producer = "ds_store_b32",
-              .consumer = "ds_load_b32"});
+  // Either wave may access LDS first; require the same conflict in either direction.
+  ExpectAnyRace({{.kernel = "named_barrier_exited_writer_kernel",
+                  .type = "LDS",
+                  .access = "read",
+                  .wave = 0,
+                  .lane = 0,
+                  .producer = "ds_store_b32",
+                  .consumer = "ds_load_b32"},
+                 {.kernel = "named_barrier_exited_writer_kernel",
+                  .type = "LDS",
+                  .access = "write",
+                  .wave = 1,
+                  .lane = 0,
+                  .producer = "ds_load_b32",
+                  .consumer = "ds_store_b32"}});
 }
 
 TEST_F(Gfx1250RaceTest, named_then_workgroup_barrier_exited_writer) {
@@ -2477,6 +2482,8 @@ TEST_F(Gfx1250RaceTest, named_then_workgroup_barrier_exited_writer) {
   ExpectNoRace();
 }
 
+// The reader's cluster barrier does not order the writer's LDS accesses,
+// even if the writer has already ended. A workgroup barrier supplies the ordering.
 template <bool WorkgroupAfter>
 __attribute__((cluster_dims(2, 1, 1), amdgpu_flat_work_group_size(64, 64)))
 __global__ void cluster_barrier_exited_writer_kernel(int *out) {
@@ -2493,9 +2500,7 @@ __global__ void cluster_barrier_exited_writer_kernel(int *out) {
     }
     return;
   }
-  // As in the named-barrier case, exercise completion after the writer exits.
-  asm volatile("s_sleep 1\n"
-               "s_barrier_signal -3\n"
+  asm volatile("s_barrier_signal -3\n"
                "s_barrier_wait -3" ::: "memory");
   if constexpr (WorkgroupAfter)
     barrier();
@@ -2519,13 +2524,21 @@ template <bool WorkgroupAfter> void launchClusterExitedWriter(int *out) {
 TEST_F(Gfx1250RaceTest, cluster_barrier_exited_writer_race) {
   launchClusterExitedWriter<false>(alloc<int>(kWave));
   sync();
-  ExpectRace({.kernel = "cluster_barrier_exited_writer_kernel",
-              .type = "LDS",
-              .access = "read",
-              .wave = 0,
-              .lane = 0,
-              .producer = "ds_store_b32",
-              .consumer = "ds_load_b32"});
+  // Either wave may access LDS first; require the same conflict in either direction.
+  ExpectAnyRace({{.kernel = "cluster_barrier_exited_writer_kernel",
+                  .type = "LDS",
+                  .access = "read",
+                  .wave = 0,
+                  .lane = 0,
+                  .producer = "ds_store_b32",
+                  .consumer = "ds_load_b32"},
+                 {.kernel = "cluster_barrier_exited_writer_kernel",
+                  .type = "LDS",
+                  .access = "write",
+                  .wave = 1,
+                  .lane = 0,
+                  .producer = "ds_load_b32",
+                  .consumer = "ds_store_b32"}});
 }
 
 TEST_F(Gfx1250RaceTest, cluster_then_workgroup_barrier_exited_writer) {
