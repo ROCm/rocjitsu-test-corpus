@@ -150,12 +150,13 @@ another wave's barrier, the DS wait before a store, or the wait between an
 async copy and a tensor transfer, or replace `s_wait_asynccnt` with
 `s_wait_storecnt`. Partial waits check that loads complete in order with loads
 and stores with stores, but loads and stores out of order with each other.
-Further cases check a store's B128 extent, IOFFSET, partially active EXEC,
-lanes past the LDS allocation (a B128 lane straddling its end reads its in-range
-DWORDs), that a store with EXEC zero still occupies an ASYNCcnt slot, and
-compiler-generated copies from the async
-builtins, for which the compiler emits no `s_wait_asynccnt`, not even before
-`__syncthreads()`. The gfx1250 program does not build the shared VMEM cases,
+Further cases check a store's B8 and B128 extents, IOFFSET, partially active
+EXEC, lanes past the LDS allocation (a B128 lane straddling its end reads its
+in-range DWORDs), that a store with EXEC zero still occupies an ASYNCcnt slot,
+an async store of another wave's async-load tile, that readers of one tile need
+no wait between them, a double-buffered store loop, and compiler-generated
+copies from the async builtins, for which the compiler emits no
+`s_wait_asynccnt`, not even before `__syncthreads()`. The gfx1250 program does not build the shared VMEM cases,
 which use pre-GFX12 waits.
 
 Before entering each private case directory, the adapter resolves relative
