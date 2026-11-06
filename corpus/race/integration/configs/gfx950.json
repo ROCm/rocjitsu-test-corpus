@@ -44,6 +44,8 @@
     "sgpr_waw_load_then_load_race",
     "lds_cross_wave",
     "lds_cross_wave_race",
+    "exited_lds_writer",
+    "exited_lds_writer_race",
     "lds_same_wave_order",
     "global_to_lds_buffer",
     "global_to_lds_buffer_race",
