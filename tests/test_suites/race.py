@@ -41,7 +41,7 @@ CASE_TIMEOUT_ENV = "ROCJITSU_RACE_CASE_TIMEOUT"
 TARGET_LAYOUT = {
     "gfx942": {
         "binary": "hip_race_tests_gfx942",
-        "fixture": "VmemRaceTest",
+        "fixture": "Gfx942RaceTest",
         "sources": ("hip_race_gfx942_test.hip", "hip_race_vmem_test.hip"),
     },
     "gfx950": {
