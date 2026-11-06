@@ -9,6 +9,8 @@
     "vmem_no_wait_race",
     "vmem_expcnt_only_race",
     "vmem_flat_lds_exchange",
-    "vmem_flat_lds_exchange_race"
+    "vmem_flat_lds_exchange_race",
+    "exited_lds_writer",
+    "exited_lds_writer_race"
   ]
 }

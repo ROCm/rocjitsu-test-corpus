@@ -104,6 +104,12 @@
     "tensor_load_builtin",
     "async_copy_builtin",
     "async_copy_builtin_race",
-    "async_store_syncthreads_race"
+    "async_store_syncthreads_race",
+    "exited_lds_writer",
+    "exited_lds_writer_race",
+    "named_barrier_exited_writer_race",
+    "named_then_workgroup_barrier_exited_writer",
+    "cluster_barrier_exited_writer_race",
+    "cluster_then_workgroup_barrier_exited_writer"
   ]
 }
