@@ -259,4 +259,75 @@ TEST_F(VmemRaceTest, flat_lds_exchange_race) {
               .consumer = "flat_load"});
 }
 
+// An LDS atomic reads and writes its bytes whether or not it returns a value.
+// Work-items 0-63 and 64-127 (one wave64 or two wave32 each) access one shared
+// counter with no barrier between the accesses. Two atomics are well defined;
+// an atomic and a plain read or write of the same bytes race.
+// The returning and non-returning atomics use different operations so the
+// compiler cannot merge the two branches into one returning atomic.
+enum class LdsCounterAccess { ReturningAtomic, Atomic, Read, Write };
+
+template <LdsCounterAccess Access>
+__device__ void access_counter(unsigned *counter, unsigned *output) {
+  const unsigned tid = threadIdx.x;
+  if constexpr (Access == LdsCounterAccess::ReturningAtomic)
+    output[tid] = atomicAdd(counter, 1u); // ds_add_rtn_u32
+  else if constexpr (Access == LdsCounterAccess::Atomic)
+    atomicOr(counter, 1u << 16); // ds_or_b32
+  else if constexpr (Access == LdsCounterAccess::Read)
+    output[tid] = *counter;
+  else
+    *counter = 1000;
+}
+
+template <LdsCounterAccess First, LdsCounterAccess Second>
+__global__ void lds_atomic_kernel(unsigned *output) {
+  __shared__ unsigned counter;
+  const unsigned tid = threadIdx.x;
+  if (tid == 0)
+    counter = 0;
+  __syncthreads();
+  if (__builtin_amdgcn_readfirstlane(tid) < 64)
+    access_counter<First>(&counter, output);
+  else
+    access_counter<Second>(&counter, output);
+  __syncthreads();
+  if (tid == 0)
+    output[128] = counter;
+}
+
+template <LdsCounterAccess First, LdsCounterAccess Second> void check_lds_atomic() {
+  unsigned *output = nullptr;
+  std::vector<unsigned> result(129);
+  RACE_HIP_CHECK(hipMalloc(&output, result.size() * sizeof(unsigned)));
+  lds_atomic_kernel<First, Second><<<1, 128>>>(output);
+  RACE_HIP_CHECK(hipGetLastError());
+  RACE_HIP_CHECK(hipDeviceSynchronize());
+  RACE_HIP_CHECK(
+      hipMemcpy(result.data(), output, result.size() * sizeof(unsigned), hipMemcpyDeviceToHost));
+  if constexpr (First == LdsCounterAccess::ReturningAtomic && Second == LdsCounterAccess::Atomic) {
+    EXPECT_EQ(result[128], 64u + (1u << 16));
+    for (unsigned tid = 0; tid < 64; ++tid)
+      EXPECT_LT(result[tid] & 0xffffu, 64u);
+  }
+  RACE_HIP_CHECK(hipFree(output));
+}
+
+TEST_F(VmemRaceTest, lds_atomic_mixed_return) {
+  ASSERT_NO_FATAL_FAILURE(
+      (check_lds_atomic<LdsCounterAccess::ReturningAtomic, LdsCounterAccess::Atomic>()));
+  ExpectNoRace();
+}
+
+TEST_F(VmemRaceTest, lds_atomic_read_race) {
+  ASSERT_NO_FATAL_FAILURE(
+      (check_lds_atomic<LdsCounterAccess::ReturningAtomic, LdsCounterAccess::Read>()));
+  ExpectRace({.kernel = "lds_atomic_kernel", .type = "LDS"});
+}
+
+TEST_F(VmemRaceTest, lds_atomic_write_race) {
+  ASSERT_NO_FATAL_FAILURE((check_lds_atomic<LdsCounterAccess::Atomic, LdsCounterAccess::Write>()));
+  ExpectRace({.kernel = "lds_atomic_kernel", .type = "LDS"});
+}
+
 } // namespace
