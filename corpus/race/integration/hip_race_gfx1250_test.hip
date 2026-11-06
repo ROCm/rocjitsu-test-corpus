@@ -2,17 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 /// @file hip_race_gfx1250_test.hip
-/// @brief gfx1250 HIP race detector tests: GFX12 split wait counters and tensor
-///        DMA (tensor_load_to_lds, tensor_store_from_lds).
+/// @brief gfx1250 HIP race detector tests: GFX12 split wait counters, tensor
+///        DMA (tensor_load_to_lds, tensor_store_from_lds) and async copies
+///        (global_load_async_to_lds, global_store_async_from_lds).
 ///
 /// A tensor load writes LDS and a tensor store reads it, asynchronously, until
 /// s_wait_tensorcnt retires the transfer. Transfers from one wave complete in
 /// issue order and independently of DS operations, but may access LDS out of
 /// order, so overlapping transfers from one wave also need a TENSORcnt wait
-/// between them. Other waves see their LDS effects only after the issuing wave
-/// waits and the workgroup passes a barrier. Each race case is its clean
-/// partner with one step removed. Clean cases also check the data moved; raced
-/// values are unconstrained.
+/// between them. Async copies do the same on ASYNCcnt, one lane at a time.
+/// Other waves see their LDS effects only after the issuing wave waits and the
+/// workgroup passes a barrier. Each race case is its clean partner with one
+/// step removed. Clean cases also check the data moved; raced values are
+/// unconstrained.
 
 #include <gtest/gtest.h>
 #include <hip/hip_runtime.h>
@@ -153,6 +155,30 @@ __device__ inline void ldsWrite(uint32_t byte_offset, int value) {
 }
 
 /// Fill one tile of LDS with `value` and wait for the writes.
+/// Copy `src[lane]` into the LDS int at `tile_offset + lane * 4` without
+/// waiting; wait with waitAsynccnt().
+__device__ inline void asyncLoad(const int *src, uint32_t tile_offset) {
+  asm volatile("global_load_async_to_lds_b32 %[lds], %[offset], %[base]"
+               :
+               : [lds] "v"(tile_offset + lane() * kElementBytes),
+                 [offset] "v"(lane() * kElementBytes), [base] "s"(src)
+               : "memory");
+}
+
+/// Copy the LDS int at `tile_offset + lane * 4` to `dst[lane]` without waiting;
+/// wait with waitAsynccnt().
+__device__ inline void asyncStore(int *dst, uint32_t tile_offset) {
+  asm volatile("global_store_async_from_lds_b32 %[offset], %[lds], %[base]"
+               :
+               : [offset] "v"(lane() * kElementBytes),
+                 [lds] "v"(tile_offset + lane() * kElementBytes), [base] "s"(dst)
+               : "memory");
+}
+
+template <int Count> __device__ inline void waitAsynccnt() {
+  asm volatile("s_wait_asynccnt %0" ::"n"(Count) : "memory");
+}
+
 __device__ inline void ldsFillAndWait(uint32_t byte_offset, int value) {
   ldsWrite(byte_offset + lane() * kElementBytes, value);
   waitDscnt();
@@ -219,6 +245,70 @@ static constexpr RaceExpectation kTensorStoreThenTensorLoadRaceExpectation{
     .access = "write",
     .producer = "tensor_store_from_lds",
     .consumer = "tensor_load_to_lds",
+};
+
+static constexpr RaceExpectation kAsyncStoreThenWriteRaceExpectation{
+    .findings = FindingCount::OneOrMore,
+    .type = "LDS",
+    .access = "write",
+    .producer = "global_store_async_from_lds_b32",
+    .consumer = "ds_store_b32",
+};
+
+static constexpr RaceExpectation kAsyncStoreB128ThenWriteRaceExpectation{
+    .findings = FindingCount::OneOrMore,
+    .type = "LDS",
+    .access = "write",
+    .producer = "global_store_async_from_lds_b128",
+    .consumer = "ds_store_b32",
+};
+
+static constexpr RaceExpectation kDsWriteThenAsyncStoreRaceExpectation{
+    .findings = FindingCount::OneOrMore,
+    .type = "LDS",
+    .access = "read",
+    .producer = "ds_store_b32",
+    .consumer = "global_store_async_from_lds_b32",
+};
+
+static constexpr RaceExpectation kAsyncLoadThenAsyncStoreRaceExpectation{
+    .findings = FindingCount::OneOrMore,
+    .type = "LDS",
+    .access = "read",
+    .producer = "global_load_async_to_lds_b32",
+    .consumer = "global_store_async_from_lds_b32",
+};
+
+static constexpr RaceExpectation kAsyncStoreThenAsyncLoadRaceExpectation{
+    .findings = FindingCount::OneOrMore,
+    .type = "LDS",
+    .access = "write",
+    .producer = "global_store_async_from_lds_b32",
+    .consumer = "global_load_async_to_lds_b32",
+};
+
+static constexpr RaceExpectation kAsyncLoadThenReadRaceExpectation{
+    .findings = FindingCount::OneOrMore,
+    .type = "LDS",
+    .access = "read",
+    .producer = "global_load_async_to_lds_b32",
+    .consumer = "ds_load_b32",
+};
+
+static constexpr RaceExpectation kAsyncStoreThenTensorLoadRaceExpectation{
+    .findings = FindingCount::OneOrMore,
+    .type = "LDS",
+    .access = "write",
+    .producer = "global_store_async_from_lds_b32",
+    .consumer = "tensor_load_to_lds",
+};
+
+static constexpr RaceExpectation kTensorLoadThenAsyncStoreRaceExpectation{
+    .findings = FindingCount::OneOrMore,
+    .type = "LDS",
+    .access = "read",
+    .producer = "tensor_load_to_lds",
+    .consumer = "global_store_async_from_lds_b32",
 };
 
 // --- GFX12 split wait counters ---
@@ -1491,6 +1581,555 @@ TEST_F(Gfx1250RaceTest, tensor_store_past_lds_allocation) {
   EXPECT_EQ(stored, range(100, kTileElements / 2));
 }
 
+// --- Async copies between global memory and LDS ---
+//
+// An async load writes LDS and an async store reads it, one lane at a time,
+// until s_wait_asynccnt retires the copy (CDNA5 ISA 10.8). Async copies may
+// access LDS out of order with each other (10.8) and with DS instructions, so a
+// wave needs that wait before touching a copy's LDS bytes, and before an async
+// copy touches bytes of its own pending DS write. STOREcnt does not cover async
+// stores. Loads complete in order with loads and stores with stores, but loads
+// and stores complete out of order with each other (10.8).
+
+/// Fill tile 0 with 100 + lane, store it with an async store, then overwrite
+/// it. Only an ASYNCcnt wait between the store and the overwrite protects it.
+enum class AsyncWait { Asynccnt, Storecnt, None };
+
+template <AsyncWait Wait> __global__ void async_store_source_overwrite_kernel(int *dst) {
+  ldsFillAndWait(0, 100 + lane());
+  asyncStore(dst, 0);
+  if constexpr (Wait == AsyncWait::Asynccnt)
+    waitAsynccnt<0>();
+  else if constexpr (Wait == AsyncWait::Storecnt)
+    // STOREcnt counts ordinary stores, not async stores.
+    asm volatile("s_wait_storecnt 0" ::: "memory");
+  ldsFillAndWait(0, -1);
+  waitAsynccnt<0>();
+}
+
+TEST_F(Gfx1250RaceTest, async_store_source_overwrite) {
+  auto *dst = alloc<int>(kTileElements);
+  async_store_source_overwrite_kernel<AsyncWait::Asynccnt><<<1, kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(100));
+}
+
+TEST_F(Gfx1250RaceTest, async_store_source_overwrite_race) {
+  auto *dst = alloc<int>(kTileElements);
+  async_store_source_overwrite_kernel<AsyncWait::None><<<1, kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsyncStoreThenWriteRaceExpectation);
+}
+
+TEST_F(Gfx1250RaceTest, async_store_source_overwrite_storecnt_race) {
+  auto *dst = alloc<int>(kTileElements);
+  async_store_source_overwrite_kernel<AsyncWait::Storecnt><<<1, kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsyncStoreThenWriteRaceExpectation);
+}
+
+// Wave 0 stores the tile; wave 1 then overwrites it.
+template <SyncMode Mode>
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+async_store_cross_wave_kernel(int *dst) {
+  const int wave = waveIndex();
+  if (wave == 0) {
+    ldsFillAndWait(0, 100 + lane());
+    asyncStore(dst, 0);
+    if (Mode != SyncMode::BarrierOnly)
+      waitAsynccnt<0>();
+  }
+  if (Mode != SyncMode::WaitOnly)
+    barrier();
+  if (wave == 1)
+    ldsFillAndWait(0, -1);
+  if (wave == 0)
+    waitAsynccnt<0>();
+}
+
+TEST_F(Gfx1250RaceTest, async_store_cross_wave) {
+  auto *dst = alloc<int>(kTileElements);
+  async_store_cross_wave_kernel<SyncMode::WaitAndBarrier><<<1, 2 * kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(100));
+}
+
+TEST_F(Gfx1250RaceTest, async_store_cross_wave_no_barrier_race) {
+  auto *dst = alloc<int>(kTileElements);
+  async_store_cross_wave_kernel<SyncMode::WaitOnly><<<1, 2 * kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  // Without a barrier the waves run in either order, so the race may be
+  // reported in either direction.
+  ExpectAnyRace(
+      {kAsyncStoreThenWriteRaceExpectation, kDsWriteThenAsyncStoreRaceExpectation});
+}
+
+// A barrier retires only copies their wave has already waited for.
+TEST_F(Gfx1250RaceTest, async_store_cross_wave_no_asynccnt_race) {
+  auto *dst = alloc<int>(kTileElements);
+  async_store_cross_wave_kernel<SyncMode::BarrierOnly><<<1, 2 * kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsyncStoreThenWriteRaceExpectation);
+}
+
+// DS writes and async stores access LDS out of order, so storing a tile the
+// wave just wrote takes a DScnt wait first.
+template <bool WaitForDs> __global__ void async_store_after_ds_write_kernel(int *dst) {
+  ldsWrite(lane() * kElementBytes, 100 + lane());
+  if constexpr (WaitForDs)
+    waitDscnt();
+  asyncStore(dst, 0);
+  waitAsynccnt<0>();
+  waitDscnt();
+}
+
+TEST_F(Gfx1250RaceTest, async_store_dscnt) {
+  auto *dst = alloc<int>(kTileElements);
+  async_store_after_ds_write_kernel<true><<<1, kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(100));
+}
+
+TEST_F(Gfx1250RaceTest, async_store_missing_dscnt_race) {
+  auto *dst = alloc<int>(kTileElements);
+  async_store_after_ds_write_kernel<false><<<1, kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kDsWriteThenAsyncStoreRaceExpectation);
+}
+
+// Copy global -> LDS -> global in one wave. The two copies share ASYNCcnt but
+// may access LDS out of order, so the store may read the tile before the load
+// writes it unless an ASYNCcnt wait separates them.
+template <bool Wait> __global__ void async_copy_load_then_store_kernel(const int *src, int *dst) {
+  asyncLoad(src, 0);
+  if constexpr (Wait)
+    waitAsynccnt<0>();
+  asyncStore(dst, 0);
+  waitAsynccnt<0>();
+}
+
+TEST_F(Gfx1250RaceTest, async_copy_load_then_store) {
+  auto *src = allocWithData<int>(kTileElements), *dst = alloc<int>(kTileElements);
+  async_copy_load_then_store_kernel<true><<<1, kWave, kTileBytes>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0));
+}
+
+TEST_F(Gfx1250RaceTest, async_copy_load_then_store_race) {
+  auto *src = allocWithData<int>(kTileElements), *dst = alloc<int>(kTileElements);
+  async_copy_load_then_store_kernel<false><<<1, kWave, kTileBytes>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsyncLoadThenAsyncStoreRaceExpectation);
+}
+
+// Store a tile, then load new data into it: the load may overwrite bytes the
+// store has not read yet.
+template <bool Wait>
+__global__ void async_copy_store_then_load_kernel(const int *src, int *stored, int *loaded) {
+  ldsFillAndWait(0, 100 + lane());
+  asyncStore(stored, 0);
+  if constexpr (Wait)
+    waitAsynccnt<0>();
+  asyncLoad(src, 0);
+  waitAsynccnt<0>();
+  loaded[lane()] = ldsReadAndWait(lane() * kElementBytes);
+}
+
+TEST_F(Gfx1250RaceTest, async_copy_store_then_load) {
+  auto *src = allocWithData<int>(kTileElements), *stored = alloc<int>(kTileElements),
+       *loaded = alloc<int>(kTileElements);
+  async_copy_store_then_load_kernel<true><<<1, kWave, kTileBytes>>>(src, stored, loaded);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(stored, range(100));
+  ExpectValues(loaded, range(0));
+}
+
+TEST_F(Gfx1250RaceTest, async_copy_store_then_load_race) {
+  auto *src = allocWithData<int>(kTileElements), *stored = alloc<int>(kTileElements),
+       *loaded = alloc<int>(kTileElements);
+  async_copy_store_then_load_kernel<false><<<1, kWave, kTileBytes>>>(src, stored, loaded);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsyncStoreThenAsyncLoadRaceExpectation);
+}
+
+// Load tile 0, store tile 1, load tile 2, then wait until at most one copy is
+// outstanding. Loads complete in order, so the first load has completed. Loads
+// and stores complete out of order with each other, so either the store or the
+// second load may be the one still pending.
+enum class MixedProbe { ReadOldestLoad, OverwriteStore, ReadNewestLoad };
+
+template <MixedProbe Probe>
+__global__ void async_mixed_partial_wait_kernel(const int *src, int *stored, int *out) {
+  ldsFillAndWait(kTileBytes, 100 + lane());
+  asyncLoad(src, 0);
+  asyncStore(stored, kTileBytes);
+  asyncLoad(src, 2 * kTileBytes);
+  waitAsynccnt<1>();
+  if constexpr (Probe == MixedProbe::ReadOldestLoad) {
+    out[lane()] = ldsReadAndWait(lane() * kElementBytes);
+  } else if constexpr (Probe == MixedProbe::OverwriteStore) {
+    ldsFillAndWait(kTileBytes, -1);
+  } else {
+    out[lane()] = ldsReadAndWait(2 * kTileBytes + lane() * kElementBytes);
+  }
+  waitAsynccnt<0>();
+}
+
+TEST_F(Gfx1250RaceTest, async_mixed_partial_wait_oldest_load) {
+  auto *src = allocWithData<int>(kTileElements), *stored = alloc<int>(kTileElements),
+       *out = alloc<int>(kTileElements);
+  async_mixed_partial_wait_kernel<MixedProbe::ReadOldestLoad>
+      <<<1, kWave, 3 * kTileBytes>>>(src, stored, out);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(out, range(0));
+  ExpectValues(stored, range(100));
+}
+
+TEST_F(Gfx1250RaceTest, async_mixed_partial_wait_store_race) {
+  auto *src = allocWithData<int>(kTileElements), *stored = alloc<int>(kTileElements),
+       *out = alloc<int>(kTileElements);
+  async_mixed_partial_wait_kernel<MixedProbe::OverwriteStore>
+      <<<1, kWave, 3 * kTileBytes>>>(src, stored, out);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsyncStoreThenWriteRaceExpectation);
+}
+
+TEST_F(Gfx1250RaceTest, async_mixed_partial_wait_newest_load_race) {
+  auto *src = allocWithData<int>(kTileElements), *stored = alloc<int>(kTileElements),
+       *out = alloc<int>(kTileElements);
+  async_mixed_partial_wait_kernel<MixedProbe::ReadNewestLoad>
+      <<<1, kWave, 3 * kTileBytes>>>(src, stored, out);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsyncLoadThenReadRaceExpectation);
+}
+
+// Store tile 0, then tile 1, then wait until at most one is outstanding. Stores
+// complete in order with each other, so tile 0's store has completed and only
+// tile 1 is still a source.
+template <uint32_t OverwriteOffset>
+__global__ void async_store_pipeline_kernel(int *first, int *second) {
+  ldsFillAndWait(0, 100 + lane());
+  ldsFillAndWait(kTileBytes, 200 + lane());
+  asyncStore(first, 0);
+  asyncStore(second, kTileBytes);
+  waitAsynccnt<1>();
+  ldsFillAndWait(OverwriteOffset, -1);
+  waitAsynccnt<0>();
+}
+
+TEST_F(Gfx1250RaceTest, async_store_pipeline_oldest) {
+  auto *first = alloc<int>(kTileElements), *second = alloc<int>(kTileElements);
+  async_store_pipeline_kernel<0><<<1, kWave, 2 * kTileBytes>>>(first, second);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(first, range(100));
+  ExpectValues(second, range(200));
+}
+
+TEST_F(Gfx1250RaceTest, async_store_pipeline_newest_race) {
+  auto *first = alloc<int>(kTileElements), *second = alloc<int>(kTileElements);
+  async_store_pipeline_kernel<kTileBytes><<<1, kWave, 2 * kTileBytes>>>(first, second);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsyncStoreThenWriteRaceExpectation);
+}
+
+// Async copies and tensor DMA complete on different counters, so a tensor load
+// over a pending async store's source needs s_wait_asynccnt, and an async store
+// of a pending tensor load's tile needs s_wait_tensorcnt.
+template <bool WaitForAsync>
+__global__ void async_store_then_tensor_load_kernel(int *stored, TensorDesc load) {
+  ldsFillAndWait(0, 100 + lane());
+  asyncStore(stored, 0);
+  if constexpr (WaitForAsync)
+    waitAsynccnt<0>();
+  else
+    waitTensorcnt<0>();
+  tensorLoad(load);
+  waitTensorcnt<0>();
+  waitAsynccnt<0>();
+}
+
+TEST_F(Gfx1250RaceTest, async_store_then_tensor_load) {
+  auto *src = allocWithData<int>(kTileElements), *stored = alloc<int>(kTileElements);
+  async_store_then_tensor_load_kernel<true>
+      <<<1, kWave, kTileBytes>>>(stored, describe({.global = src}));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(stored, range(100));
+}
+
+TEST_F(Gfx1250RaceTest, async_store_then_tensor_load_wrong_wait_race) {
+  auto *src = allocWithData<int>(kTileElements), *stored = alloc<int>(kTileElements);
+  async_store_then_tensor_load_kernel<false>
+      <<<1, kWave, kTileBytes>>>(stored, describe({.global = src}));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsyncStoreThenTensorLoadRaceExpectation);
+}
+
+template <bool WaitForTensor>
+__global__ void tensor_load_then_async_store_kernel(TensorDesc load, int *stored) {
+  tensorLoad(load);
+  if constexpr (WaitForTensor)
+    waitTensorcnt<0>();
+  else
+    waitAsynccnt<0>();
+  asyncStore(stored, 0);
+  waitAsynccnt<0>();
+  waitTensorcnt<0>();
+}
+
+TEST_F(Gfx1250RaceTest, tensor_load_then_async_store) {
+  auto *src = allocWithData<int>(kTileElements), *stored = alloc<int>(kTileElements);
+  tensor_load_then_async_store_kernel<true>
+      <<<1, kWave, kTileBytes>>>(describe({.global = src}), stored);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(stored, range(0));
+}
+
+TEST_F(Gfx1250RaceTest, tensor_load_then_async_store_wrong_wait_race) {
+  auto *src = allocWithData<int>(kTileElements), *stored = alloc<int>(kTileElements);
+  tensor_load_then_async_store_kernel<false>
+      <<<1, kWave, kTileBytes>>>(describe({.global = src}), stored);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kTensorLoadThenAsyncStoreRaceExpectation);
+}
+
+// Lane 0 stores 16 LDS bytes with one B128 store, then overwrites the int at
+// `OverwriteOffset` without waiting. The store's last int, at byte 12, is part
+// of its source; the int after it is not.
+template <uint32_t OverwriteOffset> __global__ void async_store_b128_kernel(int *dst) {
+  ldsFillAndWait(0, 100 + lane());
+  if (lane() == 0) {
+    asm volatile("global_store_async_from_lds_b128 %[offset], %[lds], %[base]"
+                 :
+                 : [offset] "v"(0), [lds] "v"(0), [base] "s"(dst)
+                 : "memory");
+    ldsWrite(OverwriteOffset, -1);
+    waitDscnt();
+  }
+  waitAsynccnt<0>();
+}
+
+TEST_F(Gfx1250RaceTest, async_store_b128_next_int) {
+  auto *dst = alloc<int>(4);
+  async_store_b128_kernel<4 * kElementBytes><<<1, kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(100, 4));
+}
+
+TEST_F(Gfx1250RaceTest, async_store_b128_last_int_race) {
+  auto *dst = alloc<int>(4);
+  async_store_b128_kernel<3 * kElementBytes><<<1, kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsyncStoreB128ThenWriteRaceExpectation);
+}
+
+// IOFFSET applies to both addresses (CDNA5 ISA 10.8.1): with an offset of one
+// tile, the store reads tile 1 and writes dst[kTileElements + lane]. Tile 0 is
+// not part of its source.
+template <uint32_t OverwriteOffset> __global__ void async_store_ioffset_kernel(int *dst) {
+  ldsFillAndWait(0, 100 + lane());
+  ldsFillAndWait(kTileBytes, 200 + lane());
+  asm volatile("global_store_async_from_lds_b32 %[offset], %[lds], %[base] offset:%[ioffset]"
+               :
+               : [offset] "v"(lane() * kElementBytes), [lds] "v"(lane() * kElementBytes),
+                 [base] "s"(dst), [ioffset] "n"(kTileBytes)
+               : "memory");
+  ldsFillAndWait(OverwriteOffset, -1);
+  waitAsynccnt<0>();
+}
+
+TEST_F(Gfx1250RaceTest, async_store_ioffset_unoffset_tile) {
+  auto *dst = alloc<int>(2 * kTileElements);
+  async_store_ioffset_kernel<0><<<1, kWave, 2 * kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst + kTileElements, range(200));
+}
+
+TEST_F(Gfx1250RaceTest, async_store_ioffset_source_race) {
+  auto *dst = alloc<int>(2 * kTileElements);
+  async_store_ioffset_kernel<kTileBytes><<<1, kWave, 2 * kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsyncStoreThenWriteRaceExpectation);
+}
+
+// Only odd lanes store. Without a wait, overwriting an even lane's int is safe,
+// since no store reads it; overwriting an odd lane's int races.
+template <int OverwriteParity> __global__ void async_store_partial_exec_kernel(int *dst) {
+  ldsFillAndWait(0, 100 + lane());
+  if (lane() & 1)
+    asyncStore(dst, 0);
+  if ((lane() & 1) == OverwriteParity)
+    ldsWrite(lane() * kElementBytes, -1);
+  waitDscnt();
+  waitAsynccnt<0>();
+}
+
+TEST_F(Gfx1250RaceTest, async_store_partial_exec_inactive_lanes) {
+  auto *dst = allocFilled(kTileElements, kUnwrittenValue);
+  async_store_partial_exec_kernel<0><<<1, kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  std::vector<int> expected(kTileElements, kUnwrittenValue);
+  for (int index = 1; index < kTileElements; index += 2)
+    expected[index] = 100 + index;
+  ExpectValues(dst, expected);
+}
+
+TEST_F(Gfx1250RaceTest, async_store_partial_exec_active_lane_race) {
+  auto *dst = allocFilled(kTileElements, kUnwrittenValue);
+  async_store_partial_exec_kernel<1><<<1, kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsyncStoreThenWriteRaceExpectation);
+}
+
+// The store's tile straddles the end of the LDS allocation: lanes 0-15 read
+// inside it and lanes 16-31 past it. Lanes past it read no LDS bytes, so
+// overwriting low LDS addresses while the store is pending is not a race.
+__global__ void async_store_past_lds_allocation_kernel(int *dst) {
+  if (lane() < 16)
+    ldsWrite(kStraddlingOffset + lane() * kElementBytes, 100 + lane());
+  waitDscnt();
+  asyncStore(dst, kStraddlingOffset);
+  if (lane() >= 16)
+    ldsWrite((lane() - 16) * kElementBytes, -1);
+  waitDscnt();
+  waitAsynccnt<0>();
+}
+
+TEST_F(Gfx1250RaceTest, async_store_past_lds_allocation) {
+  auto *dst = alloc<int>(kTileElements);
+  async_store_past_lds_allocation_kernel<<<1, kWave, kLdsAllocation>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  // CDNA5 ISA 3.3.3 specifies out-of-range LDS behavior for async loads only,
+  // so the case checks only the in-range half.
+  std::vector<int> stored(kTileElements);
+  RACE_HIP_CHECK(hipMemcpy(stored.data(), dst, kTileBytes, hipMemcpyDeviceToHost));
+  stored.resize(kTileElements / 2);
+  EXPECT_EQ(stored, range(100, kTileElements / 2));
+}
+
+// Lane 0's B128 store starts two ints before the end of the LDS allocation. An
+// LDS DWORD is out of range only if one of its own bytes is, so the store reads
+// its first two ints, and overwriting the second before the ASYNCcnt wait races.
+constexpr uint32_t kB128StraddlingOffset = kLdsAllocation - 2 * kElementBytes;
+
+template <bool Wait> __global__ void async_store_b128_past_lds_allocation_kernel(int *dst) {
+  if (lane() < 2)
+    ldsWrite(kB128StraddlingOffset + lane() * kElementBytes, 100 + lane());
+  waitDscnt();
+  if (lane() == 0) {
+    asm volatile("global_store_async_from_lds_b128 %[offset], %[lds], %[base]"
+                 :
+                 : [offset] "v"(0), [lds] "v"(kB128StraddlingOffset), [base] "s"(dst)
+                 : "memory");
+    if constexpr (Wait)
+      waitAsynccnt<0>();
+    ldsWrite(kB128StraddlingOffset + kElementBytes, -1);
+    waitDscnt();
+  }
+  waitAsynccnt<0>();
+}
+
+TEST_F(Gfx1250RaceTest, async_store_b128_past_lds_allocation) {
+  auto *dst = alloc<int>(4);
+  async_store_b128_past_lds_allocation_kernel<true><<<1, kWave, kLdsAllocation>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  // Only the in-range half is checked, as above.
+  ExpectValues(dst, range(100, 2));
+}
+
+TEST_F(Gfx1250RaceTest, async_store_b128_past_lds_allocation_in_range_int_race) {
+  auto *dst = alloc<int>(4);
+  async_store_b128_past_lds_allocation_kernel<false><<<1, kWave, kLdsAllocation>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsyncStoreB128ThenWriteRaceExpectation);
+}
+
+// Store tile 0, then issue a store of tile 1 with EXEC zero, then wait until at
+// most one is outstanding. The EXEC-zero store moves no data, but with another
+// async copy pending it still issues and takes an ASYNCcnt slot, so the wait
+// completes the tile 0 store.
+template <int WaitCount>
+__global__ void async_store_exec_zero_kernel(int *first, int *second) {
+  ldsFillAndWait(0, 100 + lane());
+  ldsFillAndWait(kTileBytes, 200 + lane());
+  asyncStore(first, 0);
+  uint32_t saved_exec;
+  asm volatile("s_mov_b32 %[saved], exec_lo\n"
+               "s_mov_b32 exec_lo, 0\n"
+               "global_store_async_from_lds_b32 %[offset], %[lds], %[base]\n"
+               "s_mov_b32 exec_lo, %[saved]"
+               : [saved] "=&s"(saved_exec)
+               : [offset] "v"(lane() * kElementBytes),
+                 [lds] "v"(kTileBytes + lane() * kElementBytes), [base] "s"(second)
+               : "memory");
+  waitAsynccnt<WaitCount>();
+  ldsFillAndWait(0, -1);
+  waitAsynccnt<0>();
+}
+
+TEST_F(Gfx1250RaceTest, async_store_exec_zero_counts) {
+  auto *first = alloc<int>(kTileElements);
+  auto *second = allocFilled(kTileElements, kUnwrittenValue);
+  async_store_exec_zero_kernel<1><<<1, kWave, 2 * kTileBytes>>>(first, second);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(first, range(100));
+  ExpectValues(second, std::vector<int>(kTileElements, kUnwrittenValue));
+}
+
+TEST_F(Gfx1250RaceTest, async_store_exec_zero_wait_two_race) {
+  auto *first = alloc<int>(kTileElements);
+  auto *second = allocFilled(kTileElements, kUnwrittenValue);
+  async_store_exec_zero_kernel<2><<<1, kWave, 2 * kTileBytes>>>(first, second);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsyncStoreThenWriteRaceExpectation);
+}
+
 // --- Compiler-generated tensor load ---
 
 // The builtin issues the load; the compiler emits no s_wait_tensorcnt for it,
@@ -1515,6 +2154,61 @@ TEST_F(Gfx1250RaceTest, tensor_load_builtin) {
   sync();
   ExpectNoRace();
   ExpectValues(dst, range(0));
+}
+
+// --- Compiler-generated async copies ---
+
+// The compiler emits no s_wait_asynccnt for the async copy builtins, not even
+// between a load and a store of the same LDS bytes, so the kernel adds it.
+template <bool Wait> __global__ void async_copy_builtin_kernel(int *src, int *dst) {
+  __shared__ int tile[kTileElements];
+  __builtin_amdgcn_global_load_async_to_lds_b32(src + threadIdx.x, tile + threadIdx.x, 0, 0);
+  if constexpr (Wait)
+    __builtin_amdgcn_s_wait_asynccnt(0);
+  __builtin_amdgcn_global_store_async_from_lds_b32(dst + threadIdx.x, tile + threadIdx.x, 0, 0);
+  __builtin_amdgcn_s_wait_asynccnt(0);
+}
+
+TEST_F(Gfx1250RaceTest, async_copy_builtin) {
+  auto *src = allocWithData<int>(kTileElements), *dst = alloc<int>(kTileElements);
+  async_copy_builtin_kernel<true><<<1, kWave>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0));
+}
+
+TEST_F(Gfx1250RaceTest, async_copy_builtin_race) {
+  auto *src = allocWithData<int>(kTileElements), *dst = alloc<int>(kTileElements);
+  async_copy_builtin_kernel<false><<<1, kWave>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsyncLoadThenAsyncStoreRaceExpectation);
+}
+
+// __syncthreads() emits a barrier but no s_wait_asynccnt, so wave 0's async
+// store is still reading its source when wave 1 overwrites it.
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+async_store_syncthreads_kernel(int *dst) {
+  __shared__ int tile[kTileElements];
+  if (threadIdx.x < kWave) {
+    tile[threadIdx.x] = 100 + threadIdx.x;
+    waitDscnt(); // There is no DScnt wait builtin.
+    __builtin_amdgcn_global_store_async_from_lds_b32(dst + threadIdx.x, tile + threadIdx.x, 0,
+                                                     0);
+  }
+  __syncthreads();
+  if (threadIdx.x >= kWave)
+    tile[threadIdx.x - kWave] = -1;
+  __builtin_amdgcn_s_wait_asynccnt(0);
+}
+
+TEST_F(Gfx1250RaceTest, async_store_syncthreads_race) {
+  auto *dst = alloc<int>(kTileElements);
+  async_store_syncthreads_kernel<<<1, 2 * kWave>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsyncStoreThenWriteRaceExpectation);
 }
 
 } // namespace

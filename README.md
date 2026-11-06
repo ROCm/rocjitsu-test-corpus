@@ -143,8 +143,20 @@ a NOP tile, an empty gather and a store outside the tensor each occupy one
 TENSORcnt slot (for a NULL tensor, a RocJITsu assumption pending hardware
 validation); that zero-filled elements are tracked while padding and a store's
 out-of-tensor elements are not; and that a tile extending past the LDS
-allocation transfers its in-range part. The gfx1250 program does not build the
-shared VMEM cases, which use pre-GFX12 waits.
+allocation transfers its in-range part. The program also covers async copies
+(`global_load_async_to_lds_b32`, `global_store_async_from_lds_b32` and `_b128`),
+whose race cases remove or change the `s_wait_asynccnt` before an LDS access,
+another wave's barrier, the DS wait before a store, or the wait between an
+async copy and a tensor transfer, or replace `s_wait_asynccnt` with
+`s_wait_storecnt`. Partial waits check that loads complete in order with loads
+and stores with stores, but loads and stores out of order with each other.
+Further cases check a store's B128 extent, IOFFSET, partially active EXEC,
+lanes past the LDS allocation (a B128 lane straddling its end reads its in-range
+DWORDs), that a store with EXEC zero still occupies an ASYNCcnt slot, and
+compiler-generated copies from the async
+builtins, for which the compiler emits no `s_wait_asynccnt`, not even before
+`__syncthreads()`. The gfx1250 program does not build the shared VMEM cases,
+which use pre-GFX12 waits.
 
 Before entering each private case directory, the adapter resolves relative
 launcher paths and plain arguments naming existing files against the corpus
