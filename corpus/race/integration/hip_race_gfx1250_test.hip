@@ -19,6 +19,7 @@
 
 #include "race_test_support.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -44,7 +45,8 @@ constexpr int kWave = 32; // gfx1250 runs wave32.
 /// The ints in one tile: a single row with one int per lane. The tests' tensors
 /// are this wide too, unless a case narrows them.
 constexpr int kTileElements = kWave;
-constexpr int kTileBytes = kTileElements * static_cast<int>(sizeof(int));
+constexpr int kElementBytes = static_cast<int>(sizeof(int));
+constexpr int kTileBytes = kTileElements * kElementBytes;
 /// A value no transfer in these tests produces. Memory filled with it shows
 /// whether a transfer wrote there.
 constexpr int kUnwrittenValue = -7;
@@ -77,7 +79,7 @@ struct Tile {
   uint32_t lds_offset = 0;
   uint32_t tensor_elements = kTileElements; ///< Elements past this are out of the tensor.
   uint32_t tile_elements = kTileElements;   ///< Zero makes the tile a NOP.
-  uint32_t count = 1;                   ///< Zero makes this a NULL tensor.
+  uint32_t count = 1;                       ///< Zero makes this a NULL tensor.
   bool pad = false;
   uint32_t pad_interval = 0; ///< 2 << pad_interval dwords between pads.
   uint32_t pad_amount = 0;   ///< pad_amount + 1 dwords of padding.
@@ -92,11 +94,11 @@ TensorDesc describe(const Tile &tile) {
   words[3] = static_cast<uint32_t>((address >> 32) & 0x1ffffffu) | (2u << 30); // type 2.
   words[4] = (2u << 16) | (uint32_t{tile.pad} << 20) | (tile.pad_interval << 22) |
              (tile.pad_amount << 25);
-  words[5] = (tile.tensor_elements & 0xffffu) << 16;          // tensor_dim0[15:0].
-  words[6] = (tile.tensor_elements >> 16) | (1u << 16);        // tensor_dim1 = 1.
-  words[7] = (tile.tile_elements & 0xffffu) << 16;             // tile_dim0.
-  words[8] = 1;                                                // tile_dim1.
-  words[9] = kTileElements;                                        // tensor_dim0_stride.
+  words[5] = (tile.tensor_elements & 0xffffu) << 16;    // tensor_dim0[15:0].
+  words[6] = (tile.tensor_elements >> 16) | (1u << 16); // tensor_dim1 = 1.
+  words[7] = (tile.tile_elements & 0xffffu) << 16;      // tile_dim0.
+  words[8] = 1;                                         // tile_dim1.
+  words[9] = kTileElements;                             // tensor_dim0_stride.
   TensorDesc desc;
   std::memcpy(&desc.group0, &words[0], sizeof(desc.group0));
   std::memcpy(&desc.group1, &words[4], sizeof(desc.group1));
@@ -152,11 +154,18 @@ __device__ inline void ldsWrite(uint32_t byte_offset, int value) {
 
 /// Fill one tile of LDS with `value` and wait for the writes.
 __device__ inline void ldsFillAndWait(uint32_t byte_offset, int value) {
-  ldsWrite(byte_offset + lane() * 4, value);
+  ldsWrite(byte_offset + lane() * kElementBytes, value);
   waitDscnt();
 }
 
-static constexpr RaceExpectation kTensorLoadThenReadRace{
+static constexpr RaceExpectation kVgprLoadcntRaceExpectation{
+    .findings = FindingCount::OneOrMore,
+    .type = "VGPR",
+    .producer = "global_load_b32",
+    .consumer = "global_store_b32",
+};
+
+static constexpr RaceExpectation kTensorLoadThenReadRaceExpectation{
     .findings = FindingCount::OneOrMore,
     .type = "LDS",
     .access = "read",
@@ -164,7 +173,7 @@ static constexpr RaceExpectation kTensorLoadThenReadRace{
     .consumer = "ds_load_b32",
 };
 
-static constexpr RaceExpectation kReadThenTensorLoadRace{
+static constexpr RaceExpectation kReadThenTensorLoadRaceExpectation{
     .findings = FindingCount::OneOrMore,
     .type = "LDS",
     .access = "write",
@@ -172,7 +181,7 @@ static constexpr RaceExpectation kReadThenTensorLoadRace{
     .consumer = "tensor_load_to_lds",
 };
 
-static constexpr RaceExpectation kTensorStoreThenWriteRace{
+static constexpr RaceExpectation kTensorStoreThenWriteRaceExpectation{
     .findings = FindingCount::OneOrMore,
     .type = "LDS",
     .access = "write",
@@ -180,7 +189,7 @@ static constexpr RaceExpectation kTensorStoreThenWriteRace{
     .consumer = "ds_store_b32",
 };
 
-static constexpr RaceExpectation kDsWriteThenTensorStoreRace{
+static constexpr RaceExpectation kDsWriteThenTensorStoreRaceExpectation{
     .findings = FindingCount::OneOrMore,
     .type = "LDS",
     .access = "read",
@@ -188,7 +197,7 @@ static constexpr RaceExpectation kDsWriteThenTensorStoreRace{
     .consumer = "tensor_store_from_lds",
 };
 
-static constexpr RaceExpectation kTensorLoadThenTensorStoreRace{
+static constexpr RaceExpectation kTensorLoadThenTensorStoreRaceExpectation{
     .findings = FindingCount::OneOrMore,
     .type = "LDS",
     .access = "read",
@@ -196,7 +205,7 @@ static constexpr RaceExpectation kTensorLoadThenTensorStoreRace{
     .consumer = "tensor_store_from_lds",
 };
 
-static constexpr RaceExpectation kAsyncLoadThenTensorStoreRace{
+static constexpr RaceExpectation kAsyncLoadThenTensorStoreRaceExpectation{
     .findings = FindingCount::OneOrMore,
     .type = "LDS",
     .access = "read",
@@ -204,7 +213,7 @@ static constexpr RaceExpectation kAsyncLoadThenTensorStoreRace{
     .consumer = "tensor_store_from_lds",
 };
 
-static constexpr RaceExpectation kTensorStoreThenTensorLoadRace{
+static constexpr RaceExpectation kTensorStoreThenTensorLoadRaceExpectation{
     .findings = FindingCount::OneOrMore,
     .type = "LDS",
     .access = "write",
@@ -245,32 +254,29 @@ TEST_F(Gfx1250RaceTest, vgpr_loadcnt_race) {
   vgpr_loadcnt_kernel<false><<<1, kWave>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace({.findings = FindingCount::OneOrMore,
-              .type = "VGPR",
-              .producer = "global_load_b32",
-              .consumer = "global_store_b32"});
+  ExpectRace(kVgprLoadcntRaceExpectation);
 }
 
 // --- The issuing wave must wait for TENSORCNT, and only TENSORCNT ---
 
-enum class Wait { Tensorcnt, None, OtherCounters };
+enum class WaitMode { Tensorcnt, None, OtherCounters };
 
-template <Wait W> __global__ void tensor_load_same_wave_kernel(TensorDesc desc, int *dst) {
+template <WaitMode Mode> __global__ void tensor_load_same_wave_kernel(TensorDesc desc, int *dst) {
   tensorLoad(desc);
-  if (W == Wait::Tensorcnt)
+  if (Mode == WaitMode::Tensorcnt)
     waitTensorcnt<0>();
-  if (W == Wait::OtherCounters)
+  if (Mode == WaitMode::OtherCounters)
     asm volatile("s_wait_loadcnt 0\n"
                  "s_wait_dscnt 0" ::: "memory");
-  dst[threadIdx.x] = ldsReadAndWait(threadIdx.x * 4);
+  dst[threadIdx.x] = ldsReadAndWait(threadIdx.x * kElementBytes);
   waitTensorcnt<0>();
 }
 
 TEST_F(Gfx1250RaceTest, tensor_load_tensorcnt) {
   auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
-  tensor_load_same_wave_kernel<Wait::Tensorcnt><<<1, kWave, kTileBytes>>>(describe({.global = src}),
-                                                                          dst);
+  tensor_load_same_wave_kernel<WaitMode::Tensorcnt>
+      <<<1, kWave, kTileBytes>>>(describe({.global = src}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
@@ -280,42 +286,42 @@ TEST_F(Gfx1250RaceTest, tensor_load_tensorcnt) {
 TEST_F(Gfx1250RaceTest, tensor_load_missing_tensorcnt_race) {
   auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
-  tensor_load_same_wave_kernel<Wait::None><<<1, kWave, kTileBytes>>>(describe({.global = src}),
-                                                                     dst);
+  tensor_load_same_wave_kernel<WaitMode::None>
+      <<<1, kWave, kTileBytes>>>(describe({.global = src}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenReadRace);
+  ExpectRace(kTensorLoadThenReadRaceExpectation);
 }
 
 // LOADcnt and DScnt waits do not cover tensor DMA.
 TEST_F(Gfx1250RaceTest, tensor_load_other_counters_race) {
   auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
-  tensor_load_same_wave_kernel<Wait::OtherCounters>
+  tensor_load_same_wave_kernel<WaitMode::OtherCounters>
       <<<1, kWave, kTileBytes>>>(describe({.global = src}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenReadRace);
+  ExpectRace(kTensorLoadThenReadRaceExpectation);
 }
 
 // --- Other waves need the issuing wave's wait and a barrier ---
 
-enum class Sync { WaitAndBarrier, WaitOnly, BarrierOnly };
+enum class SyncMode { WaitAndBarrier, WaitOnly, BarrierOnly };
 
 // Wave 0 loads the tile; wave 1 reads it.
-template <Sync S>
+template <SyncMode Mode>
 __global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
 tensor_load_cross_wave_kernel(TensorDesc desc, int *dst) {
   const int wave = waveIndex();
   if (wave == 0) {
     tensorLoad(desc);
-    if (S != Sync::BarrierOnly)
+    if (Mode != SyncMode::BarrierOnly)
       waitTensorcnt<0>();
   }
-  if (S != Sync::WaitOnly)
+  if (Mode != SyncMode::WaitOnly)
     barrier();
   if (wave == 1)
-    dst[lane()] = ldsReadAndWait(lane() * 4);
+    dst[lane()] = ldsReadAndWait(lane() * kElementBytes);
   if (wave == 0)
     waitTensorcnt<0>();
 }
@@ -323,7 +329,7 @@ tensor_load_cross_wave_kernel(TensorDesc desc, int *dst) {
 TEST_F(Gfx1250RaceTest, tensor_load_cross_wave) {
   auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
-  tensor_load_cross_wave_kernel<Sync::WaitAndBarrier>
+  tensor_load_cross_wave_kernel<SyncMode::WaitAndBarrier>
       <<<1, 2 * kWave, kTileBytes>>>(describe({.global = src}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
@@ -334,24 +340,24 @@ TEST_F(Gfx1250RaceTest, tensor_load_cross_wave) {
 TEST_F(Gfx1250RaceTest, tensor_load_cross_wave_no_barrier_race) {
   auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
-  tensor_load_cross_wave_kernel<Sync::WaitOnly>
+  tensor_load_cross_wave_kernel<SyncMode::WaitOnly>
       <<<1, 2 * kWave, kTileBytes>>>(describe({.global = src}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   // Without a barrier the waves run in either order, so the race may be
   // reported in either direction.
-  ExpectAnyRace({kTensorLoadThenReadRace, kReadThenTensorLoadRace});
+  ExpectAnyRace({kTensorLoadThenReadRaceExpectation, kReadThenTensorLoadRaceExpectation});
 }
 
 // A barrier retires only transfers their wave has already waited for.
 TEST_F(Gfx1250RaceTest, tensor_load_cross_wave_no_tensorcnt_race) {
   auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
-  tensor_load_cross_wave_kernel<Sync::BarrierOnly>
+  tensor_load_cross_wave_kernel<SyncMode::BarrierOnly>
       <<<1, 2 * kWave, kTileBytes>>>(describe({.global = src}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenReadRace);
+  ExpectRace(kTensorLoadThenReadRaceExpectation);
 }
 
 // --- Double-buffered pipeline ---
@@ -369,7 +375,7 @@ tensor_load_pipeline_kernel(TensorDesc older, TensorDesc newer, int *dst) {
   }
   barrier();
   if (wave == 1)
-    dst[lane()] = ldsReadAndWait(ReadOffset + lane() * 4);
+    dst[lane()] = ldsReadAndWait(ReadOffset + lane() * kElementBytes);
   if (wave == 0)
     waitTensorcnt<0>();
 }
@@ -394,7 +400,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_pipeline_newest_race) {
       describe({.global = older}), describe({.global = newer, .lds_offset = kTileBytes}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenReadRace);
+  ExpectRace(kTensorLoadThenReadRaceExpectation);
 }
 
 // Reading from the middle of the older tile, the first half of the lanes read
@@ -408,7 +414,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_pipeline_straddling_race) {
       describe({.global = older}), describe({.global = newer, .lds_offset = kTileBytes}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenReadRace);
+  ExpectRace(kTensorLoadThenReadRaceExpectation);
   const auto parsed = rocjitsu::test::parseRaceLogFromEnvironment();
   ASSERT_TRUE(parsed.ok()) << parsed.error;
   for (const auto &record : parsed.records) {
@@ -445,7 +451,7 @@ __global__ void tensor_iteration_count_kernel(TensorDesc multi, TensorDesc singl
   if constexpr (MultiFirst)
     tensorLoad(single);
   waitTensorcnt<WaitCount>();
-  dst[lane()] = ldsReadAndWait(Probe + lane() * 4);
+  dst[lane()] = ldsReadAndWait(Probe + lane() * kElementBytes);
   waitTensorcnt<0>();
 }
 
@@ -476,7 +482,7 @@ TEST_F(Gfx1250RaceTest, tensor_iterations_newest_single_race) {
           multi, describe({.global = src, .lds_offset = 4 * kTileBytes}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenReadRace);
+  ExpectRace(kTensorLoadThenReadRaceExpectation);
 }
 
 // single -> multi -> wait<=1 -> read A: race.
@@ -491,7 +497,7 @@ TEST_F(Gfx1250RaceTest, tensor_iterations_newest_first_range_race) {
           multi, describe({.global = src, .lds_offset = 4 * kTileBytes}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenReadRace);
+  ExpectRace(kTensorLoadThenReadRaceExpectation);
 }
 
 // single -> multi -> wait<=1 -> read B: race.
@@ -506,7 +512,7 @@ TEST_F(Gfx1250RaceTest, tensor_iterations_newest_second_range_race) {
           multi, describe({.global = src, .lds_offset = 4 * kTileBytes}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenReadRace);
+  ExpectRace(kTensorLoadThenReadRaceExpectation);
 }
 
 // single -> multi -> wait<=2 -> read C: race.
@@ -522,10 +528,8 @@ TEST_F(Gfx1250RaceTest, tensor_iterations_do_not_add_counter_tokens_race) {
           multi, describe({.global = src, .lds_offset = 4 * kTileBytes}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenReadRace);
+  ExpectRace(kTensorLoadThenReadRaceExpectation);
 }
-
-// --- LDS addresses past the workgroup's allocation ---
 
 // --- A tensor store's LDS source ---
 
@@ -565,13 +569,13 @@ TEST_F(Gfx1250RaceTest, tensor_store_source_overwrite_race) {
       <<<1, 2 * kWave, kTileBytes>>>(describe({.global = dst}));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorStoreThenWriteRace);
+  ExpectRace(kTensorStoreThenWriteRaceExpectation);
 }
 
 // DS writes and tensor DMA complete independently, so storing a tile the wave
 // just wrote takes a DScnt wait first.
 template <bool WaitDscnt> __global__ void tensor_store_after_ds_write_kernel(TensorDesc desc) {
-  ldsWrite(lane() * 4, 100 + lane());
+  ldsWrite(lane() * kElementBytes, 100 + lane());
   if (WaitDscnt)
     waitDscnt();
   tensorStore(desc);
@@ -592,14 +596,14 @@ TEST_F(Gfx1250RaceTest, tensor_store_missing_dscnt_race) {
   tensor_store_after_ds_write_kernel<false><<<1, kWave, kTileBytes>>>(describe({.global = dst}));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kDsWriteThenTensorStoreRace);
+  ExpectRace(kDsWriteThenTensorStoreRaceExpectation);
 }
 
 // The DS write and the tensor store share only one interior word: either a
 // single DS-written word inside the full tile the store reads, or a one-word
 // store inside the full tile the DS writes. Races are reported at that word.
 constexpr int kInteriorElement = 13;
-constexpr int kInteriorByte = kInteriorElement * 4;
+constexpr int kInteriorByte = kInteriorElement * kElementBytes;
 constexpr int kInteriorValue = 500;
 
 /// Expect every reported race to be at LDS byte `byte`.
@@ -641,7 +645,7 @@ TEST_F(Gfx1250RaceTest, tensor_store_missing_dscnt_interior_ds_write_race) {
       <<<1, kWave, kTileBytes>>>(describe({.global = dst}));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kDsWriteThenTensorStoreRace);
+  ExpectRace(kDsWriteThenTensorStoreRaceExpectation);
   ExpectEveryRaceAtLdsByte(kInteriorByte);
 }
 
@@ -663,7 +667,7 @@ TEST_F(Gfx1250RaceTest, tensor_store_one_word_missing_dscnt_race) {
       describe({.global = dst, .lds_offset = kInteriorByte, .tile_elements = 1}));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kDsWriteThenTensorStoreRace);
+  ExpectRace(kDsWriteThenTensorStoreRaceExpectation);
   ExpectEveryRaceAtLdsByte(kInteriorByte);
 }
 
@@ -672,9 +676,10 @@ TEST_F(Gfx1250RaceTest, tensor_store_one_word_missing_dscnt_race) {
 // s_wait_tensorcnt does not complete the load.
 template <bool WaitForAsync>
 __global__ void async_load_then_tensor_store_kernel(const int *src, TensorDesc store) {
+  const uint32_t offset = lane() * kElementBytes;
   asm volatile("global_load_async_to_lds_b32 %[lds], %[offset], %[base]\n"
                :
-               : [lds] "v"(lane() * 4), [offset] "v"(lane() * 4), [base] "s"(src)
+               : [lds] "v"(offset), [offset] "v"(offset), [base] "s"(src)
                : "memory");
   if constexpr (WaitForAsync)
     asm volatile("s_wait_asynccnt 0" ::: "memory");
@@ -702,7 +707,7 @@ TEST_F(Gfx1250RaceTest, async_load_then_tensor_store_wrong_wait_race) {
       src, describe({.global = stored}));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kAsyncLoadThenTensorStoreRace);
+  ExpectRace(kAsyncLoadThenTensorStoreRaceExpectation);
 }
 
 // --- Same-wave tensor loads and stores over one tile need a TENSORcnt wait ---
@@ -748,8 +753,8 @@ __global__ void tensor_store_then_load_same_wave_kernel(TensorDesc store, Tensor
     waitTensorcnt<0>();
   tensorLoad(load);
   waitTensorcnt<0>();
-  dst[lane()] = ldsReadAndWait(lane() * 4);
-  dst[kWave + lane()] = ldsReadAndWait(kTileBytes + lane() * 4);
+  dst[lane()] = ldsReadAndWait(lane() * kElementBytes);
+  dst[kWave + lane()] = ldsReadAndWait(kTileBytes + lane() * kElementBytes);
 }
 
 /// Launch the store-then-load kernel over `footprint`: the store copies LDS to
@@ -758,12 +763,12 @@ template <bool WaitTensorcnt>
 void launchStoreThenLoad(const SameWaveFootprint &footprint, int *stored, const int *src,
                          int *dst) {
   tensor_store_then_load_same_wave_kernel<WaitTensorcnt>
-      <<<1, kWave, kSameWaveLdsElements * static_cast<int>(sizeof(int))>>>(
+      <<<1, kWave, kSameWaveLdsElements * kElementBytes>>>(
           describe({.global = stored,
-                    .lds_offset = static_cast<uint32_t>(footprint.store_first * 4),
+                    .lds_offset = static_cast<uint32_t>(footprint.store_first * kElementBytes),
                     .tile_elements = static_cast<uint32_t>(footprint.store_count)}),
           describe({.global = src,
-                    .lds_offset = static_cast<uint32_t>(footprint.load_first * 4),
+                    .lds_offset = static_cast<uint32_t>(footprint.load_first * kElementBytes),
                     .tile_elements = static_cast<uint32_t>(footprint.load_count)}),
           dst);
   RACE_HIP_CHECK(hipGetLastError());
@@ -786,8 +791,7 @@ std::vector<int> expectedStoreOutput(const SameWaveFootprint &footprint) {
 
 /// The first LDS byte the store and the load share.
 constexpr int firstSharedByte(const SameWaveFootprint &footprint) {
-  return 4 * (footprint.store_first > footprint.load_first ? footprint.store_first
-                                                           : footprint.load_first);
+  return kElementBytes * std::max(footprint.store_first, footprint.load_first);
 }
 
 TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave) {
@@ -807,7 +811,7 @@ TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave_race) {
   auto *dst = alloc<int>(kSameWaveLdsElements);
   launchStoreThenLoad<false>(kSameTile, stored, src, dst);
   sync();
-  ExpectRace(kTensorStoreThenTensorLoadRace);
+  ExpectRace(kTensorStoreThenTensorLoadRaceExpectation);
 }
 
 TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave_load_inside_store) {
@@ -827,7 +831,7 @@ TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave_load_inside_store_race)
   auto *dst = alloc<int>(kSameWaveLdsElements);
   launchStoreThenLoad<false>(kLoadInsideStore, stored, src, dst);
   sync();
-  ExpectRace(kTensorStoreThenTensorLoadRace);
+  ExpectRace(kTensorStoreThenTensorLoadRaceExpectation);
   ExpectEveryRaceAtLdsByte(firstSharedByte(kLoadInsideStore));
 }
 
@@ -848,7 +852,7 @@ TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave_store_inside_load_race)
   auto *dst = alloc<int>(kSameWaveLdsElements);
   launchStoreThenLoad<false>(kStoreInsideLoad, stored, src, dst);
   sync();
-  ExpectRace(kTensorStoreThenTensorLoadRace);
+  ExpectRace(kTensorStoreThenTensorLoadRaceExpectation);
   ExpectEveryRaceAtLdsByte(firstSharedByte(kStoreInsideLoad));
 }
 
@@ -869,7 +873,7 @@ TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave_load_overlaps_store_sta
   auto *dst = alloc<int>(kSameWaveLdsElements);
   launchStoreThenLoad<false>(kLoadOverlapsStoreStart, stored, src, dst);
   sync();
-  ExpectRace(kTensorStoreThenTensorLoadRace);
+  ExpectRace(kTensorStoreThenTensorLoadRaceExpectation);
   ExpectEveryRaceAtLdsByte(firstSharedByte(kLoadOverlapsStoreStart));
 }
 
@@ -890,7 +894,7 @@ TEST_F(Gfx1250RaceTest, tensor_store_then_load_same_wave_load_overlaps_store_end
   auto *dst = alloc<int>(kSameWaveLdsElements);
   launchStoreThenLoad<false>(kLoadOverlapsStoreEnd, stored, src, dst);
   sync();
-  ExpectRace(kTensorStoreThenTensorLoadRace);
+  ExpectRace(kTensorStoreThenTensorLoadRaceExpectation);
   ExpectEveryRaceAtLdsByte(firstSharedByte(kLoadOverlapsStoreEnd));
 }
 
@@ -924,7 +928,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_then_store_same_wave_race) {
       describe({.global = src}), describe({.global = stored}));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenTensorStoreRace);
+  ExpectRace(kTensorLoadThenTensorStoreRaceExpectation);
 }
 
 // Tensor stores and loads from one wave share TENSORcnt and complete in issue
@@ -939,14 +943,14 @@ __global__ void tensor_mixed_partial_wait_kernel(TensorDesc store, TensorDesc lo
   waitTensorcnt<1>();
   if constexpr (ReadNewer) {
     // The load can still be pending even though the older store is complete.
-    dst[lane()] = ldsReadAndWait(kTileBytes + lane() * 4);
+    dst[lane()] = ldsReadAndWait(kTileBytes + lane() * kElementBytes);
   } else {
     // Only the completed store read this tile; the younger load uses another.
     ldsFillAndWait(0, 200 + lane());
   }
   waitTensorcnt<0>();
   if constexpr (!ReadNewer)
-    dst[lane()] = ldsReadAndWait(kTileBytes + lane() * 4);
+    dst[lane()] = ldsReadAndWait(kTileBytes + lane() * kElementBytes);
 }
 
 TEST_F(Gfx1250RaceTest, tensor_mixed_partial_wait_oldest_store) {
@@ -968,7 +972,7 @@ TEST_F(Gfx1250RaceTest, tensor_mixed_partial_wait_newest_load_race) {
       describe({.global = stored}), describe({.global = src, .lds_offset = kTileBytes}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenReadRace);
+  ExpectRace(kTensorLoadThenReadRaceExpectation);
   ExpectValues(stored, range(100));
 }
 
@@ -985,8 +989,8 @@ __global__ void tensor_load_then_empty_kernel(TensorDesc real, TensorDesc empty,
   tensorLoad(real);
   tensorLoad(empty);
   waitTensorcnt<WaitCount>();
-  loaded[lane()] = ldsReadAndWait(lane() * 4);
-  untouched[lane()] = ldsReadAndWait(kTileBytes + lane() * 4);
+  loaded[lane()] = ldsReadAndWait(lane() * kElementBytes);
+  untouched[lane()] = ldsReadAndWait(kTileBytes + lane() * kElementBytes);
   waitTensorcnt<0>();
 }
 
@@ -1018,7 +1022,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_null_tensor_uncounted_race) {
       describe({.global = src, .lds_offset = kTileBytes, .count = 0}), loaded, untouched);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenReadRace);
+  ExpectRace(kTensorLoadThenReadRaceExpectation);
 }
 
 // tile_dim0 = 0: a NOP tile (CDNA5 ISA 10.11.4, Table 63).
@@ -1068,7 +1072,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_empty_gather_zero_indices_race) {
       describe({.global = src}), describeEmptyGather(src, false), loaded, untouched);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenReadRace);
+  ExpectRace(kTensorLoadThenReadRaceExpectation);
 }
 
 TEST_F(Gfx1250RaceTest, tensor_load_empty_gather_zero_width_counts) {
@@ -1092,7 +1096,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_empty_gather_zero_width_race) {
       describe({.global = src}), describeEmptyGather(src, true), loaded, untouched);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenReadRace);
+  ExpectRace(kTensorLoadThenReadRaceExpectation);
 }
 
 // A store whose tile lies wholly outside the tensor writes nothing to global
@@ -1103,7 +1107,7 @@ __global__ void tensor_load_then_empty_store_kernel(TensorDesc real, TensorDesc 
   tensorLoad(real);
   tensorStore(empty);
   waitTensorcnt<1>();
-  loaded[lane()] = ldsReadAndWait(lane() * 4);
+  loaded[lane()] = ldsReadAndWait(lane() * kElementBytes);
   ldsFillAndWait(kTileBytes, 100 + lane());
   waitTensorcnt<0>();
 }
@@ -1164,7 +1168,7 @@ TEST_F(Gfx1250RaceTest, tensor_store_between_empty_stores_wait_two_race) {
       describe({.global = last_untouched, .tensor_elements = 0}));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorStoreThenWriteRace);
+  ExpectRace(kTensorStoreThenWriteRaceExpectation);
   // Raced values are unconstrained, but the empty stores still write nothing.
   ExpectValues(first_untouched, std::vector<int>(kTileElements, kUnwrittenValue));
   ExpectValues(last_untouched, std::vector<int>(kTileElements, kUnwrittenValue));
@@ -1192,7 +1196,7 @@ __global__ void tensor_store_holes_kernel(TensorDesc store) {
   ldsFillAndWait(kTileBytes, 200 + lane());
   tensorStore(store);
   if (lane() < 16)
-    ldsWrite((WriteHole ? 64 : 0) + lane() * 4, 300 + lane());
+    ldsWrite((WriteHole ? 64 : 0) + lane() * kElementBytes, 300 + lane());
   waitDscnt();
   waitTensorcnt<0>();
 }
@@ -1214,7 +1218,7 @@ TEST_F(Gfx1250RaceTest, tensor_store_holes_adjacent_data_race) {
   tensor_store_holes_kernel<false><<<1, kWave, 2 * kTileBytes>>>(describeStoreWithHoles(stored));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorStoreThenWriteRace);
+  ExpectRace(kTensorStoreThenWriteRaceExpectation);
 }
 
 // --- Elements outside the tensor are zero-filled in LDS ---
@@ -1241,7 +1245,7 @@ tensor_load_zero_fill_kernel(TensorDesc desc, int *dst) {
   }
   barrier();
   if (wave == 1)
-    dst[lane()] = ldsReadAndWait((kTensorHalf + lane() % kTensorHalf) * 4);
+    dst[lane()] = ldsReadAndWait((kTensorHalf + lane() % kTensorHalf) * kElementBytes);
   if (wave == 0)
     waitTensorcnt<0>();
 }
@@ -1264,7 +1268,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_zero_fill_cross_wave_race) {
       describe({.global = src, .tensor_elements = kTensorHalf}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenReadRace);
+  ExpectRace(kTensorLoadThenReadRaceExpectation);
 }
 
 // The issuing wave, waiting for its load, reads the whole tile: the copied half
@@ -1275,7 +1279,7 @@ __global__ void tensor_load_zero_fill_full_tile_kernel(TensorDesc desc, int *dst
   ldsFillAndWait(0, kUnwrittenValue);
   tensorLoad(desc);
   waitTensorcnt<0>();
-  dst[lane()] = ldsReadAndWait(lane() * 4);
+  dst[lane()] = ldsReadAndWait(lane() * kElementBytes);
 }
 
 TEST_F(Gfx1250RaceTest, tensor_load_zero_fill_full_tile) {
@@ -1311,7 +1315,7 @@ tensor_load_padding_kernel(TensorDesc desc, int *loaded, int *concurrent) {
     concurrent[lane()] = ldsReadAndWait(ReadOffset);
   if (wave == 0) {
     waitTensorcnt<0>();
-    const uint32_t offset = lane() * 4 + (lane() < 16 ? 0 : kPadBytes);
+    const uint32_t offset = lane() * kElementBytes + (lane() < 16 ? 0 : kPadBytes);
     loaded[lane()] = ldsReadAndWait(offset);
   }
 }
@@ -1338,7 +1342,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_padding_data_race) {
       concurrent);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenReadRace);
+  ExpectRace(kTensorLoadThenReadRaceExpectation);
 }
 
 // Three waves each load kStripeElements dwords per stripe, kStripesPerWave
@@ -1376,13 +1380,15 @@ tensor_load_interleaved_stripes_kernel(TensorDesc wave0, TensorDesc wave1, Tenso
   barrier();
   waitTensorcnt<0>();
   const int read_wave = PeerStripes ? (wave + 1) % kStripeWaves : wave;
-  if (lane() < kStripeLoadElements)
-    own[wave * kStripeLoadElements + lane()] = ldsReadAndWait(stripeDword(read_wave, lane()) * 4);
+  if (lane() < kStripeLoadElements) {
+    const uint32_t offset = stripeDword(read_wave, lane()) * kElementBytes;
+    own[wave * kStripeLoadElements + lane()] = ldsReadAndWait(offset);
+  }
   barrier();
   if (wave == 0) {
-    assembled[lane()] = ldsReadAndWait(lane() * 4);
+    assembled[lane()] = ldsReadAndWait(lane() * kElementBytes);
     if (lane() < kStripedElements - kWave)
-      assembled[kWave + lane()] = ldsReadAndWait((kWave + lane()) * 4);
+      assembled[kWave + lane()] = ldsReadAndWait((kWave + lane()) * kElementBytes);
   }
 }
 
@@ -1391,7 +1397,7 @@ template <bool PeerStripes>
 void launchInterleavedStripes(const int *src, int *own, int *assembled) {
   auto stripes = [&](int wave) {
     return describe({.global = src + wave * kStripeLoadElements,
-                     .lds_offset = static_cast<uint32_t>(wave * kStripeElements * 4),
+                     .lds_offset = static_cast<uint32_t>(wave * kStripeElements * kElementBytes),
                      .tile_elements = kStripeLoadElements,
                      .pad = true,
                      .pad_interval = 1, // A pad after every 4 dwords.
@@ -1430,7 +1436,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_padding_peer_stripe_race) {
   auto *assembled = alloc<int>(kStripedElements);
   launchInterleavedStripes<true>(src, own, assembled);
   sync();
-  ExpectRace(kTensorLoadThenReadRace);
+  ExpectRace(kTensorLoadThenReadRaceExpectation);
 }
 
 // --- LDS addresses past the workgroup's allocation ---
@@ -1449,7 +1455,7 @@ __global__ void tensor_load_past_lds_allocation_kernel(TensorDesc desc, int *dst
   tensorLoad(desc);
   waitTensorcnt<0>();
   if (lane() < 16)
-    dst[lane()] = ldsReadAndWait(kStraddlingOffset + lane() * 4);
+    dst[lane()] = ldsReadAndWait(kStraddlingOffset + lane() * kElementBytes);
 }
 
 TEST_F(Gfx1250RaceTest, tensor_load_past_lds_allocation) {
@@ -1465,7 +1471,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_past_lds_allocation) {
 
 __global__ void tensor_store_past_lds_allocation_kernel(TensorDesc desc) {
   if (lane() < 16)
-    ldsWrite(kStraddlingOffset + lane() * 4, 100 + lane());
+    ldsWrite(kStraddlingOffset + lane() * kElementBytes, 100 + lane());
   waitDscnt();
   tensorStore(desc);
   waitTensorcnt<0>();
