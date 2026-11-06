@@ -26,7 +26,7 @@ def _isolate_case_timeout(monkeypatch) -> None:
 
 def test_configs_preserve_every_moved_gtest() -> None:
     configs = race.load_target_configs(race.default_config_files())
-    expected_counts = {"gfx942": 8, "gfx950": 79, "gfx1151": 29, "gfx1250": 62}
+    expected_counts = {"gfx942": 10, "gfx950": 81, "gfx1151": 31, "gfx1250": 62}
 
     for target, expected_count in expected_counts.items():
         cases = race.discover(make_target_spec(target), configs)
