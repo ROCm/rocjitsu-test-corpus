@@ -46,6 +46,8 @@
     "lds_cross_wave_race",
     "exited_lds_writer",
     "exited_lds_writer_race",
+    "staggered_wave_exit",
+    "staggered_wave_exit_race",
     "lds_same_wave_order",
     "global_to_lds_buffer",
     "global_to_lds_buffer_race",

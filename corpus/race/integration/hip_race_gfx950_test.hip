@@ -836,6 +836,87 @@ TEST_F(Gfx950RaceTest, exited_lds_writer_race) {
               .consumer = "ds_read_b32"});
 }
 
+/// Exercise repeated workgroup barriers as whole waves finish at different times.
+/// Each wave owns a separate LDS slice and runs wave_id + 1 iterations. In each
+/// phase, every surviving wave writes its slice and waits for the write. Wave p
+/// then ends in phase p; the survivors cross a barrier and read wave p's slice.
+///
+/// \code
+/// Phase   Waves that write   Wave that ends   Waves that barrier and read
+///   0        0, 1, 2, 3            0                  1, 2, 3
+///   1           1, 2, 3            1                     2, 3
+///   2              2, 3            2                        3
+///   3                 3            3                     none
+/// \endcode
+///
+/// A workgroup barrier resolves after every wave has arrived or ended, ordering
+/// the departing wave's waited write before the survivors' reads. From phase 1
+/// onward, that final write follows a previous barrier, so it must be retired at
+/// the next barrier even though its issuing wave has ended. Each phase writes
+/// different values to the same slice, so the result checks detect stale reads.
+/// Barriers are explicit ISA instructions to exercise this whole-wave exit rule.
+///
+/// UnwaitedWave = -1 waits for every write. The racing control uses 2 to omit only
+/// wave 2's final wait, after two successful barrier rounds. The third barrier
+/// must leave that unwaited write pending, and wave 3 must report an LDS read race.
+template <int UnwaitedWave>
+__attribute__((amdgpu_flat_work_group_size(256, 256)))
+__global__ void staggered_wave_exit_kernel(unsigned *out) {
+  __shared__ unsigned tile[256];
+  const unsigned tid = threadIdx.x;
+  const int wave = __builtin_amdgcn_readfirstlane(tid) / 64;
+  const unsigned address = static_cast<unsigned>(reinterpret_cast<uintptr_t>(&tile[tid]));
+#pragma unroll 1
+  for (int phase = 0; phase <= wave; ++phase) {
+    asm volatile("ds_write_b32 %[address], %[value]"
+                 :
+                 : [address] "v"(address), [value] "v"(phase * 256 + tid + 1)
+                 : "memory");
+    if (wave != UnwaitedWave || phase != wave)
+      asm volatile("s_waitcnt lgkmcnt(0)" ::: "memory");
+    if (phase == wave)
+      return;
+
+    const unsigned source =
+        static_cast<unsigned>(reinterpret_cast<uintptr_t>(&tile[phase * 64 + tid % 64]));
+    unsigned value;
+    asm volatile("s_barrier\n"
+                 "ds_read_b32 %[value], %[address]\n"
+                 "s_waitcnt lgkmcnt(0)"
+                 : [value] "=v"(value)
+                 : [address] "v"(source)
+                 : "memory");
+    out[phase * 256 + tid] = value;
+  }
+}
+
+TEST_F(Gfx950RaceTest, staggered_wave_exit) {
+  unsigned *out = allocFilled<unsigned>(3 * 256, 0);
+  staggered_wave_exit_kernel<-1><<<1, 256>>>(out);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  std::vector<unsigned> expected(3 * 256, 0);
+  for (unsigned phase = 0; phase < 3; ++phase)
+    for (unsigned tid = (phase + 1) * 64; tid < 256; ++tid)
+      expected[phase * 256 + tid] = phase * 256 + phase * 64 + tid % 64 + 1;
+  ExpectValues(out, expected);
+  ExpectNoRace();
+}
+
+TEST_F(Gfx950RaceTest, staggered_wave_exit_race) {
+  // Only wave 2 omits its final wait, after two successful barrier rounds.
+  staggered_wave_exit_kernel<2><<<1, 256>>>(alloc<unsigned>(3 * 256));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace({.kernel = "staggered_wave_exit_kernel",
+              .type = "LDS",
+              .access = "read",
+              .wave = 3,
+              .lane = 0,
+              .producer = "ds_write_b32",
+              .consumer = "ds_read_b32"});
+}
+
 // --- LDS same-wave instruction ordering ---
 
 __attribute__((amdgpu_flat_work_group_size(64, 64)))

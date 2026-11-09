@@ -2425,6 +2425,88 @@ TEST_F(Gfx1250RaceTest, exited_lds_writer_race) {
               .consumer = "ds_load_b32"});
 }
 
+/// Exercise repeated workgroup barriers as whole waves finish at different times.
+/// Each wave owns a separate LDS slice and runs wave_id + 1 iterations. In each
+/// phase, every surviving wave writes its slice and waits for the write. Wave p
+/// then ends in phase p; the survivors cross a barrier and read wave p's slice.
+///
+/// \code
+/// Phase   Waves that write   Wave that ends   Waves that barrier and read
+///   0        0, 1, 2, 3            0                  1, 2, 3
+///   1           1, 2, 3            1                     2, 3
+///   2              2, 3            2                        3
+///   3                 3            3                     none
+/// \endcode
+///
+/// A workgroup barrier resolves after every wave has arrived or ended, ordering
+/// the departing wave's waited write before the survivors' reads. From phase 1
+/// onward, that final write follows a previous barrier, so it must be retired at
+/// the next barrier even though its issuing wave has ended. Each phase writes
+/// different values to the same slice, so the result checks detect stale reads.
+/// Barriers are explicit ISA instructions to exercise this whole-wave exit rule.
+///
+/// UnwaitedWave = -1 waits for every write. The racing control uses 2 to omit only
+/// wave 2's final wait, after two successful barrier rounds. The third barrier
+/// must leave that unwaited write pending, and wave 3 must report an LDS read race.
+template <int UnwaitedWave>
+__attribute__((amdgpu_flat_work_group_size(128, 128)))
+__global__ void staggered_wave_exit_kernel(unsigned *out) {
+  __shared__ unsigned tile[128];
+  const unsigned tid = threadIdx.x;
+  const int wave = __builtin_amdgcn_readfirstlane(tid) / 32;
+  const unsigned address = static_cast<unsigned>(reinterpret_cast<uintptr_t>(&tile[tid]));
+#pragma unroll 1
+  for (int phase = 0; phase <= wave; ++phase) {
+    asm volatile("ds_store_b32 %[address], %[value]"
+                 :
+                 : [address] "v"(address), [value] "v"(phase * 128 + tid + 1)
+                 : "memory");
+    if (wave != UnwaitedWave || phase != wave)
+      asm volatile("s_wait_dscnt 0" ::: "memory");
+    if (phase == wave)
+      return;
+
+    const unsigned source =
+        static_cast<unsigned>(reinterpret_cast<uintptr_t>(&tile[phase * 32 + tid % 32]));
+    unsigned value;
+    asm volatile("s_barrier_signal -1\n"
+                 "s_barrier_wait -1\n"
+                 "ds_load_b32 %[value], %[address]\n"
+                 "s_wait_dscnt 0"
+                 : [value] "=v"(value)
+                 : [address] "v"(source)
+                 : "memory");
+    out[phase * 128 + tid] = value;
+  }
+}
+
+TEST_F(Gfx1250RaceTest, staggered_wave_exit) {
+  unsigned *out = allocFilled<unsigned>(3 * 128, 0);
+  staggered_wave_exit_kernel<-1><<<1, 128>>>(out);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  std::vector<unsigned> expected(3 * 128, 0);
+  for (unsigned phase = 0; phase < 3; ++phase)
+    for (unsigned tid = (phase + 1) * 32; tid < 128; ++tid)
+      expected[phase * 128 + tid] = phase * 128 + phase * 32 + tid % 32 + 1;
+  ExpectValues(out, expected);
+  ExpectNoRace();
+}
+
+TEST_F(Gfx1250RaceTest, staggered_wave_exit_race) {
+  // Only wave 2 omits its final wait, after two successful barrier rounds.
+  staggered_wave_exit_kernel<2><<<1, 128>>>(alloc<unsigned>(3 * 128));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace({.kernel = "staggered_wave_exit_kernel",
+              .type = "LDS",
+              .access = "read",
+              .wave = 3,
+              .lane = 0,
+              .producer = "ds_store_b32",
+              .consumer = "ds_load_b32"});
+}
+
 // A named barrier joined only by the reader does not order the writer's LDS
 // accesses, even if the writer has already ended.
 // Adding a workgroup barrier supplies the missing ordering.
