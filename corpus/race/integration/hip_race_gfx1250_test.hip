@@ -2231,7 +2231,8 @@ TEST_F(Gfx1250RaceTest, async_store_b128_past_lds_allocation_in_range_int_race) 
 // Store tile 0, then issue a store of tile 1 with EXEC zero, then wait until at
 // most one is outstanding. The EXEC-zero store moves no data, but with another
 // async copy pending it still issues and takes an ASYNCcnt slot, so the wait
-// completes the tile 0 store.
+// completes the tile 0 store. Its lanes read nothing, so reusing tile 1 while it
+// may still be pending is safe.
 template <int WaitCount>
 __global__ void async_store_exec_zero_kernel(int *first, int *second) {
   ldsFillAndWait(0, 100 + lane());
@@ -2248,6 +2249,7 @@ __global__ void async_store_exec_zero_kernel(int *first, int *second) {
                : "memory");
   waitAsynccnt<WaitCount>();
   ldsFillAndWait(0, -1);
+  ldsFillAndWait(kTileBytes, -2);
   waitAsynccnt<0>();
 }
 
