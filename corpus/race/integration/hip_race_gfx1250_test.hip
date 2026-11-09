@@ -2051,17 +2051,27 @@ TEST_F(Gfx1250RaceTest, async_store_b128_last_int_race) {
 }
 
 // Lane 0 stores the one LDS byte at offset 5 with a B8 store, then overwrites
-// the byte at `OverwriteOffset` without waiting. Tile byte i holds i, so the
-// store writes 5. Only byte 5 is its source; its neighbour is not.
-template <uint32_t OverwriteOffset> __global__ void async_store_b8_kernel(uint8_t *dst) {
+// LDS without waiting. Tile byte i holds i, so the store writes 5. Only byte 5
+// is its source: overwriting both neighbours, bytes 4 and 6, is safe, which a
+// detector tracking a wider read starting at byte 5 would report.
+template <bool OverwriteSource> __global__ void async_store_b8_kernel(uint8_t *dst) {
   ldsFillAndWait(0, 0x03020100 + 0x04040404 * lane());
   if (lane() == 0) {
-    asm volatile("global_store_async_from_lds_b8 %[offset], %[lds], %[base]\n"
-                 "ds_store_b8 %[overwrite], %[value]"
-                 :
-                 : [offset] "v"(0), [lds] "v"(5), [base] "s"(dst),
-                   [overwrite] "v"(OverwriteOffset), [value] "v"(0xff)
-                 : "memory");
+    if constexpr (OverwriteSource)
+      asm volatile("global_store_async_from_lds_b8 %[offset], %[lds], %[base]\n"
+                   "ds_store_b8 %[source], %[value]"
+                   :
+                   : [offset] "v"(0), [lds] "v"(5), [base] "s"(dst), [source] "v"(5),
+                     [value] "v"(0xff)
+                   : "memory");
+    else
+      asm volatile("global_store_async_from_lds_b8 %[offset], %[lds], %[base]\n"
+                   "ds_store_b8 %[before], %[value]\n"
+                   "ds_store_b8 %[after], %[value]"
+                   :
+                   : [offset] "v"(0), [lds] "v"(5), [base] "s"(dst), [before] "v"(4),
+                     [after] "v"(6), [value] "v"(0xff)
+                   : "memory");
     waitDscnt();
   }
   waitAsynccnt<0>();
@@ -2069,7 +2079,7 @@ template <uint32_t OverwriteOffset> __global__ void async_store_b8_kernel(uint8_
 
 TEST_F(Gfx1250RaceTest, async_store_b8_neighbor_byte) {
   auto *dst = alloc<uint8_t>(1);
-  async_store_b8_kernel<4><<<1, kWave, kTileBytes>>>(dst);
+  async_store_b8_kernel<false><<<1, kWave, kTileBytes>>>(dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
@@ -2078,7 +2088,7 @@ TEST_F(Gfx1250RaceTest, async_store_b8_neighbor_byte) {
 
 TEST_F(Gfx1250RaceTest, async_store_b8_source_byte_race) {
   auto *dst = alloc<uint8_t>(1);
-  async_store_b8_kernel<5><<<1, kWave, kTileBytes>>>(dst);
+  async_store_b8_kernel<true><<<1, kWave, kTileBytes>>>(dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kAsyncStoreB8ThenByteWriteRaceExpectation);
