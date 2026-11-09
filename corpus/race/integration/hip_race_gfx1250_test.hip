@@ -10,7 +10,8 @@
 /// s_wait_tensorcnt retires the transfer. Transfers from one wave complete in
 /// issue order and independently of DS operations, but may access LDS out of
 /// order, so overlapping transfers from one wave also need a TENSORcnt wait
-/// between them. Async copies do the same on ASYNCcnt, one lane at a time.
+/// between them. Async copies do the same on ASYNCcnt, with a per-lane LDS
+/// address.
 /// Other waves see their LDS effects only after the issuing wave waits and the
 /// workgroup passes a barrier. Each race case is its clean partner with one
 /// step removed. Clean cases also check the data moved; raced values are
@@ -1591,18 +1592,20 @@ TEST_F(Gfx1250RaceTest, tensor_store_past_lds_allocation) {
 
 // --- Async copies between global memory and LDS ---
 //
-// An async load writes LDS and an async store reads it, one lane at a time,
-// until s_wait_asynccnt retires the copy (CDNA5 ISA 10.8). Async copies may
-// access LDS out of order with each other (10.8) and with DS instructions, so a
-// wave needs that wait before touching a copy's LDS bytes, and before an async
-// copy touches bytes of its own pending DS write. STOREcnt does not cover async
-// stores. Loads complete in order with loads and stores with stores, but loads
-// and stores complete out of order with each other (10.8).
+// An async load writes LDS and an async store reads it, at a per-lane LDS
+// address, until s_wait_asynccnt retires the copy (CDNA5 ISA 10.8). Async
+// copies may access LDS out of order with each other (10.8) and with DS
+// instructions, so a wave needs that wait before touching a copy's LDS bytes,
+// and before an async copy touches bytes of its own pending DS write. STOREcnt
+// does not cover async stores. Loads complete in order with loads and stores
+// with stores, but loads and stores complete out of order with each other
+// (10.8).
+
+/// The wait between an async store and the overwrite of its source.
+enum class AsyncWait { Asynccnt, Storecnt, None };
 
 /// Fill tile 0 with 100 + lane, store it with an async store, then overwrite
 /// it. Only an ASYNCcnt wait between the store and the overwrite protects it.
-enum class AsyncWait { Asynccnt, Storecnt, None };
-
 template <AsyncWait Wait> __global__ void async_store_source_overwrite_kernel(int *dst) {
   ldsFillAndWait(0, 100 + lane());
   asyncStore(dst, 0);
@@ -2147,7 +2150,9 @@ TEST_F(Gfx1250RaceTest, async_store_partial_exec_active_lane_race) {
 
 // The store's tile straddles the end of the LDS allocation: lanes 0-15 read
 // inside it and lanes 16-31 past it. Lanes past it read no LDS bytes, so
-// overwriting low LDS addresses while the store is pending is not a race.
+// overwriting low LDS addresses while the store is pending is not a race. The
+// overwrite never touches the in-range lanes' source, so this guards only
+// against lanes past the allocation being tracked at a low LDS address.
 __global__ void async_store_past_lds_allocation_kernel(int *dst) {
   if (lane() < 16)
     ldsWrite(kStraddlingOffset + lane() * kElementBytes, 100 + lane());
