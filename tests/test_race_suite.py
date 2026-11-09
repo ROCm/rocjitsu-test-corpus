@@ -297,7 +297,7 @@ def _source_gtests(target: str) -> set[str]:
         for fixture, name in pattern.findall(
             "\n".join(source.read_text(encoding="utf-8") for source in sources)
         )
-        if fixture.strip() in (layout["fixture"], "VmemRaceTest")
+        if fixture.strip() in (layout["fixture"], "VmemRaceTest", "BarrierRaceTest")
     }
 
 
