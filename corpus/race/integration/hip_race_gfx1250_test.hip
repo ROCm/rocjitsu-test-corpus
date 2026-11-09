@@ -154,7 +154,6 @@ __device__ inline void ldsWrite(uint32_t byte_offset, int value) {
   asm volatile("ds_store_b32 %0, %1" ::"v"(byte_offset), "v"(value) : "memory");
 }
 
-/// Fill one tile of LDS with `value` and wait for the writes.
 /// Copy `src[lane]` into the LDS int at `tile_offset + lane * 4` without
 /// waiting; wait with waitAsynccnt().
 __device__ inline void asyncLoad(const int *src, uint32_t tile_offset) {
@@ -179,6 +178,7 @@ template <int Count> __device__ inline void waitAsynccnt() {
   asm volatile("s_wait_asynccnt %0" ::"n"(Count) : "memory");
 }
 
+/// Fill one tile of LDS with `value` and wait for the writes.
 __device__ inline void ldsFillAndWait(uint32_t byte_offset, int value) {
   ldsWrite(byte_offset + lane() * kElementBytes, value);
   waitDscnt();
@@ -2173,9 +2173,9 @@ TEST_F(Gfx1250RaceTest, async_store_past_lds_allocation) {
   EXPECT_EQ(stored, range(100, kTileElements / 2));
 }
 
-// Lane 0's B128 store starts two ints before the end of the LDS allocation. An
-// LDS DWORD is out of range only if one of its own bytes is, so the store reads
-// its first two ints, and overwriting the second before the ASYNCcnt wait races.
+// Lane 0's B128 store starts two ints before the end of the LDS allocation, so
+// its source is those two ints, and overwriting the second before the ASYNCcnt
+// wait races.
 constexpr uint32_t kB128StraddlingOffset = kLdsAllocation - 2 * kElementBytes;
 
 template <bool Wait> __global__ void async_store_b128_past_lds_allocation_kernel(int *dst) {

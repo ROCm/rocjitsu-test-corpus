@@ -152,7 +152,7 @@ async copy and a tensor transfer, or replace `s_wait_asynccnt` with
 and stores with stores, but loads and stores out of order with each other.
 Further cases check a store's B8 and B128 extents, IOFFSET, partially active
 EXEC, lanes past the LDS allocation (a B128 lane straddling its end reads its
-in-range DWORDs), that a store with EXEC zero still occupies an ASYNCcnt slot,
+in-range bytes), that a store with EXEC zero still occupies an ASYNCcnt slot,
 an async store of another wave's async-load tile, that readers of one tile need
 no wait between them, a double-buffered store loop, and compiler-generated
 copies from the async builtins, for which the compiler emits no
