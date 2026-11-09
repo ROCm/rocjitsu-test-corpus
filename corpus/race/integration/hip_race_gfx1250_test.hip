@@ -2283,6 +2283,11 @@ TEST_F(Gfx1250RaceTest, tensor_load_builtin) {
 }
 
 // --- Compiler-generated async copies ---
+//
+// The race cases in this section check the compiler's current behavior, not
+// the ISA: they race only because the compiler emits no s_wait_asynccnt for the
+// async copy builtins. A compiler that adds those waits makes them race-free,
+// and they must then be updated.
 
 // The compiler emits no s_wait_asynccnt for the async copy builtins, not even
 // between a load and a store of the same LDS bytes, so the kernel adds it.

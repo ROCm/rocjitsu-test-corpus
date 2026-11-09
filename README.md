@@ -155,9 +155,11 @@ EXEC, lanes past the LDS allocation (a B128 lane straddling its end reads its
 in-range bytes), that a store with EXEC zero still occupies an ASYNCcnt slot,
 an async store of another wave's async-load tile, that readers of one tile need
 no wait between them, a double-buffered store loop, and compiler-generated
-copies from the async builtins, for which the compiler emits no
-`s_wait_asynccnt`, not even before `__syncthreads()`. The gfx1250 program does not build the shared VMEM cases,
-which use pre-GFX12 waits.
+copies from the async builtins. The compiler emits no `s_wait_asynccnt` for
+those builtins, not even before `__syncthreads()`, so their race cases check
+current compiler behavior and must be updated if the compiler adds the waits.
+The gfx1250 program does not build the shared VMEM cases, which use pre-GFX12
+waits.
 
 Before entering each private case directory, the adapter resolves relative
 launcher paths and plain arguments naming existing files against the corpus
