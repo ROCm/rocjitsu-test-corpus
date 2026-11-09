@@ -120,6 +120,7 @@ if(CMAKE_HIP_ARCHITECTURES STREQUAL "gfx942")
     add_rocjitsu_race_test(
         hip_race_tests_gfx942
         "${CMAKE_CURRENT_LIST_DIR}/hip_race_gfx942_test.hip"
+        "${CMAKE_CURRENT_LIST_DIR}/hip_race_barrier_test.hip"
         "${CMAKE_CURRENT_LIST_DIR}/hip_race_vmem_test.hip"
     )
 elseif(CMAKE_HIP_ARCHITECTURES STREQUAL "gfx950")
@@ -133,6 +134,7 @@ elseif(CMAKE_HIP_ARCHITECTURES STREQUAL "gfx1151")
     add_rocjitsu_race_test(
         hip_race_tests_gfx1151
         "${CMAKE_CURRENT_LIST_DIR}/hip_race_gfx1151_test.hip"
+        "${CMAKE_CURRENT_LIST_DIR}/hip_race_barrier_test.hip"
         "${CMAKE_CURRENT_LIST_DIR}/hip_race_vmem_test.hip"
     )
 elseif(CMAKE_HIP_ARCHITECTURES STREQUAL "gfx1250")

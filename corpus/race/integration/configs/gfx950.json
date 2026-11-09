@@ -44,10 +44,6 @@
     "sgpr_waw_load_then_load_race",
     "lds_cross_wave",
     "lds_cross_wave_race",
-    "exited_lds_writer",
-    "exited_lds_writer_race",
-    "barrier_staggered_wave_exit",
-    "barrier_staggered_wave_exit_race",
     "lds_same_wave_order",
     "global_to_lds_buffer",
     "global_to_lds_buffer_race",
@@ -84,6 +80,12 @@
     "vmem_no_wait_race",
     "vmem_expcnt_only_race",
     "vmem_flat_lds_exchange",
-    "vmem_flat_lds_exchange_race"
+    "vmem_flat_lds_exchange_race",
+    "barrier_exited_lds_writer",
+    "barrier_exited_lds_writer_implicit_wait",
+    "barrier_exited_lds_writer_race",
+    "barrier_staggered_wave_exit",
+    "barrier_staggered_wave_exit_implicit_wait",
+    "barrier_staggered_wave_exit_race"
   ]
 }

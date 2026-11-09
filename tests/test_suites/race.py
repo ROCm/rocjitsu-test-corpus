@@ -42,7 +42,11 @@ TARGET_LAYOUT = {
     "gfx942": {
         "binary": "hip_race_tests_gfx942",
         "fixture": "VmemRaceTest",
-        "sources": ("hip_race_gfx942_test.hip", "hip_race_vmem_test.hip"),
+        "sources": (
+            "hip_race_gfx942_test.hip",
+            "hip_race_vmem_test.hip",
+            "hip_race_barrier_test.hip",
+        ),
     },
     "gfx950": {
         "binary": "hip_race_tests_gfx950",
@@ -56,7 +60,11 @@ TARGET_LAYOUT = {
     "gfx1151": {
         "binary": "hip_race_tests_gfx1151",
         "fixture": "Gfx1151RaceTest",
-        "sources": ("hip_race_gfx1151_test.hip", "hip_race_vmem_test.hip"),
+        "sources": (
+            "hip_race_gfx1151_test.hip",
+            "hip_race_vmem_test.hip",
+            "hip_race_barrier_test.hip",
+        ),
     },
     "gfx1250": {
         "binary": "hip_race_tests_gfx1250",

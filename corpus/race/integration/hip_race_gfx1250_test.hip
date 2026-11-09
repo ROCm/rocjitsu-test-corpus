@@ -2362,69 +2362,6 @@ TEST_F(Gfx1250RaceTest, async_store_syncthreads_race) {
   ExpectRace(kAsyncStoreThenWriteRaceExpectation);
 }
 
-// --- LDS writer that ends before the barrier ---
-
-// Wave 1 writes LDS and ends without reaching the barrier; wave 0 then passes
-// the workgroup barrier and reads the bytes. It resolves only after wave 1
-// has ended, so it orders a write that wave 1 waited for. Without the wait, the
-// write may still be in flight when wave 0 reads it.
-template <bool WaitBeforeExit>
-__attribute__((amdgpu_flat_work_group_size(64, 64)))
-__global__ void exited_lds_writer_kernel(unsigned *out) {
-  __shared__ unsigned tile[64];
-  const unsigned tid = threadIdx.x;
-  const unsigned address = static_cast<unsigned>(reinterpret_cast<uintptr_t>(&tile[tid]));
-  if (__builtin_amdgcn_readfirstlane(tid) >= 32) {
-    if constexpr (WaitBeforeExit)
-      asm volatile("ds_store_b32 %[address], %[value]\n"
-                   "s_wait_dscnt 0\n"
-                   :
-                   : [address] "v"(address), [value] "v"(tid + 11)
-                   : "memory");
-    else
-      asm volatile("ds_store_b32 %[address], %[value]\n"
-                   :
-                   : [address] "v"(address), [value] "v"(tid + 11)
-                   : "memory");
-    return;
-  }
-  unsigned value;
-  // Wave 0 reads the dword wave 1 wrote, 32 dwords (128 bytes) further on.
-  asm volatile("s_barrier_signal -1\n"
-               "s_barrier_wait -1\n"
-               "ds_load_b32 %[value], %[address] offset:128\n"
-               "s_wait_dscnt 0\n"
-               : [value] "=v"(value)
-               : [address] "v"(address)
-               : "memory");
-  out[tid] = value;
-}
-
-TEST_F(Gfx1250RaceTest, exited_lds_writer) {
-  unsigned *out = alloc<unsigned>(32);
-  exited_lds_writer_kernel<true><<<1, 64>>>(out);
-  RACE_HIP_CHECK(hipGetLastError());
-  sync();
-  std::vector<unsigned> expected(32);
-  for (unsigned tid = 0; tid < expected.size(); ++tid)
-    expected[tid] = 32 + tid + 11;
-  ExpectValues(out, expected);
-  ExpectNoRace();
-}
-
-TEST_F(Gfx1250RaceTest, exited_lds_writer_race) {
-  exited_lds_writer_kernel<false><<<1, 64>>>(alloc<unsigned>(32));
-  RACE_HIP_CHECK(hipGetLastError());
-  sync();
-  ExpectRace({.kernel = "exited_lds_writer_kernel",
-              .type = "LDS",
-              .access = "read",
-              .wave = 0,
-              .lane = 0,
-              .producer = "ds_store_b32",
-              .consumer = "ds_load_b32"});
-}
-
 // A named barrier joined only by the reader does not order the writer's LDS
 // accesses, even if the writer has already ended.
 // Adding a workgroup barrier supplies the missing ordering.

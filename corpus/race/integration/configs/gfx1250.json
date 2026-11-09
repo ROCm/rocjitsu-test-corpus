@@ -105,13 +105,15 @@
     "async_copy_builtin",
     "async_copy_builtin_race",
     "async_store_syncthreads_race",
-    "exited_lds_writer",
-    "exited_lds_writer_race",
-    "barrier_staggered_wave_exit",
-    "barrier_staggered_wave_exit_race",
     "named_barrier_exited_writer_race",
     "named_then_workgroup_barrier_exited_writer",
     "cluster_barrier_exited_writer_race",
-    "cluster_then_workgroup_barrier_exited_writer"
+    "cluster_then_workgroup_barrier_exited_writer",
+    "barrier_exited_lds_writer",
+    "barrier_exited_lds_writer_implicit_wait",
+    "barrier_exited_lds_writer_race",
+    "barrier_staggered_wave_exit",
+    "barrier_staggered_wave_exit_implicit_wait",
+    "barrier_staggered_wave_exit_race"
   ]
 }
