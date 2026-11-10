@@ -7,14 +7,10 @@
 // cvt_sr_pk_f16_f32 / cvt_sr_pk_bf16_f32 in fpsan/amdgcn_cvt.hpp. Each packs two
 // f32 into a v2{f16,bf16} with SR from a u32 seed (lane0<-a, lane1<-b).
 //
-// Authoritative checks (host-referenced, independent of the device builtin):
-//   Float, exact inputs : at f32 values exactly representable in the narrow
-//                         type, SR is exact, so both lanes equal the host
-//                         narrowing.
-//   Float, SR property  : for an f32 exactly between two representable
-//                         neighbors, every result must be ONE of those two
-//                         neighbors (bracketed), and across many seeds BOTH must
-//                         occur (the rounding is actually stochastic).
+// Host checks (independent of the device builtin):
+//   Native BF16: exact inputs and stochastic rounding between adjacent BF16s.
+//   Native FP16: exact inputs with bounded seeds, and both packed components
+//                at the midpoint near 1.0 for narrow and wide seed halves.
 //   FPSan               : each lane equals fpsan::cast<{_Float16,__bf16}> of the
 //                         input (deterministic payload truncate; seed opaque).
 #include "fpsan/amdgcn_cvt.hpp"
@@ -44,8 +40,10 @@ using FVF = Value<float, Semantics::Native, kCC>;
 // ----------------------------- f16 -----------------------------------------
 __global__ void k_f16_exact(const float *a, const float *b, float *out) {
   int l = threadIdx.x;
-  auto r =
-      fpsan::amdgcn_cvt_sr_pk_f16_f32<Semantics::Native, kCC>(FVF{a[l]}, FVF{b[l]}, 0xABCDu + l);
+  // An FP16 normal discards 13 FP32 fraction bits. Each addend here fits
+  // within those discarded bits, so it leaves an exact FP16 input unchanged.
+  const unsigned seed = (0x1fffu << 16) | static_cast<unsigned>(l);
+  auto r = fpsan::amdgcn_cvt_sr_pk_f16_f32<Semantics::Native, kCC>(FVF{a[l]}, FVF{b[l]}, seed);
   out[2 * l] = static_cast<float>(static_cast<_Float16>(r.get(0)));
   out[2 * l + 1] = static_cast<float>(static_cast<_Float16>(r.get(1)));
 }
@@ -73,14 +71,18 @@ TEST(CvtSrPkF16, FloatExactInputs) {
 __global__ void k_f16_sr(float x, const unsigned *seeds, float *out) {
   int l = threadIdx.x;
   auto r = fpsan::amdgcn_cvt_sr_pk_f16_f32<Semantics::Native, kCC>(FVF{x}, FVF{x}, seeds[l]);
-  out[l] = static_cast<float>(static_cast<_Float16>(r.get(0)));
+  out[2 * l] = static_cast<float>(static_cast<_Float16>(r.get(0)));
+  out[2 * l + 1] = static_cast<float>(static_cast<_Float16>(r.get(1)));
 }
 
 TEST(CvtSrPkF16, FloatStochasticBracket) {
   DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
-  // f16 step near 1.0 is 2^-10; midpoint rounds to 1.0 or 1.0 + 2^-10.
+  // CDNA5 ISA p. 646 adds S2.low16 to the raw FP32 bits of the first input
+  // and S2.high16 to the second. Section 7.6 specifies truncation for SR.
+  // These wide-seed expectations follow the manual pending a gfx1250 capture.
+  constexpr unsigned fp32_ulps_per_f16_step = 1u << (23 - 10);
   const float lo = 1.0f;
   const float hi = 1.0f + std::ldexp(1.0f, -10);
   const float x = 0.5f * (lo + hi);
@@ -89,17 +91,22 @@ TEST(CvtSrPkF16, FloatStochasticBracket) {
   for (int i = 0; i < N; ++i)
     seeds[i] = 0x10000u * (i + 1) + 0x9E3779B9u * i; // spread across the u32 range
   unsigned *dS = device_allocations.to_dev(seeds);
-  float *dO = device_allocations.allocate<float>(N);
+  float *dO = device_allocations.allocate<float>(2 * N);
   k_f16_sr<<<1, N>>>(x, dS, dO);
   HIP_CHECK(hipDeviceSynchronize());
-  auto got = from_dev(dO, N);
-  std::set<float> seen;
+  auto got = from_dev(dO, 2 * N);
+  std::set<float> bracketed;
   for (int i = 0; i < N; ++i) {
-    EXPECT_TRUE(got[i] == lo || got[i] == hi) << "seed#" << i << " gave " << got[i];
-    seen.insert(got[i]);
+    for (unsigned component = 0; component < 2; ++component) {
+      const unsigned addend = (seeds[i] >> (16 * component)) & 0xffffu;
+      const unsigned steps = (fp32_ulps_per_f16_step / 2 + addend) / fp32_ulps_per_f16_step;
+      const float result = got[2 * i + component];
+      EXPECT_EQ(result, lo + steps * (hi - lo)) << "seed#" << i << " component " << component;
+      if (addend < fp32_ulps_per_f16_step)
+        bracketed.insert(result);
+    }
   }
-  EXPECT_TRUE(seen.count(lo) && seen.count(hi))
-      << "rounding was not stochastic (got " << seen.size() << " distinct values)";
+  EXPECT_EQ(bracketed, (std::set<float>{lo, hi}));
 }
 
 template <Semantics S> __global__ void k_f16_fpsan(const float *a, const float *b, unsigned *out) {
