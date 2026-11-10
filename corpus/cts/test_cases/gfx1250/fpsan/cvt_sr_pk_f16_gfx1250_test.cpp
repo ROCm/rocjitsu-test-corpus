@@ -9,8 +9,8 @@
 //
 // Host checks (independent of the device builtin):
 //   Native BF16: exact inputs and stochastic rounding between adjacent BF16s.
-//   Native FP16: exact inputs with bounded seeds, and both packed components
-//                at the midpoint near 1.0 for narrow and wide seed halves.
+//   Native FP16: exact inputs, both midpoint neighbors for each component,
+//                and a packed result measured on gfx1250.
 //   FPSan               : each lane equals fpsan::cast<{_Float16,__bf16}> of the
 //                         input (deterministic payload truncate; seed opaque).
 #include "fpsan/amdgcn_cvt.hpp"
@@ -40,9 +40,7 @@ using FVF = Value<float, Semantics::Native, kCC>;
 // ----------------------------- f16 -----------------------------------------
 __global__ void k_f16_exact(const float *a, const float *b, float *out) {
   int l = threadIdx.x;
-  // An FP16 normal discards 13 FP32 fraction bits. Each addend here fits
-  // within those discarded bits, so it leaves an exact FP16 input unchanged.
-  const unsigned seed = (0x1fffu << 16) | static_cast<unsigned>(l);
+  const unsigned seed = 0x80000000u + 0x9e3779b9u * static_cast<unsigned>(l);
   auto r = fpsan::amdgcn_cvt_sr_pk_f16_f32<Semantics::Native, kCC>(FVF{a[l]}, FVF{b[l]}, seed);
   out[2 * l] = static_cast<float>(static_cast<_Float16>(r.get(0)));
   out[2 * l + 1] = static_cast<float>(static_cast<_Float16>(r.get(1)));
@@ -67,10 +65,9 @@ TEST(CvtSrPkF16, FloatExactInputs) {
   }
 }
 
-// One f32 strictly between two f16 neighbors; each thread uses a distinct seed.
-__global__ void k_f16_sr(float x, const unsigned *seeds, float *out) {
+__global__ void k_f16_sr(float a, float b, const unsigned *seeds, float *out) {
   int l = threadIdx.x;
-  auto r = fpsan::amdgcn_cvt_sr_pk_f16_f32<Semantics::Native, kCC>(FVF{x}, FVF{x}, seeds[l]);
+  auto r = fpsan::amdgcn_cvt_sr_pk_f16_f32<Semantics::Native, kCC>(FVF{a}, FVF{b}, seeds[l]);
   out[2 * l] = static_cast<float>(static_cast<_Float16>(r.get(0)));
   out[2 * l + 1] = static_cast<float>(static_cast<_Float16>(r.get(1)));
 }
@@ -79,10 +76,6 @@ TEST(CvtSrPkF16, FloatStochasticBracket) {
   DeviceAllocations device_allocations;
   if (!have_device())
     GTEST_SKIP() << "no HIP device";
-  // CDNA5 ISA p. 646 adds S2.low16 to the raw FP32 bits of the first input
-  // and S2.high16 to the second. Section 7.6 specifies truncation for SR.
-  // These wide-seed expectations follow the manual pending a gfx1250 capture.
-  constexpr unsigned fp32_ulps_per_f16_step = 1u << (23 - 10);
   const float lo = 1.0f;
   const float hi = 1.0f + std::ldexp(1.0f, -10);
   const float x = 0.5f * (lo + hi);
@@ -92,21 +85,34 @@ TEST(CvtSrPkF16, FloatStochasticBracket) {
     seeds[i] = 0x10000u * (i + 1) + 0x9E3779B9u * i; // spread across the u32 range
   unsigned *dS = device_allocations.to_dev(seeds);
   float *dO = device_allocations.allocate<float>(2 * N);
-  k_f16_sr<<<1, N>>>(x, dS, dO);
+  k_f16_sr<<<1, N>>>(x, x, dS, dO);
   HIP_CHECK(hipDeviceSynchronize());
   auto got = from_dev(dO, 2 * N);
-  std::set<float> bracketed;
+  std::set<float> seen[2];
   for (int i = 0; i < N; ++i) {
     for (unsigned component = 0; component < 2; ++component) {
-      const unsigned addend = (seeds[i] >> (16 * component)) & 0xffffu;
-      const unsigned steps = (fp32_ulps_per_f16_step / 2 + addend) / fp32_ulps_per_f16_step;
       const float result = got[2 * i + component];
-      EXPECT_EQ(result, lo + steps * (hi - lo)) << "seed#" << i << " component " << component;
-      if (addend < fp32_ulps_per_f16_step)
-        bracketed.insert(result);
+      EXPECT_TRUE(result == lo || result == hi) << "seed#" << i << " component " << component;
+      seen[component].insert(result);
     }
   }
-  EXPECT_EQ(bracketed, (std::set<float>{lo, hi}));
+  for (const auto &component : seen)
+    EXPECT_EQ(component, (std::set<float>{lo, hi}));
+}
+
+TEST(CvtSrPkF16, PreservesExactUpperComponentWithHighSeedBit) {
+  DeviceAllocations device_allocations;
+  if (!have_device())
+    GTEST_SKIP() << "no HIP device";
+  // gfx1250 returned packed 0x3c003c00 for this lower midpoint and exact upper input.
+  const std::vector<unsigned> seeds{0x80000000u};
+  unsigned *dS = device_allocations.to_dev(seeds);
+  float *dO = device_allocations.allocate<float>(2);
+  k_f16_sr<<<1, 1>>>(0x1.002p0f, 1.0f, dS, dO);
+  HIP_CHECK(hipDeviceSynchronize());
+  auto got = from_dev(dO, 2);
+  EXPECT_EQ(got[0], 1.0f);
+  EXPECT_EQ(got[1], 1.0f);
 }
 
 template <Semantics S> __global__ void k_f16_fpsan(const float *a, const float *b, unsigned *out) {
