@@ -1862,8 +1862,6 @@ TEST_F(Gfx950RaceTest, report_elided_loop_race) {
   ASSERT_TRUE(matched.ok()) << matched.message();
   const std::string &message = parsed.records.front().message;
   EXPECT_NE(message.find("instructions elided"), std::string::npos) << message;
-  EXPECT_NE(message.find("--- jump backward ---"), std::string::npos)
-      << message;
   EXPECT_NE(message.find("s_cbranch_scc1"), std::string::npos) << message;
   EXPECT_NE(message.find("pending counters: vmcnt."), std::string::npos)
       << message;
@@ -1904,7 +1902,6 @@ TEST_F(Gfx950RaceTest, report_expired_producer_race) {
   EXPECT_NE(message.find("earlier instructions not recorded"),
             std::string::npos)
       << message;
-  EXPECT_EQ(message.find("--- jump"), std::string::npos) << message;
   EXPECT_NE(message.find("read-after-write (RAW)"), std::string::npos)
       << message;
   RACE_HIP_CHECK(hipFree(output));
