@@ -6,14 +6,18 @@ dispatch, daemon fixed mappings, and preservation of application limits and
 SIGXFSZ behavior. Inherited cases verify both limits on entry, before changing
 any state; late cases also check limits and SIGXFSZ across HIP initialization.
 
-Local cases create, export, import and map VMM allocations through both handles.
-Cases that can dispatch check data written through either alias from the other.
-Daemon cases assert the known `hipMemCreate` rejection because daemon dma-buf
-export is unsupported; they do not cover VMM mappings or export/import.
+Local and daemon cases create, export, import and map VMM allocations through
+both handles. Cases that can dispatch check data written through either alias
+from the other.
 Early zero-limit and fork soft-zero cases omit copies and kernel dispatch,
 including VMM data checks: COMGR's first-use compilation writes temporary files
 that remain subject to application limits. Those cases still check allocation
 and mapping; late zero-limit cases exercise copies and dispatch after warmup.
+
+The nine daemon cases require a rocjitsu build that transfers dma-buf export
+descriptors across the daemon connection
+([rocm-systems PR #13852](https://github.com/ROCm/rocm-systems/pull/13852)).
+Older builds can report `out of memory` at `hipMemCreate` for every daemon case.
 
 The supported runner in the companion rocm-systems checkout builds the clients
 and runs the matrix with the same setup as CI:
