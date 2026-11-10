@@ -117,7 +117,7 @@
     "barrier_staggered_wave_exit_race",
     "loadcnt_capacity_boundary",
     "loadcnt_below_capacity_race",
-    "loadcnt_exec_zero_issue_counts",
+    "loadcnt_exec_zero_capacity_boundary",
     "loadcnt_exec_zero_below_capacity_race",
     "storecnt_pressure_does_not_advance_loadcnt_race",
     "dscnt_capacity_boundary",

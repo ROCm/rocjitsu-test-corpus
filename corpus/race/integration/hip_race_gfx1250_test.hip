@@ -2620,7 +2620,7 @@ TEST_F(Gfx1250RaceTest, loadcnt_below_capacity_race) {
   ExpectRace(kLoadcntCapacityRaceExpectation);
 }
 
-TEST_F(Gfx1250RaceTest, loadcnt_exec_zero_issue_counts) {
+TEST_F(Gfx1250RaceTest, loadcnt_exec_zero_capacity_boundary) {
   auto *src = allocWithData<int>(kWave);
   auto *dst = alloc<int>(kWave);
   loadcnt_capacity_kernel<kCounterCapacity, true><<<1, kWave>>>(src, dst);
