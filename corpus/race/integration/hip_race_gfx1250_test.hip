@@ -2494,6 +2494,9 @@ TEST_F(Gfx1250RaceTest, cluster_then_workgroup_barrier_exited_writer) {
 // oldest one complete without an explicit wait. Each case issues an oldest
 // operation, then enough younger operations on the same counter to fill it
 // (clean) or to stop one short (race), and uses the oldest result with no wait.
+// Cases named for what does not happen (`*_does_not_*` and `*_do_not_*`) have
+// no clean partner: each shows that a full counter of one kind, or completions
+// of one type, prove nothing about an operation on another.
 
 // LOADcnt, STOREcnt, DScnt, ASYNCcnt and TENSORcnt are 6-bit counters and KMcnt
 // is a 5-bit counter (CDNA5 ISA 5.7.1, table "Counter Size Description"). Issue
