@@ -2815,20 +2815,18 @@ TEST_F(Gfx1250RaceTest, asynccnt_mixed_types_do_not_complete_a_load_race) {
   ExpectRace(kAsynccntCapacityRaceExpectation);
 }
 
-// A tensor load of tile 0, `Younger` younger tensor loads with a NULL
-// descriptor, then a DS read of tile 0. A NULL tensor moves no data but still
-// counts on TENSORcnt (see tensor_load_null_tensor_counts).
-template <int Younger>
-__global__ void tensorcnt_capacity_kernel(TensorDesc oldest, TensorDesc null_tensor, int *dst) {
+// A tensor load of tile 0, `Younger` younger tensor loads of the same data into
+// tiles 1 onward, then a DS read of tile 0. Each younger load moves real data
+// into its own tile, so the case does not depend on whether a NULL descriptor
+// counts on TENSORcnt. Only the LDS offset, descriptor word 1, differs.
+template <int Younger> __global__ void tensorcnt_capacity_kernel(TensorDesc tile, int *dst) {
   static_assert(Younger <= kCounterCapacity);
-  tensorLoad(oldest);
-  asm volatile(".rept %c[younger_loads]\n"
-               "tensor_load_to_lds %[group0], %[group1]\n"
-               ".endr\n"
-               :
-               : [group0] "s"(null_tensor.group0), [group1] "s"(null_tensor.group1),
-                 [younger_loads] "n"(Younger)
-               : "memory");
+  tensorLoad(tile);
+  for (int younger = 1; younger <= Younger; ++younger) {
+    TensorDesc next = tile;
+    next.group0[1] = younger * kTileBytes;
+    tensorLoad(next);
+  }
   dst[lane()] = ldsReadAndWait(lane() * kElementBytes);
   waitTensorcnt<0>();
 }
@@ -2836,9 +2834,8 @@ __global__ void tensorcnt_capacity_kernel(TensorDesc oldest, TensorDesc null_ten
 TEST_F(Gfx1250RaceTest, tensorcnt_capacity_boundary) {
   auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
-  tensorcnt_capacity_kernel<kCounterCapacity><<<1, kWave, 2 * kTileBytes>>>(
-      describe({.global = src}),
-      describe({.global = src, .lds_offset = kTileBytes, .count = 0}), dst);
+  tensorcnt_capacity_kernel<kCounterCapacity>
+      <<<1, kWave, (kCounterCapacity + 1) * kTileBytes>>>(describe({.global = src}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
@@ -2847,9 +2844,8 @@ TEST_F(Gfx1250RaceTest, tensorcnt_capacity_boundary) {
 
 TEST_F(Gfx1250RaceTest, tensorcnt_below_capacity_race) {
   auto *src = allocWithData<int>(kTileElements);
-  tensorcnt_capacity_kernel<kCounterCapacity - 1><<<1, kWave, 2 * kTileBytes>>>(
-      describe({.global = src}),
-      describe({.global = src, .lds_offset = kTileBytes, .count = 0}), alloc<int>(kWave));
+  tensorcnt_capacity_kernel<kCounterCapacity - 1>
+      <<<1, kWave, kCounterCapacity * kTileBytes>>>(describe({.global = src}), alloc<int>(kWave));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kTensorcntCapacityRaceExpectation);
