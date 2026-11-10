@@ -114,6 +114,22 @@
     "barrier_exited_lds_writer_race",
     "barrier_staggered_wave_exit",
     "barrier_staggered_wave_exit_implicit_wait",
-    "barrier_staggered_wave_exit_race"
+    "barrier_staggered_wave_exit_race",
+    "loadcnt_capacity_boundary",
+    "loadcnt_below_capacity_race",
+    "loadcnt_exec_zero_issue_counts",
+    "loadcnt_exec_zero_below_capacity_race",
+    "storecnt_pressure_does_not_advance_loadcnt_race",
+    "dscnt_capacity_boundary",
+    "dscnt_below_capacity_race",
+    "kmcnt_pressure_does_not_advance_dscnt_race",
+    "kmcnt_capacity_does_not_complete_scalar_loads_race",
+    "asynccnt_capacity_boundary",
+    "asynccnt_below_capacity_race",
+    "asynccnt_mixed_types_do_not_complete_a_load_race",
+    "tensorcnt_capacity_boundary",
+    "tensorcnt_below_capacity_race",
+    "dscnt_capacity_cross_wave_barrier",
+    "dscnt_capacity_cross_wave_barrier_race"
   ]
 }
