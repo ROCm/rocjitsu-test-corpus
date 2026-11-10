@@ -2571,13 +2571,16 @@ static constexpr RaceExpectation kDsWriteThenReadRaceExpectation{
 };
 
 // A load, `Younger` younger loads, then a use of the oldest load's result. With
-// `ExecZeroLast`, the last younger load runs with EXEC zero; it still takes a
-// LOADcnt slot, because VMEM is skipped only when EXEC is zero and LOADcnt,
-// STOREcnt, ASYNCcnt and TENSORcnt are all zero (CDNA5 ISA 3.2.2.1).
-template <int Younger, bool ExecZeroLast = false>
+// `ExecZeroBeforeLast`, the second-to-last younger load runs with EXEC zero and
+// the last one is active. The EXEC-zero load still holds a LOADcnt slot,
+// because VMEM is skipped only when EXEC is zero and LOADcnt, STOREcnt,
+// ASYNCcnt and TENSORcnt are all zero (CDNA5 ISA 3.2.2.1). So it is the last,
+// active load's issue that finds the counter full, and only if the EXEC-zero
+// load's slot is counted.
+template <int Younger, bool ExecZeroBeforeLast = false>
 __global__ void loadcnt_capacity_kernel(const int *src, int *dst) {
   static_assert(Younger <= kCounterCapacity);
-  constexpr int kUnmaskedYounger = ExecZeroLast ? Younger - 1 : Younger;
+  constexpr int kUnmaskedYounger = ExecZeroBeforeLast ? Younger - 2 : Younger;
   int producer, result, saved_exec;
   asm volatile("global_load_b32 %[producer], %[address], off\n"
                ".set race_vgpr, 64\n"
@@ -2590,12 +2593,14 @@ __global__ void loadcnt_capacity_kernel(const int *src, int *dst) {
                "s_mov_b32 exec_lo, 0\n"
                "global_load_b32 v[race_vgpr], %[address], off\n"
                "s_mov_b32 exec_lo, %[saved_exec]\n"
+               ".set race_vgpr, race_vgpr + 1\n"
+               "global_load_b32 v[race_vgpr], %[address], off\n"
                ".endif\n"
                "v_mov_b32 %[result], %[producer]\n"
                : [producer] "=&v"(producer), [result] "=&v"(result),
                  [saved_exec] "=&s"(saved_exec)
                : [address] "v"(&src[threadIdx.x]), [unmasked] "n"(kUnmaskedYounger),
-                 [exec_zero] "n"(ExecZeroLast ? 1 : 0)
+                 [exec_zero] "n"(ExecZeroBeforeLast ? 1 : 0)
                : "memory", RACE_YOUNGER_VGPR_CLOBBERS);
   asm volatile("s_wait_loadcnt 0" ::: "memory");
   dst[threadIdx.x] = result;
