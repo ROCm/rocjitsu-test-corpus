@@ -2887,33 +2887,52 @@ TEST_F(Gfx1250RaceTest, dscnt_capacity_cross_wave_barrier_race) {
 // VMEM portion with other VMEM loads, so a FLAT fills both counters and counts
 // toward partial waits on both, even when its addresses use only one memory.
 
-// A DS read, `Younger` younger DS reads, then a FLAT load from global memory,
-// then a use of the oldest DS result. The FLAT takes the last DScnt slot.
-template <int Younger>
-__global__ void flat_global_dscnt_capacity_kernel(const int *src, int *dst) {
+// The FLAT instruction that takes the last slot: a load, a store, or a load
+// issued with EXEC zero. With EXEC zero, a FLAT still counts on both counters
+// unless DScnt, LOADcnt, STOREcnt, ASYNCcnt and TENSORcnt are all zero (CDNA5
+// ISA 3.2.2.1), and here the younger operations keep them nonzero.
+enum class FlatForm { Load, Store, ExecZeroLoad };
+
+// A DS read, `Younger` younger DS reads, then a FLAT access to global memory,
+// then a use of the oldest DS result. The FLAT takes the last DScnt slot. A
+// store writes `scratch`, so it cannot conflict with the kernel's own stores.
+template <int Younger, FlatForm Form = FlatForm::Load>
+__global__ void flat_dscnt_capacity_kernel(const int *src, int *scratch, int *dst) {
   static_assert(Younger < kCounterCapacity);
   ldsFillAndWait(0, 100 + lane());
-  int producer, younger, flat_result, result;
+  int producer, younger, flat_result, saved_exec, result;
   asm volatile("ds_load_b32 %[producer], %[address]\n"
                ".rept %c[younger_reads]\n"
                "ds_load_b32 %[younger], %[address]\n"
                ".endr\n"
+               ".if %c[form] == 1\n"
+               "flat_store_b32 %[store_address], %[store_value]\n"
+               ".elseif %c[form] == 2\n"
+               "s_mov_b32 %[saved_exec], exec_lo\n"
+               "s_mov_b32 exec_lo, 0\n"
                "flat_load_b32 %[flat_result], %[flat_address]\n"
+               "s_mov_b32 exec_lo, %[saved_exec]\n"
+               ".else\n"
+               "flat_load_b32 %[flat_result], %[flat_address]\n"
+               ".endif\n"
                "v_mov_b32 %[result], %[producer]\n"
                : [producer] "=&v"(producer), [younger] "=&v"(younger),
-                 [flat_result] "=&v"(flat_result), [result] "=&v"(result)
+                 [flat_result] "=&v"(flat_result), [saved_exec] "=&s"(saved_exec),
+                 [result] "=&v"(result)
                : [address] "v"(lane() * kElementBytes), [flat_address] "v"(&src[lane()]),
-                 [younger_reads] "n"(Younger)
+                 [store_address] "v"(&scratch[lane()]), [store_value] "v"(1),
+                 [younger_reads] "n"(Younger), [form] "n"(static_cast<int>(Form))
                : "memory");
   asm volatile("s_wait_loadcnt 0\n"
+               "s_wait_storecnt 0\n"
                "s_wait_dscnt 0" ::: "memory");
   dst[lane()] = result;
 }
 
 TEST_F(Gfx1250RaceTest, flat_global_dscnt_capacity_boundary) {
   auto *dst = alloc<int>(kWave);
-  flat_global_dscnt_capacity_kernel<kCounterCapacity - 1>
-      <<<1, kWave, kTileBytes>>>(allocWithData<int>(kWave), dst);
+  flat_dscnt_capacity_kernel<kCounterCapacity - 1>
+      <<<1, kWave, kTileBytes>>>(allocWithData<int>(kWave), alloc<int>(kWave), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
@@ -2921,8 +2940,46 @@ TEST_F(Gfx1250RaceTest, flat_global_dscnt_capacity_boundary) {
 }
 
 TEST_F(Gfx1250RaceTest, flat_global_dscnt_below_capacity_race) {
-  flat_global_dscnt_capacity_kernel<kCounterCapacity - 2>
-      <<<1, kWave, kTileBytes>>>(allocWithData<int>(kWave), alloc<int>(kWave));
+  flat_dscnt_capacity_kernel<kCounterCapacity - 2><<<1, kWave, kTileBytes>>>(
+      allocWithData<int>(kWave), alloc<int>(kWave), alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kDscntCapacityRaceExpectation);
+}
+
+// A FLAT store counts on DScnt too, not only on STOREcnt.
+TEST_F(Gfx1250RaceTest, flat_global_store_dscnt_capacity_boundary) {
+  auto *dst = alloc<int>(kWave);
+  flat_dscnt_capacity_kernel<kCounterCapacity - 1, FlatForm::Store>
+      <<<1, kWave, kTileBytes>>>(allocWithData<int>(kWave), alloc<int>(kWave), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(100, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, flat_global_store_dscnt_below_capacity_race) {
+  flat_dscnt_capacity_kernel<kCounterCapacity - 2, FlatForm::Store><<<1, kWave, kTileBytes>>>(
+      allocWithData<int>(kWave), alloc<int>(kWave), alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kDscntCapacityRaceExpectation);
+}
+
+TEST_F(Gfx1250RaceTest, flat_exec_zero_dscnt_capacity_boundary) {
+  auto *dst = alloc<int>(kWave);
+  flat_dscnt_capacity_kernel<kCounterCapacity - 1, FlatForm::ExecZeroLoad>
+      <<<1, kWave, kTileBytes>>>(allocWithData<int>(kWave), alloc<int>(kWave), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(100, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, flat_exec_zero_dscnt_below_capacity_race) {
+  flat_dscnt_capacity_kernel<kCounterCapacity - 2, FlatForm::ExecZeroLoad>
+      <<<1, kWave, kTileBytes>>>(allocWithData<int>(kWave), alloc<int>(kWave),
+                                 alloc<int>(kWave));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kDscntCapacityRaceExpectation);
@@ -2931,24 +2988,32 @@ TEST_F(Gfx1250RaceTest, flat_global_dscnt_below_capacity_race) {
 // A global load, `Younger` younger global loads, then a FLAT load from LDS,
 // then a use of the oldest load's result. The FLAT takes the last LOADcnt slot.
 // `tile` is the kernel's only LDS allocation, so it starts at offset 0.
-template <int Younger>
-__global__ void flat_lds_loadcnt_capacity_kernel(const int *src, int *dst) {
+template <int Younger, FlatForm Form = FlatForm::Load>
+__global__ void flat_loadcnt_capacity_kernel(const int *src, int *dst) {
   static_assert(Younger < kCounterCapacity);
+  static_assert(Form != FlatForm::Store);
   __shared__ int tile[kTileElements];
   ldsFillAndWait(0, 100 + lane());
-  int producer, flat_result, result;
+  int producer, flat_result, saved_exec, result;
   asm volatile("global_load_b32 %[producer], %[address], off\n"
                ".set race_vgpr, 64\n"
                ".rept %c[younger_loads]\n"
                "global_load_b32 v[race_vgpr], %[address], off\n"
                ".set race_vgpr, race_vgpr + 1\n"
                ".endr\n"
+               ".if %c[form] == 2\n"
+               "s_mov_b32 %[saved_exec], exec_lo\n"
+               "s_mov_b32 exec_lo, 0\n"
                "flat_load_b32 %[flat_result], %[flat_address]\n"
+               "s_mov_b32 exec_lo, %[saved_exec]\n"
+               ".else\n"
+               "flat_load_b32 %[flat_result], %[flat_address]\n"
+               ".endif\n"
                "v_mov_b32 %[result], %[producer]\n"
                : [producer] "=&v"(producer), [flat_result] "=&v"(flat_result),
-                 [result] "=&v"(result)
+                 [saved_exec] "=&s"(saved_exec), [result] "=&v"(result)
                : [address] "v"(&src[lane()]), [flat_address] "v"(&tile[lane()]),
-                 [younger_loads] "n"(Younger)
+                 [younger_loads] "n"(Younger), [form] "n"(static_cast<int>(Form))
                : "memory", RACE_YOUNGER_VGPR_CLOBBERS);
   asm volatile("s_wait_loadcnt 0\n"
                "s_wait_dscnt 0" ::: "memory");
@@ -2957,8 +3022,7 @@ __global__ void flat_lds_loadcnt_capacity_kernel(const int *src, int *dst) {
 
 TEST_F(Gfx1250RaceTest, flat_lds_loadcnt_capacity_boundary) {
   auto *dst = alloc<int>(kWave);
-  flat_lds_loadcnt_capacity_kernel<kCounterCapacity - 1>
-      <<<1, kWave>>>(allocWithData<int>(kWave), dst);
+  flat_loadcnt_capacity_kernel<kCounterCapacity - 1><<<1, kWave>>>(allocWithData<int>(kWave), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
@@ -2966,7 +3030,25 @@ TEST_F(Gfx1250RaceTest, flat_lds_loadcnt_capacity_boundary) {
 }
 
 TEST_F(Gfx1250RaceTest, flat_lds_loadcnt_below_capacity_race) {
-  flat_lds_loadcnt_capacity_kernel<kCounterCapacity - 2>
+  flat_loadcnt_capacity_kernel<kCounterCapacity - 2>
+      <<<1, kWave>>>(allocWithData<int>(kWave), alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kLoadcntCapacityRaceExpectation);
+}
+
+TEST_F(Gfx1250RaceTest, flat_exec_zero_loadcnt_capacity_boundary) {
+  auto *dst = alloc<int>(kWave);
+  flat_loadcnt_capacity_kernel<kCounterCapacity - 1, FlatForm::ExecZeroLoad>
+      <<<1, kWave>>>(allocWithData<int>(kWave), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, flat_exec_zero_loadcnt_below_capacity_race) {
+  flat_loadcnt_capacity_kernel<kCounterCapacity - 2, FlatForm::ExecZeroLoad>
       <<<1, kWave>>>(allocWithData<int>(kWave), alloc<int>(kWave));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
