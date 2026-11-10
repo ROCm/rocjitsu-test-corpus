@@ -22,8 +22,10 @@
 
 #include "race_test_support.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <string>
 #include <vector>
 
 using rocjitsu::test::FindingCount;
@@ -1819,6 +1821,149 @@ TEST_F(Gfx950RaceTest, f64_vgpr_waw) {
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kF64VgprWawExpectation);
+}
+
+// Keep the producer pending while execution crosses the elided part of a trace.
+// The LDS-only wait cannot complete the global load.
+__global__ void report_loop_kernel(const int *input, int *output) {
+  int value;
+  unsigned iterations;
+  asm volatile("global_load_dword %[value], %[address], off\n"
+               ".rept 70\n s_nop 0\n.endr\n"
+               "s_mov_b32 %[iterations], 4\n"
+               "1:\n"
+               "s_sub_u32 %[iterations], %[iterations], 1\n"
+               "s_cmp_lg_u32 %[iterations], 0\n"
+               "s_cbranch_scc1 1b\n"
+               "s_waitcnt lgkmcnt(0)\n"
+               ".rept 70\n s_nop 0\n.endr\n"
+               "v_add_u32 %[value], %[value], 1\n"
+               : [value] "=&v"(value), [iterations] "=&s"(iterations)
+               : [address] "v"(input + threadIdx.x)
+               : "scc", "memory");
+  output[threadIdx.x] = value;
+}
+
+TEST_F(Gfx950RaceTest, report_elided_loop_race) {
+  int *input = allocWithData<int>(64);
+  int *output = alloc<int>(64);
+  report_loop_kernel<<<1, 64>>>(input, output);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  const auto parsed = rocjitsu::test::parseRaceLogFromEnvironment();
+  ASSERT_TRUE(parsed.ok()) << parsed.error;
+  const auto matched = rocjitsu::test::matchRaceExpectation(
+      parsed.records, {.kernel = "report_loop_kernel",
+                       .type = "VGPR",
+                       .access = "read",
+                       .producer = "global_load_dword",
+                       .between = "lgkmcnt(0)",
+                       .consumer = "v_add_u32"});
+  ASSERT_TRUE(matched.ok()) << matched.message();
+  const std::string &message = parsed.records.front().message;
+  EXPECT_NE(message.find("instructions elided"), std::string::npos) << message;
+  EXPECT_NE(message.find("--- jump backward ---"), std::string::npos)
+      << message;
+  EXPECT_NE(message.find("s_cbranch_scc1"), std::string::npos) << message;
+  EXPECT_NE(message.find("pending counters: vmcnt."), std::string::npos)
+      << message;
+  RACE_HIP_CHECK(hipFree(output));
+  RACE_HIP_CHECK(hipFree(input));
+}
+
+// NOPs consume history entries without satisfying the load's wait obligation.
+__global__ void report_expired_producer_kernel(const int *input, int *output) {
+  int value;
+  asm volatile("global_load_dword %[value], %[address], off\n"
+               ".rept 300\n s_nop 0\n.endr\n"
+               "v_add_u32 %[value], %[value], 1\n"
+               : [value] "=&v"(value)
+               : [address] "v"(input + threadIdx.x)
+               : "memory");
+  output[threadIdx.x] = value;
+}
+
+TEST_F(Gfx950RaceTest, report_expired_producer_race) {
+  int *input = allocWithData<int>(64);
+  int *output = alloc<int>(64);
+  report_expired_producer_kernel<<<1, 64>>>(input, output);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  const auto parsed = rocjitsu::test::parseRaceLogFromEnvironment();
+  ASSERT_TRUE(parsed.ok()) << parsed.error;
+  const auto matched = rocjitsu::test::matchRaceExpectation(
+      parsed.records, {.kernel = "report_expired_producer_kernel",
+                       .type = "VGPR",
+                       .access = "read",
+                       .producer = "global_load_dword",
+                       .between = "s_nop",
+                       .consumer = "v_add_u32"});
+  ASSERT_TRUE(matched.ok()) << matched.message();
+  const std::string &message = parsed.records.front().message;
+  EXPECT_NE(message.find("before trace window"), std::string::npos) << message;
+  EXPECT_NE(message.find("earlier instructions not recorded"),
+            std::string::npos)
+      << message;
+  EXPECT_EQ(message.find("--- jump"), std::string::npos) << message;
+  EXPECT_NE(message.find("read-after-write (RAW)"), std::string::npos)
+      << message;
+  RACE_HIP_CHECK(hipFree(output));
+  RACE_HIP_CHECK(hipFree(input));
+}
+
+// Each wave executes only one side of the LDS conflict, so neither trace can
+// contain the other wave's conflicting instruction.
+__global__ void report_other_wave_kernel(int *output) {
+  __shared__ int shared[64];
+  const unsigned thread = threadIdx.x;
+  if (thread < 64) {
+    shared[thread] = thread;
+  } else {
+    asm volatile(".rept 40\n s_nop 0\n.endr\n" ::: "memory");
+    output[thread] = shared[thread - 64];
+  }
+}
+
+TEST_F(Gfx950RaceTest, report_other_wave_race) {
+  int *output = alloc<int>(128);
+  report_other_wave_kernel<<<1, 128>>>(output);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  const auto parsed = rocjitsu::test::parseRaceLogFromEnvironment();
+  ASSERT_TRUE(parsed.ok()) << parsed.error;
+  const RaceExpectation alternatives[] = {
+      {.kernel = "report_other_wave_kernel",
+       .type = "LDS",
+       .access = "read",
+       .producer = "ds_write_b32",
+       .consumer = "ds_read_b32"},
+      {.kernel = "report_other_wave_kernel",
+       .type = "LDS",
+       .access = "write",
+       .producer = "ds_read_b32",
+       .consumer = "ds_write_b32"},
+  };
+  const auto matched =
+      rocjitsu::test::matchAnyRaceExpectation(parsed.records, alternatives);
+  ASSERT_TRUE(matched.ok()) << matched.message();
+  const std::string &message = parsed.records.front().message;
+  EXPECT_NE(message.find("Execution trace below is for wave"),
+            std::string::npos)
+      << message;
+  EXPECT_NE(message.find("have not synchronized this access"),
+            std::string::npos)
+      << message;
+  EXPECT_EQ(message.find("before trace window"), std::string::npos) << message;
+  std::size_t recorded_rows = 1; // The marked current access ends the trace.
+  for (const std::string &line :
+       rocjitsu::test::parseTrace(parsed.records.front()).between) {
+    const std::size_t start = line.find_first_not_of(' ');
+    if (start != std::string::npos && line.compare(start, 2, "0x") == 0)
+      ++recorded_rows;
+  }
+  EXPECT_GT(recorded_rows, 1u) << message;
+  EXPECT_LE(recorded_rows, 16u) << message;
+  RACE_HIP_CHECK(hipFree(output));
 }
 
 int main(int argc, char **argv) {
