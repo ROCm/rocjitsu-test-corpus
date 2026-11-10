@@ -2891,7 +2891,8 @@ TEST_F(Gfx1250RaceTest, dscnt_capacity_cross_wave_barrier_race) {
 // issued with EXEC zero. With EXEC zero, a FLAT still counts on both counters
 // unless DScnt, LOADcnt, STOREcnt, ASYNCcnt and TENSORcnt are all zero (CDNA5
 // ISA 3.2.2.1), and here the younger operations keep them nonzero.
-enum class FlatForm { Load, Store, ExecZeroLoad };
+// The asm compares a form's value with `.if`, so each value is fixed.
+enum class FlatForm { Load = 0, Store = 1, ExecZeroLoad = 2 };
 
 // A DS read, `Younger` younger DS reads, then a FLAT access to global memory,
 // then a use of the oldest DS result. The FLAT takes the last DScnt slot. A
