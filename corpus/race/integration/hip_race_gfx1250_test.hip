@@ -1594,12 +1594,13 @@ TEST_F(Gfx1250RaceTest, tensor_store_past_lds_allocation) {
 //
 // An async load writes LDS and an async store reads it, at a per-lane LDS
 // address, until s_wait_asynccnt retires the copy (CDNA5 ISA 10.8). Async
-// copies may access LDS out of order with each other (10.8) and with DS
-// instructions, so a wave needs that wait before touching a copy's LDS bytes,
-// and before an async copy touches bytes of its own pending DS write. STOREcnt
-// does not cover async stores. Loads complete in order with loads and stores
-// with stores, but loads and stores complete out of order with each other
-// (10.8).
+// copies may access LDS out of order with each other (10.8), so a wave needs
+// that wait before touching a copy's LDS bytes. The ISA does not specify their
+// LDS order relative to DS instructions, so as a conservative rule RocJITsu
+// also reports an async store that reads bytes of the same wave's pending DS
+// write until s_wait_dscnt completes it. STOREcnt does not cover async stores.
+// Loads complete in order with loads and stores with stores, but loads and
+// stores complete out of order with each other (10.8).
 
 /// The wait between an async store and the overwrite of its source.
 enum class AsyncWait { Asynccnt, Storecnt, None };
@@ -1771,8 +1772,9 @@ TEST_F(Gfx1250RaceTest, async_store_shared_source) {
   ExpectValues(read, range(100));
 }
 
-// DS writes and async stores access LDS out of order, so storing a tile the
-// wave just wrote takes a DScnt wait first.
+// The ISA does not specify the LDS order of a DS write and a later async store
+// of the same bytes, so as a conservative rule RocJITsu reports the store unless
+// s_wait_dscnt completes the write first.
 template <bool WaitForDs> __global__ void async_store_after_ds_write_kernel(int *dst) {
   ldsWrite(lane() * kElementBytes, 100 + lane());
   if constexpr (WaitForDs)
