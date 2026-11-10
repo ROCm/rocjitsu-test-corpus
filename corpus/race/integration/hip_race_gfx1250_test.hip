@@ -43,6 +43,8 @@ namespace {
 
 using rocjitsu::test::FindingCount;
 using rocjitsu::test::RaceExpectation;
+using rocjitsu::test::lgkmcnt_capacity_kernel;
+using rocjitsu::test::mixed_lgkmcnt_capacity_kernel;
 
 constexpr int kWave = 32; // gfx1250 runs wave32.
 /// The ints in one tile: a single row with one int per lane. The tests' tensors
@@ -2665,55 +2667,31 @@ TEST_F(Gfx1250RaceTest, storecnt_pressure_does_not_advance_loadcnt_race) {
   ExpectRace(kLoadcntCapacityRaceExpectation);
 }
 
-// A DS read, `Younger` younger DS reads, then a use of the oldest result. DS
-// operations complete in issue order (CDNA5 ISA 5.7.1.4), so the younger reads
-// may share a destination. With `ScalarLoadLast`, a scalar load follows the
-// reads; it counts on KMcnt, not DScnt (CDNA5 ISA 5.7.1.1).
-template <int Younger, bool ScalarLoadLast = false>
-__global__ void dscnt_capacity_kernel(const int *scalar_src, int *dst) {
-  static_assert(Younger <= kCounterCapacity);
-  ldsFillAndWait(0, 100 + lane());
-  int producer, younger, scalar_result, result;
-  asm volatile("ds_load_b32 %[producer], %[address]\n"
-               ".rept %c[younger_reads]\n"
-               "ds_load_b32 %[younger], %[address]\n"
-               ".endr\n"
-               ".if %c[scalar_load]\n"
-               "s_load_b32 %[scalar_result], %[scalar_address], 0x0\n"
-               ".endif\n"
-               "v_mov_b32 %[result], %[producer]\n"
-               : [producer] "=&v"(producer), [younger] "=&v"(younger),
-                 [scalar_result] "=&s"(scalar_result), [result] "=&v"(result)
-               : [address] "v"(lane() * kElementBytes), [scalar_address] "s"(scalar_src),
-                 [younger_reads] "n"(Younger), [scalar_load] "n"(ScalarLoadLast ? 1 : 0)
-               : "memory");
-  asm volatile("s_wait_dscnt 0\n"
-               "s_wait_kmcnt 0" ::: "memory");
-  dst[lane()] = result;
-}
-
+// The shared probes issue a DS read, then younger DS reads, then use the
+// oldest result. DS operations complete in issue order (CDNA5 ISA 5.7.1.4), so
+// the younger reads may share a destination. As in the gfx1151 suite, the
+// probes' results are not checked.
 TEST_F(Gfx1250RaceTest, dscnt_capacity_boundary) {
-  auto *dst = alloc<int>(kWave);
-  dscnt_capacity_kernel<kCounterCapacity><<<1, kWave, kTileBytes>>>(allocWithData<int>(1), dst);
+  lgkmcnt_capacity_kernel<kCounterCapacity><<<1, kWave>>>(alloc<int>(kWave));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
-  ExpectValues(dst, range(100, kWave));
 }
 
 TEST_F(Gfx1250RaceTest, dscnt_below_capacity_race) {
-  dscnt_capacity_kernel<kCounterCapacity - 1>
-      <<<1, kWave, kTileBytes>>>(allocWithData<int>(1), alloc<int>(kWave));
+  lgkmcnt_capacity_kernel<kCounterCapacity - 1><<<1, kWave>>>(alloc<int>(kWave));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kDscntCapacityRaceExpectation);
 }
 
-// On targets with a shared LGKMCNT, this scalar load would fill the counter
-// and complete the oldest DS read. On gfx1250 it counts on KMcnt.
+// The same program is clean on gfx1151 (mixed_lgkmcnt_capacity_boundary),
+// where the scalar load fills the shared LGKMCNT and completes the oldest DS
+// read. On gfx1250 the scalar load counts on KMcnt (CDNA5 ISA 5.7.1.1), not
+// DScnt, so the DS read stays pending.
 TEST_F(Gfx1250RaceTest, kmcnt_pressure_does_not_advance_dscnt_race) {
-  dscnt_capacity_kernel<kCounterCapacity - 1, true>
-      <<<1, kWave, kTileBytes>>>(allocWithData<int>(1), alloc<int>(kWave));
+  mixed_lgkmcnt_capacity_kernel<kCounterCapacity - 1>
+      <<<1, kWave>>>(allocWithData<int>(1), alloc<int>(kWave));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kDscntCapacityRaceExpectation);
