@@ -2669,13 +2669,15 @@ TEST_F(Gfx1250RaceTest, storecnt_pressure_does_not_advance_loadcnt_race) {
 
 // The shared probes issue a DS read, then younger DS reads, then use the
 // oldest result. DS operations complete in issue order (CDNA5 ISA 5.7.1.4), so
-// the younger reads may share a destination. As in the gfx1151 suite, the
-// probes' results are not checked.
+// the younger reads may share a destination. Each probe fills its LDS word with
+// the thread index plus one.
 TEST_F(Gfx1250RaceTest, dscnt_capacity_boundary) {
-  lgkmcnt_capacity_kernel<kCounterCapacity><<<1, kWave>>>(alloc<int>(kWave));
+  auto *dst = alloc<int>(kWave);
+  lgkmcnt_capacity_kernel<kCounterCapacity><<<1, kWave>>>(dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
+  ExpectValues(dst, range(1, kWave));
 }
 
 TEST_F(Gfx1250RaceTest, dscnt_below_capacity_race) {
