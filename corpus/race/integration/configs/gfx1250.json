@@ -130,6 +130,14 @@
     "tensorcnt_capacity_boundary",
     "tensorcnt_below_capacity_race",
     "dscnt_capacity_cross_wave_barrier",
-    "dscnt_capacity_cross_wave_barrier_race"
+    "dscnt_capacity_cross_wave_barrier_race",
+    "flat_global_dscnt_capacity_boundary",
+    "flat_global_dscnt_below_capacity_race",
+    "flat_lds_loadcnt_capacity_boundary",
+    "flat_lds_loadcnt_below_capacity_race",
+    "flat_global_partial_dscnt_wait",
+    "flat_global_partial_dscnt_wait_race",
+    "flat_lds_partial_loadcnt_wait",
+    "flat_lds_partial_loadcnt_wait_race"
   ]
 }
