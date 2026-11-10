@@ -2501,8 +2501,8 @@ TEST_F(Gfx1250RaceTest, cluster_then_workgroup_barrier_exited_writer) {
 // of one type, prove nothing about an operation on another.
 
 // LOADcnt, STOREcnt, DScnt, ASYNCcnt and TENSORcnt are 6-bit counters and KMcnt
-// is a 5-bit counter (CDNA5 ISA 5.7.1, table "Counter Size Description"). Issue
-// stalls rather than overflow a counter, so each holds 2^n - 1 tokens.
+// is a 5-bit counter (the counter table in CDNA5 ISA 5.7.1). Issue stalls
+// rather than overflow a counter, so each holds 2^n - 1 tokens.
 constexpr int kCounterCapacity = 63; // 2^6 - 1.
 constexpr int kKmcntCapacity = 31;   // 2^5 - 1.
 
@@ -2833,10 +2833,10 @@ TEST_F(Gfx1250RaceTest, tensorcnt_below_capacity_race) {
 }
 
 // Wave 0 writes tile 0, then issues `Younger` younger DS writes to tile 1 with
-// no wait, and the workgroup synchronizes. Capacity proves the first write
-// complete for wave 0, so the barrier orders it before wave 1's read. Wave 1
-// reads after the barrier, which follows the write's issue, so a race is
-// reported at the read.
+// no wait, and the workgroup synchronizes. With `Younger` at capacity, the last
+// younger write proves the first complete for wave 0, so the barrier orders it
+// before wave 1's read. In the race variant, the report is always at wave 1's
+// read, because the read follows the barrier, which follows the write's issue.
 template <int Younger>
 __global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
 dscnt_capacity_cross_wave_kernel(int *dst) {
