@@ -300,6 +300,16 @@ if(CTS_HAS_RDNA3 OR CTS_HAS_GFX12 OR
     CTS_HAS_CDNA3 OR CTS_HAS_CDNA4)
     fpsan_add_hip_test(fpsan_wave_test
         "${CTS_TEST_CASES_DIR}/general/fpsan/wave_test.cpp")
+    # Older Clang DPP combines reverse the operands of the gfx9 FPSan
+    # subtraction butterfly (LLVM #216835). Keep its shuffle and subtract separate.
+    if(CMAKE_HIP_COMPILER_ID STREQUAL "Clang" AND CMAKE_HIP_COMPILER_VERSION VERSION_LESS 24)
+        foreach(hip_arch IN LISTS CMAKE_HIP_ARCHITECTURES)
+            if(hip_arch MATCHES "^gfx(94[0-2]|950)(:|$)")
+                target_compile_options(fpsan_wave_test PRIVATE
+                    "SHELL:-Xarch_${hip_arch} -mllvm=-amdgpu-dpp-combine=false")
+            endif()
+        endforeach()
+    endif()
     fpsan_add_hip_test(fpsan_amdgcn_ldexp_test
         "${CTS_TEST_CASES_DIR}/general/fpsan/amdgcn_ldexp_test.cpp")
     fpsan_add_hip_test(fpsan_amdgcn_math_test
