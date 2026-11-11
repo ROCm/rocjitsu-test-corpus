@@ -47,12 +47,26 @@ PACKAGE_NAMES = (
     "rocm-sdk-libraries",
     "rocm-sdk-device-gfx950",
     "rocm-sdk-device-gfx1250",
+    "rocm-sdk-device-gfx1100",
+    "rocm-sdk-device-gfx1201",
     "torch",
     "triton",
     "amd-torch-device-gfx950",
     "amd-torch-device-gfx1250",
+    "amd-torch-device-gfx1100",
+    "amd-torch-device-gfx1201",
 )
 CASE_ID = re.compile(r"^[a-z0-9_]+(?:\.[a-z0-9_]+)*$")
+# Provider and entry point share one registry for dispatch and result validation.
+WORKLOAD_ADAPTERS = {
+    "tensile_candidate": ("tensile", "tensile_candidates/workload.py"),
+    "full_tensile": ("full_tensile", "full_tensile/workload.py"),
+    "gluon_copy": ("gluon", "gluon/workloads.py"),
+    "gluon_copy_2d": ("gluon", "gluon/workloads.py"),
+    "llama_rope": ("llama", "llama/workloads.py"),
+    "llama_matvec": ("llama", "llama/workloads.py"),
+    "llama_gather": ("llama", "llama/workloads.py"),
+}
 WORKLOADS = {
     "copy",
     "vector_add",
@@ -70,8 +84,7 @@ WORKLOADS = {
     "triton_layernorm",
     "deepseek_act_quant",
     "deepseek_weight_dequant",
-    "tensile_candidate",
-}
+} | set(WORKLOAD_ADAPTERS)
 WORKLOAD_FIELDS = {"schema", "case", "target", "provider", "parameters", "timings_ns"}
 PLUGIN_PROFILES: dict[str, tuple[str, ...]] = {
     "none": (),
@@ -79,6 +92,10 @@ PLUGIN_PROFILES: dict[str, tuple[str, ...]] = {
     "race": ("race",),
     "throughput": ("throughput",),
 }
+
+
+def _workload_adapter(workload: str) -> tuple[str, str]:
+    return WORKLOAD_ADAPTERS.get(workload, ("triton", "triton/workloads.py"))
 
 
 class RunnerError(ValueError):
@@ -409,11 +426,7 @@ def prepare_command(
     )
     payload = (
         sys.executable,
-        str(
-            WORKLOAD_ROOT / "tensile_candidates" / "workload.py"
-            if cell.definition.workload == "tensile_candidate"
-            else WORKLOAD_ROOT / "triton" / "workloads.py"
-        ),
+        str(WORKLOAD_ROOT / _workload_adapter(cell.definition.workload)[1]),
         "--workload",
         cell.definition.workload,
         "--params",
@@ -686,9 +699,7 @@ def validate_workload(path: Path, cell: Cell, samples: int) -> list[float]:
         "schema": "rocjitsu.benchmark.workload.v1",
         "case": cell.case,
         "target": cell.target,
-        "provider": (
-            "tensile" if cell.definition.workload == "tensile_candidate" else "triton"
-        ),
+        "provider": _workload_adapter(cell.definition.workload)[0],
     }
     for field, expected_value in expected.items():
         if value.get(field) != expected_value:
@@ -885,9 +896,8 @@ def run_suite(
         raise RunnerError("duplicate execution matrix identity")
     for cell in matrix:
         _thread_policy(cell.thread_policy)
-        if (
-            cell.definition not in suite.cases
-            or not cell.definition.supports(cell.target, cell.thread_policy)
+        if cell.definition not in suite.cases or not cell.definition.supports(
+            cell.target, cell.thread_policy
         ):
             raise RunnerError("execution matrix contains unsupported combination")
     groups = tuple(dict.fromkeys((cell.target, cell.thread_policy) for cell in matrix))
@@ -988,9 +998,7 @@ def run_suite(
     try:
         for position, cell in enumerate(matrix, start=1):
             cell_started = time.monotonic()
-            provider = (
-                "tensile" if cell.definition.workload == "tensile_candidate" else "triton"
-            )
+            provider = _workload_adapter(cell.definition.workload)[0]
             _progress(
                 progress,
                 f"START [{position}/{total_cells}] case={cell.case} "

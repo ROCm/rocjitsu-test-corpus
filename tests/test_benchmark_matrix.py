@@ -34,7 +34,9 @@ def test_manifest_target_policy_override_replaces_default_support(
     case = suite.cases[0]
     assert case.thread_policies == ("default",)
     assert case.thread_policy_overrides == {"gfx1250": ("single",)}
-    assert [(c.case, c.target, c.thread_policy) for c in runner.select_matrix(suite)] == [
+    assert [
+        (c.case, c.target, c.thread_policy) for c in runner.select_matrix(suite)
+    ] == [
         ("copy.small", "gfx950", "default"),
         ("copy.small", "gfx1250", "single"),
     ]
@@ -62,9 +64,7 @@ def test_run_suite_validates_effective_override_support(
         assert [
             (r["id"], r["target"], r["thread_policy"], r["status"])
             for r in raw["benchmark_results"]
-        ] == [
-            (case.id, "gfx1250", "single", "completed")
-        ]
+        ] == [(case.id, "gfx1250", "single", "completed")]
     else:
         with mock.patch.object(runner, "validate_build") as validate, mock.patch.object(
             runner, "_run_command"
@@ -79,13 +79,20 @@ def test_run_suite_validates_effective_override_support(
 @pytest.mark.parametrize(
     "value",
     [
-        '[]', '"single"', 'true', '1',
+        "[]",
+        '"single"',
+        "true",
+        "1",
         '{ gfx1250 = ["single"] }',
-        '{ gfx950 = [] }', '{ gfx950 = "single" }',
+        "{ gfx950 = [] }",
+        '{ gfx950 = "single" }',
         '{ gfx950 = ["single", "single"] }',
-        '{ gfx950 = ["unknown"] }', '{ gfx950 = [1] }',
-        '{ gfx950 = [true] }', '{ gfx950 = [""] }',
-        '{ gfx950 = [[]] }', '{ gfx950 = {} }',
+        '{ gfx950 = ["unknown"] }',
+        "{ gfx950 = [1] }",
+        "{ gfx950 = [true] }",
+        '{ gfx950 = [""] }',
+        "{ gfx950 = [[]] }",
+        "{ gfx950 = {} }",
     ],
 )
 def test_invalid_policy_overrides_rejected_before_output(
@@ -115,7 +122,9 @@ def test_absent_or_empty_policy_overrides_preserve_default_support(
 ) -> None:
     path = tmp_path / "fallback.toml"
     text = (runner.BENCHMARK_ROOT / "suites/smoke.toml").read_text()
-    path.write_text(text + ("\nthread_policy_overrides = {}\n" if override == {} else ""))
+    path.write_text(
+        text + ("\nthread_policy_overrides = {}\n" if override == {} else "")
+    )
     suite = runner.load_manifest(path)
     assert suite.cases[0].thread_policy_overrides == {}
     assert [(c.target, c.thread_policy) for c in runner.select_matrix(suite)] == [
@@ -132,17 +141,22 @@ def test_policy_override_table_keeps_canonical_policy_order(tmp_path: Path) -> N
     suite = runner.load_manifest(path)
     assert suite.cases[0].thread_policy_overrides == {"gfx950": ("single", "default")}
     assert [(c.target, c.thread_policy) for c in runner.select_matrix(suite)] == [
-        ("gfx950", "default"), ("gfx950", "single")
+        ("gfx950", "default"),
+        ("gfx950", "single"),
     ]
     assert not suite.cases[0].supports("gfx1250", "default")
 
 
 @pytest.mark.parametrize("missing", ["targets", "thread_policies"])
-def test_overrides_do_not_make_support_lists_optional(tmp_path: Path, missing: str) -> None:
+def test_overrides_do_not_make_support_lists_optional(
+    tmp_path: Path, missing: str
+) -> None:
     text = (runner.BENCHMARK_ROOT / "suites/smoke.toml").read_text()
     path = tmp_path / "missing.toml"
     path.write_text(
-        "\n".join(line for line in text.splitlines() if not line.startswith(f"{missing} ="))
+        "\n".join(
+            line for line in text.splitlines() if not line.startswith(f"{missing} =")
+        )
         + '\nthread_policy_overrides = { gfx950 = ["single"] }\n'
     )
     with pytest.raises(runner.RunnerError, match="each case must contain"):
@@ -152,20 +166,35 @@ def test_overrides_do_not_make_support_lists_optional(tmp_path: Path, missing: s
 @pytest.mark.parametrize(
     "targets,cases,policies,expected",
     [
-        ((), (), ("single", "default"), [
-            ("triton.rmsnorm_bf16", "gfx950", "default"),
-            ("triton.gemm_bf16_aligned", "gfx950", "default"),
-            ("triton.rmsnorm_bf16", "gfx950", "single"),
-            ("triton.rmsnorm_bf16", "gfx1250", "default"),
-            ("triton.gemm_bf16_aligned", "gfx1250", "default"),
-        ]),
-        (("gfx1250",), (), ("default", "single"), [
-            ("triton.rmsnorm_bf16", "gfx1250", "default"),
-            ("triton.gemm_bf16_aligned", "gfx1250", "default"),
-        ]),
-        ((), ("triton.rmsnorm_bf16",), ("single",), [
-            ("triton.rmsnorm_bf16", "gfx950", "single"),
-        ]),
+        (
+            (),
+            (),
+            ("single", "default"),
+            [
+                ("triton.rmsnorm_bf16", "gfx950", "default"),
+                ("triton.gemm_bf16_aligned", "gfx950", "default"),
+                ("triton.rmsnorm_bf16", "gfx950", "single"),
+                ("triton.rmsnorm_bf16", "gfx1250", "default"),
+                ("triton.gemm_bf16_aligned", "gfx1250", "default"),
+            ],
+        ),
+        (
+            ("gfx1250",),
+            (),
+            ("default", "single"),
+            [
+                ("triton.rmsnorm_bf16", "gfx1250", "default"),
+                ("triton.gemm_bf16_aligned", "gfx1250", "default"),
+            ],
+        ),
+        (
+            (),
+            ("triton.rmsnorm_bf16",),
+            ("single",),
+            [
+                ("triton.rmsnorm_bf16", "gfx950", "single"),
+            ],
+        ),
         (("gfx1250",), (), ("single",), []),
         (("gfx950",), ("triton.gemm_bf16_aligned",), ("single",), []),
     ],
@@ -193,7 +222,9 @@ def test_cli_filters_narrow_effective_override_support(
             runner.select_matrix(suite, **selection)
     args = ["--list"]
     for flag, values in (
-        ("--target", targets), ("--case", cases), ("--thread-policy", policies)
+        ("--target", targets),
+        ("--case", cases),
+        ("--thread-policy", policies),
     ):
         for value in values:
             args.extend([flag, value])
@@ -208,38 +239,73 @@ def test_cli_filters_narrow_effective_override_support(
 def test_original_performance_matrix_retains_exact_ordered_38_cells() -> None:
     # Fixed identities from performance-v1 at 682db160; not derived from support logic.
     expected_groups = [
-        ("gfx950", "default", [
-            "gpt_oss.window_batch4_seq3072", "gpt_oss.causal_seq2560",
-            "triton.persistent_1024x4096x4096", "triton.grouped_4x2048",
-            "deepseek.mlp_w1_m64", "deepseek.mlp_w2_m64",
-            "tensile.bf16_streamk_4096x4096x4096", "tensile.mxfp8_subtile_4096x4096x4096",
-            "triton.softmax_131072x2048", "triton.layernorm_131072x2048",
-            "deepseek.act_quant_32768x8192", "deepseek.weight_dequant_32768x8192",
-        ]),
-        ("gfx950", "single", [
-            "gpt_oss.causal_seq2560", "triton.persistent_1024x4096x4096",
-            "triton.grouped_4x2048", "deepseek.mlp_w1_m64",
-            "tensile.bf16_streamk_4096x4096x4096",
-        ]),
-        ("gfx1250", "default", [
-            "gpt_oss.window_batch4_seq3072", "gpt_oss.causal_seq2560",
-            "triton.persistent_1024x4096x4096", "triton.grouped_4x2048",
-            "deepseek.mlp_w1_m256", "deepseek.mlp_w2_m256",
-            "tensile.bf16_subtile_4096x4096x4096", "tensile.mxfp4_streamk_4096x4096x4096",
-            "deepseek.mlp_w1_m3072", "deepseek.mlp_w2_m3072",
-            "triton.grouped_4x3584", "triton.persistent_8192x8192x4096",
-            "triton.softmax_131072x2048", "triton.layernorm_131072x2048",
-            "deepseek.act_quant_32768x8192", "deepseek.weight_dequant_32768x8192",
-        ]),
-        ("gfx1250", "single", [
-            "gpt_oss.causal_seq2560", "triton.persistent_1024x4096x4096",
-            "triton.grouped_4x2048", "deepseek.mlp_w1_m256",
-            "tensile.bf16_subtile_4096x4096x4096",
-        ]),
+        (
+            "gfx950",
+            "default",
+            [
+                "gpt_oss.window_batch4_seq3072",
+                "gpt_oss.causal_seq2560",
+                "triton.persistent_1024x4096x4096",
+                "triton.grouped_4x2048",
+                "deepseek.mlp_w1_m64",
+                "deepseek.mlp_w2_m64",
+                "tensile.bf16_streamk_4096x4096x4096",
+                "tensile.mxfp8_subtile_4096x4096x4096",
+                "triton.softmax_131072x2048",
+                "triton.layernorm_131072x2048",
+                "deepseek.act_quant_32768x8192",
+                "deepseek.weight_dequant_32768x8192",
+            ],
+        ),
+        (
+            "gfx950",
+            "single",
+            [
+                "gpt_oss.causal_seq2560",
+                "triton.persistent_1024x4096x4096",
+                "triton.grouped_4x2048",
+                "deepseek.mlp_w1_m64",
+                "tensile.bf16_streamk_4096x4096x4096",
+            ],
+        ),
+        (
+            "gfx1250",
+            "default",
+            [
+                "gpt_oss.window_batch4_seq3072",
+                "gpt_oss.causal_seq2560",
+                "triton.persistent_1024x4096x4096",
+                "triton.grouped_4x2048",
+                "deepseek.mlp_w1_m256",
+                "deepseek.mlp_w2_m256",
+                "tensile.bf16_subtile_4096x4096x4096",
+                "tensile.mxfp4_streamk_4096x4096x4096",
+                "deepseek.mlp_w1_m3072",
+                "deepseek.mlp_w2_m3072",
+                "triton.grouped_4x3584",
+                "triton.persistent_8192x8192x4096",
+                "triton.softmax_131072x2048",
+                "triton.layernorm_131072x2048",
+                "deepseek.act_quant_32768x8192",
+                "deepseek.weight_dequant_32768x8192",
+            ],
+        ),
+        (
+            "gfx1250",
+            "single",
+            [
+                "gpt_oss.causal_seq2560",
+                "triton.persistent_1024x4096x4096",
+                "triton.grouped_4x2048",
+                "deepseek.mlp_w1_m256",
+                "tensile.bf16_subtile_4096x4096x4096",
+            ],
+        ),
     ]
     expected = [
         (case, target, policy)
-        for target, policy, cases in expected_groups for case in cases
+        for target, policy, cases in expected_groups
+        for case in cases
     ]
     assert len(expected) == 38
     suite = runner.load_manifest()

@@ -128,6 +128,37 @@ If a native policy probe or setup fails before the initial `run.json` checkpoint
 the runner removes its new output directory so the same path can be retried.
 After that checkpoint, failures preserve partial results as usual.
 
+## RDNA-expanded performance-v2
+
+`benchmarks/suites/performance-v2.toml` preserves performance-v1's CDNA definitions
+and selections and adds 28 measurement cells across gfx1100/gfx1201. Select it
+explicitly with `--manifest`; the runner's default remains performance-v1.
+Shared grouped/persistent GEMM IDs retain both CDNA policies and use per-target
+`thread_policy_overrides` to enable only `default` on RDNA.
+
+The RDNA selection adds checked FP32 softmax/layer normalization at 65536 x 2048;
+Gluon 1D copy (`single`) and 2D strided copy (`default`); four full-Tensile FP32
+mechanisms (`default`); and bounded llama RoPE/gather (`default`) and Q4_0 matvec
+(`default` and `single`). These are host simulator measurements, not native GPU
+performance. Full-Tensile FP16 WMMA is not included.
+
+Install the same pinned benchmark requirements, including both RDNA device
+packages, and supply the additional target configs. Prepare the provider-specific
+artifacts outside timing before invoking the suite:
+
+- [Gluon copies](../corpus/benchmarks/gluon/README.md): pinned unchanged kernels,
+  provenance verification and stride-safe full-output checks.
+- [Full Tensile](../corpus/benchmarks/full_tensile/README.md): separate source pin,
+  generated libraries and native adapter; set `FULL_TENSILE_ARTIFACTS` and
+  `FULL_TENSILE_RUNNER`. Split-K timing includes helper and main launches.
+- [llama/GGML operators](../corpus/benchmarks/llama/README.md): separate source pin,
+  out-of-source HIP build and `ROCJITSU_LLAMA_BINARY`; timing encloses a fixed
+  graph invocation, including internal activation packing, not an adaptive loop.
+
+Keep performance-v1 unchanged for historical reproduction. The expanded recipe
+has a distinct benchmark-set identity; it does not change the raw-run schema.
+Publishing a filtered local qualification run as the complete recipe is invalid.
+
 ## Measurement and dependencies
 
 TensileLite cases require `TENSILE_CANDIDATE_ARTIFACTS` to point to generated
