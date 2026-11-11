@@ -3099,11 +3099,12 @@ TEST_F(Gfx1250RaceTest, flat_global_dscnt_below_capacity_race) {
   ExpectRace(kDscntCapacityRaceExpectation);
 }
 
-// A DS read, `Younger` younger DS reads, then DS_BPERMUTE_B32, then a use of the
-// oldest DS result. A lane permute uses the LDS hardware without LDS memory
-// (CDNA5 ISA 11.2.3), and LDS operations count on DScnt in order (CDNA5 ISA
-// 5.7.1.4), so the permute takes the last DScnt slot.
-template <int Younger>
+// A DS read, `Younger` younger DS reads, then DS_BPERMUTE_B32 or DS_NOP, then a
+// use of the oldest DS result. A lane permute uses the LDS hardware without LDS
+// memory (CDNA5 ISA 11.2.3), and LDS operations count on DScnt in order (CDNA5
+// ISA 5.7.1.4), so the permute takes the last DScnt slot. DS_NOP does too, as
+// RocJITsu's memory-wait checker models it.
+template <int Younger, bool Nop = false>
 __global__ void bpermute_dscnt_capacity_kernel(int *dst) {
   static_assert(Younger < kCounterCapacity);
   ldsFillAndWait(0, 100 + lane());
@@ -3112,11 +3113,16 @@ __global__ void bpermute_dscnt_capacity_kernel(int *dst) {
                ".rept %c[younger_reads]\n"
                "ds_load_b32 %[younger], %[address]\n"
                ".endr\n"
+               ".if %c[nop]\n"
+               "ds_nop\n"
+               ".else\n"
                "ds_bpermute_b32 %[permuted], %[address], %[address]\n"
+               ".endif\n"
                "v_mov_b32 %[result], %[producer]\n"
                : [producer] "=&v"(producer), [younger] "=&v"(younger),
                  [permuted] "=&v"(permuted), [result] "=&v"(result)
-               : [address] "v"(lane() * kElementBytes), [younger_reads] "n"(Younger)
+               : [address] "v"(lane() * kElementBytes), [younger_reads] "n"(Younger),
+                 [nop] "n"(Nop ? 1 : 0)
                : "memory");
   asm volatile("s_wait_dscnt 0" ::: "memory");
   dst[lane()] = result;
@@ -3133,6 +3139,23 @@ TEST_F(Gfx1250RaceTest, bpermute_dscnt_capacity_boundary) {
 
 TEST_F(Gfx1250RaceTest, bpermute_dscnt_below_capacity_race) {
   bpermute_dscnt_capacity_kernel<kCounterCapacity - 2><<<1, kWave, kTileBytes>>>(
+      alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kDscntCapacityRaceExpectation);
+}
+
+TEST_F(Gfx1250RaceTest, ds_nop_dscnt_capacity_boundary) {
+  auto *dst = alloc<int>(kWave);
+  bpermute_dscnt_capacity_kernel<kCounterCapacity - 1, true><<<1, kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(100, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, ds_nop_dscnt_below_capacity_race) {
+  bpermute_dscnt_capacity_kernel<kCounterCapacity - 2, true><<<1, kWave, kTileBytes>>>(
       alloc<int>(kWave));
   RACE_HIP_CHECK(hipGetLastError());
   sync();

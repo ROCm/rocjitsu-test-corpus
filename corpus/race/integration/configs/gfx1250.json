@@ -141,6 +141,8 @@
     "flat_global_dscnt_below_capacity_race",
     "bpermute_dscnt_capacity_boundary",
     "bpermute_dscnt_below_capacity_race",
+    "ds_nop_dscnt_capacity_boundary",
+    "ds_nop_dscnt_below_capacity_race",
     "flat_lds_loadcnt_capacity_boundary",
     "flat_lds_loadcnt_below_capacity_race",
     "flat_global_store_dscnt_capacity_boundary",
