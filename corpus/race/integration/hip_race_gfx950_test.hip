@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>
 #include <hip/hip_runtime.h>
 
+#include "race_log_expectation.hpp"
 #include "race_test_support.hpp"
 
 #include <cstddef>
@@ -1850,15 +1851,17 @@ TEST_F(Gfx950RaceTest, report_elided_loop_race) {
   report_loop_kernel<<<1, 64>>>(input, output);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  const auto parsed = rocjitsu::test::parseRaceLogFromEnvironment();
+  const rocjitsu::test::RaceLogParseResult parsed =
+      rocjitsu::test::parseRaceLogFromEnvironment();
   ASSERT_TRUE(parsed.ok()) << parsed.error;
-  const auto matched = rocjitsu::test::matchRaceExpectation(
-      parsed.records, {.kernel = "report_loop_kernel",
-                       .type = "VGPR",
-                       .access = "read",
-                       .producer = "global_load_dword",
-                       .between = "lgkmcnt(0)",
-                       .consumer = "v_add_u32"});
+  const rocjitsu::test::RaceExpectationMatchResult matched =
+      rocjitsu::test::matchRaceExpectation(parsed.records,
+                                           {.kernel = "report_loop_kernel",
+                                            .type = "VGPR",
+                                            .access = "read",
+                                            .producer = "global_load_dword",
+                                            .between = "lgkmcnt(0)",
+                                            .consumer = "v_add_u32"});
   ASSERT_TRUE(matched.ok()) << matched.message();
   const std::string &message = parsed.records.front().message;
   EXPECT_NE(message.find("instructions elided"), std::string::npos) << message;
@@ -1890,15 +1893,17 @@ TEST_F(Gfx950RaceTest, report_expired_producer_race) {
   report_expired_producer_kernel<<<1, 64>>>(input, output);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  const auto parsed = rocjitsu::test::parseRaceLogFromEnvironment();
+  const rocjitsu::test::RaceLogParseResult parsed =
+      rocjitsu::test::parseRaceLogFromEnvironment();
   ASSERT_TRUE(parsed.ok()) << parsed.error;
-  const auto matched = rocjitsu::test::matchRaceExpectation(
-      parsed.records, {.kernel = "report_expired_producer_kernel",
-                       .type = "VGPR",
-                       .access = "read",
-                       .producer = "global_load_dword",
-                       .between = "s_nop",
-                       .consumer = "v_add_u32"});
+  const rocjitsu::test::RaceExpectationMatchResult matched =
+      rocjitsu::test::matchRaceExpectation(
+          parsed.records, {.kernel = "report_expired_producer_kernel",
+                           .type = "VGPR",
+                           .access = "read",
+                           .producer = "global_load_dword",
+                           .between = "s_nop",
+                           .consumer = "v_add_u32"});
   ASSERT_TRUE(matched.ok()) << matched.message();
   const std::string &message = parsed.records.front().message;
   EXPECT_NE(message.find("before trace window"), std::string::npos) << message;
@@ -1929,7 +1934,8 @@ TEST_F(Gfx950RaceTest, report_other_wave_race) {
   report_other_wave_kernel<<<1, 128>>>(output);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  const auto parsed = rocjitsu::test::parseRaceLogFromEnvironment();
+  const rocjitsu::test::RaceLogParseResult parsed =
+      rocjitsu::test::parseRaceLogFromEnvironment();
   ASSERT_TRUE(parsed.ok()) << parsed.error;
   const RaceExpectation alternatives[] = {
       {.kernel = "report_other_wave_kernel",
@@ -1943,7 +1949,7 @@ TEST_F(Gfx950RaceTest, report_other_wave_race) {
        .producer = "ds_read_b32",
        .consumer = "ds_write_b32"},
   };
-  const auto matched =
+  const rocjitsu::test::RaceExpectationMatchResult matched =
       rocjitsu::test::matchAnyRaceExpectation(parsed.records, alternatives);
   ASSERT_TRUE(matched.ok()) << matched.message();
   const std::string &message = parsed.records.front().message;
