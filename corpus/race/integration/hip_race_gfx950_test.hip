@@ -1863,6 +1863,9 @@ TEST_F(Gfx950RaceTest, report_elided_loop_race) {
   const std::string &message = parsed.records.front().message;
   EXPECT_NE(message.find("instructions elided"), std::string::npos) << message;
   EXPECT_NE(message.find("s_cbranch_scc1"), std::string::npos) << message;
+  EXPECT_NE(message.find("s_nop 0  ; 63 executions, through PC"),
+            std::string::npos)
+      << message;
   EXPECT_NE(message.find("pending counters: vmcnt."), std::string::npos)
       << message;
   RACE_HIP_CHECK(hipFree(output));
