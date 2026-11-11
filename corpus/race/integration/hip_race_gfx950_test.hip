@@ -161,12 +161,12 @@ TEST_F(Gfx950RaceTest, global_atomic_both_waits) {
 
 TEST_F(Gfx950RaceTest, global_atomic_no_wait_race) {
   ASSERT_NO_FATAL_FAILURE((check_global_atomic_values<false, false, false>()));
-  ExpectRace(kGlobalAtomicWaitRaceExpectation);
+  ExpectReadModifyWriteAndLaterUse(kGlobalAtomicWaitRaceExpectation, "global_store_dword");
 }
 
 TEST_F(Gfx950RaceTest, global_atomic_expcnt_only_race) {
   ASSERT_NO_FATAL_FAILURE((check_global_atomic_values<false, true, false>()));
-  ExpectRace(kGlobalAtomicWaitRaceExpectation);
+  ExpectReadModifyWriteAndLaterUse(kGlobalAtomicWaitRaceExpectation, "global_store_dword");
 }
 
 // Each EXEC mask gets its own process and report assertion: a finding from
@@ -183,12 +183,12 @@ TEST_F(Gfx950RaceTest, global_atomic_masked_both_waits) {
 
 TEST_F(Gfx950RaceTest, global_atomic_masked_no_wait_race) {
   ASSERT_NO_FATAL_FAILURE((check_global_atomic_values<false, false, true>()));
-  ExpectRace(kGlobalAtomicWaitRaceExpectation);
+  ExpectReadModifyWriteAndLaterUse(kGlobalAtomicWaitRaceExpectation, "global_store_dword");
 }
 
 TEST_F(Gfx950RaceTest, global_atomic_masked_expcnt_only_race) {
   ASSERT_NO_FATAL_FAILURE((check_global_atomic_values<false, true, true>()));
-  ExpectRace(kGlobalAtomicWaitRaceExpectation);
+  ExpectReadModifyWriteAndLaterUse(kGlobalAtomicWaitRaceExpectation, "global_store_dword");
 }
 
 // --- Generic FLAT result waits ---
@@ -594,6 +594,7 @@ __global__ void sgpr_no_race_kernel(const int *src, int *dst) {
 }
 
 static constexpr RaceExpectation kSgprWaitcntRaceExpectation{
+    .kernel = "sgpr_race_kernel",
     .type = "SGPR",
     .wave = 0,
     .producer = "s_load_dword",
@@ -624,7 +625,7 @@ TEST_F(Gfx950RaceTest, sgpr_waitcnt_race) {
   sgpr_race_kernel<<<1, 64>>>(src, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kSgprWaitcntRaceExpectation);
+  ExpectReadModifyWriteAndLaterUse(kSgprWaitcntRaceExpectation, "v_mov_b32");
 }
 
 // --- SGPR write-after-write ---
