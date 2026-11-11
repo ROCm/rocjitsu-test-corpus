@@ -146,14 +146,6 @@ void check_vmm(size_t bytes, bool can_dispatch) {
   hipMemGenericAllocationHandle_t allocation{}, imported{};
   const hipError_t created =
       hipMemCreate(&allocation, allocation_size, &property, 0);
-  if (options.mode == "daemon") {
-    // The daemon cannot transfer dma-buf export descriptors. Update this
-    // expectation and enable mapping coverage when that support is added.
-    EXPECT_NE(created, hipSuccess) << "Daemon VMM export is now supported";
-    if (created == hipSuccess)
-      CHECK_HIP(hipMemRelease(allocation));
-    return;
-  }
   ASSERT_EQ(created, hipSuccess) << hipGetErrorString(created);
   int shared_fd = -1;
   CHECK_HIP(hipMemExportToShareableHandle(
