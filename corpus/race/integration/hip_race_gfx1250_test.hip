@@ -2644,23 +2644,28 @@ TEST_F(Gfx1250RaceTest, loadcnt_exec_zero_below_capacity_race) {
   ExpectRace(kLoadcntCapacityRaceExpectation);
 }
 
-// A load, `Younger` younger loads, then GLOBAL_INV, then a use of the oldest
-// load's result. GLOBAL_INV counts on LOADcnt (CDNA5 ISA 5.7.1.2) and is not
-// skipped for EXEC zero (CDNA5 ISA 3.2.2.1), so it needs a free LOADcnt slot to
-// issue and, at capacity, completes the oldest load.
+// A load, `Younger` younger loads, then GLOBAL_INV with EXEC zero, then a use
+// of the oldest load's result. GLOBAL_INV counts on LOADcnt (CDNA5 ISA 5.7.1.2)
+// and is not skipped for EXEC zero (CDNA5 ISA 3.2.2.1), so even with no active
+// lanes it needs a free LOADcnt slot to issue and, at capacity, completes the
+// oldest load.
 template <int Younger>
 __global__ void global_inv_loadcnt_capacity_kernel(const int *src, int *dst) {
   static_assert(Younger < kCounterCapacity);
-  int producer, result;
+  int producer, result, saved_exec;
   asm volatile("global_load_b32 %[producer], %[address], off\n"
                ".set race_vgpr, 64\n"
                ".rept %c[younger_loads]\n"
                "global_load_b32 v[race_vgpr], %[address], off\n"
                ".set race_vgpr, race_vgpr + 1\n"
                ".endr\n"
+               "s_mov_b32 %[saved_exec], exec_lo\n"
+               "s_mov_b32 exec_lo, 0\n"
                "global_inv\n"
+               "s_mov_b32 exec_lo, %[saved_exec]\n"
                "v_mov_b32 %[result], %[producer]\n"
-               : [producer] "=&v"(producer), [result] "=&v"(result)
+               : [producer] "=&v"(producer), [result] "=&v"(result),
+                 [saved_exec] "=&s"(saved_exec)
                : [address] "v"(&src[threadIdx.x]), [younger_loads] "n"(Younger)
                : "memory", RACE_YOUNGER_VGPR_CLOBBERS);
   asm volatile("s_wait_loadcnt 0" ::: "memory");
