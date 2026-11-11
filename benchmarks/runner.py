@@ -104,6 +104,15 @@ class Case:
     params: dict[str, Any]
     targets: tuple[str, ...]
     thread_policies: tuple[str, ...]
+    thread_policy_overrides: Mapping[str, tuple[str, ...]] = dataclasses.field(
+        default_factory=dict
+    )
+
+    def supports(self, target: str, policy: str) -> bool:
+        """Whether this target supports a policy after replacing its defaults."""
+        return target in self.targets and policy in self.thread_policy_overrides.get(
+            target, self.thread_policies
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -217,7 +226,11 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
         "targets", "thread_policies",
     }
     for entry in raw_cases:
-        if not isinstance(entry, dict) or set(entry) != case_fields:
+        if (
+            not isinstance(entry, dict)
+            or not case_fields <= set(entry)
+            or set(entry) - case_fields - {"thread_policy_overrides"}
+        ):
             raise RunnerError(
                 "each case must contain id, workload, suite, name, operation, "
                 "params, targets, thread_policies"
@@ -248,6 +261,21 @@ def load_manifest(path: str | Path = DEFAULT_MANIFEST) -> Suite:
         entry["thread_policies"] = _string_list(entry["thread_policies"], "thread_policies")
         for policy in entry["thread_policies"]:
             _thread_policy(policy)
+        raw_overrides = entry.get("thread_policy_overrides", {})
+        if not isinstance(raw_overrides, dict):
+            raise RunnerError("thread_policy_overrides must be a table")
+        overrides = {}
+        for target, policies in raw_overrides.items():
+            field = f"thread_policy_overrides[{target!r}]"
+            if target not in entry["targets"]:
+                raise RunnerError(f"{field} must name a declared case target")
+            overrides[target] = _string_list(policies, field)
+            for policy in overrides[target]:
+                try:
+                    _thread_policy(policy)
+                except RunnerError as error:
+                    raise RunnerError(f"{field}: {error}") from error
+        entry["thread_policy_overrides"] = overrides
         cases.append(Case(**entry))
     timeout = value["timeout_seconds"]
     if (
@@ -304,7 +332,7 @@ def select_matrix(
         for policy in THREAD_POLICIES
         if policy in thread_policies
         for case in chosen_cases
-        if target in case.targets and policy in case.thread_policies
+        if case.supports(target, policy)
     )
     if not matrix:
         raise RunnerError(
@@ -859,8 +887,7 @@ def run_suite(
         _thread_policy(cell.thread_policy)
         if (
             cell.definition not in suite.cases
-            or cell.target not in cell.definition.targets
-            or cell.thread_policy not in cell.definition.thread_policies
+            or not cell.definition.supports(cell.target, cell.thread_policy)
         ):
             raise RunnerError("execution matrix contains unsupported combination")
     groups = tuple(dict.fromkeys((cell.target, cell.thread_policy) for cell in matrix))

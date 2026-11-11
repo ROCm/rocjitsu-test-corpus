@@ -218,6 +218,27 @@ Each file has required `name`, `warmups`, `samples`, `timeout_seconds` and cases
 every case explicitly
 declares nonempty `targets` and `thread_policies`. There are no includes/profiles
 or file-level target/threading fields, and no per-case sampling recipes.
+
+An optional per-case `thread_policy_overrides` table replaces `thread_policies`
+for named targets only; unlisted targets retain the default list. For example:
+
+```toml
+targets = ["gfx950", "gfx1250"]
+thread_policies = ["default", "single"]
+thread_policy_overrides = { gfx1250 = ["single"] }
+```
+
+This case supports both policies on gfx950 and only `single` on gfx1250.
+Overrides replace rather than intersect or extend the default list: a target
+override may also select `single` when `thread_policies = ["default"]`.
+Both `targets` and `thread_policies` remain required nonempty, duplicate-free
+lists. Override keys must be declared case targets, and each override value must
+be a nonempty, duplicate-free list containing only `default` and/or `single`.
+Omitting the table or supplying `{}` leaves support unchanged. Invalid overrides
+are rejected before listing cells or creating run output. CLI filters only narrow
+this effective support; execution still groups targets in manifest order and
+policies as `default`, then `single`, regardless of override list order.
+
 Dimensions, dtypes, and operation parameters belong in TOML; launch settings
 such as tile sizes, warps, and stages stay in code and are recorded in results.
 To add a new operation, add its preparation and parameter validation, register

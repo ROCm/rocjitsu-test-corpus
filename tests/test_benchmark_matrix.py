@@ -19,6 +19,236 @@ from support import benchmark_runner as harness
 from benchmarks import runner
 
 
+def test_manifest_target_policy_override_replaces_default_support(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "override.toml"
+    path.write_text(
+        'name = "override"\nwarmups = 0\nsamples = 1\ntimeout_seconds = 60\n'
+        '[[cases]]\nid = "copy.small"\nworkload = "copy"\nsuite = "Custom"\n'
+        'name = "Copy"\noperation = "Copy"\nparams = { dtype = "fp32" }\n'
+        'targets = ["gfx950", "gfx1250"]\nthread_policies = ["default"]\n'
+        'thread_policy_overrides = { gfx1250 = ["single"] }\n'
+    )
+    suite = runner.load_manifest(path)
+    case = suite.cases[0]
+    assert case.thread_policies == ("default",)
+    assert case.thread_policy_overrides == {"gfx1250": ("single",)}
+    assert [(c.case, c.target, c.thread_policy) for c in runner.select_matrix(suite)] == [
+        ("copy.small", "gfx950", "default"),
+        ("copy.small", "gfx1250", "single"),
+    ]
+    assert runner.main(["--manifest", str(path), "--list"]) == 0
+    assert capsys.readouterr().out == (
+        "copy.small\tgfx950\tdefault\ncopy.small\tgfx1250\tsingle\n"
+    )
+
+
+@pytest.mark.parametrize("policy", ["single", "default"])
+def test_run_suite_validates_effective_override_support(
+    runner_context: SimpleNamespace, policy: str
+) -> None:
+    ctx = runner_context
+    case = replace(
+        ctx.suite.cases[0],
+        thread_policies=("default",),
+        thread_policy_overrides={"gfx1250": ("single",)},
+    )
+    ctx.suite = replace(ctx.suite, cases=(case,))
+    cell = runner.Cell(case, "gfx1250", policy)
+    if policy == "single":
+        output, raw = harness.run_harness(ctx, (cell,), "override-run")
+        assert json.loads((output / "run.json").read_text()) == raw
+        assert [
+            (r["id"], r["target"], r["thread_policy"], r["status"])
+            for r in raw["benchmark_results"]
+        ] == [
+            (case.id, "gfx1250", "single", "completed")
+        ]
+    else:
+        with mock.patch.object(runner, "validate_build") as validate, mock.patch.object(
+            runner, "_run_command"
+        ) as execute:
+            with pytest.raises(runner.RunnerError, match="unsupported combination"):
+                harness.run_harness(ctx, (cell,), "override-run")
+            validate.assert_not_called()
+            execute.assert_not_called()
+        assert not (ctx.root / "override-run").exists()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        '[]', '"single"', 'true', '1',
+        '{ gfx1250 = ["single"] }',
+        '{ gfx950 = [] }', '{ gfx950 = "single" }',
+        '{ gfx950 = ["single", "single"] }',
+        '{ gfx950 = ["unknown"] }', '{ gfx950 = [1] }',
+        '{ gfx950 = [true] }', '{ gfx950 = [""] }',
+        '{ gfx950 = [[]] }', '{ gfx950 = {} }',
+    ],
+)
+def test_invalid_policy_overrides_rejected_before_output(
+    tmp_path: Path, value: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "invalid.toml"
+    path.write_text(
+        (runner.BENCHMARK_ROOT / "suites/smoke.toml").read_text()
+        + f"\nthread_policy_overrides = {value}\n"
+    )
+    with pytest.raises(runner.RunnerError, match="thread_policy_overrides"):
+        runner.load_manifest(path)
+    output = tmp_path / "output"
+    with mock.patch.object(runner, "run_suite") as execute:
+        for flags in (["--list"], ["--output", str(output)]):
+            assert runner.main(["--manifest", str(path), *flags]) == 2
+            captured = capsys.readouterr()
+            assert captured.out == ""
+            assert "thread_policy_overrides" in captured.err
+        execute.assert_not_called()
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("override", [None, {}])
+def test_absent_or_empty_policy_overrides_preserve_default_support(
+    tmp_path: Path, override: dict | None
+) -> None:
+    path = tmp_path / "fallback.toml"
+    text = (runner.BENCHMARK_ROOT / "suites/smoke.toml").read_text()
+    path.write_text(text + ("\nthread_policy_overrides = {}\n" if override == {} else ""))
+    suite = runner.load_manifest(path)
+    assert suite.cases[0].thread_policy_overrides == {}
+    assert [(c.target, c.thread_policy) for c in runner.select_matrix(suite)] == [
+        ("gfx950", "default")
+    ]
+
+
+def test_policy_override_table_keeps_canonical_policy_order(tmp_path: Path) -> None:
+    path = tmp_path / "ordered.toml"
+    path.write_text(
+        (runner.BENCHMARK_ROOT / "suites/smoke.toml").read_text()
+        + '\n[cases.thread_policy_overrides]\ngfx950 = ["single", "default"]\n'
+    )
+    suite = runner.load_manifest(path)
+    assert suite.cases[0].thread_policy_overrides == {"gfx950": ("single", "default")}
+    assert [(c.target, c.thread_policy) for c in runner.select_matrix(suite)] == [
+        ("gfx950", "default"), ("gfx950", "single")
+    ]
+    assert not suite.cases[0].supports("gfx1250", "default")
+
+
+@pytest.mark.parametrize("missing", ["targets", "thread_policies"])
+def test_overrides_do_not_make_support_lists_optional(tmp_path: Path, missing: str) -> None:
+    text = (runner.BENCHMARK_ROOT / "suites/smoke.toml").read_text()
+    path = tmp_path / "missing.toml"
+    path.write_text(
+        "\n".join(line for line in text.splitlines() if not line.startswith(f"{missing} ="))
+        + '\nthread_policy_overrides = { gfx950 = ["single"] }\n'
+    )
+    with pytest.raises(runner.RunnerError, match="each case must contain"):
+        runner.load_manifest(path)
+
+
+@pytest.mark.parametrize(
+    "targets,cases,policies,expected",
+    [
+        ((), (), ("single", "default"), [
+            ("triton.rmsnorm_bf16", "gfx950", "default"),
+            ("triton.gemm_bf16_aligned", "gfx950", "default"),
+            ("triton.rmsnorm_bf16", "gfx950", "single"),
+            ("triton.rmsnorm_bf16", "gfx1250", "default"),
+            ("triton.gemm_bf16_aligned", "gfx1250", "default"),
+        ]),
+        (("gfx1250",), (), ("default", "single"), [
+            ("triton.rmsnorm_bf16", "gfx1250", "default"),
+            ("triton.gemm_bf16_aligned", "gfx1250", "default"),
+        ]),
+        ((), ("triton.rmsnorm_bf16",), ("single",), [
+            ("triton.rmsnorm_bf16", "gfx950", "single"),
+        ]),
+        (("gfx1250",), (), ("single",), []),
+        (("gfx950",), ("triton.gemm_bf16_aligned",), ("single",), []),
+    ],
+)
+def test_cli_filters_narrow_effective_override_support(
+    runner_context: SimpleNamespace,
+    targets: tuple[str, ...],
+    cases: tuple[str, ...],
+    policies: tuple[str, ...],
+    expected: list[tuple[str, str, str]],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    original, fallback = runner_context.suite.cases[:2]
+    case = replace(original, thread_policy_overrides={"gfx1250": ("default",)})
+    fallback = replace(fallback, thread_policies=("default",))
+    suite = replace(runner_context.suite, cases=(case, fallback))
+    selection = dict(targets=targets, cases=cases, thread_policies=policies)
+    if expected:
+        assert [
+            (c.case, c.target, c.thread_policy)
+            for c in runner.select_matrix(suite, **selection)
+        ] == expected
+    else:
+        with pytest.raises(runner.RunnerError, match="no supported"):
+            runner.select_matrix(suite, **selection)
+    args = ["--list"]
+    for flag, values in (
+        ("--target", targets), ("--case", cases), ("--thread-policy", policies)
+    ):
+        for value in values:
+            args.extend([flag, value])
+    with mock.patch.object(runner, "load_manifest", return_value=suite):
+        assert runner.main(args) == (0 if expected else 2)
+    captured = capsys.readouterr()
+    assert captured.out == "".join("\t".join(cell) + "\n" for cell in expected)
+    if not expected:
+        assert "no supported" in captured.err
+
+
+def test_original_performance_matrix_retains_exact_ordered_38_cells() -> None:
+    # Fixed identities from performance-v1 at 682db160; not derived from support logic.
+    expected_groups = [
+        ("gfx950", "default", [
+            "gpt_oss.window_batch4_seq3072", "gpt_oss.causal_seq2560",
+            "triton.persistent_1024x4096x4096", "triton.grouped_4x2048",
+            "deepseek.mlp_w1_m64", "deepseek.mlp_w2_m64",
+            "tensile.bf16_streamk_4096x4096x4096", "tensile.mxfp8_subtile_4096x4096x4096",
+            "triton.softmax_131072x2048", "triton.layernorm_131072x2048",
+            "deepseek.act_quant_32768x8192", "deepseek.weight_dequant_32768x8192",
+        ]),
+        ("gfx950", "single", [
+            "gpt_oss.causal_seq2560", "triton.persistent_1024x4096x4096",
+            "triton.grouped_4x2048", "deepseek.mlp_w1_m64",
+            "tensile.bf16_streamk_4096x4096x4096",
+        ]),
+        ("gfx1250", "default", [
+            "gpt_oss.window_batch4_seq3072", "gpt_oss.causal_seq2560",
+            "triton.persistent_1024x4096x4096", "triton.grouped_4x2048",
+            "deepseek.mlp_w1_m256", "deepseek.mlp_w2_m256",
+            "tensile.bf16_subtile_4096x4096x4096", "tensile.mxfp4_streamk_4096x4096x4096",
+            "deepseek.mlp_w1_m3072", "deepseek.mlp_w2_m3072",
+            "triton.grouped_4x3584", "triton.persistent_8192x8192x4096",
+            "triton.softmax_131072x2048", "triton.layernorm_131072x2048",
+            "deepseek.act_quant_32768x8192", "deepseek.weight_dequant_32768x8192",
+        ]),
+        ("gfx1250", "single", [
+            "gpt_oss.causal_seq2560", "triton.persistent_1024x4096x4096",
+            "triton.grouped_4x2048", "deepseek.mlp_w1_m256",
+            "tensile.bf16_subtile_4096x4096x4096",
+        ]),
+    ]
+    expected = [
+        (case, target, policy)
+        for target, policy, cases in expected_groups for case in cases
+    ]
+    assert len(expected) == 38
+    suite = runner.load_manifest()
+    assert all(case.thread_policy_overrides == {} for case in suite.cases)
+    assert [
+        (c.case, c.target, c.thread_policy) for c in runner.select_matrix(suite)
+    ] == expected
+
+
 def test_policy_definition_preserves_order_and_budgets() -> None:
     assert tuple(runner.THREAD_POLICY_BUDGETS.items()) == (
         ("default", 0),
@@ -74,6 +304,7 @@ def test_case_constructor_preserves_explicit_support(
         thread_policies=policies,
     )
     assert case.thread_policies == policies
+    assert case.thread_policy_overrides == {}
     suite = runner.Suite(
         name="custom",
         targets=case.targets,
