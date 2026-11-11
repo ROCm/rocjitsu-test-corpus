@@ -80,6 +80,9 @@
     "vmem_no_wait_race",
     "vmem_expcnt_only_race",
     "vmem_flat_lds_exchange",
-    "vmem_flat_lds_exchange_race"
+    "vmem_flat_lds_exchange_race",
+    "vmem_lds_atomic_mixed_return",
+    "vmem_lds_atomic_read_race",
+    "vmem_lds_atomic_write_race"
   ]
 }
