@@ -121,6 +121,8 @@
     "loadcnt_exec_zero_below_capacity_race",
     "global_inv_loadcnt_capacity_boundary",
     "global_inv_loadcnt_below_capacity_race",
+    "global_inv_partial_wait_completes_older_load",
+    "partial_wait_without_global_inv_race",
     "storecnt_pressure_does_not_advance_loadcnt_race",
     "dscnt_capacity_boundary",
     "dscnt_below_capacity_race",

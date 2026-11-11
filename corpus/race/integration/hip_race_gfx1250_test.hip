@@ -2686,6 +2686,45 @@ TEST_F(Gfx1250RaceTest, global_inv_loadcnt_below_capacity_race) {
   ExpectRace(kLoadcntCapacityRaceExpectation);
 }
 
+// A load, optionally GLOBAL_INV, then s_wait_loadcnt 1 and a use of the load's
+// result. GLOBAL_INV counts on LOADcnt (CDNA5 ISA 5.7.1.2), and LLVM orders it
+// with VMEM loads, so after it, waiting for one to remain completes the load.
+// Without it, the load is the one that remains.
+template <bool Invalidate>
+__global__ void global_inv_partial_wait_kernel(const int *src, int *dst) {
+  int producer, result;
+  asm volatile("global_load_b32 %[producer], %[address], off\n"
+               ".if %c[invalidate]\n"
+               "global_inv\n"
+               ".endif\n"
+               "s_wait_loadcnt 1\n"
+               "v_mov_b32 %[result], %[producer]\n"
+               : [producer] "=&v"(producer), [result] "=&v"(result)
+               : [address] "v"(&src[threadIdx.x]), [invalidate] "n"(Invalidate ? 1 : 0)
+               : "memory");
+  asm volatile("s_wait_loadcnt 0" ::: "memory");
+  dst[threadIdx.x] = result;
+}
+
+TEST_F(Gfx1250RaceTest, global_inv_partial_wait_completes_older_load) {
+  auto *src = allocWithData<int>(kWave);
+  auto *dst = alloc<int>(kWave);
+  global_inv_partial_wait_kernel<true><<<1, kWave>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, partial_wait_without_global_inv_race) {
+  auto *src = allocWithData<int>(kWave);
+  auto *dst = alloc<int>(kWave);
+  global_inv_partial_wait_kernel<false><<<1, kWave>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kLoadcntCapacityRaceExpectation);
+}
+
 // Loads and stores use separate counters (CDNA5 ISA 5.7.1), so filling STOREcnt
 // says nothing about a pending load.
 __global__ void storecnt_pressure_kernel(const int *src, int *scratch, int *dst) {
