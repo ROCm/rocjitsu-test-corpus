@@ -2362,6 +2362,20 @@ TEST_F(Gfx1250RaceTest, async_store_syncthreads_race) {
   ExpectRace(kAsyncStoreThenWriteRaceExpectation);
 }
 
+/// Observe that only this wave remains in a two-wave workgroup, without
+/// signaling a barrier or ordering LDS accesses. CDNA5 S_GET_BARRIER_STATE
+/// reports the member count in bits 10:4; its result requires a KMCNT wait.
+__device__ inline void waitForWriterExit() {
+  uint32_t state;
+  do {
+    asm volatile("s_get_barrier_state %0, -1\n"
+                 "s_wait_kmcnt 0"
+                 : "=s"(state)
+                 :
+                 : "memory");
+  } while (((state >> 4) & 0x7fu) != 1);
+}
+
 // A named barrier joined only by the reader does not order the writer's LDS
 // accesses, even if the writer has already ended.
 // Adding a workgroup barrier supplies the missing ordering.
@@ -2378,6 +2392,7 @@ __global__ void named_barrier_exited_writer_kernel(int *out) {
     waitDscnt();
     return;
   }
+  waitForWriterExit();
   // Use the barrier type and builtins so the compiler reserves a named barrier
   // in the kernel descriptor and selects its ID.
   __builtin_amdgcn_s_barrier_init(&named, 1);
@@ -2393,21 +2408,13 @@ TEST_F(Gfx1250RaceTest, named_barrier_exited_writer_race) {
   named_barrier_exited_writer_kernel<false><<<1, 2 * kWave>>>(alloc<int>(kWave));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  // Either wave may access LDS first; require the same conflict in either direction.
-  ExpectAnyRace({{.kernel = "named_barrier_exited_writer_kernel",
-                  .type = "LDS",
-                  .access = "read",
-                  .wave = 0,
-                  .lane = 0,
-                  .producer = "ds_store_b32",
-                  .consumer = "ds_load_b32"},
-                 {.kernel = "named_barrier_exited_writer_kernel",
-                  .type = "LDS",
-                  .access = "write",
-                  .wave = 1,
-                  .lane = 0,
-                  .producer = "ds_load_b32",
-                  .consumer = "ds_store_b32"}});
+  ExpectRace({.kernel = "named_barrier_exited_writer_kernel",
+              .type = "LDS",
+              .access = "read",
+              .wave = 0,
+              .lane = 0,
+              .producer = "ds_store_b32",
+              .consumer = "ds_load_b32"});
 }
 
 TEST_F(Gfx1250RaceTest, named_then_workgroup_barrier_exited_writer) {
@@ -2437,6 +2444,7 @@ __global__ void cluster_barrier_exited_writer_kernel(int *out) {
     }
     return;
   }
+  waitForWriterExit();
   asm volatile("s_barrier_signal -3\n"
                "s_barrier_wait -3" ::: "memory");
   if constexpr (WorkgroupAfter)
@@ -2461,21 +2469,13 @@ template <bool WorkgroupAfter> void launchClusterExitedWriter(int *out) {
 TEST_F(Gfx1250RaceTest, cluster_barrier_exited_writer_race) {
   launchClusterExitedWriter<false>(alloc<int>(kWave));
   sync();
-  // Either wave may access LDS first; require the same conflict in either direction.
-  ExpectAnyRace({{.kernel = "cluster_barrier_exited_writer_kernel",
-                  .type = "LDS",
-                  .access = "read",
-                  .wave = 0,
-                  .lane = 0,
-                  .producer = "ds_store_b32",
-                  .consumer = "ds_load_b32"},
-                 {.kernel = "cluster_barrier_exited_writer_kernel",
-                  .type = "LDS",
-                  .access = "write",
-                  .wave = 1,
-                  .lane = 0,
-                  .producer = "ds_load_b32",
-                  .consumer = "ds_store_b32"}});
+  ExpectRace({.kernel = "cluster_barrier_exited_writer_kernel",
+              .type = "LDS",
+              .access = "read",
+              .wave = 0,
+              .lane = 0,
+              .producer = "ds_store_b32",
+              .consumer = "ds_load_b32"});
 }
 
 TEST_F(Gfx1250RaceTest, cluster_then_workgroup_barrier_exited_writer) {
