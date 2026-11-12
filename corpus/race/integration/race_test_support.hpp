@@ -173,6 +173,19 @@ protected:
     EXPECT_TRUE(matched.ok()) << matched.message();
   }
 
+  /// A read-modify-write does not retire an unwaited memory result. Check
+  /// both accesses and a later consumer, retaining the same producer/context.
+  void ExpectReadModifyWriteAndLaterUse(RaceExpectation expected, const char *later_consumer) {
+    expected.findings = FindingCount::OneOrMore;
+    expected.access = "read";
+    ExpectRace(expected);
+    expected.access = "write";
+    ExpectRace(expected);
+    expected.access = "read";
+    expected.consumer = later_consumer;
+    ExpectRace(expected);
+  }
+
   /// Expect a race matching any of `alternatives`, for a race whose reported
   /// direction depends on the order the waves run in.
   void ExpectAnyRace(std::initializer_list<RaceExpectation> alternatives) {
