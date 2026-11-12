@@ -26,7 +26,7 @@ def _isolate_case_timeout(monkeypatch) -> None:
 
 def test_configs_preserve_every_moved_gtest() -> None:
     configs = race.load_target_configs(race.default_config_files())
-    expected_counts = {"gfx942": 8, "gfx950": 79, "gfx1151": 29, "gfx1250": 103}
+    expected_counts = {"gfx942": 14, "gfx950": 85, "gfx1151": 35, "gfx1250": 113}
 
     for target, expected_count in expected_counts.items():
         cases = race.discover(make_target_spec(target), configs)
@@ -297,7 +297,7 @@ def _source_gtests(target: str) -> set[str]:
         for fixture, name in pattern.findall(
             "\n".join(source.read_text(encoding="utf-8") for source in sources)
         )
-        if fixture.strip() in (layout["fixture"], "VmemRaceTest")
+        if fixture.strip() in (layout["fixture"], "VmemRaceTest", "BarrierRaceTest")
     }
 
 

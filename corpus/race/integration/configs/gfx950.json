@@ -80,6 +80,12 @@
     "vmem_no_wait_race",
     "vmem_expcnt_only_race",
     "vmem_flat_lds_exchange",
-    "vmem_flat_lds_exchange_race"
+    "vmem_flat_lds_exchange_race",
+    "barrier_exited_lds_writer",
+    "barrier_exited_lds_writer_implicit_wait",
+    "barrier_exited_lds_writer_race",
+    "barrier_staggered_wave_exit",
+    "barrier_staggered_wave_exit_implicit_wait",
+    "barrier_staggered_wave_exit_race"
   ]
 }

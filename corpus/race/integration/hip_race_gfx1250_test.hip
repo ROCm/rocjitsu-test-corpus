@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /// @file hip_race_gfx1250_test.hip
-/// @brief gfx1250 HIP race detector tests: GFX12 split wait counters, tensor
+/// @brief gfx1250 HIP race detector tests: split wait counters, barriers, tensor
 ///        DMA (tensor_load_to_lds, tensor_store_from_lds) and async copies
 ///        (global_load_async_to_lds, global_store_async_from_lds).
 ///
@@ -2360,6 +2360,130 @@ TEST_F(Gfx1250RaceTest, async_store_syncthreads_race) {
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(kAsyncStoreThenWriteRaceExpectation);
+}
+
+/// Observe that only this wave remains in a two-wave workgroup, without
+/// signaling a barrier or ordering LDS accesses. CDNA5 S_GET_BARRIER_STATE
+/// reports the member count in bits 10:4; its result requires a KMCNT wait.
+__device__ inline void waitForWriterExit() {
+  uint32_t state;
+  do {
+    asm volatile("s_get_barrier_state %0, -1\n"
+                 "s_wait_kmcnt 0"
+                 : "=s"(state)
+                 :
+                 : "memory");
+  } while (((state >> 4) & 0x7fu) != 1);
+}
+
+// A named barrier joined only by the reader does not order the writer's LDS
+// accesses, even if the writer has already ended.
+// Adding a workgroup barrier supplies the missing ordering.
+template <bool WorkgroupAfter>
+__attribute__((amdgpu_flat_work_group_size(64, 64)))
+__global__ void named_barrier_exited_writer_kernel(int *out) {
+  __shared__ int tile[2 * kWave];
+  __shared__ __amdgpu_named_workgroup_barrier_t named;
+  const uint32_t address =
+      static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&tile[threadIdx.x]));
+  barrier();
+  if (waveIndex() == 1) {
+    ldsWrite(address, threadIdx.x + 11);
+    waitDscnt();
+    return;
+  }
+  waitForWriterExit();
+  // Use the barrier type and builtins so the compiler reserves a named barrier
+  // in the kernel descriptor and selects its ID.
+  __builtin_amdgcn_s_barrier_init(&named, 1);
+  __builtin_amdgcn_s_barrier_join(&named);
+  __builtin_amdgcn_s_barrier_signal_var(&named, 0);
+  asm volatile("s_barrier_wait 0" ::: "memory");
+  if constexpr (WorkgroupAfter)
+    barrier();
+  out[threadIdx.x] = ldsReadAndWait(address + kTileBytes);
+}
+
+TEST_F(Gfx1250RaceTest, named_barrier_exited_writer_race) {
+  named_barrier_exited_writer_kernel<false><<<1, 2 * kWave>>>(alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace({.kernel = "named_barrier_exited_writer_kernel",
+              .type = "LDS",
+              .access = "read",
+              .wave = 0,
+              .lane = 0,
+              .producer = "ds_store_b32",
+              .consumer = "ds_load_b32"});
+}
+
+TEST_F(Gfx1250RaceTest, named_then_workgroup_barrier_exited_writer) {
+  int *out = alloc<int>(kWave);
+  named_barrier_exited_writer_kernel<true><<<1, 2 * kWave>>>(out);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectValues(out, range(kWave + 11));
+  ExpectNoRace();
+}
+
+// The reader's cluster barrier does not order the writer's LDS accesses,
+// even if the writer has already ended. A workgroup barrier supplies the ordering.
+template <bool WorkgroupAfter>
+__attribute__((cluster_dims(2, 1, 1), amdgpu_flat_work_group_size(64, 64)))
+__global__ void cluster_barrier_exited_writer_kernel(int *out) {
+  __shared__ int tile[2 * kWave];
+  const uint32_t address =
+      static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&tile[threadIdx.x]));
+  barrier();
+  if (waveIndex() == 1) {
+    // Only workgroup 0 accesses LDS; workgroup 1 supplies the other cluster
+    // signal. One surviving race cannot hide incorrect retirement in a peer.
+    if (blockIdx.x == 0) {
+      ldsWrite(address, threadIdx.x + 11);
+      waitDscnt();
+    }
+    return;
+  }
+  waitForWriterExit();
+  asm volatile("s_barrier_signal -3\n"
+               "s_barrier_wait -3" ::: "memory");
+  if constexpr (WorkgroupAfter)
+    barrier();
+  if (blockIdx.x == 0)
+    out[threadIdx.x] = ldsReadAndWait(address + kTileBytes);
+}
+
+template <bool WorkgroupAfter> void launchClusterExitedWriter(int *out) {
+  hipLaunchAttribute cluster{};
+  cluster.id = hipLaunchAttributeClusterDimension;
+  cluster.value.clusterDim = {2, 1, 1};
+  hipLaunchConfig_t config{};
+  config.gridDim = dim3(2);
+  config.blockDim = dim3(2 * kWave);
+  config.attrs = &cluster;
+  config.numAttrs = 1;
+  RACE_HIP_CHECK(
+      hipLaunchKernelEx(&config, cluster_barrier_exited_writer_kernel<WorkgroupAfter>, out));
+}
+
+TEST_F(Gfx1250RaceTest, cluster_barrier_exited_writer_race) {
+  launchClusterExitedWriter<false>(alloc<int>(kWave));
+  sync();
+  ExpectRace({.kernel = "cluster_barrier_exited_writer_kernel",
+              .type = "LDS",
+              .access = "read",
+              .wave = 0,
+              .lane = 0,
+              .producer = "ds_store_b32",
+              .consumer = "ds_load_b32"});
+}
+
+TEST_F(Gfx1250RaceTest, cluster_then_workgroup_barrier_exited_writer) {
+  int *out = alloc<int>(kWave);
+  launchClusterExitedWriter<true>(out);
+  sync();
+  ExpectValues(out, range(kWave + 11));
+  ExpectNoRace();
 }
 
 } // namespace
