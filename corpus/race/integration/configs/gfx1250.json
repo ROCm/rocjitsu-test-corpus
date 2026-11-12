@@ -154,6 +154,25 @@
     "flat_global_partial_dscnt_wait",
     "flat_global_partial_dscnt_wait_race",
     "flat_lds_partial_loadcnt_wait",
-    "flat_lds_partial_loadcnt_wait_race"
+    "flat_lds_partial_loadcnt_wait_race",
+    "split_barrier_ds_write",
+    "split_barrier_ds_write_wait_after_signal_race",
+    "split_barrier_ds_read",
+    "split_barrier_ds_read_wait_after_signal_race",
+    "split_barrier_read_before_wait_race",
+    "split_barrier_reader_in_window_race",
+    "split_barrier_completed_in_window_ordered_by_next_round",
+    "split_barrier_tensor_load",
+    "split_barrier_tensor_load_wait_after_signal_race",
+    "split_barrier_tensor_store_source",
+    "split_barrier_tensor_store_source_wait_after_signal_race",
+    "split_barrier_async_load",
+    "split_barrier_async_load_wait_after_signal_race",
+    "split_barrier_async_store_source",
+    "split_barrier_async_store_source_wait_after_signal_race",
+    "split_barrier_exited_writer",
+    "split_barrier_exited_writer_read_before_wait_race",
+    "split_barrier_pingpong",
+    "split_barrier_pingpong_wait_after_signal_race"
   ]
 }

@@ -3,8 +3,9 @@
 
 /// @file hip_race_gfx1250_test.hip
 /// @brief gfx1250 HIP race detector tests: split wait counters, barriers, tensor
-///        DMA (tensor_load_to_lds, tensor_store_from_lds) and async copies
-///        (global_load_async_to_lds, global_store_async_from_lds).
+///        DMA (tensor_load_to_lds, tensor_store_from_lds), async copies
+///        (global_load_async_to_lds, global_store_async_from_lds) and split
+///        barriers (s_barrier_signal, s_barrier_wait).
 ///
 /// A tensor load writes LDS and a tensor store reads it, asynchronously, until
 /// s_wait_tensorcnt retires the transfer. Transfers from one wave complete in
@@ -138,6 +139,12 @@ __device__ inline void barrier() {
   asm volatile("s_barrier_signal -1\n"
                "s_barrier_wait -1" ::: "memory");
 }
+
+/// Arrive at the workgroup barrier without blocking (CDNA5 ISA 5.6).
+__device__ inline void barrierSignal() { asm volatile("s_barrier_signal -1" ::: "memory"); }
+
+/// Block until every wave of the workgroup has signalled or ended (CDNA5 ISA 5.6).
+__device__ inline void barrierWait() { asm volatile("s_barrier_wait -1" ::: "memory"); }
 
 /// Read an int from LDS and wait for it, so a case reports only the LDS race
 /// it is about and never a race on the destination register.
@@ -3363,5 +3370,489 @@ TEST_F(Gfx1250RaceTest, flat_lds_partial_loadcnt_wait_race) {
 
 #undef RACE_YOUNGER_VGPR_CLOBBERS
 #undef RACE_YOUNGER_SGPR_CLOBBERS
+
+// --- Split barriers: a barrier orders what a wave completed before its
+// --- signal, for waves past their wait ---
+//
+// s_barrier_signal does not block and waits for no memory counter; only
+// s_barrier_wait blocks, until every wave of the workgroup has signalled or
+// ended (CDNA5 ISA 5.6 and 15.3). An access is therefore ordered before the
+// barrier only if its wave completed it before its own signal, and after the
+// barrier only if the accessing wave issued it after its own wait. Each race
+// case moves one completing wait to after the signal, or one access to before
+// the wait; none depends on how the waves are scheduled.
+
+/// Where the issuing wave waits for its LDS access, relative to its signal.
+enum class Completion { BeforeSignal, AfterSignal };
+
+/// The LDS int this lane's tile slot holds, in tile `tile`.
+__device__ inline uint32_t tileSlot(int tile = 0) {
+  return tile * kTileBytes + lane() * kElementBytes;
+}
+
+/// Read an int from LDS without waiting; wait with waitDscnt() before using it.
+__device__ inline int ldsReadNoWait(uint32_t byte_offset) {
+  int value;
+  asm volatile("ds_load_b32 %0, %1" : "=v"(value) : "v"(byte_offset) : "memory");
+  return value;
+}
+
+static constexpr RaceExpectation kDsReadThenWriteRaceExpectation{
+    .findings = FindingCount::One,
+    .type = "LDS",
+    .access = "write",
+    .producer = "ds_load_b32",
+    .consumer = "ds_store_b32",
+};
+
+/// `expected`, reported by an access of `wave`.
+constexpr RaceExpectation byWave(RaceExpectation expected, int wave) {
+  expected.findings = FindingCount::One;
+  expected.wave = wave;
+  return expected;
+}
+
+// Wave 0 writes its tile; wave 1 reads it after the barrier.
+template <Completion When>
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+split_barrier_ds_write_kernel(int *dst) {
+  if (waveIndex() == 0) {
+    ldsWrite(tileSlot(), lane() + 1);
+    if constexpr (When == Completion::BeforeSignal)
+      waitDscnt();
+    barrierSignal();
+    if constexpr (When == Completion::AfterSignal)
+      waitDscnt();
+    barrierWait();
+  } else {
+    barrierSignal();
+    barrierWait();
+    dst[lane()] = ldsReadAndWait(tileSlot());
+  }
+}
+
+TEST_F(Gfx1250RaceTest, split_barrier_ds_write) {
+  auto *dst = alloc<int>(kWave);
+  split_barrier_ds_write_kernel<Completion::BeforeSignal><<<1, 2 * kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(1));
+}
+
+// The write completes after wave 0's signal, so the barrier does not order it.
+TEST_F(Gfx1250RaceTest, split_barrier_ds_write_wait_after_signal_race) {
+  auto *dst = alloc<int>(kWave);
+  split_barrier_ds_write_kernel<Completion::AfterSignal><<<1, 2 * kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(byWave(kDsWriteThenReadRaceExpectation, 1));
+}
+
+// Wave 1 reads its own tile; wave 0 overwrites it after the barrier.
+template <Completion When>
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+split_barrier_ds_read_kernel(int *dst) {
+  if (waveIndex() == 1) {
+    ldsFillAndWait(0, lane() + 1);
+    const int value = ldsReadNoWait(tileSlot());
+    if constexpr (When == Completion::BeforeSignal)
+      waitDscnt();
+    barrierSignal();
+    if constexpr (When == Completion::AfterSignal)
+      waitDscnt();
+    barrierWait();
+    dst[lane()] = value;
+  } else {
+    barrierSignal();
+    barrierWait();
+    ldsFillAndWait(0, -1);
+  }
+}
+
+TEST_F(Gfx1250RaceTest, split_barrier_ds_read) {
+  auto *dst = alloc<int>(kWave);
+  split_barrier_ds_read_kernel<Completion::BeforeSignal><<<1, 2 * kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(1));
+}
+
+// The read completes after wave 1's signal, so wave 0's overwrite races with it.
+TEST_F(Gfx1250RaceTest, split_barrier_ds_read_wait_after_signal_race) {
+  auto *dst = alloc<int>(kWave);
+  split_barrier_ds_read_kernel<Completion::AfterSignal><<<1, 2 * kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(byWave(kDsReadThenWriteRaceExpectation, 0));
+}
+
+// Wave 0 writes and releases its tile; wave 1 reads it before its own wait,
+// so the read is not ordered after the write. Whichever access runs second
+// reports the race.
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+split_barrier_read_before_wait_kernel(int *dst) {
+  if (waveIndex() == 0) {
+    ldsWrite(tileSlot(), lane() + 1);
+    waitDscnt();
+    barrierSignal();
+    barrierWait();
+  } else {
+    barrierSignal();
+    dst[lane()] = ldsReadAndWait(tileSlot());
+    barrierWait();
+  }
+}
+
+TEST_F(Gfx1250RaceTest, split_barrier_read_before_wait_race) {
+  auto *dst = alloc<int>(kWave);
+  split_barrier_read_before_wait_kernel<<<1, 2 * kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectAnyRace({byWave(kDsWriteThenReadRaceExpectation, 1),
+                 byWave(kDsReadThenWriteRaceExpectation, 0)});
+}
+
+// Wave 0 writes and releases its tile. Wave 1 reads it after its wait; wave 2
+// reads it before its wait. A wave acquires the barrier only at its own wait.
+__global__ __attribute__((amdgpu_flat_work_group_size(3 * kWave, 3 * kWave))) void
+split_barrier_reader_in_window_kernel(int *dst) {
+  const int wave = waveIndex();
+  if (wave == 0) {
+    ldsWrite(tileSlot(), lane() + 1);
+    waitDscnt();
+    barrierSignal();
+    barrierWait();
+  } else if (wave == 1) {
+    barrierSignal();
+    barrierWait();
+    dst[lane()] = ldsReadAndWait(tileSlot());
+  } else {
+    barrierSignal();
+    dst[kWave + lane()] = ldsReadAndWait(tileSlot());
+    barrierWait();
+  }
+}
+
+TEST_F(Gfx1250RaceTest, split_barrier_reader_in_window_race) {
+  auto *dst = alloc<int>(2 * kWave);
+  split_barrier_reader_in_window_kernel<<<1, 3 * kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectAnyRace({byWave(kDsWriteThenReadRaceExpectation, 2),
+                 byWave(kDsReadThenWriteRaceExpectation, 0)});
+  // Wave 1 read after its wait, so no report involves its access.
+  const auto parsed = rocjitsu::test::parseRaceLogFromEnvironment();
+  ASSERT_TRUE(parsed.ok()) << parsed.error;
+  for (const auto &record : parsed.records)
+    EXPECT_TRUE(record.wave == 0 || record.wave == 2) << record.message;
+  // Wave 1's read is ordered after the write.
+  ExpectValues(dst, range(1));
+}
+
+// Wave 0's write completes after its first signal, so the first barrier does
+// not order it, but its second signal releases it.
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+split_barrier_completed_in_window_kernel(int *dst) {
+  if (waveIndex() == 0) {
+    ldsWrite(tileSlot(), lane() + 1);
+    barrierSignal();
+    waitDscnt();
+    barrierWait();
+    barrier();
+  } else {
+    barrier();
+    barrier();
+    dst[lane()] = ldsReadAndWait(tileSlot());
+  }
+}
+
+TEST_F(Gfx1250RaceTest, split_barrier_completed_in_window_ordered_by_next_round) {
+  auto *dst = alloc<int>(kWave);
+  split_barrier_completed_in_window_kernel<<<1, 2 * kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(1));
+}
+
+// Wave 0 loads a tile with tensor DMA; wave 1 reads it after the barrier.
+template <Completion When>
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+split_barrier_tensor_load_kernel(TensorDesc desc, int *dst) {
+  if (waveIndex() == 0) {
+    tensorLoad(desc);
+    if constexpr (When == Completion::BeforeSignal)
+      waitTensorcnt<0>();
+    barrierSignal();
+    if constexpr (When == Completion::AfterSignal)
+      waitTensorcnt<0>();
+    barrierWait();
+  } else {
+    barrierSignal();
+    barrierWait();
+    dst[lane()] = ldsReadAndWait(tileSlot());
+  }
+}
+
+TEST_F(Gfx1250RaceTest, split_barrier_tensor_load) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kWave);
+  split_barrier_tensor_load_kernel<Completion::BeforeSignal>
+      <<<1, 2 * kWave, kTileBytes>>>(describe({.global = src}), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0));
+}
+
+TEST_F(Gfx1250RaceTest, split_barrier_tensor_load_wait_after_signal_race) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kWave);
+  split_barrier_tensor_load_kernel<Completion::AfterSignal>
+      <<<1, 2 * kWave, kTileBytes>>>(describe({.global = src}), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(byWave(kTensorLoadThenReadRaceExpectation, 1));
+}
+
+// Wave 0 stores its tile with tensor DMA; wave 1 overwrites it after the
+// barrier.
+template <Completion When>
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+split_barrier_tensor_store_source_kernel(TensorDesc desc) {
+  if (waveIndex() == 0) {
+    ldsFillAndWait(0, 100 + lane());
+    tensorStore(desc);
+    if constexpr (When == Completion::BeforeSignal)
+      waitTensorcnt<0>();
+    barrierSignal();
+    if constexpr (When == Completion::AfterSignal)
+      waitTensorcnt<0>();
+    barrierWait();
+  } else {
+    barrierSignal();
+    barrierWait();
+    ldsFillAndWait(0, -1);
+  }
+}
+
+TEST_F(Gfx1250RaceTest, split_barrier_tensor_store_source) {
+  auto *dst = alloc<int>(kTileElements);
+  split_barrier_tensor_store_source_kernel<Completion::BeforeSignal>
+      <<<1, 2 * kWave, kTileBytes>>>(describe({.global = dst}));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(100));
+}
+
+TEST_F(Gfx1250RaceTest, split_barrier_tensor_store_source_wait_after_signal_race) {
+  auto *dst = alloc<int>(kTileElements);
+  split_barrier_tensor_store_source_kernel<Completion::AfterSignal>
+      <<<1, 2 * kWave, kTileBytes>>>(describe({.global = dst}));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(byWave(kTensorStoreThenWriteRaceExpectation, 1));
+}
+
+// Wave 0 loads a tile with an async load; wave 1 reads it after the barrier.
+template <Completion When>
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+split_barrier_async_load_kernel(const int *src, int *dst) {
+  if (waveIndex() == 0) {
+    asyncLoadToLds(src, 0);
+    if constexpr (When == Completion::BeforeSignal)
+      waitAsynccnt<0>();
+    barrierSignal();
+    if constexpr (When == Completion::AfterSignal)
+      waitAsynccnt<0>();
+    barrierWait();
+  } else {
+    barrierSignal();
+    barrierWait();
+    dst[lane()] = ldsReadAndWait(tileSlot());
+  }
+}
+
+TEST_F(Gfx1250RaceTest, split_barrier_async_load) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kWave);
+  split_barrier_async_load_kernel<Completion::BeforeSignal>
+      <<<1, 2 * kWave, kTileBytes>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0));
+}
+
+TEST_F(Gfx1250RaceTest, split_barrier_async_load_wait_after_signal_race) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kWave);
+  split_barrier_async_load_kernel<Completion::AfterSignal>
+      <<<1, 2 * kWave, kTileBytes>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(byWave(kAsyncLoadThenReadRaceExpectation, 1));
+}
+
+// Wave 0 stores its tile with an async store; wave 1 overwrites it after the
+// barrier.
+template <Completion When>
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+split_barrier_async_store_source_kernel(int *dst) {
+  if (waveIndex() == 0) {
+    ldsFillAndWait(0, 100 + lane());
+    asyncStoreFromLds(dst, 0);
+    if constexpr (When == Completion::BeforeSignal)
+      waitAsynccnt<0>();
+    barrierSignal();
+    if constexpr (When == Completion::AfterSignal)
+      waitAsynccnt<0>();
+    barrierWait();
+  } else {
+    barrierSignal();
+    barrierWait();
+    ldsFillAndWait(0, -1);
+  }
+}
+
+TEST_F(Gfx1250RaceTest, split_barrier_async_store_source) {
+  auto *dst = alloc<int>(kTileElements);
+  split_barrier_async_store_source_kernel<Completion::BeforeSignal>
+      <<<1, 2 * kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(100));
+}
+
+TEST_F(Gfx1250RaceTest, split_barrier_async_store_source_wait_after_signal_race) {
+  auto *dst = alloc<int>(kTileElements);
+  split_barrier_async_store_source_kernel<Completion::AfterSignal>
+      <<<1, 2 * kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(byWave(kAsyncStoreThenWriteRaceExpectation, 1));
+}
+
+/// Where wave 0 reads the exited wave's tile, relative to its own wait.
+enum class ReadPoint { AfterWait, BeforeWait };
+
+// Wave 1 writes its tile, waits for the write, and ends without signalling.
+// The barrier completes when wave 0 signals, since a wave may end instead of
+// signalling (CDNA5 ISA 5.6), but wave 0 acquires it only at its wait.
+template <ReadPoint Read>
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+split_barrier_exited_writer_kernel(int *dst) {
+  if (waveIndex() == 1) {
+    ldsWrite(tileSlot(), lane() + 1);
+    waitDscnt();
+    return;
+  }
+  barrierSignal();
+  if constexpr (Read == ReadPoint::BeforeWait)
+    dst[lane()] = ldsReadAndWait(tileSlot());
+  barrierWait();
+  if constexpr (Read == ReadPoint::AfterWait)
+    dst[lane()] = ldsReadAndWait(tileSlot());
+}
+
+TEST_F(Gfx1250RaceTest, split_barrier_exited_writer) {
+  auto *dst = alloc<int>(kWave);
+  split_barrier_exited_writer_kernel<ReadPoint::AfterWait><<<1, 2 * kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(1));
+}
+
+TEST_F(Gfx1250RaceTest, split_barrier_exited_writer_read_before_wait_race) {
+  auto *dst = alloc<int>(kWave);
+  split_barrier_exited_writer_kernel<ReadPoint::BeforeWait><<<1, 2 * kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectAnyRace({byWave(kDsWriteThenReadRaceExpectation, 0),
+                 byWave(kDsReadThenWriteRaceExpectation, 1)});
+}
+
+// A double-buffered loop. In each round every wave writes its slot of one
+// buffer, waits, and signals; in the window it loads its next input; after its
+// wait it reads the next wave's slot. A slot is rewritten two rounds after it
+// was read, and the reader waited for that read before signalling the round in
+// between, so the loop has no write-after-read race.
+constexpr int kPingPongWaves = 4;
+constexpr int kPingPongRounds = 8;
+/// The round in which the race variant's wave 1 waits after signalling.
+constexpr int kPingPongRaceRound = 5;
+
+__device__ inline uint32_t pingPongSlot(int buffer, int wave) {
+  return tileSlot(buffer * kPingPongWaves + wave);
+}
+
+template <bool Race>
+__global__ __attribute__((amdgpu_flat_work_group_size(kPingPongWaves * kWave,
+                                                      kPingPongWaves * kWave))) void
+split_barrier_pingpong_kernel(const int *src, int *dst) {
+  const int wave = waveIndex();
+  const int reader_of = (wave + 1) % kPingPongWaves;
+  int next = src[wave * kWave + lane()];
+  int sum = 0;
+  for (int round = 0; round < kPingPongRounds; ++round) {
+    ldsWrite(pingPongSlot(round & 1, wave), next);
+    const bool late = Race && round == kPingPongRaceRound && wave == 1;
+    if (!late)
+      waitDscnt();
+    barrierSignal();
+    if (late)
+      waitDscnt();
+    if (round + 1 < kPingPongRounds)
+      next = src[((round + 1) * kPingPongWaves + wave) * kWave + lane()];
+    barrierWait();
+    sum += ldsReadAndWait(pingPongSlot(round & 1, reader_of));
+  }
+  dst[wave * kWave + lane()] = sum;
+}
+
+/// Each wave's sums: the inputs the next wave wrote, over every round.
+std::vector<int> pingPongSums() {
+  std::vector<int> sums(kPingPongWaves * kWave, 0);
+  for (int wave = 0; wave < kPingPongWaves; ++wave)
+    for (int lane = 0; lane < kWave; ++lane)
+      for (int round = 0; round < kPingPongRounds; ++round)
+        sums[wave * kWave + lane] +=
+            (round * kPingPongWaves + (wave + 1) % kPingPongWaves) * kWave + lane;
+  return sums;
+}
+
+TEST_F(Gfx1250RaceTest, split_barrier_pingpong) {
+  auto *src = allocWithData<int>(kPingPongRounds * kPingPongWaves * kWave);
+  auto *dst = alloc<int>(kPingPongWaves * kWave);
+  split_barrier_pingpong_kernel<false>
+      <<<1, kPingPongWaves * kWave, 2 * kPingPongWaves * kTileBytes>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, pingPongSums());
+}
+
+// Wave 1's write in round 5 completes after its signal. Wave 0 is its only
+// reader, in buffer 1 (round 5 is odd).
+TEST_F(Gfx1250RaceTest, split_barrier_pingpong_wait_after_signal_race) {
+  auto *src = allocWithData<int>(kPingPongRounds * kPingPongWaves * kWave);
+  auto *dst = alloc<int>(kPingPongWaves * kWave);
+  split_barrier_pingpong_kernel<true>
+      <<<1, kPingPongWaves * kWave, 2 * kPingPongWaves * kTileBytes>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(byWave(kDsWriteThenReadRaceExpectation, 0));
+  constexpr int kRacingSlot = (1 * kPingPongWaves + 1) * kTileBytes;
+  const auto parsed = rocjitsu::test::parseRaceLogFromEnvironment();
+  ASSERT_TRUE(parsed.ok()) << parsed.error;
+  for (const auto &record : parsed.records)
+    EXPECT_TRUE(record.reg >= kRacingSlot && record.reg < kRacingSlot + kTileBytes)
+        << record.reg;
+}
 
 } // namespace
