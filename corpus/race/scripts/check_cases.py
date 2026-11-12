@@ -8,7 +8,8 @@ Check that ``cases.toml`` agrees with ``kernels/`` and the committed ``asm/``.
 This needs no compiler: it checks the kernel inventory against the files on
 disk::
 
-    python corpus/race/scripts/check_cases.py   # exit 1 on any problem
+    python corpus/race/scripts/check_cases.py            # exit 1 on any problem
+    python corpus/race/scripts/check_cases.py --suggest  # print derived waits tables
 
 Its guarantee is about the inventory only: every case has its source and its
 assembly, and every assembly file belongs to a case. It does not check that
@@ -38,6 +39,16 @@ caught. It checks that:
 * every ``asm/<target>/`` has the ``recipe.toml`` that ``regenerate_asm.py``
   writes beside the assembly, with all of its fields, so a regeneration commit
   that leaves it out is caught.
+
+For a case with mutation rules (any of ``mutate``, ``hazard``, ``waits`` and
+the other fields ``generate.py`` reads), it also checks that:
+
+* ``waits`` has exactly one entry per target the case builds for, and that
+  entry lists exactly the counters the target's assembly waits on (see
+  ``wait_counters``);
+* each ``[[case.exempt]]`` and ``[[case.tag]]`` names, at its ordinal, the
+  instruction its ``site`` signature says it does. Sites are counted, and pins
+  matched, by ``mutate``, as ``generate.py`` counts and matches them.
 """
 
 import argparse
@@ -47,6 +58,7 @@ import sys
 from pathlib import Path
 
 import inventory
+import mutate
 import recipe
 
 
@@ -70,6 +82,16 @@ ASM_DIR = inventory.ASM_DIR
 _AMDGCN_TARGET_RE = re.compile(
     r'^\s*\.amdgcn_target\s+"[^"]*-([^-":]+)(?::[^"]*)?"', re.MULTILINE
 )
+
+
+def wait_counters(asm: Path) -> set[str]:
+    """
+    Every counter some wait site in *asm* drains, with sites counted as
+    mutate.find_wait_sites counts them, so excluding what it excludes.
+    """
+    return {
+        counter for site in mutate.find_wait_sites(asm) for counter in site.counters
+    }
 
 
 def asm_targets() -> list[str]:
@@ -137,6 +159,97 @@ def case_file_problems(corpus: inventory.Inventory) -> list[str]:
     return problems
 
 
+def mutation_problems(corpus: inventory.Inventory) -> list[str]:
+    """
+    Where a case's mutation rules disagree with its committed assembly: its
+    ``waits`` table, and its exemption ordinals. A case without mutation rules
+    is not checked, and a missing listing is left to case_file_problems.
+    """
+    problems: list[str] = []
+    for case in corpus.cases:
+        if case.rules.declared():
+            problems.extend(
+                _case_mutation_problems(case=case, targets=corpus.targets_of(case))
+            )
+    return problems
+
+
+def _case_mutation_problems(
+    case: inventory.Case, targets: tuple[str, ...]
+) -> list[str]:
+    where = f"{CASES_PATH.name} [{case.id}]"
+    waits = case.rules.waits
+    if waits is None:
+        example = targets[0] if targets else "<target>"
+        return [
+            f"{where}: waits must be a table keyed by target, e.g. "
+            f"waits = {{ {example} = [...] }}"
+        ]
+    problems = [
+        f"{where}: waits names {target}, which the case does not build for"
+        for target in sorted(set(waits) - set(targets))
+    ]
+    for target in targets:
+        asm = ASM_DIR / target / f"{case.kernel}.s"
+        if asm.is_file():
+            problems.extend(
+                _wait_problems(
+                    where, target=target, declared=waits.get(target), asm=asm
+                )
+            )
+            problems.extend(_pin_problems(where, case=case, target=target, asm=asm))
+    return problems
+
+
+def _wait_problems(
+    where: str, target: str, declared: tuple[str, ...] | None, asm: Path
+) -> list[str]:
+    """Whether *declared*, a case's waits for *target*, is what *asm* waits on."""
+    actual = wait_counters(asm)
+    if declared is None:
+        return [
+            f"{where}: waits has no {target} entry; the asm waits on {sorted(actual)}"
+        ]
+    if set(declared) == actual and len(declared) == len(set(declared)):
+        return []
+    detail = []
+    if missing := sorted(actual - set(declared)):
+        detail.append(f"asm also waits on {missing}")
+    if extra := sorted(set(declared) - actual):
+        detail.append(f"asm never waits on {extra}")
+    if len(declared) != len(set(declared)):
+        detail.append("duplicate entries")
+    return [f"{where}: waits.{target} {list(declared)}: {'; '.join(detail)}"]
+
+
+def _pin_problems(
+    where: str, case: inventory.Case, target: str, asm: Path
+) -> list[str]:
+    """Whether each of *case*'s pins for *target* names the instruction it says."""
+    problems: list[str] = []
+    listing = f"asm/{target}/{case.kernel}.s"
+    for pin in case.rules.pins():
+        if pin.target not in (None, target):
+            continue
+        sites = mutate.find_sites(asm, pin.kind)
+        if mismatch := mutate.pin_mismatch(sites, pin.ordinal, pin.site, listing):
+            label = "exempt" if isinstance(pin, inventory.Exemption) else "tag"
+            problems.append(f"{where}: {label} {pin.kind} {mismatch}")
+    return problems
+
+
+def suggest(corpus: inventory.Inventory) -> None:
+    """Print the waits table each case's committed assembly implies."""
+    for case in corpus.cases:
+        entries = []
+        for target in corpus.targets_of(case):
+            asm = ASM_DIR / target / f"{case.kernel}.s"
+            counters = sorted(wait_counters(asm)) if asm.is_file() else []
+            quoted = ", ".join(f'"{counter}"' for counter in counters)
+            entries.append(f"{target} = [{quoted}]")
+        print(f"{case.id:24} waits = {{ {', '.join(entries)} }}")
+
+
 def check(corpus: inventory.Inventory) -> list[str]:
     """
     Every mismatch between a validated inventory and the files on disk.
@@ -156,6 +269,7 @@ def check(corpus: inventory.Inventory) -> list[str]:
             )
 
     errors.extend(case_file_problems(corpus))
+    errors.extend(mutation_problems(corpus))
 
     owned = corpus.outputs()
     for target in sorted(set(corpus.targets) & set(present)):
@@ -171,10 +285,21 @@ def check(corpus: inventory.Inventory) -> list[str]:
     return errors
 
 
-def main(argv: list[str]) -> ExitCode:
-    argparse.ArgumentParser(
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
         description="Check cases.toml against kernels/ and the committed asm/, without a compiler."
-    ).parse_args(argv)
+    )
+    parser.add_argument(
+        "--suggest",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Print the waits table each case's committed assembly implies, and exit.",
+    )
+    return parser
+
+
+def main(argv: list[str]) -> ExitCode:
+    args = _build_parser().parse_args(argv)
     try:
         corpus = inventory.load(CASES_PATH)
     except inventory.InventoryError as error:
@@ -182,6 +307,9 @@ def main(argv: list[str]) -> ExitCode:
             error.problems, summary=f"{CASES_PATH.name} is invalid: {{}} problem(s)"
         )
         return ExitCode.PROBLEMS_FOUND
+    if args.suggest:
+        suggest(corpus)
+        return ExitCode.SUCCESS
     if mismatches := check(corpus):
         _print_problems(
             mismatches,
