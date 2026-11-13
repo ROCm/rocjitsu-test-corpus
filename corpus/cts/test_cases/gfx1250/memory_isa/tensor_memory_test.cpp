@@ -187,8 +187,8 @@ __global__ void iterate_tensor_kernel(const std::uint32_t *input, std::uint32_t 
     lds[lane] = kWordCanary;
   __syncthreads();
   constexpr std::uint32_t iterate_flag = 1u << 19;
-  const auto dimensions = tensor_group1(2, 2, 3, 2, 2, 0, 2, 0, iterate_flag);
-  const TensorGroup2 iteration = {0, 4, 4, 1u << 16};
+  const auto dimensions = tensor_group1(2, 2, 3, 2, 2, 0, 4, 0, iterate_flag);
+  const TensorGroup2 iteration = {0, 4, 8, 1u << 16};
   tensor_load(tensor_group0(input, 0), dimensions, iteration, {});
   wait_tensor();
   __syncthreads();
@@ -325,17 +325,17 @@ TEST(Gfx1250MemoryIsaTensor, GatherAndScatterUseSixteenAndThirtyTwoBitIndices) {
     }
 }
 
-TEST(Gfx1250MemoryIsaTensor, IterationCompactsRowsAndZeroFillsPastTensorExtent) {
+TEST(Gfx1250MemoryIsaTensor, IterationChecksTileBoundsAtEachGlobalBase) {
   REQUIRE_GFX1250_DEVICE();
-  auto input = DeviceBuffer<std::uint32_t>::from_host(patterned<std::uint32_t>(8, 0x65000000u));
+  auto input = DeviceBuffer<std::uint32_t>::from_host(patterned<std::uint32_t>(14, 0x65000000u));
   auto output = DeviceBuffer<std::uint32_t>::allocate(8);
   ASSERT_TRUE(input && output);
   iterate_tensor_kernel<<<1, kWaveLanes>>>(input.get(), output.get());
   HIP_CHECK(hipGetLastError());
   HIP_CHECK(hipDeviceSynchronize());
   const auto actual = output.to_host();
-  for (unsigned i = 0; i < 6; ++i)
-    EXPECT_EQ(actual[i], 0x65000000u + i);
-  EXPECT_EQ(actual[6], 0u);
-  EXPECT_EQ(actual[7], 0u);
+  // Both 2x2 tiles fit the local 2x3 tensor bounds. The second starts at word 8.
+  constexpr unsigned input_indices[] = {0, 1, 4, 5, 8, 9, 12, 13};
+  for (unsigned i = 0; i < std::size(input_indices); ++i)
+    EXPECT_EQ(actual[i], 0x65000000u + input_indices[i]) << "LDS word " << i;
 }
