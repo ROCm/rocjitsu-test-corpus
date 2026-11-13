@@ -113,6 +113,11 @@ manifest's recipe: performance-v1 0 warmups/1 sample, smoke 1/3, and
 plugin-overhead 3/21. Each flag overrides only its corresponding setting;
 for example, smoke with `--warmups 0` uses 0 warmups and 3 samples.
 Warmups must be nonnegative integers, and samples must be positive odd integers.
+There is no arbitrary upper sampling cap. Native llama, full Tensile and
+TensileLite adapters require each count to fit a native `int` (2147483647 on
+supported builds); shape and allocation bounds remain separate and unchanged.
+Standalone workload adapters also accept even sample counts. Large counts still
+consume time and timing-output memory and remain subject to the run timeout.
 Invalid manifest recipes are rejected even when CLI overrides are supplied.
 Each invocation accepts
 one manifest; repeated `--manifest` flags are rejected, including identical paths.
@@ -127,6 +132,39 @@ Invalid base configurations are rejected before creating the output directory.
 If a native policy probe or setup fails before the initial `run.json` checkpoint,
 the runner removes its new output directory so the same path can be retried.
 After that checkpoint, failures preserve partial results as usual.
+
+## RDNA-expanded performance-v2
+
+`benchmarks/suites/performance-v2.toml` preserves performance-v1's CDNA definitions
+and selections and adds 28 measurement cells across gfx1100/gfx1201. Select it
+explicitly with `--manifest`; the runner's default remains performance-v1.
+Shared grouped/persistent GEMM IDs retain both CDNA policies and use per-target
+`thread_policy_overrides` to enable only `default` on RDNA.
+
+The RDNA selection adds checked FP32 softmax/layer normalization at 65536 x 2048;
+Gluon 1D copy (`single`) and 2D strided copy (`default`); four full-Tensile FP32
+mechanisms (`default`); and bounded llama RoPE/gather (`default`) and Q4_0 matvec
+(`default` and `single`). These are host simulator measurements, not native GPU
+performance. Full-Tensile FP16 WMMA is not included.
+
+Install the same pinned benchmark requirements, including both RDNA device
+packages, and supply the additional target configs. Prepare the provider-specific
+artifacts outside timing before invoking the suite:
+
+- [Gluon copies](../corpus/benchmarks/gluon/README.md): pinned unchanged kernels,
+  provenance verification and stride-safe full-output checks.
+- [Full Tensile](../corpus/benchmarks/full_tensile/README.md): separate source pin,
+  generated libraries and native adapter; set `FULL_TENSILE_ARTIFACTS` and
+  `FULL_TENSILE_RUNNER`. Split-K timing includes helper and main launches.
+- [llama/GGML operators](../corpus/benchmarks/llama/README.md): separate source pin,
+  out-of-source HIP build of `runner.cpp` as `llama_bounded_ops`, selected through
+  `ROCJITSU_LLAMA_BINARY`; launch rejects missing/stale adapter-source receipt hashes
+  with an explicit rebuild instruction (no automatic build). Timing encloses a fixed
+  graph invocation, including internal activation packing, not an adaptive loop.
+
+Keep performance-v1 unchanged for historical reproduction. The expanded recipe
+has a distinct benchmark-set identity; it does not change the raw-run schema.
+Publishing a filtered local qualification run as the complete recipe is invalid.
 
 ## Measurement and dependencies
 
@@ -188,8 +226,10 @@ are build artifacts.
 
 ## Defining cases
 
-Each suite is a standalone TOML file. To benchmark another size or dtype, add a
-case using an existing workload; no Python change is needed:
+Each suite is a standalone TOML file. For workloads with bounded parameters,
+add a case using an existing workload to try another accepted size or dtype;
+no Python change is needed, but acceptance alone does not qualify the new case.
+Full Tensile is the fixed-selection exception described below:
 
 ```toml
 [[cases]]
@@ -218,6 +258,27 @@ Each file has required `name`, `warmups`, `samples`, `timeout_seconds` and cases
 every case explicitly
 declares nonempty `targets` and `thread_policies`. There are no includes/profiles
 or file-level target/threading fields, and no per-case sampling recipes.
+
+An optional per-case `thread_policy_overrides` table replaces `thread_policies`
+for named targets only; unlisted targets retain the default list. For example:
+
+```toml
+targets = ["gfx950", "gfx1250"]
+thread_policies = ["default", "single"]
+thread_policy_overrides = { gfx1250 = ["single"] }
+```
+
+This case supports both policies on gfx950 and only `single` on gfx1250.
+Overrides replace rather than intersect or extend the default list: a target
+override may also select `single` when `thread_policies = ["default"]`.
+Both `targets` and `thread_policies` remain required nonempty, duplicate-free
+lists. Override keys must be declared case targets, and each override value must
+be a nonempty, duplicate-free list containing only `default` and/or `single`.
+Omitting the table or supplying `{}` leaves support unchanged. Invalid overrides
+are rejected before listing cells or creating run output. CLI filters only narrow
+this effective support; execution still groups targets in manifest order and
+policies as `default`, then `single`, regardless of override list order.
+
 Dimensions, dtypes, and operation parameters belong in TOML; launch settings
 such as tile sizes, warps, and stages stay in code and are recorded in results.
 To add a new operation, add its preparation and parameter validation, register
@@ -243,6 +304,30 @@ Supported parameters (all dimensions are positive integers):
 | `deepseek_weight_dequant` | `rows`, `columns` | fp8 |
 | `tensile_candidate` | `variant`, `m`, `n`, `k`; explicit matching case `targets` | bf16, mxfp8, mxfp4 (matching variant) |
 | `deepseek_fp8` | `rows`, `columns`, `reduction`; optional `configuration = "large_tile"` | fp8 |
+| `gluon_copy` | `elements` in 1..134217728; [Gluon guide](../corpus/benchmarks/gluon/README.md) | fp32 |
+| `gluon_copy_2d` | `rows`, `columns` in 1..134217728; product <=134217728; [Gluon guide](../corpus/benchmarks/gluon/README.md) | fp32 |
+| `llama_rope` | `k`, `heads`, `tokens` in 1..32768; `k` even; footprint bounds below; [llama guide](../corpus/benchmarks/llama/README.md) | fp32 |
+| `llama_matvec` | `k`, `rows` in 1..32768; `k` divisible by 32; `tokens=1`; footprint bounds below; [llama guide](../corpus/benchmarks/llama/README.md) | fp32 |
+| `llama_gather` | `k`, `rows`, `tokens` in 1..32768; `k` divisible by 32; footprint bounds below; [llama guide](../corpus/benchmarks/llama/README.md) | fp32 |
+| `full_tensile` | Exactly four fixed parameter dictionaries (`valu`, `tensor`, `splitk`, `pointer`); [full-Tensile guide](../corpus/benchmarks/full_tensile/README.md#fixed-scope-and-parameters) | fp32 |
+
+Gluon and llama support gfx1100/gfx1201. Gluon/llama `dtype` defaults to `fp32`
+for standalone callers and no other dtype is accepted. The llama footprint
+limits are `k * heads * tokens <= 134217728` for RoPE and
+`k * rows <= 134217728` for matvec/gather; all three additionally require
+`k * tokens <= 134217728`.
+
+Full Tensile requires the entire parameter dictionary, including `variant`,
+`dtype`, dimensions and scalars, to match one of the four entries in
+[`prepare.py:CASES`](../corpus/benchmarks/full_tensile/prepare.py).
+The provider guide above lists their exact values. Editing a full-Tensile shape in TOML alone is not supported;
+changed shapes, missing keys, extra keys and different dtypes fail before generation.
+
+Input acceptance is not qualification. These bounds describe adapter validation,
+not an arbitrarily qualified numerical domain. The finite selected cases and
+execution policies live in the suite TOML; smaller or alternate accepted inputs
+can support integration tests but do not become qualified benchmark cases merely
+by passing the parameter validator.
 
 The legacy `softmax` and `rmsnorm` workloads use local kernels and do not
 validate their outputs. The performance-v1 `triton_softmax` and `triton_layernorm`

@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
+"""Fixed-count GGML graph adapter; no models, adaptive loops or CPU fallback."""
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+
+PIN = "26d52b0f9543f441fc2bfa383557c992a4fbf4b9"
+WORKLOADS = {
+    "llama_rope": "rope",
+    "llama_matvec": "matvec-q4",
+    "llama_gather": "gather-q8",
+}
+SCHEMA = "rocjitsu.benchmark.workload.v1"
+
+
+def validate_parameters(workload, params):
+    keys = (
+        {"k", "heads", "tokens"}
+        if workload == "llama_rope"
+        else {"k", "rows", "tokens"}
+    )
+    if (
+        workload not in WORKLOADS
+        or not isinstance(params, dict)
+        or set(params) - {"dtype"} != keys
+    ):
+        raise ValueError("unknown workload or unexpected parameters")
+    if params.get("dtype", "fp32") != "fp32":
+        raise ValueError("dtype must be fp32")
+    if any(
+        type(params[key]) is not int or not 1 <= params[key] <= 32768 for key in keys
+    ):
+        raise ValueError("dimensions must be integers in 1..32768")
+    k, tokens = params["k"], params["tokens"]
+    if k % (2 if workload == "llama_rope" else 32):
+        raise ValueError("K must be even for RoPE or divisible by 32 for quantization")
+    if workload == "llama_matvec" and tokens != 1:
+        raise ValueError("matvec requires exactly one RHS")
+    footprint = k * params.get("rows", params.get("heads", 1))
+    if workload == "llama_rope":
+        footprint *= tokens
+    if footprint > 134217728 or k * tokens > 134217728:
+        raise ValueError("footprint exceeds 134217728 elements")
+    return {**params, "dtype": "fp32"}
+
+
+def checked_result(
+    data, case, target, params, samples, *, warmups=0, cpu=False, op=None
+):
+    timings = data.get("timings_ns")
+    expected = (
+        params["k"] * params["heads"] * params["tokens"]
+        if "heads" in params
+        else (
+            params["rows"]
+            if params["tokens"] == 1 and op == "matvec-q4"
+            else params["k"] * params["tokens"]
+        )
+    )
+    if (
+        data.get("source_pin") != PIN
+        or data.get("pass") is not True
+        or data.get("bad") != 0
+        or type(data.get("checked")) is not int
+        or data["checked"] != expected
+        or data.get("warmups") != warmups
+        or data.get("graph_invocations") != warmups + samples
+        or (cpu and data.get("backend") != "CPU")
+        or (
+            not cpu
+            and not str(data.get("backend", "")).startswith(("ROCm", "CUDA", "HIP"))
+        )
+        or (op is not None and data.get("op") != op)
+        or not isinstance(timings, list)
+        or len(timings) != samples
+        or any(type(t) is not int or t <= 0 for t in timings)
+    ):
+        raise ValueError(
+            "native result failed correctness, provenance or sampling contract"
+        )
+    # dtype is wrapper metadata: the fixed-FP32 native protocol reports dimensions only.
+    if any(data.get(key) != value for key, value in params.items() if key != "dtype"):
+        raise ValueError("native parameters do not match requested parameters")
+    return dict(
+        schema=SCHEMA,
+        case=case,
+        target=target,
+        provider="llama",
+        parameters={**params, "dtype": "fp32", "source_pin": PIN},
+        timings_ns=timings,
+    )
+
+
+def verify_binary(binary, *, cpu, target):
+    binary = Path(binary).resolve()
+    if not binary.is_file():
+        raise ValueError("prepared binary must exist as a file")
+    data = json.loads(binary.with_name("benchmark-build.json").read_text())
+    if (
+        data.get("source_pin") != PIN
+        or data.get("backend") != ("cpu" if cpu else "hip")
+        or (not cpu and target not in data.get("targets", []))
+    ):
+        raise ValueError(
+            "prepared binary source provenance, backend or target mismatch"
+        )
+    adapter_hash = hashlib.sha256(
+        Path(__file__).with_name("runner.cpp").read_bytes()
+    ).hexdigest()
+    if data.get("adapter_sha256") != adapter_hash:
+        raise ValueError(
+            "prepared adapter source hash mismatch or missing; rebuild with "
+            "corpus/benchmarks/llama/prepare.py --source SOURCE --build FRESH_BUILD "
+            "--backend "
+            + ("cpu" if cpu else "hip --rocm-path ROCM_PATH")
+            + " and select the new llama_bounded_ops executable; "
+            "do not regenerate the receipt without rebuilding"
+        )
+    return binary
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--workload", choices=WORKLOADS, required=True)
+    parser.add_argument("--params", required=True)
+    parser.add_argument("--case", required=True)
+    parser.add_argument("--target", choices=("gfx1100", "gfx1201"), required=True)
+    parser.add_argument("--warmups", type=int, default=0)
+    parser.add_argument("--samples", type=int, default=1)
+    parser.add_argument("--output", default="-")
+    parser.add_argument("--binary", default=os.environ.get("ROCJITSU_LLAMA_BINARY"))
+    parser.add_argument(
+        "--cpu", action="store_true", help="host-only test; never a GPU result"
+    )
+    args = parser.parse_args(argv)
+    try:
+        params = validate_parameters(args.workload, json.loads(args.params))
+        if args.warmups < 0 or args.samples <= 0:
+            raise ValueError("warmups must be nonnegative and samples positive")
+        if not args.binary:
+            raise ValueError(
+                "set ROCJITSU_LLAMA_BINARY or --binary to the prepared executable"
+            )
+        binary = verify_binary(args.binary, cpu=args.cpu, target=args.target)
+        command = [
+            str(binary),
+            WORKLOADS[args.workload],
+            "--warmups",
+            str(args.warmups),
+            "--samples",
+            str(args.samples),
+            "--target",
+            args.target,
+        ]
+        if args.cpu:
+            command.append("--cpu")
+        for key, value in params.items():
+            if key != "dtype":
+                command += ["--" + key, str(value)]
+        process = subprocess.run(command, stdout=subprocess.PIPE, text=True, check=True)
+        data = json.loads(process.stdout)
+        output = checked_result(
+            data,
+            args.case,
+            args.target,
+            params,
+            args.samples,
+            warmups=args.warmups,
+            cpu=args.cpu,
+            op=WORKLOADS[args.workload],
+        )
+        text = json.dumps(output, sort_keys=True, allow_nan=False) + "\n"
+        if args.output == "-":
+            print(text, end="")
+        else:
+            path = Path(args.output)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+    except subprocess.CalledProcessError as exc:
+        diagnostic = str(exc) + "\n"
+        if exc.stdout:
+            diagnostic += exc.stdout
+            if not diagnostic.endswith("\n"):
+                diagnostic += "\n"
+        parser.exit(1, diagnostic)
+    except (ValueError, OSError) as exc:
+        parser.exit(1, str(exc) + "\n")
+
+
+if __name__ == "__main__":
+    main()
