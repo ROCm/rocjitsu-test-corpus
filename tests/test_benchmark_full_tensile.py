@@ -256,6 +256,92 @@ def test_workload_protocol_and_native_rejection(tmp_path, bad):
         assert payload["parameters"]["source_revision"] == prep.REVISION
 
 
+def test_native_measurement_rejects_bad_final_output(tmp_path):
+    # Compile the installed callback block and its actual measure() call. Only
+    # the HIP transport and device launch are replaced, so disconnecting native
+    # validation/reset is observable without a GPU, SDK or second oracle.
+    native = (ROOT / "runner.cpp").read_text()
+    start = "        std::vector<float> output(host.c.size());"
+    end = "        std::ofstream out(argv[12]);"
+    assert native.count(start) == native.count(end) == 1
+    callbacks = native.split(start, 1)[1].split(end, 1)[0]
+    source = tmp_path / "native_measurement.cpp"
+    source.write_text(
+        r"""
+#include "host.hpp"
+#include <cassert>
+#include <chrono>
+#include <cstring>
+#include <iostream>
+
+constexpr int hipMemcpyDeviceToHost = 0;
+int hipMemsetAsync(void* data, int value, size_t bytes, void*) {
+    std::memset(data, value, bytes);
+    return 0;
+}
+int hipDeviceSynchronize() { return 0; }
+int hipMemcpy(void* destination, const void* source, size_t bytes, int) {
+    std::memcpy(destination, source, bytes);
+    return 0;
+}
+void check(int status) { assert(status == 0); }
+struct Adapter {
+    const full_tensile::Host& host;
+    std::vector<float>& device;
+    int mode, calls = 0;
+    int launchKernels(const std::vector<int>&) {
+        ++calls;
+        // Warmup succeeds before the faulty final sample. The expected values
+        // are a fixture for device transport, not a replacement Host oracle.
+        if(calls == 1 || mode == 0)
+            std::copy(host.expected.begin(), host.expected.end(), device.begin());
+        else if(mode == 2)
+            std::copy(host.expected.begin(), host.expected.end()-1, device.begin());
+        else if(mode == 3) {
+            std::copy(host.expected.begin(), host.expected.end(), device.begin());
+            device.front() += 1.f;
+        }
+        return 0;
+    }
+};
+void run(int mode) {
+    full_tensile::Host host(15, 17, 7, 1, 1, 1, false);
+    std::vector<float> device(host.expected.size());
+    struct { void* data; } dd{device.data()};
+    const size_t bytes = device.size()*sizeof(float);
+    Adapter adapter{host, device, mode};
+    const std::vector<int> kernels{1};
+    const int warmups = 1, samples = mode == 0 ? 2 : 1;
+    bool rejected = false;
+    try {
+        std::vector<float> output(host.c.size());
+"""
+        + callbacks
+        + r"""
+        assert(timings.size() == size_t(samples));
+    } catch(const std::runtime_error& error) {
+        assert(std::string(error.what()).find("full output reference mismatch") != std::string::npos);
+        rejected = true;
+    }
+    assert(adapter.calls == warmups + samples);
+    assert(rejected == (mode != 0));
+}
+int main() {
+    run(0); // unmodified callback path: warmup and both samples succeed
+    run(1); // final no-op must not reuse the previous successful result
+    run(2); // final partial write must not reuse the last previous element
+    run(3); // finite wrong output must reach Host::validate, not just a NaN gate
+}
+"""
+    )
+    binary = tmp_path / "native_measurement"
+    subprocess.run(
+        ["c++", "-std=c++17", "-I", str(ROOT), str(source), "-o", str(binary)],
+        check=True,
+    )
+    subprocess.run([str(binary)], check=True, capture_output=True, text=True)
+
+
 def test_native_host_only_build(tmp_path):
     source = os.environ.get("FULL_TENSILE_TEST_SOURCE")
     sdk = os.environ.get("FULL_TENSILE_TEST_SDK")
