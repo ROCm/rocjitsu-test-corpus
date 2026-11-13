@@ -63,16 +63,23 @@ __global__ void buffer_width_kernel(u32x4 input_resource, u32x4 output_resource,
                : "memory");
 }
 
-__global__ void buffer_partial_oob_kernel(u32x4 resource, u32x4 *result) {
-  const std::uint32_t offset = 56;
-  u32x4 value{kWordCanary, kWordCanary, kWordCanary, kWordCanary};
-  asm volatile("buffer_load_b128 %0, %1, %2, null offen\n\t"
-               "s_wait_loadcnt 0"
-               : "=v"(value)
-               : "v"(offset), "s"(resource)
-               : "memory");
-  if (threadIdx.x == 0)
-    *result = value;
+struct BufferTails {
+  u32x4 null128, sgpr128;
+  u32x2 null64, sgpr64;
+};
+
+__global__ void buffer_tail_kernel(u32x4 resource, unsigned offset, unsigned zero,
+                                   BufferTails *result) {
+  BufferTails values;
+  asm volatile("buffer_load_b128 %0, %1, %2, null offen\n\ts_wait_loadcnt 0"
+               : "=v"(values.null128) : "v"(offset), "s"(resource) : "memory");
+  asm volatile("buffer_load_b128 %0, %1, %2, %3 offen\n\ts_wait_loadcnt 0"
+               : "=v"(values.sgpr128) : "v"(offset), "s"(resource), "s"(zero) : "memory");
+  asm volatile("buffer_load_b64 %0, %1, %2, null offen\n\ts_wait_loadcnt 0"
+               : "=v"(values.null64) : "v"(offset), "s"(resource) : "memory");
+  asm volatile("buffer_load_b64 %0, %1, %2, %3 offen\n\ts_wait_loadcnt 0"
+               : "=v"(values.sgpr64) : "v"(offset), "s"(resource), "s"(zero) : "memory");
+  *result = values;
 }
 
 std::uint32_t word_at(const std::vector<std::uint8_t> &bytes, std::size_t offset) {
@@ -142,26 +149,43 @@ TEST(Gfx1250MemoryIsaBuffer, WidthExtensionStoresAndCanariesMatchManual) {
   expect_bytes_equal(actual, expected, "buffer stores");
 }
 
-TEST(Gfx1250MemoryIsaBuffer, PartialOobLoadZeroFillsEachDword) {
+TEST(Gfx1250MemoryIsaBuffer, RawB64AndB128LoadTailsMatchHardware) {
   REQUIRE_GFX1250_DEVICE();
-  std::vector<std::uint8_t> input(64);
+  std::vector<std::uint32_t> input(64);
   for (unsigned i = 0; i < input.size(); ++i)
-    input[i] = coordinate_byte(i, 7);
-  auto device_input = DeviceBuffer<std::uint8_t>::from_host(input);
-  auto device_result = DeviceBuffer<u32x4>::allocate(1);
+    input[i] = 101 + i;
+  auto device_input = DeviceBuffer<std::uint32_t>::from_host(input);
+  auto device_result = DeviceBuffer<BufferTails>::allocate(1);
   ASSERT_TRUE(device_input);
   ASSERT_TRUE(device_result);
-  const u32x4 resource =
-      make_buffer_resource(reinterpret_cast<std::uint64_t>(device_input.get()), input.size())
-          .vector();
-  buffer_partial_oob_kernel<<<1, kWaveLanes>>>(resource, device_result.get());
-  HIP_CHECK(hipGetLastError());
-  HIP_CHECK(hipDeviceSynchronize());
-  const u32x4 actual = device_result.to_host()[0];
-  EXPECT_EQ(actual[0], word_at(input, 56));
-  EXPECT_EQ(actual[1], word_at(input, 60));
-  EXPECT_EQ(actual[2], 0u);
-  EXPECT_EQ(actual[3], 0u);
+
+  struct Case {
+    unsigned bound, offset, retained64, retained128;
+  };
+  // Number of leading data DWORDs returned by gfx1250 for each raw load.
+  constexpr Case cases[] = {
+      {16, 0, 2, 4}, {8, 0, 2, 1}, {4, 0, 0, 0},
+      {24, 16, 2, 1}, {16, 16, 0, 0}, {164, 160, 0, 0},
+  };
+  for (const Case &c : cases) {
+    SCOPED_TRACE(::testing::Message() << "NUM_RECORDS=" << c.bound << " offset=" << c.offset);
+    const u32x4 resource =
+        make_buffer_resource(reinterpret_cast<std::uint64_t>(device_input.get()), c.bound).vector();
+    buffer_tail_kernel<<<1, 1>>>(resource, c.offset, 0, device_result.get());
+    HIP_CHECK(hipGetLastError());
+    HIP_CHECK(hipDeviceSynchronize());
+    const BufferTails actual = device_result.to_host()[0];
+    for (unsigned i = 0; i < 2; ++i) {
+      const auto expected = i < c.retained64 ? input[c.offset / 4 + i] : 0u;
+      EXPECT_EQ(actual.null64[i], expected) << i;
+      EXPECT_EQ(actual.sgpr64[i], expected) << i;
+    }
+    for (unsigned i = 0; i < 4; ++i) {
+      const auto expected = i < c.retained128 ? input[c.offset / 4 + i] : 0u;
+      EXPECT_EQ(actual.null128[i], expected) << i;
+      EXPECT_EQ(actual.sgpr128[i], expected) << i;
+    }
+  }
 }
 
 TEST(Gfx1250MemoryIsaBuffer, DescriptorFieldsMatchCdna5Manual) {
