@@ -60,6 +60,10 @@ progress and validation remain outside timing. Poisoning uses stride-aware
 `fill_(NaN)`, not `view(uint8)`, which cannot handle this output view. Every
 logical output element is compared exactly on CPU with independent nonuniform,
 exact-dyadic input generation; no GPU reference kernel or validation rerun.
+The input's prime period is 1048573 (centered integer numerators divided by 16),
+not 8191: at the selected width 8192 the old period made each 128-square tile
+symmetric and could hide local row/column transposition. A selected-width CPU
+regression checks this mutation using the real strided output view.
 
 Host tests: `python -m pytest tests/test_benchmark_gluon.py -q`. The actual
 strided-output positive/NaN/index-corruption test needs Torch, but uses CPU

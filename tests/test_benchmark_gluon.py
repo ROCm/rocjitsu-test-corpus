@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """CPU-only Gluon contract and full-output corruption checks."""
 
 import importlib.util
@@ -85,6 +87,26 @@ class GluonContractTests(unittest.TestCase):
         output.copy_(expected.flip(0))
         with self.assertRaises(RuntimeError):
             w.check_output(output, expected)
+
+    def test_selected_width_rejects_transposed_layout_tiles(self):
+        try:
+            import torch
+        except ImportError as exc:
+            self.skipTest(str(exc))
+        w = self.load()
+        # One tile-row at the selected width: 64 tiles, not the full 512 MiB case.
+        expected = w.host_input(128, 8192, pinned=False)
+        output = torch.empty((8192, 128), dtype=torch.float32).T
+        self.assertFalse(output.is_contiguous())
+        output.copy_(expected)
+        w.check_output(output, expected)
+        for column in range(0, 8192, 128):
+            output[:, column : column + 128].copy_(expected[:, column : column + 128].T)
+        with self.assertRaisesRegex(RuntimeError, "full exact CPU copy validation"):
+            w.check_output(output, expected)
+        # The generated dyadic values survive an FP64 round trip exactly.
+        self.assertTrue(torch.equal(expected.double().float(), expected))
+        self.assertTrue(torch.equal(expected * 16, (expected * 16).round()))
 
     def test_cli_rejects_arguments_without_device_imports(self):
         import subprocess

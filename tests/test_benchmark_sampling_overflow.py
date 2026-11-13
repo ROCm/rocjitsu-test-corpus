@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Bounded host controls for native iteration arithmetic (no device execution)."""
 
 from pathlib import Path

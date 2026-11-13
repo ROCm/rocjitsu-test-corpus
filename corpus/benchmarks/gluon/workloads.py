@@ -59,7 +59,10 @@ def host_input(rows, columns, *, pinned=True):
     flat = host.view(-1)
     for start in range(0, rows * columns, 1048576):
         end = min(rows * columns, start + 1048576)
-        values = torch.arange(start, end, dtype=torch.int64) % 8191 - 4095
+        # Unlike period 8191 (= selected columns - 1), this longer prime
+        # distinguishes local row/column swaps in the selected 128-square tiles.
+        # Centered numerators fit exactly in FP32; division by 16 stays exact.
+        values = torch.arange(start, end, dtype=torch.int64) % 1048573 - 524286
         flat[start:end].copy_(values.to(torch.float32).div_(16))
     return host
 

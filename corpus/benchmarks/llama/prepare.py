@@ -68,7 +68,9 @@ def main(argv=None):
     parser.add_argument("--backend", choices=("cpu", "hip"), required=True)
     parser.add_argument("--rocm-path", type=Path)
     parser.add_argument(
-        "--mutation", action="store_true", help="CPU-only negative-control binary"
+        "--mutation",
+        action="store_true",
+        help="CPU-only correctness negative-control binaries",
     )
     args = parser.parse_args(argv)
     try:

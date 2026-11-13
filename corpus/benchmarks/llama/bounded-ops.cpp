@@ -18,6 +18,13 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#ifdef BENCHMARK_CPU_WRONG_ROW
+#ifdef EXPERIMENT_HIP
+#error "Wrong-row mutation is CPU-only"
+#endif
+#include <cstdlib>
+#include <set>
+#endif
 
 static int number(const char *s, int low, int high) {
   if (!s || !*s || std::strspn(s, "0123456789") != std::strlen(s))
@@ -154,8 +161,23 @@ int main(int argc, char **argv) {
     if (!buf)
       throw std::runtime_error("buffer allocation failed");
     std::vector<float> src(ggml_nelements(a));
-    for (size_t i = 0; i < src.size(); ++i)
+    for (size_t i = 0; i < src.size(); ++i) {
       src[i] = float(int((i * 17 + 13) % 101) - 50) / 51.f;
+      // Gather rows remain distinct AFTER Q8_0 quantization: encode the
+      // row in 15 sign markers (rows <= 32768), fixing the first block scale.
+      if (gather && i % k < 15)
+        src[i] = ((i / k) >> (i % k)) & 1 ? 1.f : -1.f;
+      if (mat) {
+        // Keep the historical mod-101 K pattern, positively offset to avoid
+        // bulk cancellation. Independent RHS lanes vary below block grain.
+        // Row magnitude separates modulo-101 substitutions; sign markers
+        // preserve row identity through real Q4 quantization.
+        float magnitude = float(1 + (i / k) / 32);
+        src[i] = magnitude * float(64 + (i * 17 + 13) % 101) / 256.f;
+        if (i % k < 15)
+          src[i] = ((i / k) >> (i % k)) & 1 ? magnitude : -magnitude;
+      }
+    }
     std::vector<unsigned char> packed;
     if (rope)
       ggml_backend_tensor_set(a, src.data(), 0, ggml_nbytes(a));
@@ -172,7 +194,7 @@ int main(int argc, char **argv) {
       ix[i] = rope ? i + 7 : (i % 3 == 0 ? 0 : (i * 7 + 3) % rows);
     std::vector<float> rhs(k);
     for (int i = 0; i < k; ++i)
-      rhs[i] = float(int((i * 3) % 15) - 7) / 7.f;
+      rhs[i] = float(8 + (i * 3) % 15) / 1024.f;
     if (mat)
       ggml_backend_tensor_set(b, rhs.data(), 0, ggml_nbytes(b));
     else
@@ -188,16 +210,100 @@ int main(int argc, char **argv) {
     if (ggml_graph_n_nodes(graph) != 1)
       throw std::runtime_error("expected one operation per graph");
     std::vector<float> ref = cpu_reference(graph);
+#ifdef BENCHMARK_CPU_WRONG_ROW
+    if (!cpu || (!gather && !mat))
+      throw std::runtime_error(
+          "wrong-row control requires CPU gather or matvec");
+    // Inspect the real serialized input, not a duplicate generator in a test.
+    std::set<std::vector<unsigned char>> unique_rows;
+    const size_t row_bytes = ggml_row_size(type, k);
+    for (int row = 0; row < rows; ++row)
+      unique_rows.emplace(packed.begin() + row * row_bytes,
+                          packed.begin() + (row + 1) * row_bytes);
+    size_t wrong_row_requests = 0;
+    const char *reverse_operand = std::getenv("LLAMA_TEST_REVERSE_K");
+    if (reverse_operand) {
+      // Bounded CPU-only control: reverse lanes inside bulk 32-value blocks,
+      // leaving the row-identity block untouched. Reference already ran.
+      if (!mat || (std::strcmp(reverse_operand, "a") &&
+                   std::strcmp(reverse_operand, "b")))
+        throw std::runtime_error("K reversal requires matvec operand a or b");
+      if (!std::strcmp(reverse_operand, "a")) {
+        auto shifted = src;
+        for (int row = 0; row < rows; ++row)
+          for (int block = 32; block < k; block += 32)
+            std::reverse(shifted.begin() + row * k + block,
+                         shifted.begin() + row * k + block + 32);
+        auto changed = packed;
+        ggml_quantize_chunk(type, shifted.data(), changed.data(), 0, rows, k,
+                            nullptr);
+        ggml_backend_tensor_set(a, changed.data(), 0, changed.size());
+      } else {
+        auto shifted = rhs;
+        for (int block = 32; block < k; block += 32)
+          std::reverse(shifted.begin() + block, shifted.begin() + block + 32);
+        ggml_backend_tensor_set(b, shifted.data(), 0, ggml_nbytes(b));
+      }
+    } else if (mat) {
+      // Substitute complete serialized weight rows only after the intended
+      // reference has executed. Always copy from the original packed bytes.
+      auto wrong_weights = packed;
+      for (int row = 0; row < rows; ++row) {
+        int wrong = row % 101;
+        wrong_row_requests += wrong != row;
+        std::memcpy(wrong_weights.data() + row * row_bytes,
+                    packed.data() + wrong * row_bytes, row_bytes);
+      }
+      ggml_backend_tensor_set(a, wrong_weights.data(), 0, wrong_weights.size());
+    } else {
+      for (auto &index : ix) {
+        int32_t wrong = index % 101;
+        wrong_row_requests += wrong != index;
+        index = wrong;
+      }
+      ggml_backend_tensor_set(b, ix.data(), 0, ggml_nbytes(b));
+    }
+#endif
     std::vector<int64_t> timings;
+#if defined(BENCHMARK_CPU_NOOP) || defined(BENCHMARK_CPU_PARTIAL)
+    std::vector<float> previous(got.size());
+    bool prior_sample_pass = false;
+    int64_t completed_graph_invocations = 0;
+#endif
     for (int64_t iteration = 0; iteration < int64_t(warmups) + samples;
          ++iteration) {
+#if defined(BENCHMARK_CPU_NOOP) || defined(BENCHMARK_CPU_PARTIAL)
+      bool final = iteration == int64_t(warmups) + samples - 1;
+      if (final && iteration > 0) {
+        // Inspect a real earlier graph result before the production reset.
+        ggml_backend_tensor_get(out, previous.data(), 0, ggml_nbytes(out));
+        prior_sample_pass = true;
+        for (size_t i = 0; i < previous.size(); ++i)
+          if (!std::isfinite(previous[i]) || !std::isfinite(ref[i]) ||
+              std::abs(double(previous[i]) - ref[i]) >
+                  (mat ? .03 : 2e-5) + (mat ? .02 : 2e-5) * std::abs(ref[i]))
+            prior_sample_pass = false;
+      }
+#endif
       std::fill(got.begin(), got.end(),
                 std::numeric_limits<float>::quiet_NaN());
       ggml_backend_tensor_set(out, got.data(), 0, ggml_nbytes(out));
       ggml_backend_synchronize(backend);
       auto start = std::chrono::steady_clock::now();
-#ifdef BENCHMARK_CPU_NOOP
+#if defined(BENCHMARK_CPU_NOOP) || defined(BENCHMARK_CPU_PARTIAL)
       auto status = GGML_STATUS_SUCCESS;
+      if (!final) {
+        status = ggml_backend_graph_compute(backend, graph);
+        ++completed_graph_invocations;
+      }
+#ifdef BENCHMARK_CPU_PARTIAL
+      else if (iteration > 0) {
+        // A faulty final invocation writes only the first half, using the
+        // actual prior good result, not a second oracle or a reference copy.
+        ggml_backend_tensor_set(out, previous.data(), 0,
+                                (previous.size() / 2) * sizeof(float));
+      }
+#endif
 #else
       auto status = ggml_backend_graph_compute(backend, graph);
 #endif
@@ -215,6 +321,9 @@ int main(int argc, char **argv) {
     got.back() += 1.0f;
 #endif
     double maxerr = 0, maxratio = 0;
+#ifdef BENCHMARK_CPU_WRONG_ROW
+    double min_wrong_row_ratio = std::numeric_limits<double>::infinity();
+#endif
     size_t bad = 0;
     double atol = mat ? .03 : 2e-5, rtol = mat ? .02 : 2e-5;
     for (size_t i = 0; i < got.size(); ++i) {
@@ -226,8 +335,33 @@ int main(int argc, char **argv) {
         maxerr = std::max(maxerr, e);
       if (std::isfinite(ratio))
         maxratio = std::max(maxratio, ratio);
+#ifdef BENCHMARK_CPU_WRONG_ROW
+      if (mat && !reverse_operand && i >= 101)
+        min_wrong_row_ratio = std::min(min_wrong_row_ratio, ratio);
+#endif
     }
-    std::cout << "{\"source_pin\":\"26d52b0f9543f441fc2bfa383557c992a4fbf4b9\","
+#ifdef BENCHMARK_CPU_WRONG_ROW
+    std::cout << "{\"quantized_unique_rows\":" << unique_rows.size()
+              << ",\"wrong_row_requests\":" << wrong_row_requests << ",";
+    if (mat && !reverse_operand && wrong_row_requests)
+      std::cout << "\"min_wrong_row_tolerance_ratio\":" << min_wrong_row_ratio
+                << ",\"max_reference_magnitude\":"
+                << std::abs(*std::max_element(ref.begin(), ref.end(),
+                                              [](float x, float y) {
+                                                return std::abs(x) <
+                                                       std::abs(y);
+                                              }))
+                << ",";
+#else
+    std::cout << "{";
+#endif
+#if defined(BENCHMARK_CPU_NOOP) || defined(BENCHMARK_CPU_PARTIAL)
+    std::cout << "\"prior_sample_pass\":"
+              << (prior_sample_pass ? "true" : "false")
+              << ",\"completed_graph_invocations\":"
+              << completed_graph_invocations << ",";
+#endif
+    std::cout << "\"source_pin\":\"26d52b0f9543f441fc2bfa383557c992a4fbf4b9\","
                  "\"op\":\""
               << op << "\",\"backend\":\"" << ggml_backend_name(backend)
               << "\",\"k\":" << k << ",\"rows\":" << rows

@@ -105,9 +105,41 @@ and tensor-footprint bounds are unchanged. First invocation
 may include lazy GGML dispatch/workspace preparation and activation packing;
 this is whole-graph host timing, not an isolated device-event measurement.
 
-Inputs retain the deterministic nonuniform formulas, duplicate/dispersed gather
-indices and RoPE positions 7..tokens+6. Validation follows upstream
-`tests/test-backend-ops.cpp` MODE_TEST: a separate CPU backend explicitly enables
+Inputs retain deterministic nonuniform values, duplicate/dispersed gather
+indices and RoPE positions 7..tokens+6. Gather inputs encode the row index in
+15 +/-1 sign markers in the first Q8_0 block, preserving distinct rows after
+upstream quantization instead of repeating every 101 rows. Matvec weights retain
+that historical nonuniform K pattern, positively offset and scaled:
+`M * (64 + ((row*K + lane)*17 + 13)%101) / 256`, where
+`M = 1 + floor(row/32)`. The first 15 lanes instead encode row-index signs
+`+/-M`. The independent FP32 RHS is `(8 + (lane*3)%15)/1024` (period 5).
+Both operands vary within a 32-value quantization block; the row repair must not
+flatten either reduction operand. Positive bulk avoids cancellation, and row
+magnitude separates modulo-101 substitutions after accumulation. Sign markers
+preserve serialized row identity, not detection of every possible wrong row.
+
+First-block Q4 scales `+/-M/8` are exactly FP16-representable for M=1..1024.
+Bulk scales are not all exact: the selected-size upstream quantizer/dequantizer
+probe found maximum relative FP16 scale rounding 0.000486618, maximum bulk
+scale 82, and decoded bulk weights between 0.222551*M and 0.640931*M.
+No bulk block became constant after quantization. The `/256` normalization
+preserves headroom: bounding every nonmarker decoded weight by 0.75*M gives
+absolute dot sum <=61515 at K4096/M1024 with the original dyadic RHS, below
+FP16 maximum 65504 even before using FP32 accumulation. This is a conservative
+input-range bound, not a claim about unqualified HIP intermediate arithmetic.
+A full selected-size CPU run (K4096/32768 rows) passed against the separate
+upstream reference. The actual-serialized-row modulo-101 mutation rejected all
+32667 changed outputs; all 32768 quantized rows were distinct and the minimum
+changed-output tolerance ratio was 21.228. Maximum reference output was 25539.2.
+The bounded K4096/202-row regression retains all 101 required substitutions.
+All these CPU results retain the unchanged .03/.02 policy; HIP qualification
+remains separate.
+Upstream `init_tensor_uniform` uses `random_device`-seeded uniform samples: it
+was inspected but does not guarantee reproducible separation of these selected
+dot outputs at the existing tolerance. This small deterministic input repair
+retains upstream quantization and reference execution, not a new numerical oracle.
+Validation follows
+upstream `tests/test-backend-ops.cpp` MODE_TEST: a separate CPU backend explicitly enables
 `ggml_backend_cpu_set_use_ref(backend, true)`. This is GGML's reference mode, not
 its default optimized CPU mode. The setter is linked directly from the pinned
 public CPU API; missing support fails the build rather than silently using a
@@ -153,10 +185,34 @@ pin/build containment, receipt source/backend/target mismatches, missing binary
 paths, hash-free receipts and partial-check rejection. Set
 `LLAMA_BENCHMARK_SOURCE` to the exact pristine checkout to also exercise a fresh
 CPU preparation and its receipt format.
-`--mutation` creates CPU-only no-op and finite-last-element-corruption binaries;
-the no-op must fail every poisoned output, and finite corruption must fail the
-last element for all three families. Mutations cannot be built in HIP mode;
-these controls fail native correctness checks, not receipt hash validation.
+`--mutation` creates CPU-only final-no-op, final-partial-write,
+finite-last-element-corruption and wrong-row binaries. The no-op and partial-write
+controls first compute the warmup and earlier measured sample, inspect that real
+prior output against the same reference/tolerances, then omit the final compute
+or copy only its first half from that prior output. They must reject all or half
+of the final poisoned output, respectively, for normal/NeoX RoPE, matvec and
+gather. Test-only native diagnostics confirm the earlier output passed and two
+real graph invocations completed. Disabling the loop's output poison must break
+this regression; startup-only poisoning cannot catch stale final samples.
+Finite corruption must fail the last element for all three families.
+The selected-size gather test uses `bounded-ops-wrong-row` from that same prepared
+build: it checks all 1024 serialized Q8_0 rows are distinct, remaps indices modulo
+101 only after reference execution, and requires rejection of the 2461 changed
+requests. The bounded K4096/202-row matvec test uses the same variant to substitute
+complete serialized Q4 weight rows r%101 after reference execution; all 202 rows
+must be distinct and all 101 substituted outputs must fail the unchanged checker.
+For matvec only, that CPU-only binary also accepts test environment variable
+`LLAMA_TEST_REVERSE_K=a|b`: after the reference ran, it reverses the selected
+operand's lanes within each bulk 32-value block, leaving the first row-marker
+block untouched. A reversal in A is quantized again by upstream before execution;
+B remains FP32. The K64/4096-row test requires rejection for either operand at
+unchanged tolerances, and failed for both with the flattened inputs. Short K
+avoids averaging lane-order effects away; enough row magnitudes clear the
+absolute-error floor. This bounded sensitivity test does not claim detection of
+every K permutation or full-K reversal after long-reduction averaging.
+Mutations cannot be built
+in HIP mode; these controls fail native correctness checks, not receipt hash
+validation.
 The receipt does not distinguish mutation executables from the production one.
 Without the CPU binary environment
 variable, native tests are explicitly skipped, not falsely reported as passed.

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Sampling boundaries without running large workloads or importing GPU runtimes."""
 
 import json

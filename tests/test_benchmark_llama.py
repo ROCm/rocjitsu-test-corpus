@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Host-only native adapter tests. Set LLAMA_BENCHMARK_CPU_BINARY after preparation."""
 
 import json
@@ -31,6 +33,7 @@ class LlamaContractTests(unittest.TestCase):
                     "-c",
                     "user.email=test@example.com",
                     "commit",
+                    "--no-gpg-sign",
                     "-qm",
                     "fixture",
                 ],
@@ -442,6 +445,175 @@ class LlamaContractTests(unittest.TestCase):
             w.checked_result(
                 data, "case", "gfx1100", params, 1, cpu=True, op="gather-q8"
             )
+
+    @unittest.skipUnless(
+        os.environ.get("LLAMA_BENCHMARK_CPU_BINARY"), "prepare CPU binary first"
+    )
+    def test_matvec_quantized_rows_reject_wrong_row(self):
+        binary = Path(os.environ["LLAMA_BENCHMARK_CPU_BINARY"])
+        # Same K as the selected case, two periods of the former alias pattern.
+        arguments = [
+            "matvec-q4",
+            "--cpu",
+            "--k",
+            "4096",
+            "--rows",
+            "202",
+            "--tokens",
+            "1",
+            "--warmups",
+            "1",
+            "--samples",
+            "2",
+        ]
+        control = subprocess.run(
+            [str(binary), *arguments], capture_output=True, text=True, timeout=120
+        )
+        self.assertEqual(control.returncode, 0, control.stdout + control.stderr)
+        positive = json.loads(control.stdout)
+        self.assertEqual(positive["checked"], 202)
+        mutation = subprocess.run(
+            [str(binary.with_name("bounded-ops-wrong-row")), *arguments],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        data = json.loads(mutation.stdout)
+        self.assertEqual(data["wrong_row_requests"], 101)
+        self.assertEqual(mutation.returncode, 2, mutation.stdout + mutation.stderr)
+        self.assertEqual(data["quantized_unique_rows"], 202)
+        self.assertEqual(data["bad"], data["wrong_row_requests"])
+        self.assertGreater(data["min_wrong_row_tolerance_ratio"], 1)
+        self.assertGreater(data["max_tolerance_ratio"], 1)
+        self.assertEqual(data["checked"], positive["checked"])
+        self.assertEqual(data["graph_invocations"], 3)
+        self.assertEqual(data["reference_graph_invocations"], 1)
+        self.assertEqual((data["atol"], data["rtol"]), (0.03, 0.02))
+
+    @unittest.skipUnless(
+        os.environ.get("LLAMA_BENCHMARK_CPU_BINARY"), "prepare CPU binary first"
+    )
+    def test_matvec_bulk_k_reversal_is_observable_for_either_operand(self):
+        binary = Path(os.environ["LLAMA_BENCHMARK_CPU_BINARY"])
+        arguments = [
+            # Short K avoids averaging lane-order errors away; enough rows
+            # exercise magnitudes above the unchanged absolute-error floor.
+            "matvec-q4",
+            "--cpu",
+            "--k",
+            "64",
+            "--rows",
+            "4096",
+            "--tokens",
+            "1",
+        ]
+        control = subprocess.run(
+            [str(binary), *arguments], capture_output=True, text=True, timeout=120
+        )
+        self.assertEqual(control.returncode, 0, control.stdout + control.stderr)
+        for operand in ("a", "b"):
+            with self.subTest(operand=operand):
+                mutation = subprocess.run(
+                    [str(binary.with_name("bounded-ops-wrong-row")), *arguments],
+                    env={**os.environ, "LLAMA_TEST_REVERSE_K": operand},
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                data = json.loads(mutation.stdout)
+                self.assertEqual(data["wrong_row_requests"], 0)
+                self.assertEqual(
+                    mutation.returncode, 2, mutation.stdout + mutation.stderr
+                )
+                self.assertGreater(data["bad"], 0)
+                self.assertEqual((data["atol"], data["rtol"]), (0.03, 0.02))
+
+    @unittest.skipUnless(
+        os.environ.get("LLAMA_BENCHMARK_CPU_BINARY"), "prepare CPU binary first"
+    )
+    def test_selected_gather_quantized_rows_reject_wrong_row(self):
+        binary = Path(os.environ["LLAMA_BENCHMARK_CPU_BINARY"])
+        arguments = [
+            "gather-q8",
+            "--cpu",
+            "--k",
+            "4096",
+            "--rows",
+            "1024",
+            "--tokens",
+            "4096",
+        ]
+        control = subprocess.run(
+            [str(binary), *arguments], capture_output=True, text=True, timeout=120
+        )
+        self.assertEqual(control.returncode, 0, control.stdout + control.stderr)
+        positive = json.loads(control.stdout)
+        self.assertTrue(positive["pass"])
+        self.assertEqual(positive["checked"], 4096 * 4096)
+        wrong_row = binary.with_name("bounded-ops-wrong-row")
+        self.assertTrue(wrong_row.is_file(), "prepare CPU binary with --mutation")
+        mutation = subprocess.run(
+            [str(wrong_row), *arguments],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        data = json.loads(mutation.stdout)
+        # This variant inspects the actual upstream-quantized source bytes,
+        # then rewrites indices only AFTER the unchanged CPU reference ran.
+        self.assertEqual(data["quantized_unique_rows"], 1024)
+        self.assertEqual(data["wrong_row_requests"], 2461)
+        self.assertEqual(mutation.returncode, 2, mutation.stdout + mutation.stderr)
+        self.assertFalse(data["pass"])
+        self.assertGreater(data["bad"], 0)
+        self.assertGreater(data["max_tolerance_ratio"], 1)
+        self.assertEqual(data["reference_graph_invocations"], 1)
+        self.assertEqual(data["checked"], positive["checked"])
+
+    @unittest.skipUnless(
+        os.environ.get("LLAMA_BENCHMARK_CPU_BINARY"), "prepare CPU binary first"
+    )
+    def test_native_final_missing_writes_reject_prior_good_sample(self):
+        binary = Path(os.environ["LLAMA_BENCHMARK_CPU_BINARY"])
+        for op, extra in (
+            ("rope", []),
+            ("rope", ["--neox"]),
+            ("matvec-q4", []),
+            ("gather-q8", []),
+        ):
+            for variant in ("noop", "partial"):
+                with self.subTest(op=op, extra=extra, variant=variant):
+                    process = subprocess.run(
+                        [
+                            str(binary.with_name("bounded-ops-" + variant)),
+                            op,
+                            "--cpu",
+                            "--tokens",
+                            "1",
+                            "--warmups",
+                            "1",
+                            "--samples",
+                            "2",
+                            *extra,
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                    )
+                    data = json.loads(process.stdout)
+                    # The mutation really computed and inspected an earlier
+                    # valid sample, not just an output poisoned from startup.
+                    self.assertIs(data.get("prior_sample_pass"), True)
+                    self.assertEqual(data["completed_graph_invocations"], 2)
+                    self.assertEqual(
+                        process.returncode, 2, process.stdout + process.stderr
+                    )
+                    self.assertFalse(data["pass"])
+                    written = data["checked"] // 2 if variant == "partial" else 0
+                    self.assertEqual(data["bad"], data["checked"] - written)
+                    self.assertEqual(data["graph_invocations"], 3)
+                    self.assertEqual(data["reference_graph_invocations"], 1)
+                    self.assertEqual(len(data["timings_ns"]), 2)
 
     @unittest.skipUnless(
         os.environ.get("LLAMA_BENCHMARK_CPU_BINARY"), "prepare CPU binary first"

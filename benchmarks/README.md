@@ -224,8 +224,10 @@ are build artifacts.
 
 ## Defining cases
 
-Each suite is a standalone TOML file. To benchmark another size or dtype, add a
-case using an existing workload; no Python change is needed:
+Each suite is a standalone TOML file. For workloads with bounded parameters,
+add a case using an existing workload to try another accepted size or dtype;
+no Python change is needed, but acceptance alone does not qualify the new case.
+Full Tensile is the fixed-selection exception described below:
 
 ```toml
 [[cases]]
@@ -300,6 +302,30 @@ Supported parameters (all dimensions are positive integers):
 | `deepseek_weight_dequant` | `rows`, `columns` | fp8 |
 | `tensile_candidate` | `variant`, `m`, `n`, `k`; explicit matching case `targets` | bf16, mxfp8, mxfp4 (matching variant) |
 | `deepseek_fp8` | `rows`, `columns`, `reduction`; optional `configuration = "large_tile"` | fp8 |
+| `gluon_copy` | `elements` in 1..134217728; [Gluon guide](../corpus/benchmarks/gluon/README.md) | fp32 |
+| `gluon_copy_2d` | `rows`, `columns` in 1..134217728; product <=134217728; [Gluon guide](../corpus/benchmarks/gluon/README.md) | fp32 |
+| `llama_rope` | `k`, `heads`, `tokens` in 1..32768; `k` even; footprint bounds below; [llama guide](../corpus/benchmarks/llama/README.md) | fp32 |
+| `llama_matvec` | `k`, `rows` in 1..32768; `k` divisible by 32; `tokens=1`; footprint bounds below; [llama guide](../corpus/benchmarks/llama/README.md) | fp32 |
+| `llama_gather` | `k`, `rows`, `tokens` in 1..32768; `k` divisible by 32; footprint bounds below; [llama guide](../corpus/benchmarks/llama/README.md) | fp32 |
+| `full_tensile` | Exactly four fixed parameter dictionaries (`valu`, `tensor`, `splitk`, `pointer`); [full-Tensile guide](../corpus/benchmarks/full_tensile/README.md#fixed-scope-and-parameters) | fp32 |
+
+Gluon and llama support gfx1100/gfx1201. Gluon/llama `dtype` defaults to `fp32`
+for standalone callers and no other dtype is accepted. The llama footprint
+limits are `k * heads * tokens <= 134217728` for RoPE and
+`k * rows <= 134217728` for matvec/gather; all three additionally require
+`k * tokens <= 134217728`.
+
+Full Tensile requires the entire parameter dictionary, including `variant`,
+`dtype`, dimensions and scalars, to match one of the four entries in
+[`prepare.py:CASES`](../corpus/benchmarks/full_tensile/prepare.py).
+The provider guide above lists their exact values. Editing a full-Tensile shape in TOML alone is not supported;
+changed shapes, missing keys, extra keys and different dtypes fail before generation.
+
+Input acceptance is not qualification. These bounds describe adapter validation,
+not an arbitrarily qualified numerical domain. The finite selected cases and
+execution policies live in the suite TOML; smaller or alternate accepted inputs
+can support integration tests but do not become qualified benchmark cases merely
+by passing the parameter validator.
 
 The legacy `softmax` and `rmsnorm` workloads use local kernels and do not
 validate their outputs. The performance-v1 `triton_softmax` and `triton_layernorm`

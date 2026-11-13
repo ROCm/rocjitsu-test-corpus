@@ -169,7 +169,14 @@ def main(argv=None):
             path = Path(args.output)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
-    except (ValueError, OSError, subprocess.CalledProcessError) as exc:
+    except subprocess.CalledProcessError as exc:
+        diagnostic = str(exc) + "\n"
+        if exc.stdout:
+            diagnostic += exc.stdout
+            if not diagnostic.endswith("\n"):
+                diagnostic += "\n"
+        parser.exit(1, diagnostic)
+    except (ValueError, OSError) as exc:
         parser.exit(1, str(exc) + "\n")
 
 
