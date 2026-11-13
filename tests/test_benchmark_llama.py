@@ -349,11 +349,12 @@ class LlamaContractTests(unittest.TestCase):
         for args in (
             ["invalid"],
             ["rope", "--k", "3"],
+            ["rope", "--k", "32769"],
             ["gather-q8", "--tokens", "32768", "--k", "32768"],
             ["matvec-q4", "--tokens", "2"],
             ["rope", "--samples", "0"],
             ["rope", "--warmups", "-1"],
-            ["rope", "--samples", "101"],
+            ["rope", "--samples", "2147483648"],
             ["rope", "--target", "gfx950"],
         ):
             p = subprocess.run([binary, *args, "--cpu"], capture_output=True, text=True)

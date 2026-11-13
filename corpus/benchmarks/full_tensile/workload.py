@@ -25,7 +25,7 @@ def main():
     args = parser.parse_args()
     params = args.params
     variant = validate_parameters(params, args.target)
-    if not 0 <= args.warmups <= 65536 or not 1 <= args.samples <= 65536:
+    if args.warmups < 0 or args.samples <= 0:
         raise ValueError("invalid sampling counts")
     root = Path(os.environ["FULL_TENSILE_ARTIFACTS"]).resolve() / args.target / variant
     provenance = validate_artifacts(root, params, args.target)

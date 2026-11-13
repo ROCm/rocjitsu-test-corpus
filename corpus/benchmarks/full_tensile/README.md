@@ -83,6 +83,13 @@ to the native executable. JSON has exactly `schema`, `case`, `target`,
 provider `full_tensile`, and positive integer nanosecond samples. Parameters
 retain hashes, pin, kernel, solution index, invocation count and timing contract.
 
+Warmups are nonnegative and samples positive caller-provided integers without
+an arbitrary upper cap; each must fit a native `int` (2147483647 on supported
+builds). Warmup and sample loops are separate to avoid total-count overflow.
+Standalone adapters accept even samples; the benchmark runner requires odd
+samples. Native dimension bounds remain 1..65536 and fixed recipe shapes remain
+unchanged. Large counts remain subject to time and timing-output memory limits.
+
 Before any sample: independently construct host inputs/reference, allocate and
 copy A/B/C and device pointer arrays, verify actual target and fixed solution
 predicates, load **all** code objects, solve once, and initialize every kernel.

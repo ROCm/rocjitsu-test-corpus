@@ -13,6 +13,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 
 namespace {
 void check(hipError_t result) {
@@ -25,9 +26,9 @@ struct Buffer {
     Buffer(const Buffer&)=delete;
     Buffer& operator=(const Buffer&)=delete;
 };
-int number(const char* text, bool zero=false) {
+int number(const char* text, bool zero=false, int high=65536) {
     size_t end=0; auto value=std::stoll(text,&end);
-    if(text[end] || value<(zero?0:1) || value>65536) throw std::invalid_argument("invalid integer");
+    if(text[end] || value<(zero?0:1) || value>high) throw std::invalid_argument("invalid integer");
     return int(value);
 }
 void upload(Buffer& dst, const std::vector<float>& src) {
@@ -49,7 +50,8 @@ int main(int argc,char** argv) {
             throw std::invalid_argument("unsupported variant/target");
         int m=number(argv[4]), n=number(argv[5]), k=number(argv[6]), l=number(argv[7]);
         int batches=number(argv[8]), beta=number(argv[9],true);
-        int warmups=number(argv[10],true), samples=number(argv[11]);
+        int warmups=number(argv[10],true,std::numeric_limits<int>::max());
+        int samples=number(argv[11],false,std::numeric_limits<int>::max());
         if((!pointer && batches!=1) || (!tensor && l!=1) || beta!=(variant=="valu"?0:1))
             throw std::invalid_argument("invalid fixed contraction layout");
         full_tensile::Host host(m,n,k,l,batches,beta,tensor);

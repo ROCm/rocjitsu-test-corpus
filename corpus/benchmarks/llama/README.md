@@ -83,7 +83,11 @@ synchronize precede **every** invocation outside timing. Input generation,
 allocation, CPU reference graph copying/execution, output readback
 and full comparison are outside timing. Only samples enter timings_ns. The
 final measured output is validated without rerunning computation. Warmups
-0..100 and samples 1..100 are fixed caller-provided counts. First invocation
+are nonnegative and samples positive fixed caller-provided integers, bounded
+only by the native `int` representation (2147483647 on supported builds), not an
+arbitrary sampling cap. Invocation totals use widened arithmetic. Standalone
+adapters accept even samples; the benchmark runner requires odd samples. Shape
+and tensor-footprint bounds are unchanged. First invocation
 may include lazy GGML dispatch/workspace preparation and activation packing;
 this is whole-graph host timing, not an isolated device-event measurement.
 

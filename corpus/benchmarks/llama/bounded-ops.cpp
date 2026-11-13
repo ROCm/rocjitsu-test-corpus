@@ -79,7 +79,9 @@ int main(int argc, char **argv) {
           continue;
         }
         int v = number(value, (a == "--warmups" ? 0 : 1),
-                       (a == "--warmups" || a == "--samples" ? 100 : 32768));
+                       (a == "--warmups" || a == "--samples"
+                            ? std::numeric_limits<int>::max()
+                            : 32768));
         if (a == "--warmups")
           warmups = v;
         else if (a == "--samples")
@@ -187,7 +189,8 @@ int main(int argc, char **argv) {
       throw std::runtime_error("expected one operation per graph");
     std::vector<float> ref = cpu_reference(graph);
     std::vector<int64_t> timings;
-    for (int iteration = 0; iteration < warmups + samples; ++iteration) {
+    for (int64_t iteration = 0; iteration < int64_t(warmups) + samples;
+         ++iteration) {
       std::fill(got.begin(), got.end(),
                 std::numeric_limits<float>::quiet_NaN());
       ggml_backend_tensor_set(out, got.data(), 0, ggml_nbytes(out));
@@ -231,7 +234,7 @@ int main(int argc, char **argv) {
               << ",\"tokens\":" << tokens << ",\"heads\":" << heads
               << ",\"reference_backend\":\"CPU\",\"reference_use_ref\":true"
               << ",\"reference_graph_invocations\":1"
-              << ",\"graph_invocations\":" << warmups + samples
+              << ",\"graph_invocations\":" << int64_t(warmups) + samples
               << ",\"warmups\":" << warmups << ",\"checked\":" << got.size()
               << ",\"bad\":" << bad << ",\"max_abs_error\":" << maxerr
               << ",\"max_tolerance_ratio\":" << maxratio << ",\"atol\":" << atol

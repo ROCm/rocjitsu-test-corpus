@@ -113,6 +113,11 @@ manifest's recipe: performance-v1 0 warmups/1 sample, smoke 1/3, and
 plugin-overhead 3/21. Each flag overrides only its corresponding setting;
 for example, smoke with `--warmups 0` uses 0 warmups and 3 samples.
 Warmups must be nonnegative integers, and samples must be positive odd integers.
+There is no arbitrary upper sampling cap. Native llama, full Tensile and
+TensileLite adapters require each count to fit a native `int` (2147483647 on
+supported builds); shape and allocation bounds remain separate and unchanged.
+Standalone workload adapters also accept even sample counts. Large counts still
+consume time and timing-output memory and remain subject to the run timeout.
 Invalid manifest recipes are rejected even when CLI overrides are supplied.
 Each invocation accepts
 one manifest; repeated `--manifest` flags are rejected, including identical paths.

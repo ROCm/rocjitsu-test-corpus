@@ -52,8 +52,10 @@ The unchanged upstream functions use the qualified blocked layouts: 1D XBLOCK
 1024 / four warps; 2D tile 128x128 / four warps, input layout
 `([1,4],[4,8],[4,1],[1,0])`, output `([4,1],[8,4],[1,4],[0,1])`.
 `TritonLaunch.compile()` only compiles/initializes; `benchmarks.measurement.measure`
-times one launch plus synchronization per sample. Warmups are 0..100, samples
-1..100, with no adaptive loops. Preparation, CPU input construction, poisoning,
+times one launch plus synchronization per sample. Warmups are nonnegative and
+samples positive caller-provided integers, with no arbitrary upper cap or adaptive
+loops. The benchmark runner additionally requires odd sample counts; standalone
+adapters accept even counts. Preparation, CPU input construction, poisoning,
 progress and validation remain outside timing. Poisoning uses stride-aware
 `fill_(NaN)`, not `view(uint8)`, which cannot handle this output view. Every
 logical output element is compared exactly on CPU with independent nonuniform,

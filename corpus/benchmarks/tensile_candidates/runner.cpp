@@ -40,10 +40,10 @@ struct Buffer {
     Buffer(const Buffer &) = delete;
     Buffer &operator=(const Buffer &) = delete;
 };
-int positive(const char *value, bool zero = false) {
+int positive(const char *value, bool zero = false, int high = 65536) {
     size_t end;
     const auto parsed = std::stoll(value, &end);
-    if (value[end] || parsed < (zero ? 0 : 1) || parsed > 65536)
+    if (value[end] || parsed < (zero ? 0 : 1) || parsed > high)
         throw std::invalid_argument("invalid integer argument");
     return int(parsed);
 }
@@ -62,7 +62,10 @@ int main(int argc, char **argv) {
         if (!mx && variant != "bf16_subtile" && variant != "bf16_streamk")
             throw std::invalid_argument("unknown native candidate");
         const int m = positive(argv[4]), n = positive(argv[5]), k = positive(argv[6]);
-        const int warmups = positive(argv[7], true), samples = positive(argv[8]);
+        const int warmups =
+            positive(argv[7], true, std::numeric_limits<int>::max());
+        const int samples =
+            positive(argv[8], false, std::numeric_limits<int>::max());
         hipDeviceProp_t properties{};
         int device;
         check(hipGetDevice(&device));

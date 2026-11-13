@@ -65,9 +65,13 @@ std::vector<long long> measure(int warmups, int samples, Reset reset, Launch lau
                                Validate validate, Clock clock) {
     if(warmups<0 || samples<=0) throw std::invalid_argument("invalid sampling");
     std::vector<long long> result;
-    for(int i=0;i<warmups+samples;i++) {
+    for(int i=0;i<warmups;i++) {
         reset();
-        if(i<warmups) {launch(); validate(); continue;}
+        launch();
+        validate();
+    }
+    for(int i=0;i<samples;i++) {
+        reset();
         auto begin=clock();
         launch();
         auto elapsed=clock()-begin;

@@ -73,6 +73,12 @@ The requested target and shape must match the artifact metadata. The wrapper
 verifies artifact hashes before launching and emits the standard workload JSON,
 including source and solution provenance.
 
+Warmups are nonnegative and samples positive caller-provided integers without
+an arbitrary upper cap; each must fit a native `int` (2147483647 on supported
+builds). Standalone adapters accept even samples; the benchmark runner requires
+odd samples. Native dimension bounds remain 1..65536 and artifact shape checks
+are unchanged. Large counts still consume time and timing-output memory.
+
 The native adapter requires exactly one solution and exactly one kernel invocation
 from `solve()`. It loads the precompiled code objects and initializes the kernel
 handle without executing it, performs the requested warmups, then times individual

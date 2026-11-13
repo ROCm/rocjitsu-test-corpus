@@ -127,8 +127,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         params = validate_parameters(args.workload, json.loads(args.params))
-        if not 0 <= args.warmups <= 100 or not 1 <= args.samples <= 100:
-            raise ValueError("warmups must be 0..100 and samples 1..100")
+        if args.warmups < 0 or args.samples <= 0:
+            raise ValueError("warmups must be nonnegative and samples positive")
         if not args.binary:
             raise ValueError(
                 "set ROCJITSU_LLAMA_BINARY or --binary to the prepared executable"
