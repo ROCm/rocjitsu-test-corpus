@@ -41,8 +41,7 @@ class LlamaContractTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 prepare.check_build_path(path, path / "build")
 
-    def test_binary_receipt_rejects_tampering(self):
-        import hashlib
+    def test_binary_receipt_needs_source_backend_target_not_binary_hash(self):
         import tempfile
         from corpus.benchmarks.llama import workloads as w
 
@@ -50,19 +49,115 @@ class LlamaContractTests(unittest.TestCase):
             path = Path(directory)
             binary = path / "bounded-ops"
             binary.write_bytes(b"explicit unit-test binary fixture, not executable")
-            receipt = dict(
-                source_pin=w.PIN,
-                backend="cpu",
-                targets=[],
-                binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
+            receipt = dict(source_pin=w.PIN, backend="cpu", targets=[])
+            receipt_path = path / "benchmark-build.json"
+            receipt_path.write_text(json.dumps(receipt))
+            self.assertEqual(
+                w.verify_binary(binary, cpu=True, target="gfx1100"), binary
             )
-            (path / "benchmark-build.json").write_text(json.dumps(receipt))
-            w.verify_binary(binary, cpu=True, target="gfx1100")
-            with self.assertRaises(ValueError):
+            # Receipts describe source provenance, not executable-byte identity.
+            binary.write_bytes(b"changed fixture")
+            self.assertEqual(
+                w.verify_binary(binary, cpu=True, target="gfx1100"), binary
+            )
+            for cpu, target, metadata in (
+                (True, "gfx1100", {**receipt, "source_pin": "wrong"}),
+                (False, "gfx1100", receipt),
+                (True, "gfx1100", {**receipt, "backend": "hip"}),
+                (
+                    False,
+                    "gfx1201",
+                    {**receipt, "backend": "hip", "targets": ["gfx1100"]},
+                ),
+            ):
+                with self.subTest(cpu=cpu, target=target, metadata=metadata):
+                    receipt_path.write_text(json.dumps(metadata))
+                    with self.assertRaises(ValueError):
+                        w.verify_binary(binary, cpu=cpu, target=target)
+            receipt_path.write_text(
+                json.dumps({**receipt, "backend": "hip", "targets": ["gfx1100"]})
+            )
+            self.assertEqual(
+                w.verify_binary(binary, cpu=False, target="gfx1100"), binary
+            )
+            binary.unlink()
+            with self.assertRaises((ValueError, OSError)):
                 w.verify_binary(binary, cpu=False, target="gfx1100")
-            binary.write_bytes(b"corrupted fixture")
-            with self.assertRaises(ValueError):
-                w.verify_binary(binary, cpu=True, target="gfx1100")
+            binary.mkdir()
+            with self.assertRaises((ValueError, OSError)):
+                w.verify_binary(binary, cpu=False, target="gfx1100")
+
+    @unittest.skipUnless(
+        os.environ.get("LLAMA_BENCHMARK_SOURCE"), "exact llama source required"
+    )
+    def test_fresh_preparation_records_source_without_binary_hash(self):
+        import tempfile
+        from corpus.benchmarks.llama import prepare, workloads
+
+        with tempfile.TemporaryDirectory() as directory:
+            build = Path(directory) / "cpu"
+            prepare.main(
+                [
+                    "--source",
+                    os.environ["LLAMA_BENCHMARK_SOURCE"],
+                    "--build",
+                    str(build),
+                    "--backend",
+                    "cpu",
+                ]
+            )
+            receipt = json.loads((build / "benchmark-build.json").read_text())
+            self.assertEqual(receipt["source_pin"], workloads.PIN)
+            self.assertEqual(receipt["backend"], "cpu")
+            self.assertEqual(receipt["targets"], [])
+            self.assertNotIn("binary_sha256", receipt)
+            self.assertEqual(
+                workloads.verify_binary(
+                    build / "bounded-ops", cpu=True, target="gfx1100"
+                ),
+                build / "bounded-ops",
+            )
+
+    def test_result_parameters_include_exact_source_pin(self):
+        from corpus.benchmarks.llama import workloads as w
+
+        params = {"k": 32, "rows": 4, "tokens": 1, "dtype": "fp32"}
+        data = {
+            "source_pin": w.PIN,
+            "backend": "CPU",
+            "op": "matvec-q4",
+            "pass": True,
+            "bad": 0,
+            "checked": 4,
+            "warmups": 0,
+            "graph_invocations": 1,
+            "timings_ns": [123],
+            "k": 32,
+            "rows": 4,
+            "tokens": 1,
+        }
+        for cpu, backend in ((True, "CPU"), (False, "HIP0")):
+            with self.subTest(cpu=cpu):
+                native = {**data, "backend": backend}
+                result = w.checked_result(
+                    native, "case", "gfx1100", params, 1, cpu=cpu, op="matvec-q4"
+                )
+                self.assertEqual(result["parameters"], {**params, "source_pin": w.PIN})
+                for key, value in (
+                    ("source_pin", "wrong"),
+                    ("backend", "HIP0" if cpu else "CPU"),
+                ):
+                    with self.subTest(key=key), self.assertRaises(ValueError):
+                        w.checked_result(
+                            {**native, key: value},
+                            "case",
+                            "gfx1100",
+                            params,
+                            1,
+                            cpu=cpu,
+                            op="matvec-q4",
+                        )
+        self.assertNotIn("source_pin", params)
 
     def test_contract(self):
         from corpus.benchmarks.llama import workloads as w
@@ -228,7 +323,14 @@ class LlamaContractTests(unittest.TestCase):
             )
             self.assertEqual(data["schema"], "rocjitsu.benchmark.workload.v1")
             self.assertEqual(data["provider"], "llama")
-            self.assertEqual(data["parameters"], {**params, "dtype": "fp32"})
+            self.assertEqual(
+                data["parameters"],
+                {
+                    **params,
+                    "dtype": "fp32",
+                    "source_pin": "26d52b0f9543f441fc2bfa383557c992a4fbf4b9",
+                },
+            )
             self.assertEqual(len(data["timings_ns"]), 2)
             self.assertTrue(all(type(t) is int and t > 0 for t in data["timings_ns"]))
 
@@ -312,7 +414,7 @@ class LlamaContractTests(unittest.TestCase):
         result = w.checked_result(
             data, "case", "gfx1100", params, 1, cpu=True, op="gather-q8"
         )
-        self.assertEqual(result["parameters"], params)
+        self.assertEqual(result["parameters"], {**params, "source_pin": w.PIN})
         for key, value in (
             ("source_pin", "wrong"),
             ("pass", False),
@@ -360,7 +462,7 @@ class LlamaContractTests(unittest.TestCase):
             p = subprocess.run([binary, *args, "--cpu"], capture_output=True, text=True)
             self.assertNotEqual(p.returncode, 0, args)
             self.assertFalse(p.stdout, args)
-        # Dedicated CPU-only mutation compiled by prepare --mutation; never accepted by the wrapper.
+        # CPU-only controls fail correctness, not executable hash validation.
         mutation = str(Path(binary).with_name("bounded-ops-noop"))
         modes = (
             ("rope", []),

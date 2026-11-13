@@ -5,7 +5,9 @@
 exactly schema/case/target/provider/parameters/timings_ns with schema
 `rocjitsu.benchmark.workload.v1` and provider `llama`. Supply the prepared binary
 through `ROCJITSU_LLAMA_BINARY` or `--binary`; it must have a matching adjacent
-`benchmark-build.json` receipt (pin/backend/target/binary hash checked).
+`benchmark-build.json` receipt (source pin/backend/target checked), and the
+binary path must exist as a file. Executable and GGML library hashes are not
+validated.
 There is no stock perf loop, adaptive repetition, model download or CPU fallback.
 
 | Workload | Selected parameters | Graph / selected policies |
@@ -20,7 +22,10 @@ for quantization. Matvec always has one RHS. Each source/output footprint is
 bounded by 134217728 elements. Small shapes are supported for host tests.
 Manifest parameters explicitly specify `"dtype":"fp32"`, the only supported
 dtype; standalone callers may omit it (defaults to `fp32`). Emitted parameters
-always record dtype. This describes FP32 activations/output, not the quantized
+always record dtype and the exact llama commit as `source_pin`, preserving the
+requested dimensions. The outer `run.json` corpus revision supplies adapter
+provenance; the workload does not duplicate that Git metadata.
+Dtype describes FP32 activations/output, not the quantized
 weight storage. Dtype is wrapper metadata: it is neither forwarded as a native
 dimension flag nor required in the native dimension-only JSON. All native
 correctness, provenance, dimension and sampling checks remain enforced.
@@ -58,9 +63,18 @@ targets, suppressing implicit compiler device discovery. SDK loader directories
 are prepended without dropping inherited LD_LIBRARY_PATH. FlashAttention and
 HIP graphs are disabled, VMM disabled, native CPU tuning disabled, runtime
 backend loading disabled. GGML's HIP implementation is otherwise unchanged.
-The receipt records source/license/adapter/CMake/binary hashes and exact CMake
-commands. Configure/build logs and linked libraries stay in the build tree;
+The receipt records the llama source commit, license/adapter/CMake hashes and
+exact CMake commands. Those hashes are diagnostic build evidence, not execution
+attestation. Older receipts may include an unused `binary_sha256`; new receipts
+do not generate it. Configure/build logs and linked libraries stay in the build tree;
 keep the entire tree with the binary (build-tree RPATHs are intentional).
+
+This is commit provenance under a controlled preparation/execution workflow,
+not proof of the executable bytes or the GGML libraries actually loaded.
+Use the prepared executable and intact build tree from that workflow; source
+pins and receipt metadata do not detect arbitrary executable/library replacement
+or loader overrides. The wrapper still checks the native result's source pin
+and CPU-versus-HIP backend identity; native HIP mode checks the actual target.
 
 Preparation performs no GPU/simulator execution. Actual benchmark invocation
 belongs inside the parent runner's serialized simulator launcher:
@@ -135,11 +149,16 @@ a CPU artifact without it, and refuses a HIP artifact with it. Never publish
 host-test results as simulator measurements. Tests exercise all three real CPU
 graphs against a separate reference, long-position normal/NeoX RoPE, 0/1 and 1/2
 sampling, reference metadata, exact child schema, invalid arguments, wrong source
-pin/build containment, receipt corruption and partial-check rejection.
+pin/build containment, receipt source/backend/target mismatches, missing binary
+paths, hash-free receipts and partial-check rejection. Set
+`LLAMA_BENCHMARK_SOURCE` to the exact pristine checkout to also exercise a fresh
+CPU preparation and its receipt format.
 `--mutation` creates CPU-only no-op and finite-last-element-corruption binaries;
 the no-op must fail every poisoned output, and finite corruption must fail the
-last element for all three families. Mutations cannot be built in HIP mode and
-are not accepted by the production binary hash receipt. Without the environment
+last element for all three families. Mutations cannot be built in HIP mode;
+these controls fail native correctness checks, not receipt hash validation.
+The receipt does not distinguish mutation executables from the production one.
+Without the CPU binary environment
 variable, native tests are explicitly skipped, not falsely reported as passed.
 CPU builds/tests do not qualify HIP compilation, runtime kernels or numerical
 GPU correctness; those remain parent-owned acceptance.

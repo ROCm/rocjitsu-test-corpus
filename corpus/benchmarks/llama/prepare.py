@@ -170,7 +170,6 @@ def main(argv=None):
             source_license_sha256=sha256(source / "LICENSE"),
             adapter_sha256=sha256(HERE / "bounded-ops.cpp"),
             cmake_sha256=sha256(HERE / "CMakeLists.txt"),
-            binary_sha256=sha256(build / "bounded-ops"),
             cmake_version=subprocess.check_output(
                 ["cmake", "--version"], text=True
             ).splitlines()[0],

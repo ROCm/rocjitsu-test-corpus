@@ -91,23 +91,24 @@ def checked_result(
         case=case,
         target=target,
         provider="llama",
-        parameters={**params, "dtype": "fp32"},
+        parameters={**params, "dtype": "fp32", "source_pin": PIN},
         timings_ns=timings,
     )
 
 
 def verify_binary(binary, *, cpu, target):
-    import hashlib
-
     binary = Path(binary).resolve()
+    if not binary.is_file():
+        raise ValueError("prepared binary must exist as a file")
     data = json.loads(binary.with_name("benchmark-build.json").read_text())
     if (
         data.get("source_pin") != PIN
         or data.get("backend") != ("cpu" if cpu else "hip")
         or (not cpu and target not in data.get("targets", []))
-        or data.get("binary_sha256") != hashlib.sha256(binary.read_bytes()).hexdigest()
     ):
-        raise ValueError("prepared binary provenance, backend, target or hash mismatch")
+        raise ValueError(
+            "prepared binary source provenance, backend or target mismatch"
+        )
     return binary
 
 
