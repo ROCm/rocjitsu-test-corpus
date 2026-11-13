@@ -22,6 +22,7 @@
 #ifdef EXPERIMENT_HIP
 #error "Wrong-row mutation is CPU-only"
 #endif
+#include "ggml-quants.h"
 #include <cstdlib>
 #include <set>
 #endif
@@ -65,7 +66,7 @@ int main(int argc, char **argv) {
   try {
     if (argc < 2)
       throw std::runtime_error(
-          "usage: bounded-ops rope|matvec-q4|gather-q8 "
+          "usage: llama_bounded_ops rope|matvec-q4|gather-q8 "
           "[--cpu] [--k N] [--rows N] [--tokens N] [--heads N] [--neox]");
     std::string op = argv[1];
     bool cpu = false, neox = false;
@@ -193,8 +194,14 @@ int main(int argc, char **argv) {
     for (int i = 0; i < tokens; ++i)
       ix[i] = rope ? i + 7 : (i % 3 == 0 ? 0 : (i * 7 + 3) % rows);
     std::vector<float> rhs(k);
-    for (int i = 0; i < k; ++i)
-      rhs[i] = float(8 + (i * 3) % 15) / 1024.f;
+    // Nearly balanced half blocks have opposite signs and dyadic magnitudes.
+    // Every block has |127|, so Q8_0/Q8_1 packing has exact scale
+    // 1/1024 and preserves every lane (including its sign) without rounding.
+    // Balanced halves expose nibble-order errors and missing reduction blocks.
+    for (int i = 0; i < k; ++i) {
+      int magnitude = i % 3 == 0 ? 127 : (i % 3 == 1 ? 64 : 32);
+      rhs[i] = float((i % 32 < 16 ? 1 : -1) * magnitude) / 1024.f;
+    }
     if (mat)
       ggml_backend_tensor_set(b, rhs.data(), 0, ggml_nbytes(b));
     else
@@ -222,7 +229,70 @@ int main(int argc, char **argv) {
                           packed.begin() + (row + 1) * row_bytes);
     size_t wrong_row_requests = 0;
     const char *reverse_operand = std::getenv("LLAMA_TEST_REVERSE_K");
-    if (reverse_operand) {
+    const char *matvec_mutation = std::getenv("LLAMA_TEST_MATVEC_MUTATION");
+    size_t q8_negative = 0, q8_positive = 0;
+    double q8_reconstruction_error = 0;
+    if (matvec_mutation) {
+      if (!mat || reverse_operand)
+        throw std::runtime_error("packed-input control requires matvec only");
+      // Inspect upstream packing of the actual RHS, after the reference ran.
+      std::vector<block_q8_1> activation(k / QK8_1);
+      quantize_row_q8_1_ref(rhs.data(), activation.data(), k);
+      auto unsigned_rhs = rhs;
+      for (int block = 0; block < k / QK8_1; ++block) {
+        float d = ggml_fp16_to_fp32(activation[block].d);
+        for (int lane = 0; lane < QK8_1; ++lane) {
+          int value = activation[block].qs[lane];
+          q8_negative += value < 0;
+          q8_positive += value > 0;
+          int index = block * QK8_1 + lane;
+          q8_reconstruction_error =
+              std::max(q8_reconstruction_error,
+                       std::abs(double(d * value) - rhs[index]));
+          unsigned_rhs[index] = d * static_cast<unsigned char>(value);
+        }
+      }
+      auto changed = packed;
+      const size_t block_bytes = ggml_type_size(type);
+      if (!std::strcmp(matvec_mutation, "drop-last-block")) {
+        for (int row = 0; row < rows; ++row)
+          std::memset(changed.data() + (row + 1) * row_bytes - block_bytes, 0,
+                      block_bytes);
+        ggml_backend_tensor_set(a, changed.data(), 0, changed.size());
+      } else if (!std::strcmp(matvec_mutation, "swap-nibbles")) {
+        // Q4_0 stores its FP16 scale before the sixteen packed nibble pairs.
+        for (size_t block = 0; block < changed.size(); block += block_bytes)
+          for (size_t byte = sizeof(ggml_fp16_t); byte < block_bytes; ++byte) {
+            unsigned char value = changed[block + byte];
+            changed[block + byte] = (value << 4) | (value >> 4);
+          }
+        ggml_backend_tensor_set(a, changed.data(), 0, changed.size());
+      } else if (!std::strcmp(matvec_mutation, "unsigned-activation")) {
+        // Use upstream dequantization and the same MUL_MAT operator in FP32
+        // so a second Q8_0 packing cannot round the unsigned 128..255 lanes.
+        // This models sum((q4-8)*d4 * uint8(q8)*d8), including Q4's offset,
+        // rather than corrupting an already computed output or writing a dot.
+        std::vector<float> decoded(src.size());
+        auto to_float = ggml_get_type_traits(type)->to_float;
+        for (int row = 0; row < rows; ++row)
+          to_float(packed.data() + row * row_bytes,
+                   decoded.data() + size_t(row) * k, k);
+        ggml_backend_buffer_free(buf);
+        ggml_free(ctx);
+        ctx = ggml_init({16 * 1024 * 1024, nullptr, true});
+        a = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, k, rows);
+        b = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, k, 1);
+        out = ggml_mul_mat(ctx, a, b);
+        graph = ggml_new_graph_custom(ctx, 16, false);
+        ggml_build_forward_expand(graph, out);
+        buf = ggml_backend_alloc_ctx_tensors(ctx, backend);
+        if (!buf)
+          throw std::runtime_error("unsigned control allocation failed");
+        ggml_backend_tensor_set(a, decoded.data(), 0, ggml_nbytes(a));
+        ggml_backend_tensor_set(b, unsigned_rhs.data(), 0, ggml_nbytes(b));
+      } else
+        throw std::runtime_error("unknown packed-input control");
+    } else if (reverse_operand) {
       // Bounded CPU-only control: reverse lanes inside bulk 32-value blocks,
       // leaving the row-identity block untouched. Reference already ran.
       if (!mat || (std::strcmp(reverse_operand, "a") &&
@@ -325,8 +395,14 @@ int main(int argc, char **argv) {
     double min_wrong_row_ratio = std::numeric_limits<double>::infinity();
 #endif
     size_t bad = 0;
+#ifdef BENCHMARK_CPU_WRONG_ROW
+    size_t nonfinite_outputs = 0;
+#endif
     double atol = mat ? .03 : 2e-5, rtol = mat ? .02 : 2e-5;
     for (size_t i = 0; i < got.size(); ++i) {
+#ifdef BENCHMARK_CPU_WRONG_ROW
+      nonfinite_outputs += !std::isfinite(got[i]);
+#endif
       double e = std::abs(double(got[i]) - ref[i]),
              ratio = e / (atol + rtol * std::abs(ref[i]));
       if (!std::isfinite(got[i]) || !std::isfinite(ref[i]) || ratio > 1)
@@ -336,13 +412,20 @@ int main(int argc, char **argv) {
       if (std::isfinite(ratio))
         maxratio = std::max(maxratio, ratio);
 #ifdef BENCHMARK_CPU_WRONG_ROW
-      if (mat && !reverse_operand && i >= 101)
+      if (mat && !reverse_operand && !matvec_mutation && i >= 101)
         min_wrong_row_ratio = std::min(min_wrong_row_ratio, ratio);
 #endif
     }
 #ifdef BENCHMARK_CPU_WRONG_ROW
     std::cout << "{\"quantized_unique_rows\":" << unique_rows.size()
               << ",\"wrong_row_requests\":" << wrong_row_requests << ",";
+    if (matvec_mutation)
+      std::cout << "\"matvec_mutation\":\"" << matvec_mutation
+                << "\",\"q8_1_negative_values\":" << q8_negative
+                << ",\"q8_1_positive_values\":" << q8_positive
+                << ",\"q8_1_reconstruction_max_error\":"
+                << q8_reconstruction_error
+                << ",\"nonfinite_outputs\":" << nonfinite_outputs << ",";
     if (mat && !reverse_operand && wrong_row_requests)
       std::cout << "\"min_wrong_row_tolerance_ratio\":" << min_wrong_row_ratio
                 << ",\"max_reference_magnitude\":"

@@ -4,6 +4,7 @@
 """Fixed-count GGML graph adapter; no models, adaptive loops or CPU fallback."""
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -108,6 +109,18 @@ def verify_binary(binary, *, cpu, target):
     ):
         raise ValueError(
             "prepared binary source provenance, backend or target mismatch"
+        )
+    adapter_hash = hashlib.sha256(
+        Path(__file__).with_name("runner.cpp").read_bytes()
+    ).hexdigest()
+    if data.get("adapter_sha256") != adapter_hash:
+        raise ValueError(
+            "prepared adapter source hash mismatch or missing; rebuild with "
+            "corpus/benchmarks/llama/prepare.py --source SOURCE --build FRESH_BUILD "
+            "--backend "
+            + ("cpu" if cpu else "hip --rocm-path ROCM_PATH")
+            + " and select the new llama_bounded_ops executable; "
+            "do not regenerate the receipt without rebuilding"
         )
     return binary
 

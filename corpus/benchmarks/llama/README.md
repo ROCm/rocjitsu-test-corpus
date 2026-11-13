@@ -5,9 +5,10 @@
 exactly schema/case/target/provider/parameters/timings_ns with schema
 `rocjitsu.benchmark.workload.v1` and provider `llama`. Supply the prepared binary
 through `ROCJITSU_LLAMA_BINARY` or `--binary`; it must have a matching adjacent
-`benchmark-build.json` receipt (source pin/backend/target checked), and the
-binary path must exist as a file. Executable and GGML library hashes are not
-validated.
+`benchmark-build.json` receipt (source pin/backend/target and current
+`runner.cpp` SHA-256 checked), and the binary path must exist as a file.
+The native CMake target/executable is `llama_bounded_ops`; `runner.cpp` is its
+first-party source. Executable and GGML library hashes are not validated.
 There is no stock perf loop, adaptive repetition, model download or CPU fallback.
 
 | Workload | Selected parameters | Graph / selected policies |
@@ -42,7 +43,7 @@ git clone https://github.com/ggml-org/llama.cpp.git "$LLAMA_SOURCE"
 git -C "$LLAMA_SOURCE" checkout --detach 26d52b0f9543f441fc2bfa383557c992a4fbf4b9
 python corpus/benchmarks/llama/prepare.py --source "$LLAMA_SOURCE" \
   --build "$ATTEMPT/llama-hip" --backend hip --rocm-path "$ROCM_PATH"
-export ROCJITSU_LLAMA_BINARY="$ATTEMPT/llama-hip/bounded-ops"
+export ROCJITSU_LLAMA_BINARY="$ATTEMPT/llama-hip/llama_bounded_ops"
 ```
 
 The CLI verifies the exact HEAD, checkout root, expected files and pristine state
@@ -64,9 +65,18 @@ are prepended without dropping inherited LD_LIBRARY_PATH. FlashAttention and
 HIP graphs are disabled, VMM disabled, native CPU tuning disabled, runtime
 backend loading disabled. GGML's HIP implementation is otherwise unchanged.
 The receipt records the llama source commit, license/adapter/CMake hashes and
-exact CMake commands. Those hashes are diagnostic build evidence, not execution
-attestation. Older receipts may include an unused `binary_sha256`; new receipts
-do not generate it. Configure/build logs and linked libraries stay in the build tree;
+exact CMake commands after the build succeeds. Before every launch the wrapper
+compares `adapter_sha256` against the exact current `runner.cpp` bytes, including
+comments. An unchanged source and matching receipt pass; a missing or different
+adapter hash rejects the launch even when the upstream pin is unchanged. Rebuild
+with the preparation command above into a fresh owned directory and select its
+new executable. Do not regenerate the receipt alone for an unrebuilt binary.
+Preparation and execution require a stable adapter source snapshot. The wrapper
+does not build, download, orchestrate preparation or manage a build cache.
+License/CMake hashes remain diagnostic evidence, not launch checks; the adapter
+hash is source freshness, not executable or loaded-library attestation. Older
+receipts may include an unused `binary_sha256`; new receipts do not generate it.
+Configure/build logs and linked libraries stay in the build tree;
 keep the entire tree with the binary (build-tree RPATHs are intentional).
 
 This is commit provenance under a controlled preparation/execution workflow,
@@ -109,31 +119,43 @@ Inputs retain deterministic nonuniform values, duplicate/dispersed gather
 indices and RoPE positions 7..tokens+6. Gather inputs encode the row index in
 15 +/-1 sign markers in the first Q8_0 block, preserving distinct rows after
 upstream quantization instead of repeating every 101 rows. Matvec weights retain
-that historical nonuniform K pattern, positively offset and scaled:
+the historical nonuniform K pattern, positively offset and scaled:
 `M * (64 + ((row*K + lane)*17 + 13)%101) / 256`, where
 `M = 1 + floor(row/32)`. The first 15 lanes instead encode row-index signs
-`+/-M`. The independent FP32 RHS is `(8 + (lane*3)%15)/1024` (period 5).
-Both operands vary within a 32-value quantization block; the row repair must not
-flatten either reduction operand. Positive bulk avoids cancellation, and row
-magnitude separates modulo-101 substitutions after accumulation. Sign markers
-preserve serialized row identity, not detection of every possible wrong row.
+`+/-M`. The independent FP32 RHS cycles magnitudes `127,64,32` divided by
+1024, positive in lanes 0..15 and negative in lanes 16..31 of each block.
+Both operands vary within every 32-value block. Nearly balanced signed halves
+avoid the old positive long-dot averaging that hid missing final blocks and
+nibble swaps. Sign markers retain serialized row identity; they do not promise
+detection of every possible wrong row.
 
-First-block Q4 scales `+/-M/8` are exactly FP16-representable for M=1..1024.
-Bulk scales are not all exact: the selected-size upstream quantizer/dequantizer
-probe found maximum relative FP16 scale rounding 0.000486618, maximum bulk
-scale 82, and decoded bulk weights between 0.222551*M and 0.640931*M.
-No bulk block became constant after quantization. The `/256` normalization
-preserves headroom: bounding every nonmarker decoded weight by 0.75*M gives
-absolute dot sum <=61515 at K4096/M1024 with the original dyadic RHS, below
-FP16 maximum 65504 even before using FP32 accumulation. This is a conservative
-input-range bound, not a claim about unqualified HIP intermediate arithmetic.
-A full selected-size CPU run (K4096/32768 rows) passed against the separate
-upstream reference. The actual-serialized-row modulo-101 mutation rejected all
-32667 changed outputs; all 32768 quantized rows were distinct and the minimum
-changed-output tolerance ratio was 21.228. Maximum reference output was 25539.2.
-The bounded K4096/202-row regression retains all 101 required substitutions.
-All these CPU results retain the unchanged .03/.02 policy; HIP qualification
-remains separate.
+Every RHS block contains magnitude 127, so upstream Q8_0 and Q8_1 activation
+packing both have exactly representable scale `1/1024`; each signed integer
+lane is preserved exactly. The Q8_1 block sum is also dyadic and exactly FP16
+representable. This removes activation quantization error for this fixture,
+without replacing upstream weight quantization or the CPU reference. The
+unchanged matvec `.03/.02` policy remains conservative for accumulation-order
+and backend differences; no tolerance was fitted to a failing maximum.
+
+First-block Q4 scales `+/-M/8` remain exactly FP16-representable for M=1..1024.
+Bulk Q4 scale rounding is unchanged. Conservatively `|decoded weight| <= M`,
+so the largest absolute block dot is bounded by
+`32 * 1024 * 127/1024 = 4064`. The pinned Q4_0/Q8_1 vecdot accumulates integer
+products, converts Q8_1 scale/sum to float, and performs Q4 offset correction
+and scaling in FP32 (`ggml-cuda/vecdotq.cuh`); it does not store the entire
+K4096 dot in FP16. Its absolute long-dot bound is 520192, safely finite in
+FP32, but **not** claimed to fit FP16. GPU runtime qualification is separate.
+
+The selected K4096/32768-row CPU positive control passes all outputs. Actual
+packed-input controls applied only after the independent reference reject
+30597 outputs for a missing final Q4 block and 32745 for swapped high/low
+nibbles. Both controls retain finite inputs and outputs. An unsigned
+interpretation of the actual upstream Q8_1 activation bytes rejects all 32768
+outputs. The pack has 2048 positive and 2048 negative values and zero
+reconstruction error. All 32768 packed weight rows remain distinct. The
+K4096/202-row modulo-101 wrong-row and K64/4096-row either-operand reversal
+regressions remain required at the same tolerances. These are finite fixture
+sensitivity checks, not exhaustive kernel certification.
 Upstream `init_tensor_uniform` uses `random_device`-seeded uniform samples: it
 was inspected but does not guarantee reproducible separation of these selected
 dot outputs at the existing tolerance. This small deterministic input repair
@@ -172,7 +194,7 @@ reference backend; it is never a fallback for the measured operation.
 ```sh
 python corpus/benchmarks/llama/prepare.py --source "$LLAMA_SOURCE" \
   --build "$ATTEMPT/llama-cpu" --backend cpu --mutation
-LLAMA_BENCHMARK_CPU_BINARY="$ATTEMPT/llama-cpu/bounded-ops" \
+LLAMA_BENCHMARK_CPU_BINARY="$ATTEMPT/llama-cpu/llama_bounded_ops" \
   python -m pytest tests/test_benchmark_llama.py -q
 ```
 
@@ -182,7 +204,9 @@ host-test results as simulator measurements. Tests exercise all three real CPU
 graphs against a separate reference, long-position normal/NeoX RoPE, 0/1 and 1/2
 sampling, reference metadata, exact child schema, invalid arguments, wrong source
 pin/build containment, receipt source/backend/target mismatches, missing binary
-paths, hash-free receipts and partial-check rejection. Set
+paths, receipts without executable hashes and partial-check rejection. Dedicated
+`tests/test_benchmark_llama_freshness.py` checks stale/missing adapter hashes
+reject before child execution, including comment-only source differences. Set
 `LLAMA_BENCHMARK_SOURCE` to the exact pristine checkout to also exercise a fresh
 CPU preparation and its receipt format.
 `--mutation` creates CPU-only final-no-op, final-partial-write,
@@ -195,13 +219,23 @@ gather. Test-only native diagnostics confirm the earlier output passed and two
 real graph invocations completed. Disabling the loop's output poison must break
 this regression; startup-only poisoning cannot catch stale final samples.
 Finite corruption must fail the last element for all three families.
-The selected-size gather test uses `bounded-ops-wrong-row` from that same prepared
+The selected-size gather test uses `llama_bounded_ops-wrong-row` from that same prepared
 build: it checks all 1024 serialized Q8_0 rows are distinct, remaps indices modulo
 101 only after reference execution, and requires rejection of the 2461 changed
 requests. The bounded K4096/202-row matvec test uses the same variant to substitute
 complete serialized Q4 weight rows r%101 after reference execution; all 202 rows
 must be distinct and all 101 substituted outputs must fail the unchanged checker.
-For matvec only, that CPU-only binary also accepts test environment variable
+For matvec only, that CPU-only binary accepts
+`LLAMA_TEST_MATVEC_MUTATION=drop-last-block|swap-nibbles|unsigned-activation`.
+The first two mutate actual Q4_0 bytes after reference execution. The unsigned
+control upstream-dequantizes the actual weights and reconstructs activations
+from the actual Q8_1 bytes with unsigned rather than signed lanes, then executes
+the same upstream MUL_MAT operator in FP32. This includes the Q4 zero-point
+term without a handwritten dot oracle or a second lossy Q8 packing. It models
+fully unsigned activation interpretation, not every possible mixed signedness
+error in a fused kernel. The selected-size test checks packed signs, exact
+signed reconstruction, finite-error rejection and unchanged tolerances.
+That same CPU-only binary also accepts test environment variable
 `LLAMA_TEST_REVERSE_K=a|b`: after the reference ran, it reverses the selected
 operand's lanes within each bulk 32-value block, leaving the first row-marker
 block untouched. A reversal in A is quantized again by upstream before execution;

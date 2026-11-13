@@ -157,7 +157,9 @@ artifacts outside timing before invoking the suite:
   generated libraries and native adapter; set `FULL_TENSILE_ARTIFACTS` and
   `FULL_TENSILE_RUNNER`. Split-K timing includes helper and main launches.
 - [llama/GGML operators](../corpus/benchmarks/llama/README.md): separate source pin,
-  out-of-source HIP build and `ROCJITSU_LLAMA_BINARY`; timing encloses a fixed
+  out-of-source HIP build of `runner.cpp` as `llama_bounded_ops`, selected through
+  `ROCJITSU_LLAMA_BINARY`; launch rejects missing/stale adapter-source receipt hashes
+  with an explicit rebuild instruction (no automatic build). Timing encloses a fixed
   graph invocation, including internal activation packing, not an adaptive loop.
 
 Keep performance-v1 unchanged for historical reproduction. The expanded recipe

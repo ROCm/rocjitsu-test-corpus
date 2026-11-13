@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Bounded host-only subprocess and preparation interface regressions."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -23,7 +24,7 @@ class LlamaDiagnosticsTests(unittest.TestCase):
                 stdout=stdout
             ), tempfile.TemporaryDirectory() as directory:
                 path = Path(directory)
-                binary = path / "bounded-ops"
+                binary = path / "llama_bounded_ops"
                 binary.write_text(
                     f"#!{sys.executable}\nimport sys\n"
                     f"sys.stdout.write({stdout!r})\n"
@@ -32,7 +33,18 @@ class LlamaDiagnosticsTests(unittest.TestCase):
                 )
                 binary.chmod(0o755)
                 (path / "benchmark-build.json").write_text(
-                    json.dumps(dict(source_pin=PIN, backend="cpu", targets=[]))
+                    json.dumps(
+                        dict(
+                            source_pin=PIN,
+                            backend="cpu",
+                            targets=[],
+                            adapter_sha256=hashlib.sha256(
+                                (
+                                    ROOT / "corpus/benchmarks/llama/runner.cpp"
+                                ).read_bytes()
+                            ).hexdigest(),
+                        )
+                    )
                 )
                 for output in ("-", str(path / "result.json")):
                     result = subprocess.run(
@@ -89,11 +101,22 @@ class LlamaDiagnosticsTests(unittest.TestCase):
                 stdout=stdout
             ), tempfile.TemporaryDirectory() as directory:
                 path = Path(directory)
-                binary = path / "bounded-ops"
+                binary = path / "llama_bounded_ops"
                 binary.write_text(f"#!{sys.executable}\nprint({stdout!r})\n")
                 binary.chmod(0o755)
                 (path / "benchmark-build.json").write_text(
-                    json.dumps(dict(source_pin=PIN, backend="cpu", targets=[]))
+                    json.dumps(
+                        dict(
+                            source_pin=PIN,
+                            backend="cpu",
+                            targets=[],
+                            adapter_sha256=hashlib.sha256(
+                                (
+                                    ROOT / "corpus/benchmarks/llama/runner.cpp"
+                                ).read_bytes()
+                            ).hexdigest(),
+                        )
+                    )
                 )
                 for output in ("-", str(path / "result.json")):
                     result = subprocess.run(

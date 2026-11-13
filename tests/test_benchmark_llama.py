@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Host-only native adapter tests. Set LLAMA_BENCHMARK_CPU_BINARY after preparation."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -50,9 +51,16 @@ class LlamaContractTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
-            binary = path / "bounded-ops"
+            binary = path / "llama_bounded_ops"
             binary.write_bytes(b"explicit unit-test binary fixture, not executable")
-            receipt = dict(source_pin=w.PIN, backend="cpu", targets=[])
+            receipt = dict(
+                source_pin=w.PIN,
+                backend="cpu",
+                targets=[],
+                adapter_sha256=hashlib.sha256(
+                    (ROOT / "corpus/benchmarks/llama/runner.cpp").read_bytes()
+                ).hexdigest(),
+            )
             receipt_path = path / "benchmark-build.json"
             receipt_path.write_text(json.dumps(receipt))
             self.assertEqual(
@@ -113,12 +121,16 @@ class LlamaContractTests(unittest.TestCase):
             self.assertEqual(receipt["source_pin"], workloads.PIN)
             self.assertEqual(receipt["backend"], "cpu")
             self.assertEqual(receipt["targets"], [])
+            self.assertEqual(
+                receipt["adapter_sha256"],
+                prepare.sha256(ROOT / "corpus/benchmarks/llama/runner.cpp"),
+            )
             self.assertNotIn("binary_sha256", receipt)
             self.assertEqual(
                 workloads.verify_binary(
-                    build / "bounded-ops", cpu=True, target="gfx1100"
+                    build / "llama_bounded_ops", cpu=True, target="gfx1100"
                 ),
-                build / "bounded-ops",
+                build / "llama_bounded_ops",
             )
 
     def test_result_parameters_include_exact_source_pin(self):
@@ -207,7 +219,7 @@ class LlamaContractTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 1)
         self.assertFalse(result.stdout)
-        self.assertTrue(result.stderr.startswith("usage: bounded-ops "))
+        self.assertTrue(result.stderr.startswith("usage: llama_bounded_ops "))
         self.assertEqual(
             result.stderr.split()[2].split("|"),
             ["rope", "matvec-q4", "gather-q8"],
@@ -473,7 +485,7 @@ class LlamaContractTests(unittest.TestCase):
         positive = json.loads(control.stdout)
         self.assertEqual(positive["checked"], 202)
         mutation = subprocess.run(
-            [str(binary.with_name("bounded-ops-wrong-row")), *arguments],
+            [str(binary.with_name("llama_bounded_ops-wrong-row")), *arguments],
             capture_output=True,
             text=True,
             timeout=120,
@@ -514,7 +526,7 @@ class LlamaContractTests(unittest.TestCase):
         for operand in ("a", "b"):
             with self.subTest(operand=operand):
                 mutation = subprocess.run(
-                    [str(binary.with_name("bounded-ops-wrong-row")), *arguments],
+                    [str(binary.with_name("llama_bounded_ops-wrong-row")), *arguments],
                     env={**os.environ, "LLAMA_TEST_REVERSE_K": operand},
                     capture_output=True,
                     text=True,
@@ -550,7 +562,7 @@ class LlamaContractTests(unittest.TestCase):
         positive = json.loads(control.stdout)
         self.assertTrue(positive["pass"])
         self.assertEqual(positive["checked"], 4096 * 4096)
-        wrong_row = binary.with_name("bounded-ops-wrong-row")
+        wrong_row = binary.with_name("llama_bounded_ops-wrong-row")
         self.assertTrue(wrong_row.is_file(), "prepare CPU binary with --mutation")
         mutation = subprocess.run(
             [str(wrong_row), *arguments],
@@ -585,7 +597,7 @@ class LlamaContractTests(unittest.TestCase):
                 with self.subTest(op=op, extra=extra, variant=variant):
                     process = subprocess.run(
                         [
-                            str(binary.with_name("bounded-ops-" + variant)),
+                            str(binary.with_name("llama_bounded_ops-" + variant)),
                             op,
                             "--cpu",
                             "--tokens",
@@ -635,7 +647,7 @@ class LlamaContractTests(unittest.TestCase):
             self.assertNotEqual(p.returncode, 0, args)
             self.assertFalse(p.stdout, args)
         # CPU-only controls fail correctness, not executable hash validation.
-        mutation = str(Path(binary).with_name("bounded-ops-noop"))
+        mutation = str(Path(binary).with_name("llama_bounded_ops-noop"))
         modes = (
             ("rope", []),
             ("rope", ["--neox"]),
@@ -665,7 +677,7 @@ class LlamaContractTests(unittest.TestCase):
             self.assertEqual(data["bad"], data["checked"])
             self.assertEqual(data["graph_invocations"], 3)
             self.assertEqual(data["reference_graph_invocations"], 1)
-        corruption = str(Path(binary).with_name("bounded-ops-corrupt"))
+        corruption = str(Path(binary).with_name("llama_bounded_ops-corrupt"))
         for op, extra in modes:
             p = subprocess.run(
                 [
@@ -689,6 +701,53 @@ class LlamaContractTests(unittest.TestCase):
             self.assertEqual(data["bad"], 1)
             self.assertEqual(data["graph_invocations"], 3)
             self.assertEqual(data["reference_graph_invocations"], 1)
+
+    @unittest.skipUnless(
+        os.environ.get("LLAMA_BENCHMARK_CPU_BINARY"), "prepare CPU binary first"
+    )
+    def test_selected_matvec_finite_packed_input_controls(self):
+        binary = Path(os.environ["LLAMA_BENCHMARK_CPU_BINARY"])
+        arguments = [
+            "matvec-q4",
+            "--cpu",
+            "--k",
+            "4096",
+            "--rows",
+            "32768",
+            "--tokens",
+            "1",
+            "--warmups",
+            "0",
+            "--samples",
+            "1",
+        ]
+        positive = subprocess.run(
+            [str(binary), *arguments], capture_output=True, text=True, timeout=120
+        )
+        self.assertEqual(positive.returncode, 0, positive.stdout + positive.stderr)
+        for mode in ("drop-last-block", "swap-nibbles", "unsigned-activation"):
+            with self.subTest(mode=mode):
+                process = subprocess.run(
+                    [str(binary.with_name("llama_bounded_ops-wrong-row")), *arguments],
+                    env={**os.environ, "LLAMA_TEST_MATVEC_MUTATION": mode},
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                data = json.loads(process.stdout)
+                self.assertEqual(data["matvec_mutation"], mode)
+                self.assertGreater(data["q8_1_negative_values"], 0)
+                self.assertGreater(data["q8_1_positive_values"], 0)
+                self.assertEqual(data["q8_1_reconstruction_max_error"], 0)
+                self.assertEqual(data["nonfinite_outputs"], 0)
+                self.assertEqual(process.returncode, 2, process.stdout + process.stderr)
+                self.assertFalse(data["pass"])
+                self.assertGreater(data["bad"], 0)
+                self.assertGreater(data["max_tolerance_ratio"], 1)
+                self.assertEqual(data["reference_graph_invocations"], 1)
+                self.assertEqual(data["graph_invocations"], 1)
+                self.assertEqual(data["checked"], 32768)
+                self.assertEqual((data["atol"], data["rtol"]), (0.03, 0.02))
 
 
 if __name__ == "__main__":

@@ -170,7 +170,7 @@ def main(argv=None):
             build_command=["cmake", "--build", str(build), "-j16"],
             configure_command=command,
             source_license_sha256=sha256(source / "LICENSE"),
-            adapter_sha256=sha256(HERE / "bounded-ops.cpp"),
+            adapter_sha256=sha256(HERE / "runner.cpp"),
             cmake_sha256=sha256(HERE / "CMakeLists.txt"),
             cmake_version=subprocess.check_output(
                 ["cmake", "--version"], text=True
@@ -179,7 +179,7 @@ def main(argv=None):
         (build / "benchmark-build.json").write_text(
             json.dumps(receipt, indent=2) + "\n"
         )
-        print(build / "bounded-ops")
+        print(build / "llama_bounded_ops")
     except (ValueError, OSError, subprocess.CalledProcessError) as exc:
         parser.exit(1, str(exc) + "\n")
 

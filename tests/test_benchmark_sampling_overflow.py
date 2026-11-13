@@ -28,7 +28,7 @@ int main() {
 }
 """
     else:
-        source = (ROOT / "llama/bounded-ops.cpp").read_text()
+        source = (ROOT / "llama/runner.cpp").read_text()
         # Compile the real loop header and serialized invocation expression,
         # stopping on its first iteration instead of running billions of graphs.
         loop_match = re.search(r"for \([^;]*iteration[^;]*;[^;]*;[^;]*\) \{", source)
