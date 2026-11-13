@@ -153,6 +153,38 @@ class LlamaContractTests(unittest.TestCase):
     @unittest.skipUnless(
         os.environ.get("LLAMA_BENCHMARK_CPU_BINARY"), "prepare CPU binary first"
     )
+    def test_cpu_long_rope_matches_reference(self):
+        """Long positions expose drift in a corpus-written double-trig oracle."""
+        from corpus.benchmarks.llama import workloads as w
+
+        binary = os.environ["LLAMA_BENCHMARK_CPU_BINARY"]
+        w.verify_binary(binary, cpu=True, target="gfx1100")
+        for mode in ([], ["--neox"]):
+            with self.subTest(mode=mode):
+                process = subprocess.run(
+                    [
+                        binary,
+                        "rope",
+                        "--cpu",
+                        "--k",
+                        "128",
+                        "--heads",
+                        "1",
+                        "--tokens",
+                        "1024",
+                        *mode,
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+                data = json.loads(process.stdout)
+                self.assertTrue(data["pass"])
+                self.assertEqual(data["checked"], 128 * 1024)
+
+    @unittest.skipUnless(
+        os.environ.get("LLAMA_BENCHMARK_CPU_BINARY"), "prepare CPU binary first"
+    )
     def test_cpu_positive_and_schema(self):
         binary = os.environ["LLAMA_BENCHMARK_CPU_BINARY"]
         cases = [
@@ -199,6 +231,68 @@ class LlamaContractTests(unittest.TestCase):
             self.assertEqual(data["parameters"], {**params, "dtype": "fp32"})
             self.assertEqual(len(data["timings_ns"]), 2)
             self.assertTrue(all(type(t) is int and t > 0 for t in data["timings_ns"]))
+
+    @unittest.skipUnless(
+        os.environ.get("LLAMA_BENCHMARK_CPU_BINARY"), "prepare CPU binary first"
+    )
+    def test_native_separate_cpu_reference_and_counts(self):
+        from corpus.benchmarks.llama import workloads as w
+
+        binary = os.environ["LLAMA_BENCHMARK_CPU_BINARY"]
+        w.verify_binary(binary, cpu=True, target="gfx1100")
+        for op, params, extent in (
+            ("rope", {"k": 128, "heads": 4, "tokens": 4}, 2048),
+            ("matvec-q4", {"k": 128, "rows": 32, "tokens": 1}, 32),
+            ("gather-q8", {"k": 128, "rows": 32, "tokens": 7}, 896),
+        ):
+            for warmups, samples in ((0, 1), (1, 2)):
+                with self.subTest(op=op, warmups=warmups, samples=samples):
+                    command = [
+                        binary,
+                        op,
+                        "--cpu",
+                        "--warmups",
+                        str(warmups),
+                        "--samples",
+                        str(samples),
+                    ]
+                    for key, value in params.items():
+                        command.extend(["--" + key, str(value)])
+                    process = subprocess.run(command, capture_output=True, text=True)
+                    self.assertEqual(
+                        process.returncode, 0, process.stdout + process.stderr
+                    )
+                    data = json.loads(process.stdout)
+                    self.assertEqual(data["reference_backend"], "CPU")
+                    self.assertIs(data["reference_use_ref"], True)
+                    self.assertEqual(data["reference_graph_invocations"], 1)
+                    self.assertEqual(data["graph_invocations"], warmups + samples)
+                    self.assertEqual(data["checked"], extent)
+                    self.assertEqual(data["bad"], 0)
+                    self.assertEqual(data["atol"], 0.03 if op == "matvec-q4" else 2e-5)
+                    self.assertEqual(data["rtol"], 0.02 if op == "matvec-q4" else 2e-5)
+                    result = w.checked_result(
+                        data,
+                        "reference-check",
+                        "gfx1100",
+                        params,
+                        samples,
+                        warmups=warmups,
+                        cpu=True,
+                        op=op,
+                    )
+                    self.assertEqual(len(result["timings_ns"]), samples)
+                    self.assertEqual(
+                        set(result),
+                        {
+                            "schema",
+                            "case",
+                            "target",
+                            "provider",
+                            "parameters",
+                            "timings_ns",
+                        },
+                    )
 
     @unittest.skipUnless(
         os.environ.get("LLAMA_BENCHMARK_CPU_BINARY"), "prepare CPU binary first"
@@ -267,18 +361,50 @@ class LlamaContractTests(unittest.TestCase):
             self.assertFalse(p.stdout, args)
         # Dedicated CPU-only mutation compiled by prepare --mutation; never accepted by the wrapper.
         mutation = str(Path(binary).with_name("bounded-ops-noop"))
-        for op in ("rope", "matvec-q4", "gather-q8"):
+        modes = (
+            ("rope", []),
+            ("rope", ["--neox"]),
+            ("matvec-q4", []),
+            ("gather-q8", []),
+        )
+        for op, extra in modes:
             p = subprocess.run(
-                [mutation, op, "--cpu", "--tokens", "1"], capture_output=True, text=True
+                [
+                    mutation,
+                    op,
+                    "--cpu",
+                    "--tokens",
+                    "1",
+                    "--warmups",
+                    "1",
+                    "--samples",
+                    "2",
+                    *extra,
+                ],
+                capture_output=True,
+                text=True,
             )
             data = json.loads(p.stdout)
             self.assertEqual(p.returncode, 2)
             self.assertFalse(data["pass"])
             self.assertEqual(data["bad"], data["checked"])
+            self.assertEqual(data["graph_invocations"], 3)
+            self.assertEqual(data["reference_graph_invocations"], 1)
         corruption = str(Path(binary).with_name("bounded-ops-corrupt"))
-        for op in ("rope", "matvec-q4", "gather-q8"):
+        for op, extra in modes:
             p = subprocess.run(
-                [corruption, op, "--cpu", "--tokens", "1"],
+                [
+                    corruption,
+                    op,
+                    "--cpu",
+                    "--tokens",
+                    "1",
+                    "--warmups",
+                    "1",
+                    "--samples",
+                    "2",
+                    *extra,
+                ],
                 capture_output=True,
                 text=True,
             )
@@ -286,6 +412,8 @@ class LlamaContractTests(unittest.TestCase):
             self.assertEqual(p.returncode, 2)
             self.assertFalse(data["pass"])
             self.assertEqual(data["bad"], 1)
+            self.assertEqual(data["graph_invocations"], 3)
+            self.assertEqual(data["reference_graph_invocations"], 1)
 
 
 if __name__ == "__main__":

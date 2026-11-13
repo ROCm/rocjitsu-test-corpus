@@ -28,22 +28,31 @@ static int number(const char *s, int low, int high) {
     throw std::runtime_error("integer out of bounds");
   return v;
 }
-// Independent unpack of serialized GGML block_q4_0/block_q8_0 (half scale +
-// packed quants).
-static std::vector<float> unpack(const std::vector<unsigned char> &bytes,
-                                 bool q8, int count) {
-  std::vector<float> v(count);
-  int bs = q8 ? 34 : 18;
-  for (int i = 0; i < count; i += 32) {
-    ggml_fp16_t h;
-    const auto *p = bytes.data() + (i / 32) * bs;
-    std::memcpy(&h, p, 2);
-    float d = ggml_fp16_to_fp32(h);
-    for (int j = 0; j < 32; ++j)
-      v[i + j] = d * (q8 ? int(static_cast<int8_t>(p[2 + j]))
-                         : int((p[2 + j % 16] >> (j < 16 ? 0 : 4)) & 15) - 8);
+// Follow upstream test-backend-ops MODE_TEST: use the CPU reference kernels,
+// not the default optimized CPU backend. The upstream clone preserves tensor
+// layout, op parameters and serialized inputs in a separate backend buffer.
+static std::vector<float> cpu_reference(ggml_cgraph *graph) {
+  std::vector<float> result(ggml_nelements(ggml_graph_node(graph, -1)));
+  auto backend = ggml_backend_cpu_init();
+  if (!backend)
+    throw std::runtime_error("CPU reference backend unavailable");
+  ggml_backend_cpu_set_n_threads(backend, 1);
+  ggml_backend_cpu_set_use_ref(backend, true);
+  auto copy = ggml_backend_graph_copy(backend, graph);
+  if (!copy.buffer) {
+    ggml_backend_free(backend);
+    throw std::runtime_error("CPU reference graph allocation failed");
   }
-  return v;
+  auto status = ggml_backend_graph_compute(backend, copy.graph);
+  ggml_backend_synchronize(backend);
+  auto *out = ggml_graph_node(copy.graph, -1);
+  if (status == GGML_STATUS_SUCCESS)
+    ggml_backend_tensor_get(out, result.data(), 0, ggml_nbytes(out));
+  ggml_backend_graph_copy_free(copy);
+  ggml_backend_free(backend);
+  if (status != GGML_STATUS_SUCCESS)
+    throw std::runtime_error("CPU reference graph compute failed");
+  return result;
 }
 int main(int argc, char **argv) {
   try {
@@ -145,7 +154,6 @@ int main(int argc, char **argv) {
     std::vector<float> src(ggml_nelements(a));
     for (size_t i = 0; i < src.size(); ++i)
       src[i] = float(int((i * 17 + 13) % 101) - 50) / 51.f;
-    std::vector<float> stored = src;
     std::vector<unsigned char> packed;
     if (rope)
       ggml_backend_tensor_set(a, src.data(), 0, ggml_nbytes(a));
@@ -155,7 +163,6 @@ int main(int argc, char **argv) {
                                    nullptr);
       if (n != packed.size())
         throw std::runtime_error("quantized size mismatch");
-      stored = unpack(packed, q8, src.size());
       ggml_backend_tensor_set(a, packed.data(), 0, packed.size());
     }
     std::vector<int32_t> ix(tokens);
@@ -168,54 +175,17 @@ int main(int argc, char **argv) {
       ggml_backend_tensor_set(b, rhs.data(), 0, ggml_nbytes(b));
     else
       ggml_backend_tensor_set(b, ix.data(), 0, ggml_nbytes(b));
-    // Read back actual serialized inputs before constructing the independent
-    // oracle.
-    if (rope) {
-      ggml_backend_tensor_get(a, stored.data(), 0, ggml_nbytes(a));
-      ggml_backend_tensor_get(b, ix.data(), 0, ggml_nbytes(b));
-    } else {
-      ggml_backend_tensor_get(a, packed.data(), 0, packed.size());
-      stored = unpack(packed, q8, src.size());
-      if (mat)
-        ggml_backend_tensor_get(b, rhs.data(), 0, ggml_nbytes(b));
-      else
-        ggml_backend_tensor_get(b, ix.data(), 0, ggml_nbytes(b));
-    }
-    for (float x : stored)
-      if (!std::isfinite(x))
-        throw std::runtime_error("nonfinite stored input");
-    for (float x : rhs)
-      if (!std::isfinite(x))
-        throw std::runtime_error("nonfinite RHS");
-    if (gather)
-      for (int32_t x : ix)
-        if (x < 0 || x >= rows)
-          throw std::runtime_error("readback gather index out of range");
-    std::vector<float> ref(ggml_nelements(out));
-    if (mat) {
-      for (int r = 0; r < rows; ++r) {
-        double sum = 0;
-        for (int j = 0; j < k; ++j)
-          sum += double(stored[r * k + j]) * rhs[j];
-        ref[r] = sum;
-      }
-    } else if (gather) {
-      for (int t = 0; t < tokens; ++t)
-        for (int j = 0; j < k; ++j)
-          ref[t * k + j] = stored[ix[t] * k + j];
-    } else {
-      for (int t = 0; t < tokens; ++t)
-        for (int h = 0; h < heads; ++h)
-          for (int j = 0; j < k / 2; ++j) {
-            int x = neox ? j : 2 * j, y = neox ? j + k / 2 : 2 * j + 1,
-                base = (t * heads + h) * k;
-            double angle = ix[t] * std::pow(10000., -2. * j / k),
-                   c = std::cos(angle), s = std::sin(angle);
-            ref[base + x] = stored[base + x] * c - stored[base + y] * s;
-            ref[base + y] = stored[base + x] * s + stored[base + y] * c;
-          }
-    }
-    std::vector<float> got(ref.size(), std::numeric_limits<float>::quiet_NaN());
+    // Poison before cloning too: graph_copy copies all allocated tensors, so
+    // never ask it to read uninitialized output storage. The clone executes
+    // once outside timing and cannot write the measured output or bypass
+    // mutations.
+    std::vector<float> got(ggml_nelements(out),
+                           std::numeric_limits<float>::quiet_NaN());
+    ggml_backend_tensor_set(out, got.data(), 0, ggml_nbytes(out));
+    ggml_backend_synchronize(backend);
+    if (ggml_graph_n_nodes(graph) != 1)
+      throw std::runtime_error("expected one operation per graph");
+    std::vector<float> ref = cpu_reference(graph);
     std::vector<int64_t> timings;
     for (int iteration = 0; iteration < warmups + samples; ++iteration) {
       std::fill(got.begin(), got.end(),
@@ -259,6 +229,8 @@ int main(int argc, char **argv) {
               << op << "\",\"backend\":\"" << ggml_backend_name(backend)
               << "\",\"k\":" << k << ",\"rows\":" << rows
               << ",\"tokens\":" << tokens << ",\"heads\":" << heads
+              << ",\"reference_backend\":\"CPU\",\"reference_use_ref\":true"
+              << ",\"reference_graph_invocations\":1"
               << ",\"graph_invocations\":" << warmups + samples
               << ",\"warmups\":" << warmups << ",\"checked\":" << got.size()
               << ",\"bad\":" << bad << ",\"max_abs_error\":" << maxerr

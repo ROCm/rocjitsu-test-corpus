@@ -4,7 +4,13 @@ This directory contains first-party bounded adapters and CMake/preparation code,
 not a copy of llama.cpp or GGML. They are derived from the qualified disposable
 operator harness, promoted with fixed-count sampling, protocol/provenance gates
 and host-only corruption controls. Upstream operator/quantization/backend code
-is neither copied nor patched.
+is neither copied nor patched. Numerical validation reuses the upstream CPU
+reference-mode execution pattern from `tests/test-backend-ops.cpp` MODE_TEST
+(`ggml_backend_cpu_set_use_ref`), with `ggml_backend_graph_copy` from
+`ggml/src/ggml-backend.cpp` to preserve serialized inputs and operation parameters
+in a separate buffer. Reference kernels remain in upstream `ggml/src/ggml-cpu/`;
+the adapter does not implement a separate numerical oracle or adopt the upstream
+test suite's numerical comparison thresholds.
 
 Required upstream: https://github.com/ggml-org/llama.cpp
 Exact revision: `26d52b0f9543f441fc2bfa383557c992a4fbf4b9`.

@@ -74,31 +74,48 @@ python corpus/benchmarks/llama/workloads.py --workload llama_matvec \
 Native HIP mode validates the actual reported architecture before graph setup.
 It requires direct HIP support for the operation; there is no scheduler fallback.
 
-## Timing and independent validation
+## Timing and upstream CPU reference validation
 
 A graph contains exactly one operation. Each warmup/sample invokes graph compute
 once, followed by synchronization; `steady_clock` measures that host-wall
 interval as integer nanoseconds. Uploads, full NaN output poisoning and a drain
 synchronize precede **every** invocation outside timing. Input generation,
-allocation, serialized input readback, reference construction, output readback
+allocation, CPU reference graph copying/execution, output readback
 and full comparison are outside timing. Only samples enter timings_ns. The
 final measured output is validated without rerunning computation. Warmups
 0..100 and samples 1..100 are fixed caller-provided counts. First invocation
 may include lazy GGML dispatch/workspace preparation and activation packing;
 this is whole-graph host timing, not an isolated device-event measurement.
 
-Inputs follow the qualified deterministic nonuniform formulas. Actual serialized
-quantized weights and RHS/indices are read back before building the oracle.
-Q4_0 and Q8_0 are manually unpacked (FP16 scale, low/high signed-offset nibbles
-or signed bytes); GGML's scalar half conversion is used, never its dequantizer
-or device graph as the reference. Matvec uses double-accumulated independent
-dots, gather direct indexed reads (duplicates and dispersed indices), RoPE
-independent double trig/power at positions 7..tokens+6 with base 10000.
-All output elements are checked; nonfinite values fail. RoPE/gather tolerances
-are atol=rtol=2e-5; matvec atol=.03, rtol=.02 permits upstream activation packing.
-This explicitly approximate matvec check compares against **stored** weights,
-not unquantized source floats. Native JSON reports checked/bad/error/tolerances,
-source pin/backend/parameters/invocation count; the wrapper rejects mismatches.
+Inputs retain the deterministic nonuniform formulas, duplicate/dispersed gather
+indices and RoPE positions 7..tokens+6. Validation follows upstream
+`tests/test-backend-ops.cpp` MODE_TEST: a separate CPU backend explicitly enables
+`ggml_backend_cpu_set_use_ref(backend, true)`. This is GGML's reference mode, not
+its default optimized CPU mode. The setter is linked directly from the pinned
+public CPU API; missing support fails the build rather than silently using a
+different mode. `ggml_backend_graph_copy` copies the allocated graph's actual
+serialized inputs (including quantized weights), layout and operation parameters
+into a distinct CPU buffer. The cloned one-operation graph executes exactly once
+before any warmup/sample. Its result is read back, then its graph, buffer and
+backend are freed before timing. It cannot overwrite the tested graph's output.
+No corpus-written unpacking, dot-product, gather or trigonometric oracle remains.
+This reuses upstream reference execution, not the upstream test suite or its
+comparison policy; shared upstream defects are not independently detected.
+
+All output elements are checked; nonfinite values fail. Existing comparison
+policy is unchanged: RoPE/gather atol=rtol=2e-5; matvec atol=.03, rtol=.02 allows
+activation-packing differences. Native JSON reports checked/bad/error/tolerances,
+source pin/backend/parameters/measured invocation count, plus
+`reference_backend="CPU"`, `reference_use_ref=true` and
+`reference_graph_invocations=1`. The reference invocation is not included in
+`graph_invocations` or `timings_ns`. The wrapper accepts the additive native
+metadata without adding fields to its top-level workload schema.
+
+Reference validation adds an untimed CPU execution and a temporary host copy of
+the graph's inputs/output, in addition to the tested backend allocation and host
+input/comparison vectors. CPU reference time and peak host memory are preparation/
+validation costs, not reported sample timings. Even a HIP build requires this CPU
+reference backend; it is never a fallback for the measured operation.
 
 ## CPU-only tests
 
@@ -112,7 +129,8 @@ LLAMA_BENCHMARK_CPU_BINARY="$ATTEMPT/llama-cpu/bounded-ops" \
 `--cpu` is an explicit host-test-only adapter/native switch; the wrapper refuses
 a CPU artifact without it, and refuses a HIP artifact with it. Never publish
 host-test results as simulator measurements. Tests exercise all three real CPU
-graphs, 0/1 and 1/2 sampling, exact child schema, invalid arguments, wrong source
+graphs against a separate reference, long-position normal/NeoX RoPE, 0/1 and 1/2
+sampling, reference metadata, exact child schema, invalid arguments, wrong source
 pin/build containment, receipt corruption and partial-check rejection.
 `--mutation` creates CPU-only no-op and finite-last-element-corruption binaries;
 the no-op must fail every poisoned output, and finite corruption must fail the
