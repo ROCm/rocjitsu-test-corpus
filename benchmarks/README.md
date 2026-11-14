@@ -56,9 +56,13 @@ also retain the input budget. For example, an input `cpu_thread_budget` of 7 sta
 Policy is recorded on each raw result, not in the execution summary.
 
 The runner checks the Release configuration, disabled LTO/sanitizers,
-source root, SDK, and selected plugin binaries. The wrapper must select the
-binary from that build; arbitrary wrapper commands cannot be checked against
-CMake metadata. Rebuild rocjitsu after source changes.
+source root, and selected plugin binaries. SDK preflight requires
+`rocm-sdk-devel` in the Python environment running `benchmarks.runner`. The
+runner also uses this environment's Python interpreter to launch workloads. SDK
+discovery and version recording happen in the runner process, independently of
+rocjitsu's build toolchain and any cached `ROCM_PATH`. The wrapper must
+select the binary from that build; arbitrary wrapper commands cannot be checked
+against CMake metadata. Rebuild rocjitsu after source changes.
 
 The default `benchmarks/suites/performance-v1.toml` contains 20 case definitions and
 28 target/case combinations across `gfx950` and `gfx1250`:
@@ -310,7 +314,7 @@ separate output directory. Each enabled profile must produce its report.
 Reports cover the entire process, including setup and warmups; timing samples
 retain the same boundary across profiles.
 
-### Harness tests
+## Harness tests
 
 Run the benchmark harness tests through the repository's pytest configuration,
 without ROCm dependencies. pytest-xdist supplies the plugin used by the root

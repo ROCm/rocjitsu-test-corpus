@@ -15,6 +15,8 @@ CANDIDATES = {
 
 
 def configuration(variant, shape=None):
+    # Prebuilt workloads and CMake source verification import this module
+    # without needing YAML; only configuration generation requires PyYAML.
     import yaml
 
     target, filename, group_index, defaults = CANDIDATES[variant]
