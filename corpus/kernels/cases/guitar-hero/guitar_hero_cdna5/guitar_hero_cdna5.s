@@ -60585,7 +60585,7 @@ s_mov_b32 m0, 0
 s_wait_alu 0xfffe
 v_mov_b32 v27, 0xa5a5a5a5
 set_exec -1
-v_ashr_pk_i8_i32 v27.l, s20, v96, v128
+v_ashr_pk_i8_i32 v27, s20, v96, v128
 set_exec -1
 ; vop3 dpp16: vashrpki8i32
 v_mov_b32 v64, 0x3f800000
@@ -60615,7 +60615,7 @@ s_mov_b32 m0, 0
 s_wait_alu 0xfffe
 v_mov_b32 v30, 0xa5a5a5a5
 set_exec -1
-v_ashr_pk_u8_i32 v30.l, s20, v96, v128
+v_ashr_pk_u8_i32 v30, s20, v96, v128
 set_exec -1
 ; vop3 dpp16: vashrpku8i32
 v_mov_b32 v64, 0x3f800000
