@@ -158,6 +158,15 @@ no wait between them, a double-buffered store loop, and compiler-generated
 copies from the async builtins. The compiler emits no `s_wait_asynccnt` for
 those builtins, not even before `__syncthreads()`, so their race cases check
 current compiler behavior and must be updated if the compiler adds the waits.
+The program also covers the split workgroup barrier (`s_barrier_signal`,
+`s_barrier_wait`): a barrier orders what a wave completed before its own
+signal, for waves past their own wait. Race cases move the wait for a DS
+access, a tensor transfer or an async copy to after the wave's signal, issue a
+write after the signal, read before the reader's own wait, or have a wave
+signal and then end. Clean cases check that a wave may work on LDS no other
+wave touches between its signal and its wait, that an access completed after
+one signal is ordered by the wave's next, that a wave may end instead of
+signalling, and a double-buffered loop of eight barrier rounds.
 The gfx1250 program does not build the shared VMEM cases, which use pre-GFX12
 waits.
 
