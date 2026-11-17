@@ -4429,7 +4429,7 @@ TEST_F(Gfx1250RaceTest, cell_third_wave_without_poll_race) {
 // The cell as a non-blocking workgroup barrier, initialized with the thread
 // count (CDNA5 ISA 11.2.2): every wave writes its tile, arrives, waits for the
 // phase, and reads the next wave's tile. In the race variant wave 2 reads
-// before it waits.
+// before it arrives.
 constexpr int kCellBarrierWaves = 4;
 
 template <bool Race>
@@ -4440,11 +4440,13 @@ cell_as_workgroup_barrier_kernel(int *dst) {
   const int wave = waveIndex();
   const int neighbour = (wave + 1) % kCellBarrierWaves;
   ldsWrite(tileSlot(wave), wave * kWave + lane());
-  cellArrive(cell(0));
+  // The early read comes before the wave's own arrive: a returning arrive that
+  // completes the phase reads the cell and so acquires the phase.
   const bool early = Race && wave == 2;
   int value = 0;
   if (early)
     value = ldsReadAndWait(tileSlot(neighbour));
+  cellArrive(cell(0));
   cellWaitPhase(cell(0), 1);
   if (!early)
     value = ldsReadAndWait(tileSlot(neighbour));
@@ -4469,7 +4471,8 @@ TEST_F(Gfx1250RaceTest, cell_as_workgroup_barrier) {
   ExpectValues(dst, cellBarrierValues());
 }
 
-// Wave 2 reads wave 3's tile before it has seen the phase.
+// Wave 2 reads wave 3's tile before it arrives, so the phase cannot have
+// completed and nothing orders the read with wave 3's write.
 TEST_F(Gfx1250RaceTest, cell_as_workgroup_barrier_read_before_wait_race) {
   auto *dst = alloc<int>(kCellBarrierWaves * kWave);
   cell_as_workgroup_barrier_kernel<true><<<1, kCellBarrierWaves * kWave, kCellLdsBytes>>>(dst);
