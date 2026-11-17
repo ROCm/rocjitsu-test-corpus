@@ -34,6 +34,8 @@ inline void checkHip(hipError_t status, const char *operation, const char *file,
 
 /// Common issue-capacity probes. Target suites instantiate these with their
 /// architectural counter capacities and keep target-specific expectations.
+/// Each probe passes its LDS word's address into the asm, so the compiler keeps
+/// the `lds` array and the store that fills it.
 template <int YoungerLoads> __global__ void vmcnt_capacity_kernel(const float *src, float *dst) {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
   float producer, younger, result;
@@ -53,6 +55,7 @@ template <int YoungerReads> __global__ void lgkmcnt_capacity_kernel(int *dst) {
   int tid = threadIdx.x;
   lds[tid] = tid + 1;
   __syncthreads();
+  const unsigned address = static_cast<unsigned>(reinterpret_cast<uintptr_t>(&lds[tid]));
 
   int producer, younger, result;
   asm volatile("ds_read_b32 %[producer], %[address]\n"
@@ -61,7 +64,7 @@ template <int YoungerReads> __global__ void lgkmcnt_capacity_kernel(int *dst) {
                ".endr\n"
                "v_mov_b32 %[result], %[producer]\n"
                : [producer] "=&v"(producer), [younger] "=&v"(younger), [result] "=&v"(result)
-               : [address] "v"(tid * 4), [younger_reads] "n"(YoungerReads)
+               : [address] "v"(address), [younger_reads] "n"(YoungerReads)
                : "memory");
   dst[tid] = result;
 }
@@ -75,6 +78,7 @@ __global__ void mixed_lgkmcnt_capacity_kernel(const int *scalar_src, int *dst) {
   int tid = threadIdx.x;
   lds[tid] = tid + 1;
   __syncthreads();
+  const unsigned address = static_cast<unsigned>(reinterpret_cast<uintptr_t>(&lds[tid]));
 
   int producer, younger, scalar_result, result;
   asm volatile("ds_read_b32 %[producer], %[lds_address]\n"
@@ -85,7 +89,7 @@ __global__ void mixed_lgkmcnt_capacity_kernel(const int *scalar_src, int *dst) {
                "v_mov_b32 %[result], %[producer]\n"
                : [producer] "=&v"(producer), [younger] "=&v"(younger),
                  [scalar_result] "=s"(scalar_result), [result] "=&v"(result)
-               : [lds_address] "v"(tid * 4), [scalar_address] "s"(scalar_src),
+               : [lds_address] "v"(address), [scalar_address] "s"(scalar_src),
                  [younger_reads] "n"(YoungerReads)
                : "memory");
   dst[tid] = result;
@@ -100,6 +104,7 @@ __global__ void wide_scalar_lgkmcnt_capacity_kernel(const uint64_t *scalar_src, 
   int tid = threadIdx.x;
   lds[tid] = tid + 1;
   __syncthreads();
+  const unsigned address = static_cast<unsigned>(reinterpret_cast<uintptr_t>(&lds[tid]));
 
   int producer, younger, result;
   uint64_t scalar_result;
@@ -111,7 +116,7 @@ __global__ void wide_scalar_lgkmcnt_capacity_kernel(const uint64_t *scalar_src, 
                "v_mov_b32 %[result], %[producer]\n"
                : [producer] "=&v"(producer), [younger] "=&v"(younger),
                  [scalar_result] "=s"(scalar_result), [result] "=&v"(result)
-               : [lds_address] "v"(tid * 4), [scalar_address] "s"(scalar_src),
+               : [lds_address] "v"(address), [scalar_address] "s"(scalar_src),
                  [younger_reads] "n"(YoungerReads)
                : "memory");
   dst[tid] = result;

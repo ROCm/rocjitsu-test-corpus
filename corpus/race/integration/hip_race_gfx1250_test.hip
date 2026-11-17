@@ -43,6 +43,8 @@ namespace {
 
 using rocjitsu::test::FindingCount;
 using rocjitsu::test::RaceExpectation;
+using rocjitsu::test::lgkmcnt_capacity_kernel;
+using rocjitsu::test::mixed_lgkmcnt_capacity_kernel;
 
 constexpr int kWave = 32; // gfx1250 runs wave32.
 /// The ints in one tile: a single row with one int per lane. The tests' tensors
@@ -2485,5 +2487,881 @@ TEST_F(Gfx1250RaceTest, cluster_then_workgroup_barrier_exited_writer) {
   ExpectValues(out, range(kWave + 11));
   ExpectNoRace();
 }
+
+// --- Counter-capacity backpressure ---
+
+// Each memory counter is finite, and issuing an instruction that would overflow
+// one stalls the wave until the oldest operation completes (CDNA5 ISA 5.7.1).
+// For a counter whose operations complete in issue order, that proves the
+// oldest one complete without an explicit wait. Each case issues an oldest
+// operation, then enough younger operations on the same counter to fill it
+// (clean) or to stop one short (race), and uses the oldest result with no wait.
+// Cases named for what does not happen (`*_does_not_*` and `*_do_not_*`) have
+// no clean partner: each shows that a full counter of one kind, or completions
+// of one type, prove nothing about an operation on another.
+
+// LOADcnt, STOREcnt, DScnt, ASYNCcnt and TENSORcnt are 6-bit counters and KMcnt
+// is a 5-bit counter (the counter table in CDNA5 ISA 5.7.1). Issue stalls
+// rather than overflow a counter, so each holds 2^n - 1 tokens.
+constexpr int kCounterCapacity = 63; // 2^6 - 1.
+constexpr int kKmcntCapacity = 31;   // 2^5 - 1.
+
+// Younger loads write VGPRs v64 onward, one register each, so no two pending
+// loads share a destination. That keeps the clean cases independent of
+// whether same-type loads write their VGPRs in order (CDNA5 ISA 5.7.1 allows
+// out-of-order writeback).
+#define RACE_YOUNGER_VGPR_CLOBBERS \
+  "v64", "v65", "v66", "v67", "v68", "v69", "v70", "v71", "v72", "v73", \
+  "v74", "v75", "v76", "v77", "v78", "v79", "v80", "v81", "v82", "v83", \
+  "v84", "v85", "v86", "v87", "v88", "v89", "v90", "v91", "v92", "v93", \
+  "v94", "v95", "v96", "v97", "v98", "v99", "v100", "v101", "v102", "v103", \
+  "v104", "v105", "v106", "v107", "v108", "v109", "v110", "v111", "v112", "v113", \
+  "v114", "v115", "v116", "v117", "v118", "v119", "v120", "v121", "v122", "v123", \
+  "v124", "v125", "v126"
+// Younger scalar loads write s40 onward, one register each.
+#define RACE_YOUNGER_SGPR_CLOBBERS \
+  "s40", "s41", "s42", "s43", "s44", "s45", "s46", "s47", "s48", "s49", \
+  "s50", "s51", "s52", "s53", "s54", "s55", "s56", "s57", "s58", "s59", \
+  "s60", "s61", "s62", "s63", "s64", "s65", "s66", "s67", "s68", "s69", \
+  "s70"
+
+static constexpr RaceExpectation kLoadcntCapacityRaceExpectation{
+    .findings = FindingCount::One,
+    .type = "VGPR",
+    .producer = "global_load_b32",
+    .consumer = "v_mov_b32",
+};
+
+static constexpr RaceExpectation kDscntCapacityRaceExpectation{
+    .findings = FindingCount::One,
+    .type = "VGPR",
+    .producer = "ds_load_b32",
+    .consumer = "v_mov_b32",
+};
+
+static constexpr RaceExpectation kKmcntCapacityRaceExpectation{
+    .findings = FindingCount::One,
+    .type = "SGPR",
+    .producer = "s_load_b32",
+    .consumer = "v_mov_b32",
+};
+
+static constexpr RaceExpectation kAsynccntCapacityRaceExpectation{
+    .findings = FindingCount::One,
+    .type = "LDS",
+    .access = "read",
+    .producer = "global_load_async_to_lds_b32",
+    .consumer = "ds_load_b32",
+};
+
+static constexpr RaceExpectation kTensorcntCapacityRaceExpectation{
+    .findings = FindingCount::One,
+    .type = "LDS",
+    .access = "read",
+    .producer = "tensor_load_to_lds",
+    .consumer = "ds_load_b32",
+};
+
+static constexpr RaceExpectation kDsWriteThenReadRaceExpectation{
+    .findings = FindingCount::One,
+    .type = "LDS",
+    .access = "read",
+    .producer = "ds_store_b32",
+    .consumer = "ds_load_b32",
+};
+
+// A load, `Younger` younger loads, then a use of the oldest load's result. With
+// `ExecZeroBeforeLast`, the second-to-last younger load runs with EXEC zero and
+// the last one is active. The EXEC-zero load still holds a LOADcnt slot,
+// because VMEM is skipped only when EXEC is zero and LOADcnt, STOREcnt,
+// ASYNCcnt and TENSORcnt are all zero (CDNA5 ISA 3.2.2.1). So it is the last,
+// active load's issue that finds the counter full, and only if the EXEC-zero
+// load's slot is counted.
+template <int Younger, bool ExecZeroBeforeLast = false>
+__global__ void loadcnt_capacity_kernel(const int *src, int *dst) {
+  static_assert(Younger <= kCounterCapacity);
+  constexpr int kUnmaskedYounger = ExecZeroBeforeLast ? Younger - 2 : Younger;
+  int producer, result, saved_exec;
+  asm volatile("global_load_b32 %[producer], %[address], off\n"
+               ".set race_vgpr, 64\n"
+               ".rept %c[unmasked]\n"
+               "global_load_b32 v[race_vgpr], %[address], off\n"
+               ".set race_vgpr, race_vgpr + 1\n"
+               ".endr\n"
+               ".if %c[exec_zero]\n"
+               "s_mov_b32 %[saved_exec], exec_lo\n"
+               "s_mov_b32 exec_lo, 0\n"
+               "global_load_b32 v[race_vgpr], %[address], off\n"
+               "s_mov_b32 exec_lo, %[saved_exec]\n"
+               ".set race_vgpr, race_vgpr + 1\n"
+               "global_load_b32 v[race_vgpr], %[address], off\n"
+               ".endif\n"
+               "v_mov_b32 %[result], %[producer]\n"
+               : [producer] "=&v"(producer), [result] "=&v"(result),
+                 [saved_exec] "=&s"(saved_exec)
+               : [address] "v"(&src[threadIdx.x]), [unmasked] "n"(kUnmaskedYounger),
+                 [exec_zero] "n"(ExecZeroBeforeLast ? 1 : 0)
+               : "memory", RACE_YOUNGER_VGPR_CLOBBERS);
+  asm volatile("s_wait_loadcnt 0" ::: "memory");
+  dst[threadIdx.x] = result;
+}
+
+TEST_F(Gfx1250RaceTest, loadcnt_capacity_boundary) {
+  auto *src = allocWithData<int>(kWave);
+  auto *dst = alloc<int>(kWave);
+  loadcnt_capacity_kernel<kCounterCapacity><<<1, kWave>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, loadcnt_below_capacity_race) {
+  auto *src = allocWithData<int>(kWave);
+  auto *dst = alloc<int>(kWave);
+  loadcnt_capacity_kernel<kCounterCapacity - 1><<<1, kWave>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kLoadcntCapacityRaceExpectation);
+}
+
+TEST_F(Gfx1250RaceTest, loadcnt_exec_zero_capacity_boundary) {
+  auto *src = allocWithData<int>(kWave);
+  auto *dst = alloc<int>(kWave);
+  loadcnt_capacity_kernel<kCounterCapacity, true><<<1, kWave>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, loadcnt_exec_zero_below_capacity_race) {
+  auto *src = allocWithData<int>(kWave);
+  auto *dst = alloc<int>(kWave);
+  loadcnt_capacity_kernel<kCounterCapacity - 1, true><<<1, kWave>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kLoadcntCapacityRaceExpectation);
+}
+
+// A load, `Younger` younger loads, then GLOBAL_INV with EXEC zero, then a use
+// of the oldest load's result. GLOBAL_INV counts on LOADcnt (CDNA5 ISA 5.7.1.2)
+// and is not skipped for EXEC zero (CDNA5 ISA 3.2.2.1), so even with no active
+// lanes it needs a free LOADcnt slot to issue and, at capacity, completes the
+// oldest load.
+template <int Younger>
+__global__ void global_inv_loadcnt_capacity_kernel(const int *src, int *dst) {
+  static_assert(Younger < kCounterCapacity);
+  int producer, result, saved_exec;
+  asm volatile("global_load_b32 %[producer], %[address], off\n"
+               ".set race_vgpr, 64\n"
+               ".rept %c[younger_loads]\n"
+               "global_load_b32 v[race_vgpr], %[address], off\n"
+               ".set race_vgpr, race_vgpr + 1\n"
+               ".endr\n"
+               "s_mov_b32 %[saved_exec], exec_lo\n"
+               "s_mov_b32 exec_lo, 0\n"
+               "global_inv\n"
+               "s_mov_b32 exec_lo, %[saved_exec]\n"
+               "v_mov_b32 %[result], %[producer]\n"
+               : [producer] "=&v"(producer), [result] "=&v"(result),
+                 [saved_exec] "=&s"(saved_exec)
+               : [address] "v"(&src[threadIdx.x]), [younger_loads] "n"(Younger)
+               : "memory", RACE_YOUNGER_VGPR_CLOBBERS);
+  asm volatile("s_wait_loadcnt 0" ::: "memory");
+  dst[threadIdx.x] = result;
+}
+
+TEST_F(Gfx1250RaceTest, global_inv_loadcnt_capacity_boundary) {
+  auto *src = allocWithData<int>(kWave);
+  auto *dst = alloc<int>(kWave);
+  global_inv_loadcnt_capacity_kernel<kCounterCapacity - 1><<<1, kWave>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, global_inv_loadcnt_below_capacity_race) {
+  auto *src = allocWithData<int>(kWave);
+  auto *dst = alloc<int>(kWave);
+  global_inv_loadcnt_capacity_kernel<kCounterCapacity - 2><<<1, kWave>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kLoadcntCapacityRaceExpectation);
+}
+
+// A load, optionally GLOBAL_INV, then s_wait_loadcnt 1 and a use of the load's
+// result. GLOBAL_INV counts on LOADcnt (CDNA5 ISA 5.7.1.2), and LLVM orders it
+// with VMEM loads, so after it, waiting for one to remain completes the load.
+// Without it, the load is the one that remains.
+template <bool Invalidate>
+__global__ void global_inv_partial_wait_kernel(const int *src, int *dst) {
+  int producer, result;
+  asm volatile("global_load_b32 %[producer], %[address], off\n"
+               ".if %c[invalidate]\n"
+               "global_inv\n"
+               ".endif\n"
+               "s_wait_loadcnt 1\n"
+               "v_mov_b32 %[result], %[producer]\n"
+               : [producer] "=&v"(producer), [result] "=&v"(result)
+               : [address] "v"(&src[threadIdx.x]), [invalidate] "n"(Invalidate ? 1 : 0)
+               : "memory");
+  asm volatile("s_wait_loadcnt 0" ::: "memory");
+  dst[threadIdx.x] = result;
+}
+
+TEST_F(Gfx1250RaceTest, global_inv_partial_wait_completes_older_load) {
+  auto *src = allocWithData<int>(kWave);
+  auto *dst = alloc<int>(kWave);
+  global_inv_partial_wait_kernel<true><<<1, kWave>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, partial_wait_without_global_inv_race) {
+  auto *src = allocWithData<int>(kWave);
+  auto *dst = alloc<int>(kWave);
+  global_inv_partial_wait_kernel<false><<<1, kWave>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kLoadcntCapacityRaceExpectation);
+}
+
+// Loads and stores use separate counters (CDNA5 ISA 5.7.1), so even a store
+// issued against a full STOREcnt says nothing about a pending load.
+__global__ void storecnt_pressure_kernel(const int *src, int *scratch, int *dst) {
+  int producer, result;
+  asm volatile("global_load_b32 %[producer], %[load_address], off\n"
+               ".rept %c[stores]\n"
+               "global_store_b32 %[store_address], %[store_value], off\n"
+               ".endr\n"
+               "v_mov_b32 %[result], %[producer]\n"
+               : [producer] "=&v"(producer), [result] "=&v"(result)
+               : [load_address] "v"(&src[threadIdx.x]), [store_address] "v"(&scratch[threadIdx.x]),
+                 [store_value] "v"(1), [stores] "n"(kCounterCapacity + 1)
+               : "memory");
+  asm volatile("s_wait_loadcnt 0\n"
+               "s_wait_storecnt 0" ::: "memory");
+  dst[threadIdx.x] = result;
+}
+
+TEST_F(Gfx1250RaceTest, storecnt_pressure_does_not_advance_loadcnt_race) {
+  auto *src = allocWithData<int>(kWave);
+  auto *scratch = alloc<int>(kWave);
+  auto *dst = alloc<int>(kWave);
+  storecnt_pressure_kernel<<<1, kWave>>>(src, scratch, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kLoadcntCapacityRaceExpectation);
+}
+
+// The shared probes issue a DS read, then younger DS reads, then use the
+// oldest result. DS operations complete in issue order (CDNA5 ISA 5.7.1.4), so
+// the younger reads may share a destination. Each probe fills its LDS word with
+// the thread index plus one.
+TEST_F(Gfx1250RaceTest, dscnt_capacity_boundary) {
+  auto *dst = alloc<int>(kWave);
+  lgkmcnt_capacity_kernel<kCounterCapacity><<<1, kWave>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(1, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, dscnt_below_capacity_race) {
+  lgkmcnt_capacity_kernel<kCounterCapacity - 1><<<1, kWave>>>(alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kDscntCapacityRaceExpectation);
+}
+
+// The same program is clean on gfx1151 (mixed_lgkmcnt_capacity_boundary),
+// where the scalar load fills the shared LGKMCNT and completes the oldest DS
+// read. On gfx1250 the scalar load counts on KMcnt (CDNA5 ISA 5.7.1.1), not
+// DScnt, so the DS read stays pending.
+TEST_F(Gfx1250RaceTest, kmcnt_pressure_does_not_advance_dscnt_race) {
+  mixed_lgkmcnt_capacity_kernel<kCounterCapacity - 1>
+      <<<1, kWave>>>(allocWithData<int>(1), alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kDscntCapacityRaceExpectation);
+}
+
+// Scalar memory loads return out of order (CDNA5 ISA 5.7.1.1), so a full KMcnt
+// does not prove which one completed.
+__global__ void kmcnt_capacity_kernel(const int *src, int *dst) {
+  int producer, result;
+  asm volatile("s_load_b32 %[producer], %[address], 0x0\n"
+               ".set race_sgpr, 40\n"
+               ".rept %c[younger_loads]\n"
+               "s_load_b32 s[race_sgpr], %[address], 0x0\n"
+               ".set race_sgpr, race_sgpr + 1\n"
+               ".endr\n"
+               "v_mov_b32 %[result], %[producer]\n"
+               : [producer] "=&s"(producer), [result] "=&v"(result)
+               : [address] "s"(src), [younger_loads] "n"(kKmcntCapacity)
+               : "memory", RACE_YOUNGER_SGPR_CLOBBERS);
+  asm volatile("s_wait_kmcnt 0" ::: "memory");
+  dst[lane()] = result;
+}
+
+TEST_F(Gfx1250RaceTest, kmcnt_capacity_does_not_complete_scalar_loads_race) {
+  kmcnt_capacity_kernel<<<1, kWave>>>(allocWithData<int>(1), alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kKmcntCapacityRaceExpectation);
+}
+
+// An async load into tile 0, `Younger` younger async loads into tiles 1
+// onward, then a DS read of tile 0. The instruction offset moves both the
+// global and the LDS address (CDNA5 ISA 10.8.1), so each younger load writes
+// its own tile.
+template <int Younger> __global__ void asynccnt_capacity_kernel(const int *src, int *dst) {
+  static_assert(Younger <= kCounterCapacity);
+  const uint32_t offset = lane() * kElementBytes;
+  asm volatile("global_load_async_to_lds_b32 %[lds], %[offset], %[base]\n"
+               ".set race_tile, 1\n"
+               ".rept %c[younger_loads]\n"
+               "global_load_async_to_lds_b32 %[lds], %[offset], %[base] "
+               "offset:race_tile*%c[tile_bytes]\n"
+               ".set race_tile, race_tile + 1\n"
+               ".endr\n"
+               :
+               : [lds] "v"(offset), [offset] "v"(offset), [base] "s"(src),
+                 [younger_loads] "n"(Younger), [tile_bytes] "n"(kTileBytes)
+               : "memory");
+  dst[lane()] = ldsReadAndWait(offset);
+  asm volatile("s_wait_asynccnt 0" ::: "memory");
+}
+
+TEST_F(Gfx1250RaceTest, asynccnt_capacity_boundary) {
+  auto *src = allocWithData<int>((kCounterCapacity + 1) * kTileElements);
+  auto *dst = alloc<int>(kWave);
+  asynccnt_capacity_kernel<kCounterCapacity>
+      <<<1, kWave, (kCounterCapacity + 1) * kTileBytes>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0));
+}
+
+TEST_F(Gfx1250RaceTest, asynccnt_below_capacity_race) {
+  auto *src = allocWithData<int>(kCounterCapacity * kTileElements);
+  asynccnt_capacity_kernel<kCounterCapacity - 1>
+      <<<1, kWave, kCounterCapacity * kTileBytes>>>(src, alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsynccntCapacityRaceExpectation);
+}
+
+// Async loads and async stores complete in order only within their own type
+// (CDNA5 ISA 10.8). An async load into tile 0, then enough async stores to
+// nearly fill ASYNCcnt, then one more async load: the counter is full, but
+// neither type alone overflows, so the first load is not proven complete.
+__global__ void asynccnt_mixed_kernel(const int *src, int *scratch, int *dst) {
+  const uint32_t offset = lane() * kElementBytes;
+  ldsFillAndWait(kTileBytes, 100 + lane());
+  asm volatile("global_load_async_to_lds_b32 %[lds], %[offset], %[base]\n"
+               ".rept %c[stores]\n"
+               "global_store_async_from_lds_b32 %[offset], %[lds], %[scratch] "
+               "offset:%c[tile_bytes]\n"
+               ".endr\n"
+               "global_load_async_to_lds_b32 %[lds], %[offset], %[base] "
+               "offset:2*%c[tile_bytes]\n"
+               :
+               : [lds] "v"(offset), [offset] "v"(offset), [base] "s"(src),
+                 [scratch] "s"(scratch), [stores] "n"(kCounterCapacity - 1),
+                 [tile_bytes] "n"(kTileBytes)
+               : "memory");
+  dst[lane()] = ldsReadAndWait(offset);
+  asm volatile("s_wait_asynccnt 0" ::: "memory");
+}
+
+TEST_F(Gfx1250RaceTest, asynccnt_mixed_types_do_not_complete_a_load_race) {
+  auto *src = allocWithData<int>(3 * kTileElements);
+  auto *scratch = alloc<int>(2 * kTileElements);
+  asynccnt_mixed_kernel<<<1, kWave, 3 * kTileBytes>>>(src, scratch, alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsynccntCapacityRaceExpectation);
+}
+
+// An async load into tile 0, then younger async loads and an async-counted
+// instruction issued with EXEC zero, then a DS read of tile 0. An EXEC-zero
+// instruction counts unless the counters its encoding names are all zero (CDNA5
+// ISA 3.2.2.1). A VMEM async load names ASYNCcnt, so it holds a slot: with 61
+// younger loads, the EXEC-zero load at issue 63 and an active load into tile 63
+// at issue 64 fill ASYNCcnt, and the active load's issue completes the oldest
+// load only if the EXEC-zero load kept its slot. With `Arrive`, 62 younger loads
+// are followed by ds_atomic_async_barrier_arrive_b64 at issue 64, an LDS
+// instruction that counts on ASYNCcnt but is skipped whenever DScnt is zero, as
+// it is here, so it proves nothing about the pending loads.
+template <bool Arrive> __global__ void asynccnt_exec_zero_kernel(const int *src, int *dst) {
+  constexpr int kYounger = Arrive ? kCounterCapacity - 1 : kCounterCapacity - 2;
+  constexpr uint32_t kCellOffset = (kCounterCapacity + 1) * kTileBytes;
+  const uint32_t offset = lane() * kElementBytes;
+  int saved_exec;
+  asm volatile("global_load_async_to_lds_b32 %[lds], %[offset], %[base]\n"
+               ".set race_tile, 1\n"
+               ".rept %c[younger_loads]\n"
+               "global_load_async_to_lds_b32 %[lds], %[offset], %[base] "
+               "offset:race_tile*%c[tile_bytes]\n"
+               ".set race_tile, race_tile + 1\n"
+               ".endr\n"
+               "s_mov_b32 %[saved_exec], exec_lo\n"
+               "s_mov_b32 exec_lo, 0\n"
+               ".if %c[arrive]\n"
+               "ds_atomic_async_barrier_arrive_b64 %[cell]\n"
+               "s_mov_b32 exec_lo, %[saved_exec]\n"
+               ".else\n"
+               "global_load_async_to_lds_b32 %[lds], %[offset], %[base] "
+               "offset:race_tile*%c[tile_bytes]\n"
+               ".set race_tile, race_tile + 1\n"
+               "s_mov_b32 exec_lo, %[saved_exec]\n"
+               "global_load_async_to_lds_b32 %[lds], %[offset], %[base] "
+               "offset:race_tile*%c[tile_bytes]\n"
+               ".endif\n"
+               : [saved_exec] "=&s"(saved_exec)
+               : [lds] "v"(offset), [offset] "v"(offset), [base] "s"(src), [cell] "v"(kCellOffset),
+                 [younger_loads] "n"(kYounger), [tile_bytes] "n"(kTileBytes),
+                 [arrive] "n"(Arrive ? 1 : 0)
+               : "memory");
+  dst[lane()] = ldsReadAndWait(offset);
+  asm volatile("s_wait_asynccnt 0" ::: "memory");
+}
+
+/// Tiles for the oldest, younger, EXEC-zero and final async loads, plus a
+/// barrier cell for the arrive, which writes nothing with EXEC zero.
+constexpr int kAsyncExecZeroLdsBytes = (kCounterCapacity + 2) * kTileBytes + 8;
+
+TEST_F(Gfx1250RaceTest, asynccnt_exec_zero_load_capacity_boundary) {
+  auto *src = allocWithData<int>((kCounterCapacity + 1) * kTileElements);
+  auto *dst = alloc<int>(kWave);
+  asynccnt_exec_zero_kernel<false><<<1, kWave, kAsyncExecZeroLdsBytes>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0));
+}
+
+TEST_F(Gfx1250RaceTest, asynccnt_exec_zero_barrier_arrive_does_not_complete_a_load_race) {
+  auto *src = allocWithData<int>((kCounterCapacity + 1) * kTileElements);
+  asynccnt_exec_zero_kernel<true><<<1, kWave, kAsyncExecZeroLdsBytes>>>(src, alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kAsynccntCapacityRaceExpectation);
+}
+
+// A tensor load of tile 0, `Younger` younger tensor loads of the same data into
+// tiles 1 onward, then a DS read of tile 0. Each younger load moves real data
+// into its own tile, so the case does not depend on whether a NULL descriptor
+// counts on TENSORcnt. Only the LDS offset, descriptor word 1, differs.
+template <int Younger> __global__ void tensorcnt_capacity_kernel(TensorDesc tile, int *dst) {
+  static_assert(Younger <= kCounterCapacity);
+  tensorLoad(tile);
+  for (int younger = 1; younger <= Younger; ++younger) {
+    TensorDesc next = tile;
+    next.group0[1] = younger * kTileBytes;
+    tensorLoad(next);
+  }
+  dst[lane()] = ldsReadAndWait(lane() * kElementBytes);
+  waitTensorcnt<0>();
+}
+
+TEST_F(Gfx1250RaceTest, tensorcnt_capacity_boundary) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kWave);
+  tensorcnt_capacity_kernel<kCounterCapacity>
+      <<<1, kWave, (kCounterCapacity + 1) * kTileBytes>>>(describe({.global = src}), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0));
+}
+
+TEST_F(Gfx1250RaceTest, tensorcnt_below_capacity_race) {
+  auto *src = allocWithData<int>(kTileElements);
+  tensorcnt_capacity_kernel<kCounterCapacity - 1>
+      <<<1, kWave, kCounterCapacity * kTileBytes>>>(describe({.global = src}), alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kTensorcntCapacityRaceExpectation);
+}
+
+// Wave 0 writes tile 0, then issues `Younger` younger DS writes to tile 1 with
+// no wait, and the workgroup synchronizes. With `Younger` at capacity, the last
+// younger write proves the first complete for wave 0, so the barrier orders it
+// before wave 1's read. In the race variant, the report is always at wave 1's
+// read, because the read follows the barrier, which follows the write's issue.
+template <int Younger>
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+dscnt_capacity_cross_wave_kernel(int *dst) {
+  static_assert(Younger <= kCounterCapacity);
+  const int wave = waveIndex();
+  const uint32_t offset = lane() * kElementBytes;
+  if (wave == 0) {
+    asm volatile("ds_store_b32 %[address], %[value]\n"
+                 ".rept %c[younger_writes]\n"
+                 "ds_store_b32 %[address], %[value] offset:%c[tile_bytes]\n"
+                 ".endr\n"
+                 :
+                 : [address] "v"(offset), [value] "v"(100 + lane()),
+                   [younger_writes] "n"(Younger), [tile_bytes] "n"(kTileBytes)
+                 : "memory");
+  }
+  barrier();
+  if (wave == 1)
+    dst[lane()] = ldsReadAndWait(offset);
+  if (wave == 0)
+    waitDscnt();
+}
+
+TEST_F(Gfx1250RaceTest, dscnt_capacity_cross_wave_barrier) {
+  auto *dst = alloc<int>(kWave);
+  dscnt_capacity_cross_wave_kernel<kCounterCapacity><<<1, 2 * kWave, 2 * kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(100, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, dscnt_capacity_cross_wave_barrier_race) {
+  dscnt_capacity_cross_wave_kernel<kCounterCapacity - 1>
+      <<<1, 2 * kWave, 2 * kTileBytes>>>(alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kDsWriteThenReadRaceExpectation);
+}
+
+// --- FLAT counts on DScnt and on LOADcnt ---
+
+// Every FLAT instruction increments both DScnt and either LOADcnt or STOREcnt
+// when it issues, whichever memory its addresses resolve to (CDNA5 ISA
+// 5.7.1.3). Its LDS portion completes in order with LDS instructions and its
+// VMEM portion with other VMEM loads, so a FLAT fills both counters and counts
+// toward partial waits on both, even when its addresses use only one memory.
+
+// The FLAT instruction under test: a load or a store that takes the last slot,
+// or a load issued with EXEC zero. With EXEC zero, a FLAT still counts on both
+// counters unless DScnt, LOADcnt, STOREcnt, ASYNCcnt and TENSORcnt are all zero
+// (CDNA5 ISA 3.2.2.1), and here the younger operations keep them nonzero. The
+// EXEC-zero load is followed by an active operation on the counter under test,
+// which takes the last slot, so it completes the oldest operation only if the
+// EXEC-zero load kept its slot.
+// The asm compares a form's value with `.if`, so each value is fixed.
+enum class FlatForm { Load = 0, Store = 1, ExecZeroLoad = 2 };
+
+// A DS read, `Younger` younger DS reads, then a FLAT access to global memory
+// (for the EXEC-zero form, followed by a DS read), then a use of the oldest DS
+// result. A store writes `scratch`, so it cannot conflict with the kernel's own
+// stores.
+template <int Younger, FlatForm Form = FlatForm::Load>
+__global__ void flat_dscnt_capacity_kernel(const int *src, int *scratch, int *dst) {
+  static_assert(Younger < kCounterCapacity);
+  ldsFillAndWait(0, 100 + lane());
+  int producer, younger, flat_result, saved_exec, result;
+  asm volatile("ds_load_b32 %[producer], %[address]\n"
+               ".rept %c[younger_reads]\n"
+               "ds_load_b32 %[younger], %[address]\n"
+               ".endr\n"
+               ".if %c[form] == 1\n"
+               "flat_store_b32 %[store_address], %[store_value]\n"
+               ".elseif %c[form] == 2\n"
+               "s_mov_b32 %[saved_exec], exec_lo\n"
+               "s_mov_b32 exec_lo, 0\n"
+               "flat_load_b32 %[flat_result], %[flat_address]\n"
+               "s_mov_b32 exec_lo, %[saved_exec]\n"
+               "ds_load_b32 %[younger], %[address]\n"
+               ".else\n"
+               "flat_load_b32 %[flat_result], %[flat_address]\n"
+               ".endif\n"
+               "v_mov_b32 %[result], %[producer]\n"
+               : [producer] "=&v"(producer), [younger] "=&v"(younger),
+                 [flat_result] "=&v"(flat_result), [saved_exec] "=&s"(saved_exec),
+                 [result] "=&v"(result)
+               : [address] "v"(lane() * kElementBytes), [flat_address] "v"(&src[lane()]),
+                 [store_address] "v"(&scratch[lane()]), [store_value] "v"(1),
+                 [younger_reads] "n"(Younger), [form] "n"(static_cast<int>(Form))
+               : "memory");
+  asm volatile("s_wait_loadcnt 0\n"
+               "s_wait_storecnt 0\n"
+               "s_wait_dscnt 0" ::: "memory");
+  dst[lane()] = result;
+}
+
+TEST_F(Gfx1250RaceTest, flat_global_dscnt_capacity_boundary) {
+  auto *dst = alloc<int>(kWave);
+  flat_dscnt_capacity_kernel<kCounterCapacity - 1>
+      <<<1, kWave, kTileBytes>>>(allocWithData<int>(kWave), alloc<int>(kWave), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(100, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, flat_global_dscnt_below_capacity_race) {
+  flat_dscnt_capacity_kernel<kCounterCapacity - 2><<<1, kWave, kTileBytes>>>(
+      allocWithData<int>(kWave), alloc<int>(kWave), alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kDscntCapacityRaceExpectation);
+}
+
+// A DS read, `Younger` younger DS reads, then DS_BPERMUTE_B32 or DS_NOP, then a
+// use of the oldest DS result. A lane permute uses the LDS hardware without LDS
+// memory (CDNA5 ISA 11.2.3), and LDS operations count on DScnt in order (CDNA5
+// ISA 5.7.1.4), so the permute takes the last DScnt slot. DS_NOP does too, as
+// RocJITsu's memory-wait checker models it.
+template <int Younger, bool Nop = false>
+__global__ void bpermute_dscnt_capacity_kernel(int *dst) {
+  static_assert(Younger < kCounterCapacity);
+  ldsFillAndWait(0, 100 + lane());
+  int producer, younger, permuted, result;
+  asm volatile("ds_load_b32 %[producer], %[address]\n"
+               ".rept %c[younger_reads]\n"
+               "ds_load_b32 %[younger], %[address]\n"
+               ".endr\n"
+               ".if %c[nop]\n"
+               "ds_nop\n"
+               ".else\n"
+               "ds_bpermute_b32 %[permuted], %[address], %[address]\n"
+               ".endif\n"
+               "v_mov_b32 %[result], %[producer]\n"
+               : [producer] "=&v"(producer), [younger] "=&v"(younger),
+                 [permuted] "=&v"(permuted), [result] "=&v"(result)
+               : [address] "v"(lane() * kElementBytes), [younger_reads] "n"(Younger),
+                 [nop] "n"(Nop ? 1 : 0)
+               : "memory");
+  asm volatile("s_wait_dscnt 0" ::: "memory");
+  dst[lane()] = result;
+}
+
+TEST_F(Gfx1250RaceTest, bpermute_dscnt_capacity_boundary) {
+  auto *dst = alloc<int>(kWave);
+  bpermute_dscnt_capacity_kernel<kCounterCapacity - 1><<<1, kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(100, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, bpermute_dscnt_below_capacity_race) {
+  bpermute_dscnt_capacity_kernel<kCounterCapacity - 2><<<1, kWave, kTileBytes>>>(
+      alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kDscntCapacityRaceExpectation);
+}
+
+TEST_F(Gfx1250RaceTest, ds_nop_dscnt_capacity_boundary) {
+  auto *dst = alloc<int>(kWave);
+  bpermute_dscnt_capacity_kernel<kCounterCapacity - 1, true><<<1, kWave, kTileBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(100, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, ds_nop_dscnt_below_capacity_race) {
+  bpermute_dscnt_capacity_kernel<kCounterCapacity - 2, true><<<1, kWave, kTileBytes>>>(
+      alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kDscntCapacityRaceExpectation);
+}
+
+// A FLAT store counts on DScnt too, not only on STOREcnt.
+TEST_F(Gfx1250RaceTest, flat_global_store_dscnt_capacity_boundary) {
+  auto *dst = alloc<int>(kWave);
+  flat_dscnt_capacity_kernel<kCounterCapacity - 1, FlatForm::Store>
+      <<<1, kWave, kTileBytes>>>(allocWithData<int>(kWave), alloc<int>(kWave), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(100, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, flat_global_store_dscnt_below_capacity_race) {
+  flat_dscnt_capacity_kernel<kCounterCapacity - 2, FlatForm::Store><<<1, kWave, kTileBytes>>>(
+      allocWithData<int>(kWave), alloc<int>(kWave), alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kDscntCapacityRaceExpectation);
+}
+
+TEST_F(Gfx1250RaceTest, flat_exec_zero_dscnt_capacity_boundary) {
+  auto *dst = alloc<int>(kWave);
+  flat_dscnt_capacity_kernel<kCounterCapacity - 2, FlatForm::ExecZeroLoad>
+      <<<1, kWave, kTileBytes>>>(allocWithData<int>(kWave), alloc<int>(kWave), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(100, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, flat_exec_zero_dscnt_below_capacity_race) {
+  flat_dscnt_capacity_kernel<kCounterCapacity - 3, FlatForm::ExecZeroLoad>
+      <<<1, kWave, kTileBytes>>>(allocWithData<int>(kWave), alloc<int>(kWave),
+                                 alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kDscntCapacityRaceExpectation);
+}
+
+// A global load, `Younger` younger global loads, then a FLAT load from LDS (for
+// the EXEC-zero form, followed by a global load into the next free VGPR), then a
+// use of the oldest load's result. `tile` is the kernel's only LDS allocation,
+// so it starts at offset 0.
+template <int Younger, FlatForm Form = FlatForm::Load>
+__global__ void flat_loadcnt_capacity_kernel(const int *src, int *dst) {
+  static_assert(Younger < kCounterCapacity);
+  static_assert(Form != FlatForm::Store);
+  __shared__ int tile[kTileElements];
+  ldsFillAndWait(0, 100 + lane());
+  int producer, flat_result, saved_exec, result;
+  asm volatile("global_load_b32 %[producer], %[address], off\n"
+               ".set race_vgpr, 64\n"
+               ".rept %c[younger_loads]\n"
+               "global_load_b32 v[race_vgpr], %[address], off\n"
+               ".set race_vgpr, race_vgpr + 1\n"
+               ".endr\n"
+               ".if %c[form] == 2\n"
+               "s_mov_b32 %[saved_exec], exec_lo\n"
+               "s_mov_b32 exec_lo, 0\n"
+               "flat_load_b32 %[flat_result], %[flat_address]\n"
+               "s_mov_b32 exec_lo, %[saved_exec]\n"
+               "global_load_b32 v[race_vgpr], %[address], off\n"
+               ".else\n"
+               "flat_load_b32 %[flat_result], %[flat_address]\n"
+               ".endif\n"
+               "v_mov_b32 %[result], %[producer]\n"
+               : [producer] "=&v"(producer), [flat_result] "=&v"(flat_result),
+                 [saved_exec] "=&s"(saved_exec), [result] "=&v"(result)
+               : [address] "v"(&src[lane()]), [flat_address] "v"(&tile[lane()]),
+                 [younger_loads] "n"(Younger), [form] "n"(static_cast<int>(Form))
+               : "memory", RACE_YOUNGER_VGPR_CLOBBERS);
+  asm volatile("s_wait_loadcnt 0\n"
+               "s_wait_dscnt 0" ::: "memory");
+  dst[lane()] = result;
+}
+
+TEST_F(Gfx1250RaceTest, flat_lds_loadcnt_capacity_boundary) {
+  auto *dst = alloc<int>(kWave);
+  flat_loadcnt_capacity_kernel<kCounterCapacity - 1><<<1, kWave>>>(allocWithData<int>(kWave), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, flat_lds_loadcnt_below_capacity_race) {
+  flat_loadcnt_capacity_kernel<kCounterCapacity - 2>
+      <<<1, kWave>>>(allocWithData<int>(kWave), alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kLoadcntCapacityRaceExpectation);
+}
+
+TEST_F(Gfx1250RaceTest, flat_exec_zero_loadcnt_capacity_boundary) {
+  auto *dst = alloc<int>(kWave);
+  flat_loadcnt_capacity_kernel<kCounterCapacity - 2, FlatForm::ExecZeroLoad>
+      <<<1, kWave>>>(allocWithData<int>(kWave), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, flat_exec_zero_loadcnt_below_capacity_race) {
+  flat_loadcnt_capacity_kernel<kCounterCapacity - 3, FlatForm::ExecZeroLoad>
+      <<<1, kWave>>>(allocWithData<int>(kWave), alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kLoadcntCapacityRaceExpectation);
+}
+
+// A DS read, then a FLAT load from global memory, then a DScnt wait that
+// allows `Remaining` operations to stay outstanding, then a use of the DS
+// result. DScnt holds both, so allowing one completes the DS read.
+template <int Remaining>
+__global__ void flat_global_partial_dscnt_wait_kernel(const int *src, int *dst) {
+  ldsFillAndWait(0, 100 + lane());
+  int producer, flat_result, result;
+  asm volatile("ds_load_b32 %[producer], %[address]\n"
+               "flat_load_b32 %[flat_result], %[flat_address]\n"
+               "s_wait_dscnt %c[remaining]\n"
+               "v_mov_b32 %[result], %[producer]\n"
+               : [producer] "=&v"(producer), [flat_result] "=&v"(flat_result),
+                 [result] "=&v"(result)
+               : [address] "v"(lane() * kElementBytes), [flat_address] "v"(&src[lane()]),
+                 [remaining] "n"(Remaining)
+               : "memory");
+  asm volatile("s_wait_loadcnt 0\n"
+               "s_wait_dscnt 0" ::: "memory");
+  dst[lane()] = result;
+}
+
+TEST_F(Gfx1250RaceTest, flat_global_partial_dscnt_wait) {
+  auto *dst = alloc<int>(kWave);
+  flat_global_partial_dscnt_wait_kernel<1>
+      <<<1, kWave, kTileBytes>>>(allocWithData<int>(kWave), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(100, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, flat_global_partial_dscnt_wait_race) {
+  flat_global_partial_dscnt_wait_kernel<2>
+      <<<1, kWave, kTileBytes>>>(allocWithData<int>(kWave), alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kDscntCapacityRaceExpectation);
+}
+
+// A global load, then a FLAT load from LDS, then a LOADcnt wait that allows
+// `Remaining` operations to stay outstanding, then a use of the global load's
+// result. LOADcnt holds both, so allowing one completes the global load.
+template <int Remaining>
+__global__ void flat_lds_partial_loadcnt_wait_kernel(const int *src, int *dst) {
+  __shared__ int tile[kTileElements];
+  ldsFillAndWait(0, 100 + lane());
+  int producer, flat_result, result;
+  asm volatile("global_load_b32 %[producer], %[address], off\n"
+               "flat_load_b32 %[flat_result], %[flat_address]\n"
+               "s_wait_loadcnt %c[remaining]\n"
+               "v_mov_b32 %[result], %[producer]\n"
+               : [producer] "=&v"(producer), [flat_result] "=&v"(flat_result),
+                 [result] "=&v"(result)
+               : [address] "v"(&src[lane()]), [flat_address] "v"(&tile[lane()]),
+                 [remaining] "n"(Remaining)
+               : "memory");
+  asm volatile("s_wait_loadcnt 0\n"
+               "s_wait_dscnt 0" ::: "memory");
+  dst[lane()] = result;
+}
+
+TEST_F(Gfx1250RaceTest, flat_lds_partial_loadcnt_wait) {
+  auto *dst = alloc<int>(kWave);
+  flat_lds_partial_loadcnt_wait_kernel<1><<<1, kWave>>>(allocWithData<int>(kWave), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0, kWave));
+}
+
+TEST_F(Gfx1250RaceTest, flat_lds_partial_loadcnt_wait_race) {
+  flat_lds_partial_loadcnt_wait_kernel<2>
+      <<<1, kWave>>>(allocWithData<int>(kWave), alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kLoadcntCapacityRaceExpectation);
+}
+
+#undef RACE_YOUNGER_VGPR_CLOBBERS
+#undef RACE_YOUNGER_SGPR_CLOBBERS
 
 } // namespace
