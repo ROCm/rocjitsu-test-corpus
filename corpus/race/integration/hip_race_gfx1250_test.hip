@@ -4084,7 +4084,8 @@ static constexpr RaceExpectation kCellArriveThenInitRaceExpectation{
     .consumer = "ds_store_b64",
 };
 
-/// Every race record lies in tile `tile`.
+/// Every race record lies in tile `tile`. Passes on an empty log, so it adds
+/// to an ExpectAnyRace() check rather than replacing one.
 void ExpectRecordsInTile(int tile) {
   const auto parsed = rocjitsu::test::parseRaceLogFromEnvironment();
   ASSERT_TRUE(parsed.ok()) << parsed.error;
@@ -4093,7 +4094,9 @@ void ExpectRecordsInTile(int tile) {
         << record.reg;
 }
 
-/// Every race record was reported by an access of `first` or `second`.
+/// Every race record was reported by an access of `first` or `second`. Passes
+/// on an empty log, so it adds to an ExpectAnyRace() check rather than
+/// replacing one.
 void ExpectRecordsByWaves(int first, int second) {
   const auto parsed = rocjitsu::test::parseRaceLogFromEnvironment();
   ASSERT_TRUE(parsed.ok()) << parsed.error;
