@@ -4276,7 +4276,11 @@ TEST_F(Gfx1250RaceTest, cell_tensor_wait_then_async_arrive) {
   ExpectValues(dst, range(0));
 }
 
-// The load completes after the arrival, so the arrival does not order it.
+// The load completes after the arrival. The detector does not treat an async
+// arrive as ordered after a pending tensor load: tensor instructions "are
+// unordered with respect to other types of memory instructions" (CDNA5 ISA
+// 10.11.1), although 11.2.2 says the async arrive "follows previous async
+// operations including TDM". This case pins that conservative reading.
 TEST_F(Gfx1250RaceTest, cell_tensor_async_arrive_before_wait_race) {
   auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
