@@ -5,10 +5,6 @@
 #include "ggml-backend.h"
 #include "ggml-cpu.h"
 #include "ggml.h"
-#ifdef EXPERIMENT_HIP
-#include "ggml-cuda.h"
-#include <hip/hip_runtime_api.h>
-#endif
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -18,6 +14,10 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#ifdef EXPERIMENT_HIP
+#include "ggml-cuda.h"
+#include <hip/hip_runtime_api.h>
+#endif
 #ifdef BENCHMARK_CPU_WRONG_ROW
 #ifdef EXPERIMENT_HIP
 #error "Wrong-row mutation is CPU-only"

@@ -256,15 +256,30 @@ def test_workload_protocol_and_native_rejection(tmp_path, bad):
         assert payload["parameters"]["source_revision"] == prep.REVISION
 
 
-def test_native_measurement_rejects_bad_final_output(tmp_path):
-    # Compile the installed callback block and its actual measure() call. Only
-    # the HIP transport and device launch are replaced, so disconnecting native
-    # validation/reset is observable without a GPU, SDK or second oracle.
+def _native_measurement_fixture(tmp_path, missing_wait=None):
+    # Compile the installed callback block and its actual measure() call, with
+    # queued HIP/device operations and an observed clock, so native validation,
+    # reset and completion boundaries are observable without a GPU or SDK.
     native = (ROOT / "runner.cpp").read_text()
     start = "        std::vector<float> output(host.c.size());"
     end = "        std::ofstream out(argv[12]);"
     assert native.count(start) == native.count(end) == 1
     callbacks = native.split(start, 1)[1].split(end, 1)[0]
+    if missing_wait is not None:
+        # Mutate only the extracted disposable callback, never runner.cpp.
+        lines = callbacks.splitlines(keepends=True)
+        (index,) = [
+            i for i, line in enumerate(lines) if f"auto {missing_wait}=" in line
+        ]
+        wait = "check(hipDeviceSynchronize());"
+        assert lines[index].count(wait) == 1
+        lines[index] = lines[index].replace(wait, "")
+        callbacks = "".join(lines)
+    # Observe the actual clock reads in the extracted lambda; retain the real
+    # measure/reset/launch/validate wiring rather than replacing measure().
+    callbacks = callbacks.replace(
+        "std::chrono::steady_clock::now()", "BoundaryClock::now()"
+    )
     source = tmp_path / "native_measurement.cpp"
     source.write_text(
         r"""
@@ -272,15 +287,47 @@ def test_native_measurement_rejects_bad_final_output(tmp_path):
 #include <cassert>
 #include <chrono>
 #include <cstring>
+#include <deque>
+#include <functional>
 #include <iostream>
 
+std::deque<std::function<void()>> pending;
+enum class Completion { None, Reset, Launch };
+Completion completed = Completion::None;
+int clock_reads = 0;
+struct BoundaryClock {
+    static auto now() {
+        if(clock_reads % 2 == 0) {
+            assert((pending.empty() && completed == Completion::Reset)
+                   && "reset incomplete at sample start");
+        } else {
+            assert((pending.empty() && completed == Completion::Launch)
+                   && "launch incomplete at sample end");
+        }
+        return std::chrono::time_point<std::chrono::steady_clock, std::chrono::nanoseconds>(
+            std::chrono::nanoseconds(++clock_reads));
+    }
+};
 constexpr int hipMemcpyDeviceToHost = 0;
 int hipMemsetAsync(void* data, int value, size_t bytes, void*) {
-    std::memset(data, value, bytes);
+    pending.push_back([=] {
+        std::memset(data, value, bytes);
+        completed = Completion::Reset;
+    });
     return 0;
 }
-int hipDeviceSynchronize() { return 0; }
+int hipDeviceSynchronize() {
+    while(!pending.empty()) {
+        auto operation = std::move(pending.front());
+        pending.pop_front();
+        operation();
+    }
+    return 0;
+}
 int hipMemcpy(void* destination, const void* source, size_t bytes, int) {
+    // Synchronous copy-back can hide a missing launch wait from validation,
+    // but cannot repair a sample whose ending timestamp was already read.
+    hipDeviceSynchronize();
     std::memcpy(destination, source, bytes);
     return 0;
 }
@@ -291,20 +338,26 @@ struct Adapter {
     int mode, calls = 0;
     int launchKernels(const std::vector<int>&) {
         ++calls;
-        // Warmup succeeds before the faulty final sample. The expected values
-        // are a fixture for device transport, not a replacement Host oracle.
-        if(calls == 1 || mode == 0)
-            std::copy(host.expected.begin(), host.expected.end(), device.begin());
-        else if(mode == 2)
-            std::copy(host.expected.begin(), host.expected.end()-1, device.begin());
-        else if(mode == 3) {
-            std::copy(host.expected.begin(), host.expected.end(), device.begin());
-            device.front() += 1.f;
-        }
+        pending.push_back([this] {
+            // Warmup succeeds before the faulty final sample. The expected values
+            // are a fixture for device transport, not a replacement Host oracle.
+            if(calls == 1 || mode == 0)
+                std::copy(host.expected.begin(), host.expected.end(), device.begin());
+            else if(mode == 2)
+                std::copy(host.expected.begin(), host.expected.end()-1, device.begin());
+            else if(mode == 3) {
+                std::copy(host.expected.begin(), host.expected.end(), device.begin());
+                device.front() += 1.f;
+            }
+            completed = Completion::Launch;
+        });
         return 0;
     }
 };
 void run(int mode) {
+    assert(pending.empty());
+    clock_reads = 0;
+    completed = Completion::None;
     full_tensile::Host host(15, 17, 7, 1, 1, 1, false);
     std::vector<float> device(host.expected.size());
     struct { void* data; } dd{device.data()};
@@ -339,7 +392,21 @@ int main() {
         ["c++", "-std=c++17", "-I", str(ROOT), str(source), "-o", str(binary)],
         check=True,
     )
-    subprocess.run([str(binary)], check=True, capture_output=True, text=True)
+    return subprocess.run([str(binary)], capture_output=True, text=True)
+
+
+def test_native_measurement_rejects_bad_final_output(tmp_path):
+    result = _native_measurement_fixture(tmp_path)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("missing_wait", ["reset", "launch"])
+def test_native_measurement_requires_completion_at_clock_boundary(
+    tmp_path, missing_wait
+):
+    result = _native_measurement_fixture(tmp_path, missing_wait)
+    assert result.returncode != 0, f"{missing_wait} wait deletion survived"
+    assert f"{missing_wait} incomplete at" in result.stderr
 
 
 def test_native_host_only_build(tmp_path):

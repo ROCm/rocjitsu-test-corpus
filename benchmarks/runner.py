@@ -965,6 +965,8 @@ def run_suite(
                 "trigger": None,
                 "machine_label": None,
                 "workflow_commit_sha": None,
+                # TODO: Replace tensile_commit_sha with workflow-owned publication.auxiliary
+                # for optional dependency version/revision strings or null; coordinate consumers.
                 "tensile_commit_sha": None,
             },
             "execution_summary": summary,

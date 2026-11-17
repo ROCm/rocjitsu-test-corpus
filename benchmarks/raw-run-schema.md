@@ -84,6 +84,8 @@ numbers, not strings.
   `source.base` is `{"branch": "develop", "commit": "<base SHA>"}` and
   `source.pull_request` is `{"number": 42}` with an optional `url` string.
   Unavailable values remain null, including runs with no base or PR.
+- **Tensile publication identity.** `publication.tensile_commit_sha` records the
+  TensileLite source pin, not full Tensile's separately pinned source.
 - **One result per case, target and policy.** The same corpus-owned `id` occurs
   unchanged across targets/policies; use `(id, target, thread_policy)` as identity.
   `operation` and `thread_policy` are present even on failed/timeout results.
