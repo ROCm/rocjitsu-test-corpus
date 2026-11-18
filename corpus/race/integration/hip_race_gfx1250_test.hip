@@ -3391,7 +3391,10 @@ TEST_F(Gfx1250RaceTest, flat_lds_partial_loadcnt_wait_race) {
 // case moves one completing wait or one access to the wrong side of its wave's
 // signal or wait. Every race case reports on every schedule of the waves;
 // where the schedule decides which of the two accesses reports, the case
-// accepts either.
+// accepts either. Two cases fix the schedule with a flag in global memory, so
+// that the access lands between a wave's signal or wait and the round's
+// completion: the write of split_barrier_ds_write completes before the round
+// does, and the early read of split_barrier_reader_in_window follows it.
 
 /// Where the issuing wave waits for its LDS access, relative to its signal.
 enum class Completion { BeforeSignal, AfterSignal };
@@ -3409,6 +3412,17 @@ static constexpr RaceExpectation kDsReadThenWriteRaceExpectation{
     .consumer = "ds_store_b32",
 };
 
+/// Tell the other waves, through global memory, that this wave has reached
+/// this point. A flag orders nothing in LDS; it only fixes the order in which
+/// the waves run, so that a case exercises one interleaving on every schedule.
+__device__ inline void raise(int *flag) { __atomic_store_n(flag, 1, __ATOMIC_RELAXED); }
+
+/// Spin until another wave raises `flag`.
+__device__ inline void awaitRaised(const int *flag) {
+  while (__atomic_load_n(flag, __ATOMIC_RELAXED) == 0) {
+  }
+}
+
 /// `expected` as exactly one report, by an access of `wave`.
 constexpr RaceExpectation byWave(RaceExpectation expected, int wave) {
   expected.findings = FindingCount::One;
@@ -3416,10 +3430,13 @@ constexpr RaceExpectation byWave(RaceExpectation expected, int wave) {
   return expected;
 }
 
-// Wave 0 writes its tile; wave 1 reads it after the barrier.
+// Wave 0 writes its tile; wave 1 reads it after the barrier. Wave 1 signals
+// only once wave 0 has signalled and its write has completed, so the round
+// completes after the write does on every schedule: only the side of wave 0's
+// own signal the write completed on decides whether the barrier orders it.
 template <Completion When>
 __global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
-split_barrier_ds_write_kernel(int *dst) {
+split_barrier_ds_write_kernel(int *dst, int *write_complete) {
   if (waveIndex() == 0) {
     ldsWrite(tileSlot(), lane() + 1);
     if constexpr (When == Completion::BeforeSignal)
@@ -3427,8 +3444,10 @@ split_barrier_ds_write_kernel(int *dst) {
     barrierSignal();
     if constexpr (When == Completion::AfterSignal)
       waitDscnt();
+    raise(write_complete);
     barrierWait();
   } else {
+    awaitRaised(write_complete);
     barrierSignal();
     barrierWait();
     dst[lane()] = ldsReadAndWait(tileSlot());
@@ -3437,17 +3456,22 @@ split_barrier_ds_write_kernel(int *dst) {
 
 TEST_F(Gfx1250RaceTest, split_barrier_ds_write) {
   auto *dst = alloc<int>(kWave);
-  split_barrier_ds_write_kernel<Completion::BeforeSignal><<<1, 2 * kWave, kTileBytes>>>(dst);
+  auto *write_complete = allocFilled<int>(1, 0);
+  split_barrier_ds_write_kernel<Completion::BeforeSignal>
+      <<<1, 2 * kWave, kTileBytes>>>(dst, write_complete);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
   ExpectValues(dst, range(1));
 }
 
-// The write completes after wave 0's signal, so the barrier does not order it.
+// The write completes after wave 0's signal, so the barrier does not order
+// it, although it completes before the round does.
 TEST_F(Gfx1250RaceTest, split_barrier_ds_write_wait_after_signal_race) {
   auto *dst = alloc<int>(kWave);
-  split_barrier_ds_write_kernel<Completion::AfterSignal><<<1, 2 * kWave, kTileBytes>>>(dst);
+  auto *write_complete = allocFilled<int>(1, 0);
+  split_barrier_ds_write_kernel<Completion::AfterSignal>
+      <<<1, 2 * kWave, kTileBytes>>>(dst, write_complete);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(byWave(kDsWriteThenReadRaceExpectation, 1));
@@ -3545,9 +3569,11 @@ TEST_F(Gfx1250RaceTest, split_barrier_read_before_wait_race) {
 }
 
 // Wave 0 writes and releases its tile. Wave 1 reads it after its wait; wave 2
-// reads it before its wait. A wave acquires the barrier only at its own wait.
+// reads it before its wait. A wave acquires the barrier only at its own wait:
+// wave 2 reads once wave 1 has passed its wait, so the round has completed
+// and the write is released on every schedule, and the read still races.
 __global__ __attribute__((amdgpu_flat_work_group_size(3 * kWave, 3 * kWave))) void
-split_barrier_reader_in_window_kernel(int *dst) {
+split_barrier_reader_in_window_kernel(int *dst, int *round_complete) {
   const int wave = waveIndex();
   if (wave == 0) {
     ldsWrite(tileSlot(), lane() + 1);
@@ -3557,9 +3583,11 @@ split_barrier_reader_in_window_kernel(int *dst) {
   } else if (wave == 1) {
     barrierSignal();
     barrierWait();
+    raise(round_complete);
     dst[lane()] = ldsReadAndWait(tileSlot());
   } else {
     barrierSignal();
+    awaitRaised(round_complete);
     dst[kWave + lane()] = ldsReadAndWait(tileSlot());
     barrierWait();
   }
@@ -3567,16 +3595,12 @@ split_barrier_reader_in_window_kernel(int *dst) {
 
 TEST_F(Gfx1250RaceTest, split_barrier_reader_in_window_race) {
   auto *dst = alloc<int>(2 * kWave);
-  split_barrier_reader_in_window_kernel<<<1, 3 * kWave, kTileBytes>>>(dst);
+  auto *round_complete = allocFilled<int>(1, 0);
+  split_barrier_reader_in_window_kernel<<<1, 3 * kWave, kTileBytes>>>(dst, round_complete);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectAnyRace({byWave(kDsWriteThenReadRaceExpectation, 2),
-                 byWave(kDsReadThenWriteRaceExpectation, 0)});
-  // Wave 1 read after its wait, so no report involves its access.
-  const auto parsed = rocjitsu::test::parseRaceLogFromEnvironment();
-  ASSERT_TRUE(parsed.ok()) << parsed.error;
-  for (const auto &record : parsed.records)
-    EXPECT_TRUE(record.wave == 0 || record.wave == 2) << record.message;
+  // Only wave 2's read reports: wave 1 read after its wait.
+  ExpectRace(byWave(kDsWriteThenReadRaceExpectation, 2));
   // Wave 1's read is ordered after the write.
   ExpectValues(dst, range(1));
 }
