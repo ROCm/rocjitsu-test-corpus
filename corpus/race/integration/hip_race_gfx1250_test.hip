@@ -4090,8 +4090,7 @@ void ExpectRecordsInTile(int tile) {
   const auto parsed = rocjitsu::test::parseRaceLogFromEnvironment();
   ASSERT_TRUE(parsed.ok()) << parsed.error;
   for (const auto &record : parsed.records)
-    EXPECT_TRUE(record.reg >= tile * kTileBytes && record.reg < (tile + 1) * kTileBytes)
-        << record.reg;
+    EXPECT_EQ(record.reg / kTileBytes, tile) << record.reg;
 }
 
 /// Every race record was reported by an access of `first` or `second`. Passes
