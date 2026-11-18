@@ -42,6 +42,10 @@ The [benchmark guide](benchmarks/README.md) covers installation, sequential
 execution, upstream kernel reuse, and results. Benchmark sources follow the
 corpus provider layout; execution is separate from pytest regression tests.
 CI orchestration and simulator configurations remain in rocm-systems.
+The guide's [supported-parameter table](benchmarks/README.md#defining-cases)
+includes the RDNA Gluon, llama/GGML and full-Tensile workloads. Gluon and llama
+accept bounded inputs; full Tensile requires one of four fixed parameter
+selections. Accepted inputs do not by themselves establish case qualification.
 
 ## Corpus Contents
 

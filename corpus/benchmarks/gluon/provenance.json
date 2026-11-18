@@ -1,0 +1,13 @@
+{
+  "source_url": "https://github.com/triton-lang/triton",
+  "source_pin": "675c59878aa2280b31f722aaf42b825fcee21de8",
+  "upstream_path": "python/tutorials/gluon/02-layouts.py",
+  "upstream_sha256": "e38bd74d39cbaa136367efe27434ed3a7af9b95817b2ee7793905906906dd7f5",
+  "kernels_sha256": "76e45da07b4483dcc6cfd14ea5383d9d7148086e61d82fd17b9b98ea55a82e50",
+  "license_sha256": "92640fb97222fd0a698ff28ce0c3782c172623f8d6c609b557636a80f28fb946",
+  "functions": [
+    "memcpy_1d_kernel",
+    "get_mask_and_offsets",
+    "memcpy_2d_inout_kernel"
+  ]
+}

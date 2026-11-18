@@ -1,0 +1,320 @@
+name = "performance-v2"
+warmups = 0
+samples = 1
+timeout_seconds = 1200
+
+[[cases]]
+id = "gpt_oss.window_batch4_seq3072"
+workload = "gpt_oss_attention"
+suite = "GPT-OSS"
+name = "Windowed attention"
+operation = "Attention"
+targets = ["gfx950", "gfx1250"]
+thread_policies = ["default"]
+params = { dtype = "bf16", batch = 4, query_heads = 64, key_value_heads = 8, sequence = 3072, window = 128, head_dimension = 64 }
+
+[[cases]]
+id = "gpt_oss.causal_seq2560"
+workload = "gpt_oss_attention"
+suite = "GPT-OSS"
+name = "Full causal attention"
+operation = "Attention"
+targets = ["gfx950", "gfx1250"]
+thread_policies = ["default", "single"]
+params = { dtype = "bf16", batch = 1, query_heads = 64, key_value_heads = 8, sequence = 2560, window = 0, head_dimension = 64 }
+
+[[cases]]
+id = "triton.persistent_1024x4096x4096"
+workload = "triton_persistent"
+suite = "Triton"
+name = "FP16 persistent matmul"
+operation = "GEMM"
+targets = ["gfx950", "gfx1250", "gfx1100", "gfx1201"]
+thread_policies = ["default", "single"]
+thread_policy_overrides = { gfx1100 = ["default"], gfx1201 = ["default"] }
+params = { dtype = "fp16", rows = 1024, columns = 4096, reduction = 4096 }
+
+[[cases]]
+id = "triton.grouped_4x2048"
+workload = "triton_grouped"
+suite = "Triton"
+name = "FP16 grouped GEMM"
+operation = "Grouped GEMM"
+targets = ["gfx950", "gfx1250", "gfx1100", "gfx1201"]
+thread_policies = ["default", "single"]
+thread_policy_overrides = { gfx1100 = ["default"], gfx1201 = ["default"] }
+params = { dtype = "fp16", rows = 2048, columns = 2048, reduction = 2048, groups = 4 }
+
+[[cases]]
+id = "deepseek.mlp_w1_m64"
+workload = "deepseek_fp8"
+suite = "DeepSeek"
+name = "FP8 MLP first projection"
+operation = "GEMM"
+targets = ["gfx950"]
+thread_policies = ["default", "single"]
+params = { dtype = "fp8", rows = 64, columns = 18432, reduction = 7168 }
+
+[[cases]]
+id = "deepseek.mlp_w1_m256"
+workload = "deepseek_fp8"
+suite = "DeepSeek"
+name = "FP8 MLP first projection"
+operation = "GEMM"
+targets = ["gfx1250"]
+thread_policies = ["default", "single"]
+params = { dtype = "fp8", rows = 256, columns = 18432, reduction = 7168 }
+
+[[cases]]
+id = "deepseek.mlp_w2_m64"
+workload = "deepseek_fp8"
+suite = "DeepSeek"
+name = "FP8 MLP second projection"
+operation = "GEMM"
+targets = ["gfx950"]
+thread_policies = ["default"]
+params = { dtype = "fp8", rows = 64, columns = 7168, reduction = 18432 }
+
+[[cases]]
+id = "deepseek.mlp_w2_m256"
+workload = "deepseek_fp8"
+suite = "DeepSeek"
+name = "FP8 MLP second projection"
+operation = "GEMM"
+targets = ["gfx1250"]
+thread_policies = ["default"]
+params = { dtype = "fp8", rows = 256, columns = 7168, reduction = 18432 }
+
+[[cases]]
+id = "tensile.bf16_streamk_4096x4096x4096"
+workload = "tensile_candidate"
+suite = "TensileLite"
+name = "BF16 Stream-K 4096x4096x4096"
+operation = "GEMM"
+targets = ["gfx950"]
+thread_policies = ["default", "single"]
+params = { dtype = "bf16", variant = "bf16_streamk", m = 4096, n = 4096, k = 4096 }
+
+[[cases]]
+id = "tensile.bf16_subtile_4096x4096x4096"
+workload = "tensile_candidate"
+suite = "TensileLite"
+name = "BF16 subtile 4096x4096x4096"
+operation = "GEMM"
+targets = ["gfx1250"]
+thread_policies = ["default", "single"]
+params = { dtype = "bf16", variant = "bf16_subtile", m = 4096, n = 4096, k = 4096 }
+
+[[cases]]
+id = "tensile.mxfp8_subtile_4096x4096x4096"
+workload = "tensile_candidate"
+suite = "TensileLite"
+name = "MXFP8 subtile 4096x4096x4096"
+operation = "GEMM"
+targets = ["gfx950"]
+thread_policies = ["default"]
+params = { dtype = "mxfp8", variant = "mxfp8_subtile", m = 4096, n = 4096, k = 4096 }
+
+[[cases]]
+id = "tensile.mxfp4_streamk_4096x4096x4096"
+workload = "tensile_candidate"
+suite = "TensileLite"
+name = "MXFP4 Stream-K 4096x4096x4096"
+operation = "GEMM"
+targets = ["gfx1250"]
+thread_policies = ["default"]
+params = { dtype = "mxfp4", variant = "mxfp4_streamk", m = 4096, n = 4096, k = 4096 }
+
+# Larger gfx1250 cases from rocm-systems#12611, with its fixed launch settings.
+[[cases]]
+id = "deepseek.mlp_w1_m3072"
+workload = "deepseek_fp8"
+suite = "DeepSeek"
+name = "FP8 MLP first projection, 3072 tokens"
+operation = "GEMM"
+targets = ["gfx1250"]
+thread_policies = ["default"]
+params = { dtype = "fp8", rows = 3072, columns = 18432, reduction = 7168, configuration = "large_tile" }
+
+[[cases]]
+id = "deepseek.mlp_w2_m3072"
+workload = "deepseek_fp8"
+suite = "DeepSeek"
+name = "FP8 MLP second projection, 3072 tokens"
+operation = "GEMM"
+targets = ["gfx1250"]
+thread_policies = ["default"]
+params = { dtype = "fp8", rows = 3072, columns = 7168, reduction = 18432, configuration = "large_tile" }
+
+[[cases]]
+id = "triton.grouped_4x3584"
+workload = "triton_grouped"
+suite = "Triton"
+name = "FP16 grouped GEMM, 4 groups of 3584x3584x3584"
+operation = "Grouped GEMM"
+targets = ["gfx1250"]
+thread_policies = ["default"]
+params = { dtype = "fp16", rows = 3584, columns = 3584, reduction = 3584, groups = 4, configuration = "large_tile" }
+
+[[cases]]
+id = "triton.persistent_8192x8192x4096"
+workload = "triton_persistent"
+suite = "Triton"
+name = "FP16 persistent matmul, 8192 x 8192 x 4096"
+operation = "GEMM"
+targets = ["gfx1250"]
+thread_policies = ["default"]
+params = { dtype = "fp16", rows = 8192, columns = 8192, reduction = 4096, configuration = "large_tile" }
+
+# Additional operation coverage from rocm-systems#12611, default threading only.
+[[cases]]
+id = "triton.softmax_131072x2048"
+workload = "triton_softmax"
+suite = "Triton"
+name = "FP32 softmax"
+operation = "Softmax"
+targets = ["gfx950", "gfx1250"]
+thread_policies = ["default"]
+params = { dtype = "fp32", rows = 131072, columns = 2048 }
+
+[[cases]]
+id = "triton.layernorm_131072x2048"
+workload = "triton_layernorm"
+suite = "Triton"
+name = "FP32 layer normalization"
+operation = "Layer normalization"
+targets = ["gfx950", "gfx1250"]
+thread_policies = ["default"]
+params = { dtype = "fp32", rows = 131072, columns = 2048, epsilon = 1e-5 }
+
+[[cases]]
+id = "deepseek.act_quant_32768x8192"
+workload = "deepseek_act_quant"
+suite = "DeepSeek"
+name = "BF16 activation quantization to FP8"
+operation = "Activation quantization"
+targets = ["gfx950", "gfx1250"]
+thread_policies = ["default"]
+params = { dtype = "bf16", rows = 32768, columns = 8192 }
+
+[[cases]]
+id = "deepseek.weight_dequant_32768x8192"
+workload = "deepseek_weight_dequant"
+suite = "DeepSeek"
+name = "FP8 weight dequantization to FP32"
+operation = "Weight dequantization"
+targets = ["gfx950", "gfx1250"]
+thread_policies = ["default"]
+params = { dtype = "fp8", rows = 32768, columns = 8192 }
+
+# RDNA3/gfx1100 and RDNA4/gfx1201 additions. Shared GEMMs above use policy overrides.
+
+[[cases]]
+id = "triton.softmax_65536x2048"
+workload = "triton_softmax"
+suite = "Triton"
+name = "FP32 softmax, 65536 x 2048"
+operation = "Softmax"
+targets = ["gfx1100", "gfx1201"]
+thread_policies = ["default"]
+params = { dtype = "fp32", rows = 65536, columns = 2048 }
+
+[[cases]]
+id = "triton.layernorm_65536x2048"
+workload = "triton_layernorm"
+suite = "Triton"
+name = "FP32 layer normalization, 65536 x 2048"
+operation = "Layer normalization"
+targets = ["gfx1100", "gfx1201"]
+thread_policies = ["default"]
+params = { dtype = "fp32", rows = 65536, columns = 2048, epsilon = 1e-05 }
+
+[[cases]]
+id = "gluon.copy_fp32_100663296"
+workload = "gluon_copy"
+suite = "Gluon"
+name = "FP32 1D memory copy"
+operation = "Copy"
+targets = ["gfx1100", "gfx1201"]
+thread_policies = ["single"]
+params = { dtype = "fp32", elements = 100663296 }
+
+[[cases]]
+id = "gluon.copy_2d_fp32_16384x8192"
+workload = "gluon_copy_2d"
+suite = "Gluon"
+name = "FP32 2D strided layout-converting copy"
+operation = "Layout conversion"
+targets = ["gfx1100", "gfx1201"]
+thread_policies = ["default"]
+params = { dtype = "fp32", rows = 16384, columns = 8192 }
+
+[[cases]]
+id = "full_tensile.valu_3072x2048x1024"
+workload = "full_tensile"
+suite = "Tensile"
+name = "FP32 VALU GEMM"
+operation = "GEMM"
+targets = ["gfx1100", "gfx1201"]
+thread_policies = ["default"]
+params = { variant = "valu", dtype = "fp32", m = 3072, n = 2048, k = 1024, beta = 0 }
+
+[[cases]]
+id = "full_tensile.tensor_2048x2048x16x64"
+workload = "full_tensile"
+suite = "Tensile"
+name = "FP32 two-summation tensor contraction"
+operation = "Tensor contraction"
+targets = ["gfx1100", "gfx1201"]
+thread_policies = ["default"]
+params = { variant = "tensor", dtype = "fp32", i = 2048, j = 2048, k = 16, l = 64, beta = 1 }
+
+[[cases]]
+id = "full_tensile.splitk_3072x2048x1536_gsu3"
+workload = "full_tensile"
+suite = "Tensile"
+name = "FP32 split-K GEMM, GSU3"
+operation = "Split-K GEMM"
+targets = ["gfx1100", "gfx1201"]
+thread_policies = ["default"]
+params = { variant = "splitk", dtype = "fp32", m = 3072, n = 2048, k = 1536, gsu = 3, beta = 1 }
+
+[[cases]]
+id = "full_tensile.pointer_8x1024x1024x1024"
+workload = "full_tensile"
+suite = "Tensile"
+name = "FP32 pointer-array batched GEMM"
+operation = "Batched GEMM"
+targets = ["gfx1100", "gfx1201"]
+thread_policies = ["default"]
+params = { variant = "pointer", dtype = "fp32", m = 1024, n = 1024, k = 1024, batch = 8, beta = 1 }
+
+[[cases]]
+id = "llama.rope_128x4096x32"
+workload = "llama_rope"
+suite = "llama.cpp"
+name = "FP32 RoPE, independent-vector batching"
+operation = "RoPE"
+targets = ["gfx1100", "gfx1201"]
+thread_policies = ["default"]
+params = { dtype = "fp32", k = 128, heads = 4096, tokens = 32 }
+
+[[cases]]
+id = "llama.matvec_q4_4096x32768"
+workload = "llama_matvec"
+suite = "llama.cpp"
+name = "Q4_0 decode matrix-vector product"
+operation = "Quantized matrix-vector product"
+targets = ["gfx1100", "gfx1201"]
+thread_policies = ["default", "single"]
+params = { dtype = "fp32", k = 4096, rows = 32768, tokens = 1 }
+
+[[cases]]
+id = "llama.gather_q8_4096x1024x4096"
+workload = "llama_gather"
+suite = "llama.cpp"
+name = "Q8_0 embedding gather"
+operation = "Quantized embedding gather"
+targets = ["gfx1100", "gfx1201"]
+thread_policies = ["default"]
+params = { dtype = "fp32", k = 4096, rows = 1024, tokens = 4096 }

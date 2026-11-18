@@ -306,10 +306,10 @@ def test_reference_failure_does_not_emit_successful_samples(workloads_context):
 
 
 def test_workload_registries_agree(workloads_context):
-    from benchmarks.runner import WORKLOADS
+    from benchmarks.runner import WORKLOADS, WORKLOAD_ADAPTERS
 
     workload = workloads_context.workload
-    assert WORKLOADS == set(workload.PREPARE) | {"tensile_candidate"}
+    assert WORKLOADS == set(workload.PREPARE) | set(WORKLOAD_ADAPTERS)
     for family in (workload.PREPARE_CANDIDATES, workload.PREPARE_REDUCTIONS,
                    workload.PREPARE_QUANTIZATION):
         for name, prepare in family.items():
