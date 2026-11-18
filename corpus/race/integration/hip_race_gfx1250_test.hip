@@ -4282,7 +4282,9 @@ TEST_F(Gfx1250RaceTest, cell_tensor_wait_then_async_arrive) {
 // arrive as ordered after a pending tensor load: tensor instructions "are
 // unordered with respect to other types of memory instructions" (CDNA5 ISA
 // 10.11.1), although 11.2.2 says the async arrive "follows previous async
-// operations including TDM". This case pins that conservative reading.
+// operations including TDM" and 10.11.3 points the same way. This case pins
+// the reading that hides no race; if hardware orders the arrive after the
+// load, the report is a false positive.
 TEST_F(Gfx1250RaceTest, cell_tensor_async_arrive_before_wait_race) {
   auto *src = allocWithData<int>(kTileElements);
   auto *dst = alloc<int>(kWave);
