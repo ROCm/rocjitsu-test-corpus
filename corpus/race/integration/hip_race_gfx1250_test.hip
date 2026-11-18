@@ -155,23 +155,20 @@ __device__ inline void ldsWrite(uint32_t byte_offset, int value) {
   asm volatile("ds_store_b32 %0, %1" ::"v"(byte_offset), "v"(value) : "memory");
 }
 
-// Inline async assembly must keep its inputs live until address translation
-// completes. X waits release those inputs without requiring LDS completion.
-
-/// Copy `src[lane]` into LDS without waiting for completion; use waitAsynccnt().
+/// Copy `src[lane]` into the LDS int at `tile_offset + lane * 4` without
+/// waiting; wait with waitAsynccnt().
 __device__ inline void asyncLoadToLds(const int *src, uint32_t tile_offset) {
-  asm volatile("global_load_async_to_lds_b32 %[lds], %[offset], %[base]\n"
-               "s_wait_xcnt 0\n"
+  asm volatile("global_load_async_to_lds_b32 %[lds], %[offset], %[base]"
                :
                : [lds] "v"(tile_offset + lane() * kElementBytes),
                  [offset] "v"(lane() * kElementBytes), [base] "s"(src)
                : "memory");
 }
 
-/// Copy the LDS int to `dst[lane]` without waiting for completion; use waitAsynccnt().
+/// Copy the LDS int at `tile_offset + lane * 4` to `dst[lane]` without waiting;
+/// wait with waitAsynccnt().
 __device__ inline void asyncStoreFromLds(int *dst, uint32_t tile_offset) {
-  asm volatile("global_store_async_from_lds_b32 %[offset], %[lds], %[base]\n"
-               "s_wait_xcnt 0\n"
+  asm volatile("global_store_async_from_lds_b32 %[offset], %[lds], %[base]"
                :
                : [offset] "v"(lane() * kElementBytes),
                  [lds] "v"(tile_offset + lane() * kElementBytes), [base] "s"(dst)
@@ -780,7 +777,6 @@ template <bool WaitForAsync>
 __global__ void async_load_then_tensor_store_kernel(const int *src, TensorDesc store) {
   const uint32_t offset = lane() * kElementBytes;
   asm volatile("global_load_async_to_lds_b32 %[lds], %[offset], %[base]\n"
-               "s_wait_xcnt 0\n"
                :
                : [lds] "v"(offset), [offset] "v"(offset), [base] "s"(src)
                : "memory");
@@ -2030,8 +2026,7 @@ TEST_F(Gfx1250RaceTest, tensor_load_then_async_store_wrong_wait_race) {
 template <uint32_t OverwriteOffset> __global__ void async_store_b128_kernel(int *dst) {
   ldsFillAndWait(0, 100 + lane());
   if (lane() == 0) {
-    asm volatile("global_store_async_from_lds_b128 %[offset], %[lds], %[base]\n"
-                 "s_wait_xcnt 0\n"
+    asm volatile("global_store_async_from_lds_b128 %[offset], %[lds], %[base]"
                  :
                  : [offset] "v"(0), [lds] "v"(0), [base] "s"(dst)
                  : "memory");
@@ -2067,7 +2062,6 @@ template <bool OverwriteSource> __global__ void async_store_b8_kernel(uint8_t *d
   if (lane() == 0) {
     if constexpr (OverwriteSource)
       asm volatile("global_store_async_from_lds_b8 %[offset], %[lds], %[base]\n"
-                   "s_wait_xcnt 0\n"
                    "ds_store_b8 %[source], %[value]"
                    :
                    : [offset] "v"(0), [lds] "v"(5), [base] "s"(dst), [source] "v"(5),
@@ -2075,7 +2069,6 @@ template <bool OverwriteSource> __global__ void async_store_b8_kernel(uint8_t *d
                    : "memory");
     else
       asm volatile("global_store_async_from_lds_b8 %[offset], %[lds], %[base]\n"
-                   "s_wait_xcnt 0\n"
                    "ds_store_b8 %[before], %[value]\n"
                    "ds_store_b8 %[after], %[value]"
                    :
@@ -2110,8 +2103,7 @@ TEST_F(Gfx1250RaceTest, async_store_b8_source_byte_race) {
 template <uint32_t OverwriteOffset> __global__ void async_store_ioffset_kernel(int *dst) {
   ldsFillAndWait(0, 100 + lane());
   ldsFillAndWait(kTileBytes, 200 + lane());
-  asm volatile("global_store_async_from_lds_b32 %[offset], %[lds], %[base] offset:%[ioffset]\n"
-               "s_wait_xcnt 0\n"
+  asm volatile("global_store_async_from_lds_b32 %[offset], %[lds], %[base] offset:%[ioffset]"
                :
                : [offset] "v"(lane() * kElementBytes), [lds] "v"(lane() * kElementBytes),
                  [base] "s"(dst), [ioffset] "n"(kTileBytes)
@@ -2209,8 +2201,7 @@ template <bool Wait> __global__ void async_store_b128_past_lds_allocation_kernel
     ldsWrite(kB128StraddlingOffset + lane() * kElementBytes, 100 + lane());
   waitDscnt();
   if (lane() == 0) {
-    asm volatile("global_store_async_from_lds_b128 %[offset], %[lds], %[base]\n"
-                 "s_wait_xcnt 0\n"
+    asm volatile("global_store_async_from_lds_b128 %[offset], %[lds], %[base]"
                  :
                  : [offset] "v"(0), [lds] "v"(kB128StraddlingOffset), [base] "s"(dst)
                  : "memory");
@@ -2254,7 +2245,6 @@ __global__ void async_store_exec_zero_kernel(int *first, int *second) {
   asm volatile("s_mov_b32 %[saved], exec_lo\n"
                "s_mov_b32 exec_lo, 0\n"
                "global_store_async_from_lds_b32 %[offset], %[lds], %[base]\n"
-               "s_wait_xcnt 0\n"
                "s_mov_b32 exec_lo, %[saved]"
                : [saved] "=&s"(saved_exec)
                : [offset] "v"(lane() * kElementBytes),

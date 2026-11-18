@@ -101,7 +101,7 @@ def test_materialize_config_adds_required_race_plugin(tmp_path: Path) -> None:
 
     value = json.loads(output.read_text(encoding="utf-8"))
     assert value["max_ticks"] == 123
-    assert value["wait_checking"] == "all"
+    assert value["wait_checking"] == "on"
     assert value["require_all_plugins"] is True
     assert value["plugins"] == {"race": {}}
     assert value["sinks"] == {"types": ["file"], "dir": str(sink)}

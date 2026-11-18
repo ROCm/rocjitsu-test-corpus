@@ -315,7 +315,7 @@ def test_plugin_config_is_derived_without_modifying_base(runner_context) -> None
         target=runner.TargetMetadata(runner._load_target_configuration(runner_context.configs["gfx950"])),
     )
     generated = json.loads(command.config_path.read_text(encoding="utf-8"))
-    assert generated["wait_checking"] == "all"
+    assert generated["wait_checking"] == "on"
     assert generated["plugins"] == {"race": {}}
     assert generated["sinks"]["types"] == ["file"]
     assert command.plugin_reports == {

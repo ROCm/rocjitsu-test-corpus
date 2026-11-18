@@ -612,7 +612,7 @@ def _materialize_config(
         raise RunnerError(f"unknown plugin profile {plugin_profile!r}") from error
     value = dict(configuration)
     if "race" in plugins:
-        value["wait_checking"] = "all"
+        value["wait_checking"] = "on"
 
     cell_dir = output_root / cell.target / cell.thread_policy / "cases" / cell.case
     cell_dir.mkdir(parents=True, exist_ok=True)

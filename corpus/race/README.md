@@ -4,10 +4,9 @@ Small HIP kernels for scoring race and data-hazard detectors, with their device
 assembly pinned per gfx target. Mutants are derived from the pinned assembly,
 so the assembly, not the HIP source, is what the corpus is built on.
 
-The race harness enables all wait checks supported by rocjitsu. On gfx1250 this
-includes input-register reuse checks. Inline async operations wait for address
-translation before releasing their input registers; their LDS completion waits
-remain explicit so the tests can check missing or insufficient waits.
+The race harness selects `wait_checking=on`: ordinary register-result checks are
+enabled and XCNT replay-source checks are disabled. LDS completion waits remain
+explicit so the tests can check missing or insufficient waits.
 
 ## Using the listings
 
