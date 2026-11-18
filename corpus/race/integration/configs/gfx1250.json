@@ -176,6 +176,26 @@
     "split_barrier_exited_writer_read_before_wait_race",
     "split_barrier_signal_then_exit_race",
     "split_barrier_pingpong",
-    "split_barrier_pingpong_wait_after_signal_race"
+    "split_barrier_pingpong_wait_after_signal_race",
+    "cell_poll_is_not_a_race",
+    "cell_ds_handoff",
+    "cell_ds_handoff_no_poll_race",
+    "cell_async_handoff",
+    "cell_async_handoff_load_after_arrive_race",
+    "cell_tensor_auto_arrive",
+    "cell_tensor_ds_arrive_race",
+    "cell_tensor_wait_then_async_arrive",
+    "cell_tensor_async_arrive_before_wait_race",
+    "cell_tensor_store_source_handed_back",
+    "cell_tensor_store_source_no_poll_race",
+    "cell_async_store_source_not_released_race",
+    "cell_two_producers",
+    "cell_two_producers_one_late_race",
+    "cell_third_wave_without_poll_race",
+    "cell_as_workgroup_barrier",
+    "cell_as_workgroup_barrier_read_before_wait_race",
+    "cell_unordered_init_race",
+    "cell_pingpong",
+    "cell_pingpong_late_load_race"
   ]
 }

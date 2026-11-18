@@ -4,8 +4,9 @@
 /// @file hip_race_gfx1250_test.hip
 /// @brief gfx1250 HIP race detector tests: split wait counters, tensor DMA
 ///        (tensor_load_to_lds, tensor_store_from_lds), async copies
-///        (global_load_async_to_lds, global_store_async_from_lds) and split
-///        barriers (s_barrier_signal, s_barrier_wait).
+///        (global_load_async_to_lds, global_store_async_from_lds), split
+///        barriers (s_barrier_signal, s_barrier_wait) and LDS barrier cells
+///        (ds_atomic_barrier_arrive_rtn_b64, ds_atomic_async_barrier_arrive_b64).
 ///
 /// A tensor load writes LDS and a tensor store reads it, asynchronously, until
 /// s_wait_tensorcnt retires the transfer. Transfers from one wave complete in
@@ -80,6 +81,9 @@ struct TensorDesc {
   v8i group1;
 };
 
+/// A tile whose descriptor requests no barrier arrival.
+constexpr uint32_t kNoBarrierCell = ~0u;
+
 /// A one-row transfer of 4-byte elements between global memory and LDS.
 struct Tile {
   const void *global = nullptr;
@@ -90,6 +94,9 @@ struct Tile {
   bool pad = false;
   uint32_t pad_interval = 0; ///< 2 << pad_interval dwords between pads.
   uint32_t pad_amount = 0;   ///< pad_amount + 1 dwords of padding.
+  /// LDS byte offset of a barrier cell the transfer arrives at when it
+  /// completes (CDNA5 ISA 10.11.3), or kNoBarrierCell.
+  uint32_t barrier_cell = kNoBarrierCell;
 };
 
 TensorDesc describe(const Tile &tile) {
@@ -102,6 +109,13 @@ TensorDesc describe(const Tile &tile) {
   words[4] = (2u << 16) | (uint32_t{tile.pad} << 20) | (tile.pad_interval << 22) |
              (tile.pad_amount << 25);
   words[5] = (tile.tensor_elements & 0xffffu) << 16;    // tensor_dim0[15:0].
+  if (tile.barrier_cell != kNoBarrierCell) {
+    // atomic_barrier_enable is bit 18 of group 1 and atomic_barrier_address
+    // bits 47:32, the cell's 64-bit-aligned LDS address without its three low
+    // bits (CDNA5 ISA 10.11.4).
+    words[4] |= 1u << 18;
+    words[5] |= (tile.barrier_cell >> 3) & 0xffffu;
+  }
   words[6] = (tile.tensor_elements >> 16) | (1u << 16); // tensor_dim1 = 1.
   words[7] = (tile.tile_elements & 0xffffu) << 16;      // tile_dim0.
   words[8] = 1;                                         // tile_dim1.
@@ -3956,6 +3970,608 @@ TEST_F(Gfx1250RaceTest, split_barrier_pingpong_wait_after_signal_race) {
   for (const auto &record : parsed.records)
     EXPECT_TRUE(record.reg >= kRacingSlot && record.reg < kRacingSlot + kTileBytes)
         << record.reg;
+}
+
+// --- LDS barrier cells: an arrival releases, a read of the cell acquires ---
+//
+// An LDS barrier cell is a 64-bit LDS word holding a pending count and a phase
+// (CDNA5 ISA 11.2.2, Table 70). A wave arrives at it with
+// ds_atomic_barrier_arrive_rtn_b64, which stays in order with its DS
+// instructions, or with ds_atomic_async_barrier_arrive_b64, which executes only
+// after its earlier async loads; a tensor transfer can arrive when it completes
+// (CDNA5 ISA 10.11.3). When the pending count rolls under, the phase changes,
+// and a wave that polls the cell and sees the new phase proceeds. No wave
+// blocks and no s_barrier is involved: the arrival orders what its wave
+// completed, and the pending operations the arrive is ordered after, for the
+// waves that read the cell. Each race case drops the read of the cell, or
+// moves a transfer to after its arrival; none depends on how the waves are
+// scheduled.
+
+/// The cells sit after the tiles the cell kernels use.
+constexpr uint32_t kCellBase = 8 * kTileBytes;
+constexpr int kCellCount = 4;
+/// A barrier cell is one 64-bit LDS word (CDNA5 ISA 11.2.2, Table 70).
+constexpr int kCellBytes = 8;
+/// Dynamic LDS for a cell kernel: its tiles, then its cells.
+constexpr int kCellLdsBytes = kCellBase + kCellCount * kCellBytes;
+/// The low bit of the cell's phase. The phase is bits [31:WIDTH] of the cell's
+/// low dword (CDNA5 ISA 11.2.2, Table 70); RocJITsu models WIDTH = 29, one of
+/// the widths the ISA lists, so the phase starts at bit 29. The phase is
+/// decremented each time it completes, so this bit alternates.
+constexpr int kCellPhaseBit = 29;
+
+/// LDS byte offset of cell `index`.
+constexpr uint32_t cell(int index) { return kCellBase + index * kCellBytes; }
+
+/// Initialize the cell for `arrivals` arrivals per phase, in phase zero, and
+/// wait for the store. The pending count and the initial count both hold
+/// `arrivals - 1`: the count rolls under on the last arrival (CDNA5 ISA
+/// 11.2.2, "the pending_count is initialized to COUNT-1").
+__device__ inline void cellInit(uint32_t cell_offset, uint32_t arrivals) {
+  const uint64_t state = (static_cast<uint64_t>(arrivals - 1) << 32) | (arrivals - 1);
+  asm volatile("ds_store_b64 %0, %1\n"
+               "s_wait_dscnt 0" ::"v"(cell_offset),
+               "v"(state)
+               : "memory");
+}
+
+/// Arrive at the cell in order with this wave's DS instructions (CDNA5 ISA
+/// 11.2.2), then wait for the value the arrive returns. Every active lane
+/// arrives once. The wait follows the arrive, so it does not order anything
+/// before it.
+__device__ inline void cellArrive(uint32_t cell_offset) {
+  uint64_t before;
+  const uint64_t update = 1;
+  asm volatile("ds_atomic_barrier_arrive_rtn_b64 %0, %1, %2\n"
+               "s_wait_dscnt 0"
+               : "=v"(before)
+               : "v"(cell_offset), "v"(update)
+               : "memory");
+}
+
+/// Arrive at the cell in order with this wave's async loads (CDNA5 ISA 11.2.2,
+/// 10.8), without waiting. Every active lane arrives once.
+__device__ inline void cellArriveAsync(uint32_t cell_offset) {
+  asm volatile("ds_atomic_async_barrier_arrive_b64 %0" ::"v"(cell_offset) : "memory");
+}
+
+/// Poll the cell until the low bit of its phase is `parity`, sleeping between
+/// polls. The phase starts at zero, so the cell's first completion makes the
+/// bit 1, its second 0, and so on.
+__device__ inline void cellWaitPhase(uint32_t cell_offset, int parity) {
+  for (;;) {
+    int state;
+    asm volatile("ds_load_b32 %0, %1\n"
+                 "s_wait_dscnt 0"
+                 : "=v"(state)
+                 : "v"(cell_offset)
+                 : "memory");
+    if (((__builtin_amdgcn_readfirstlane(state) >> kCellPhaseBit) & 1) == parity)
+      return;
+    asm volatile("s_sleep 1" ::: "memory");
+  }
+}
+
+/// Wave 0 initializes cell `index` for `arrivals` arrivals per phase, and a
+/// workgroup barrier orders the initialization for every wave.
+__device__ inline void cellSetup(int index, uint32_t arrivals) {
+  if (waveIndex() == 0)
+    cellInit(cell(index), arrivals);
+  barrier();
+}
+
+static constexpr RaceExpectation kReadThenAsyncLoadRaceExpectation{
+    .findings = FindingCount::One,
+    .type = "LDS",
+    .access = "write",
+    .producer = "ds_load_b32",
+    .consumer = "global_load_async_to_lds_b32",
+};
+
+static constexpr RaceExpectation kCellInitThenArriveRaceExpectation{
+    .findings = FindingCount::One,
+    .type = "LDS",
+    .access = "read",
+    .producer = "ds_store_b64",
+    .consumer = "ds_atomic_barrier_arrive_rtn_b64",
+};
+
+static constexpr RaceExpectation kCellArriveThenInitRaceExpectation{
+    .findings = FindingCount::One,
+    .type = "LDS",
+    .access = "write",
+    .producer = "ds_atomic_barrier_arrive_rtn_b64",
+    .consumer = "ds_store_b64",
+};
+
+/// Every race record lies in tile `tile`.
+void ExpectRecordsInTile(int tile) {
+  const auto parsed = rocjitsu::test::parseRaceLogFromEnvironment();
+  ASSERT_TRUE(parsed.ok()) << parsed.error;
+  for (const auto &record : parsed.records)
+    EXPECT_TRUE(record.reg >= tile * kTileBytes && record.reg < (tile + 1) * kTileBytes)
+        << record.reg;
+}
+
+/// Every race record was reported by an access of `first` or `second`.
+void ExpectRecordsByWaves(int first, int second) {
+  const auto parsed = rocjitsu::test::parseRaceLogFromEnvironment();
+  ASSERT_TRUE(parsed.ok()) << parsed.error;
+  for (const auto &record : parsed.records)
+    EXPECT_TRUE(record.wave == first || record.wave == second) << record.message;
+}
+
+// Wave 0 arrives at one cell with each DS arrive; wave 1 polls both. An
+// arrival updates the cell atomically, so a poll of it is not a race.
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+cell_poll_kernel(int *dst) {
+  cellSetup(0, kWave);
+  cellSetup(1, kWave);
+  if (waveIndex() == 0) {
+    cellArrive(cell(0));
+    cellArriveAsync(cell(1));
+  } else {
+    cellWaitPhase(cell(0), 1);
+    cellWaitPhase(cell(1), 1);
+    dst[lane()] = 1;
+  }
+}
+
+TEST_F(Gfx1250RaceTest, cell_poll_is_not_a_race) {
+  auto *dst = alloc<int>(kWave);
+  cell_poll_kernel<<<1, 2 * kWave, kCellLdsBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, std::vector<int>(kWave, 1));
+}
+
+// Wave 0 writes its tile and arrives, with no DS wait between them: the arrive
+// stays in order with the write. Wave 1 reads the tile after it sees the phase.
+template <bool Poll>
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+cell_ds_handoff_kernel(int *dst) {
+  cellSetup(0, kWave);
+  if (waveIndex() == 0) {
+    ldsWrite(tileSlot(), lane() + 1);
+    cellArrive(cell(0));
+  } else {
+    if constexpr (Poll)
+      cellWaitPhase(cell(0), 1);
+    dst[lane()] = ldsReadAndWait(tileSlot());
+  }
+}
+
+TEST_F(Gfx1250RaceTest, cell_ds_handoff) {
+  auto *dst = alloc<int>(kWave);
+  cell_ds_handoff_kernel<true><<<1, 2 * kWave, kCellLdsBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(1));
+}
+
+// Wave 1 never reads the cell, so nothing orders its read after the write.
+// Whichever access runs second reports the race.
+TEST_F(Gfx1250RaceTest, cell_ds_handoff_no_poll_race) {
+  auto *dst = alloc<int>(kWave);
+  cell_ds_handoff_kernel<false><<<1, 2 * kWave, kCellLdsBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectAnyRace({byWave(kDsWriteThenReadRaceExpectation, 1),
+                 byWave(kDsReadThenWriteRaceExpectation, 0)});
+}
+
+/// Whether the producer issues its transfer before or after it arrives.
+enum class ArriveOrder { AfterTransfer, BeforeTransfer };
+
+// Wave 0 loads its tile with an async copy and arrives, and never waits on
+// ASYNCcnt: the async arrive executes only after the wave's earlier async
+// loads (CDNA5 ISA 11.2.2). Wave 1 reads the tile after it sees the phase.
+template <ArriveOrder Order>
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+cell_async_handoff_kernel(const int *src, int *dst) {
+  cellSetup(0, kWave);
+  if (waveIndex() == 0) {
+    if constexpr (Order == ArriveOrder::BeforeTransfer)
+      cellArriveAsync(cell(0));
+    asyncLoadToLds(src, 0);
+    if constexpr (Order == ArriveOrder::AfterTransfer)
+      cellArriveAsync(cell(0));
+  } else {
+    cellWaitPhase(cell(0), 1);
+    dst[lane()] = ldsReadAndWait(tileSlot());
+  }
+}
+
+TEST_F(Gfx1250RaceTest, cell_async_handoff) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kWave);
+  cell_async_handoff_kernel<ArriveOrder::AfterTransfer><<<1, 2 * kWave, kCellLdsBytes>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0));
+}
+
+// The load is issued after the arrival, which therefore does not order it.
+// Wave 1 may read before or after the load issues.
+TEST_F(Gfx1250RaceTest, cell_async_handoff_load_after_arrive_race) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kWave);
+  cell_async_handoff_kernel<ArriveOrder::BeforeTransfer>
+      <<<1, 2 * kWave, kCellLdsBytes>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectAnyRace({byWave(kAsyncLoadThenReadRaceExpectation, 1),
+                 byWave(kReadThenAsyncLoadRaceExpectation, 0)});
+}
+
+/// How the producer of a tensor load arrives at the cell.
+enum class TensorArrive {
+  Descriptor, ///< The descriptor requests the arrival; no wait.
+  Ds,         ///< ds_atomic_barrier_arrive_rtn_b64 after the load, no TENSORcnt wait.
+  WaitThenAsync, ///< s_wait_tensorcnt, then ds_atomic_async_barrier_arrive_b64.
+  AsyncThenWait, ///< ds_atomic_async_barrier_arrive_b64, then s_wait_tensorcnt.
+};
+
+// Wave 0 loads its tile with a tensor transfer and arrives at the cell; wave 1
+// reads the tile after it sees the phase. `arrivals` is 1 when the transfer
+// itself arrives, once per instruction, and kWave when a DS arrive does, once
+// per lane.
+template <TensorArrive Arrive>
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+cell_tensor_load_kernel(TensorDesc desc, int *dst) {
+  cellSetup(0, Arrive == TensorArrive::Descriptor ? 1 : kWave);
+  if (waveIndex() == 0) {
+    tensorLoad(desc);
+    if constexpr (Arrive == TensorArrive::Ds)
+      cellArrive(cell(0));
+    if constexpr (Arrive == TensorArrive::WaitThenAsync)
+      waitTensorcnt<0>();
+    if constexpr (Arrive == TensorArrive::WaitThenAsync || Arrive == TensorArrive::AsyncThenWait)
+      cellArriveAsync(cell(0));
+    if constexpr (Arrive == TensorArrive::AsyncThenWait)
+      waitTensorcnt<0>();
+  } else {
+    cellWaitPhase(cell(0), 1);
+    dst[lane()] = ldsReadAndWait(tileSlot());
+  }
+}
+
+// The transfer arrives when it completes (CDNA5 ISA 10.11.3), so the producer
+// never waits on TENSORcnt.
+TEST_F(Gfx1250RaceTest, cell_tensor_auto_arrive) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kWave);
+  cell_tensor_load_kernel<TensorArrive::Descriptor>
+      <<<1, 2 * kWave, kCellLdsBytes>>>(describe({.global = src, .barrier_cell = cell(0)}), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0));
+}
+
+// Tensor instructions are unordered with other memory instructions (CDNA5 ISA
+// 10.11.1), so a DS arrive does not follow the pending tensor load.
+TEST_F(Gfx1250RaceTest, cell_tensor_ds_arrive_race) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kWave);
+  cell_tensor_load_kernel<TensorArrive::Ds>
+      <<<1, 2 * kWave, kCellLdsBytes>>>(describe({.global = src}), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(byWave(kTensorLoadThenReadRaceExpectation, 1));
+}
+
+// The producer waits for its tensor load, then arrives.
+TEST_F(Gfx1250RaceTest, cell_tensor_wait_then_async_arrive) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kWave);
+  cell_tensor_load_kernel<TensorArrive::WaitThenAsync>
+      <<<1, 2 * kWave, kCellLdsBytes>>>(describe({.global = src}), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0));
+}
+
+// The load completes after the arrival, so the arrival does not order it.
+TEST_F(Gfx1250RaceTest, cell_tensor_async_arrive_before_wait_race) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kWave);
+  cell_tensor_load_kernel<TensorArrive::AsyncThenWait>
+      <<<1, 2 * kWave, kCellLdsBytes>>>(describe({.global = src}), dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(byWave(kTensorLoadThenReadRaceExpectation, 1));
+}
+
+// Wave 1 stores its tile with a tensor transfer that arrives when it
+// completes; wave 0 overwrites the tile after it sees the phase.
+template <bool Poll>
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+cell_tensor_store_source_kernel(TensorDesc desc) {
+  cellSetup(0, 1);
+  if (waveIndex() == 1) {
+    ldsFillAndWait(0, 5);
+    tensorStore(desc);
+  } else {
+    if constexpr (Poll)
+      cellWaitPhase(cell(0), 1);
+    ldsFillAndWait(0, 9);
+  }
+}
+
+TEST_F(Gfx1250RaceTest, cell_tensor_store_source_handed_back) {
+  auto *dst = allocFilled<int>(kTileElements, kUnwrittenValue);
+  cell_tensor_store_source_kernel<true>
+      <<<1, 2 * kWave, kCellLdsBytes>>>(describe({.global = dst, .barrier_cell = cell(0)}));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, std::vector<int>(kTileElements, 5));
+}
+
+// Wave 0 never reads the cell. Whichever of its overwrite and the store runs
+// second reports the race.
+TEST_F(Gfx1250RaceTest, cell_tensor_store_source_no_poll_race) {
+  auto *dst = allocFilled<int>(kTileElements, kUnwrittenValue);
+  cell_tensor_store_source_kernel<false>
+      <<<1, 2 * kWave, kCellLdsBytes>>>(describe({.global = dst, .barrier_cell = cell(0)}));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectAnyRace({byWave(kTensorStoreThenWriteRaceExpectation, 0),
+                 byWave(kDsWriteThenTensorStoreRaceExpectation, 1)});
+}
+
+// Wave 1 stores its tile with an async copy and arrives. The async arrive
+// stays in order with async loads, not stores (CDNA5 ISA 10.8), so it does not
+// order the store's LDS source, which wave 0 overwrites after it sees the
+// phase.
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+cell_async_store_source_kernel(int *dst) {
+  cellSetup(0, kWave);
+  if (waveIndex() == 1) {
+    ldsFillAndWait(0, 5);
+    asyncStoreFromLds(dst, 0);
+    cellArriveAsync(cell(0));
+  } else {
+    cellWaitPhase(cell(0), 1);
+    ldsFillAndWait(0, 9);
+  }
+}
+
+TEST_F(Gfx1250RaceTest, cell_async_store_source_not_released_race) {
+  auto *dst = alloc<int>(kTileElements);
+  cell_async_store_source_kernel<<<1, 2 * kWave, kCellLdsBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(byWave(kAsyncStoreThenWriteRaceExpectation, 0));
+}
+
+// Waves 0 and 1 each write a tile and arrive at one cell that needs both
+// waves; wave 2 reads both tiles after it sees the phase. In the race variant
+// wave 1 writes after it arrives.
+template <bool Race>
+__global__ __attribute__((amdgpu_flat_work_group_size(3 * kWave, 3 * kWave))) void
+cell_two_producers_kernel(int *dst) {
+  cellSetup(0, 2 * kWave);
+  const int wave = waveIndex();
+  if (wave == 2) {
+    cellWaitPhase(cell(0), 1);
+    dst[lane()] = ldsReadAndWait(tileSlot(0));
+    dst[kWave + lane()] = ldsReadAndWait(tileSlot(1));
+    return;
+  }
+  const bool late = Race && wave == 1;
+  if (!late)
+    ldsWrite(tileSlot(wave), wave * kWave + lane());
+  cellArrive(cell(0));
+  if (late) {
+    ldsWrite(tileSlot(wave), wave * kWave + lane());
+    waitDscnt();
+  }
+}
+
+TEST_F(Gfx1250RaceTest, cell_two_producers) {
+  auto *dst = alloc<int>(2 * kWave);
+  cell_two_producers_kernel<false><<<1, 3 * kWave, kCellLdsBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0, 2 * kWave));
+}
+
+// Wave 1's write follows its arrival, so the phase does not order it. Wave 2
+// may read wave 1's tile before or after the write issues.
+TEST_F(Gfx1250RaceTest, cell_two_producers_one_late_race) {
+  auto *dst = alloc<int>(2 * kWave);
+  cell_two_producers_kernel<true><<<1, 3 * kWave, kCellLdsBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectAnyRace({byWave(kDsWriteThenReadRaceExpectation, 2),
+                 byWave(kDsReadThenWriteRaceExpectation, 1)});
+  ExpectRecordsInTile(1);
+}
+
+// Wave 0 writes its tile and arrives. Wave 1 reads it after it sees the phase;
+// wave 2 reads it without reading the cell. Only a wave that reads the cell
+// acquires the phase.
+__global__ __attribute__((amdgpu_flat_work_group_size(3 * kWave, 3 * kWave))) void
+cell_third_wave_without_poll_kernel(int *dst) {
+  cellSetup(0, kWave);
+  const int wave = waveIndex();
+  if (wave == 0) {
+    ldsWrite(tileSlot(), lane() + 1);
+    cellArrive(cell(0));
+  } else if (wave == 1) {
+    cellWaitPhase(cell(0), 1);
+    dst[lane()] = ldsReadAndWait(tileSlot());
+  } else {
+    dst[kWave + lane()] = ldsReadAndWait(tileSlot());
+  }
+}
+
+TEST_F(Gfx1250RaceTest, cell_third_wave_without_poll_race) {
+  auto *dst = alloc<int>(2 * kWave);
+  cell_third_wave_without_poll_kernel<<<1, 3 * kWave, kCellLdsBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectAnyRace({byWave(kDsWriteThenReadRaceExpectation, 2),
+                 byWave(kDsReadThenWriteRaceExpectation, 0)});
+  // Wave 1 read after it saw the phase, so no report involves its access.
+  ExpectRecordsByWaves(0, 2);
+  // Wave 1's read is ordered after the write.
+  ExpectValues(dst, range(1));
+}
+
+// The cell as a non-blocking workgroup barrier, initialized with the thread
+// count (CDNA5 ISA 11.2.2): every wave writes its tile, arrives, waits for the
+// phase, and reads the next wave's tile. In the race variant wave 2 reads
+// before it waits.
+constexpr int kCellBarrierWaves = 4;
+
+template <bool Race>
+__global__ __attribute__((amdgpu_flat_work_group_size(kCellBarrierWaves * kWave,
+                                                      kCellBarrierWaves * kWave))) void
+cell_as_workgroup_barrier_kernel(int *dst) {
+  cellSetup(0, kCellBarrierWaves * kWave);
+  const int wave = waveIndex();
+  const int neighbour = (wave + 1) % kCellBarrierWaves;
+  ldsWrite(tileSlot(wave), wave * kWave + lane());
+  cellArrive(cell(0));
+  const bool early = Race && wave == 2;
+  int value = 0;
+  if (early)
+    value = ldsReadAndWait(tileSlot(neighbour));
+  cellWaitPhase(cell(0), 1);
+  if (!early)
+    value = ldsReadAndWait(tileSlot(neighbour));
+  dst[wave * kWave + lane()] = value;
+}
+
+/// Each wave's output: the values the next wave wrote.
+std::vector<int> cellBarrierValues() {
+  std::vector<int> values(kCellBarrierWaves * kWave);
+  for (int wave = 0; wave < kCellBarrierWaves; ++wave)
+    for (int lane = 0; lane < kWave; ++lane)
+      values[wave * kWave + lane] = (wave + 1) % kCellBarrierWaves * kWave + lane;
+  return values;
+}
+
+TEST_F(Gfx1250RaceTest, cell_as_workgroup_barrier) {
+  auto *dst = alloc<int>(kCellBarrierWaves * kWave);
+  cell_as_workgroup_barrier_kernel<false><<<1, kCellBarrierWaves * kWave, kCellLdsBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, cellBarrierValues());
+}
+
+// Wave 2 reads wave 3's tile before it has seen the phase.
+TEST_F(Gfx1250RaceTest, cell_as_workgroup_barrier_read_before_wait_race) {
+  auto *dst = alloc<int>(kCellBarrierWaves * kWave);
+  cell_as_workgroup_barrier_kernel<true><<<1, kCellBarrierWaves * kWave, kCellLdsBytes>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectAnyRace({byWave(kDsWriteThenReadRaceExpectation, 2),
+                 byWave(kDsReadThenWriteRaceExpectation, 3)});
+  ExpectRecordsByWaves(2, 3);
+  ExpectRecordsInTile(3);
+}
+
+// A plain store that initializes the cell is ordinary LDS data. Wave 1 arrives
+// with no barrier after wave 0's initialization, so the two race on the cell.
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+cell_unordered_init_kernel() {
+  if (waveIndex() == 0)
+    cellInit(cell(0), kWave);
+  else
+    cellArrive(cell(0));
+}
+
+TEST_F(Gfx1250RaceTest, cell_unordered_init_race) {
+  cell_unordered_init_kernel<<<1, 2 * kWave, kCellLdsBytes>>>();
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectAnyRace({byWave(kCellInitThenArriveRaceExpectation, 1),
+                 byWave(kCellArriveThenInitRaceExpectation, 0)});
+}
+
+// A double-buffered pipeline with no s_barrier in its loop. Wave 0 loads a
+// buffer with an async copy and arrives at that buffer's "ready" cell; wave 1
+// waits for it, reads the buffer, and arrives at its "free" cell; wave 0 waits
+// for that before it reloads the buffer.
+constexpr int kCellPipelineRounds = 8;
+/// The round in which the race variant's wave 0 arrives before it loads.
+constexpr int kCellPipelineRaceRound = 5;
+
+/// Buffer `buffer`'s ready and free cells.
+constexpr uint32_t readyCell(int buffer) { return cell(buffer); }
+constexpr uint32_t freeCell(int buffer) { return cell(2 + buffer); }
+
+template <bool Race>
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+cell_pingpong_kernel(const int *src, int *dst) {
+  for (int index = 0; index < kCellCount; ++index)
+    cellSetup(index, kWave);
+  int sum = 0;
+  for (int round = 0; round < kCellPipelineRounds; ++round) {
+    const int buffer = round & 1;
+    // Each buffer is used every second round, so this is its (round / 2 + 1)th
+    // use: its ready cell has completed round / 2 phases before this round, and
+    // its free cell completes its (round / 2)th at the end of the last use.
+    const int use = round / 2;
+    if (waveIndex() == 0) {
+      if (use > 0)
+        cellWaitPhase(freeCell(buffer), use & 1);
+      const bool late = Race && round == kCellPipelineRaceRound;
+      if (late)
+        cellArriveAsync(readyCell(buffer));
+      asyncLoadToLds(src + round * kWave, buffer * kTileBytes);
+      if (!late)
+        cellArriveAsync(readyCell(buffer));
+    } else {
+      cellWaitPhase(readyCell(buffer), (use + 1) & 1);
+      sum += ldsReadAndWait(tileSlot(buffer));
+      cellArrive(freeCell(buffer));
+    }
+  }
+  if (waveIndex() == 1)
+    dst[lane()] = sum;
+}
+
+/// Wave 1's sums: every round's input for its lane.
+std::vector<int> cellPipelineSums() {
+  std::vector<int> sums(kWave, 0);
+  for (int lane = 0; lane < kWave; ++lane)
+    for (int round = 0; round < kCellPipelineRounds; ++round)
+      sums[lane] += round * kWave + lane;
+  return sums;
+}
+
+TEST_F(Gfx1250RaceTest, cell_pingpong) {
+  auto *src = allocWithData<int>(kCellPipelineRounds * kWave);
+  auto *dst = alloc<int>(kWave);
+  cell_pingpong_kernel<false><<<1, 2 * kWave, kCellLdsBytes>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, cellPipelineSums());
+}
+
+// In round 5 wave 0 arrives before it loads buffer 1 (round 5 is odd), so the
+// arrival does not order that load. Wave 1 may read before or after it issues.
+TEST_F(Gfx1250RaceTest, cell_pingpong_late_load_race) {
+  auto *src = allocWithData<int>(kCellPipelineRounds * kWave);
+  auto *dst = alloc<int>(kWave);
+  cell_pingpong_kernel<true><<<1, 2 * kWave, kCellLdsBytes>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectAnyRace({byWave(kAsyncLoadThenReadRaceExpectation, 1),
+                 byWave(kReadThenAsyncLoadRaceExpectation, 0)});
+  ExpectRecordsInTile(1);
 }
 
 } // namespace
