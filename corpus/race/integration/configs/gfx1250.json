@@ -189,6 +189,8 @@
     "cell_tensor_store_source_handed_back",
     "cell_tensor_store_source_no_poll_race",
     "cell_async_store_source_not_released_race",
+    "cell_async_handoff_then_barrier_race",
+    "cell_tensor_auto_arrive_then_barrier_race",
     "cell_two_producers",
     "cell_two_producers_one_late_race",
     "cell_third_wave_without_poll_race",

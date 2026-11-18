@@ -3983,9 +3983,9 @@ TEST_F(Gfx1250RaceTest, split_barrier_pingpong_wait_after_signal_race) {
 // and a wave that polls the cell and sees the new phase proceeds. No wave
 // blocks and no s_barrier is involved: the arrival orders what its wave
 // completed, and the pending operations the arrive is ordered after, for the
-// waves that read the cell. Each race case drops the read of the cell, or
-// moves a transfer to after its arrival; none depends on how the waves are
-// scheduled.
+// waves that read the cell. Each race case drops the read of the cell, moves a
+// transfer to after its arrival, or relies on something that is not ordered
+// after the transfer; every race case reports on every schedule.
 
 /// The cells sit after the tiles the cell kernels use.
 constexpr uint32_t kCellBase = 8 * kTileBytes;
@@ -4348,6 +4348,50 @@ TEST_F(Gfx1250RaceTest, cell_async_store_source_not_released_race) {
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(byWave(kAsyncStoreThenWriteRaceExpectation, 0));
+}
+
+// Wave 0 loads its tile with a transfer that it never waits for, arrives, and
+// passes a workgroup barrier; wave 1 passes the barrier and reads the tile
+// without reading the cell. A barrier waits for no memory counter (CDNA5 ISA
+// 15.3, S_BARRIER_SIGNAL), so it does not order the pending transfer: only a
+// wave that reads the cell is ordered after it.
+template <bool Tensor>
+__global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
+cell_handoff_then_barrier_kernel(TensorDesc desc, const int *src, int *dst) {
+  cellSetup(0, Tensor ? 1 : kWave);
+  if (waveIndex() == 0) {
+    if constexpr (Tensor) {
+      tensorLoad(desc);
+    } else {
+      asyncLoadToLds(src, 0);
+      cellArriveAsync(cell(0));
+    }
+    barrier();
+  } else {
+    barrier();
+    dst[lane()] = ldsReadAndWait(tileSlot());
+  }
+}
+
+TEST_F(Gfx1250RaceTest, cell_async_handoff_then_barrier_race) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kWave);
+  cell_handoff_then_barrier_kernel<false>
+      <<<1, 2 * kWave, kCellLdsBytes>>>(describe({.global = src}), src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(byWave(kAsyncLoadThenReadRaceExpectation, 1));
+}
+
+TEST_F(Gfx1250RaceTest, cell_tensor_auto_arrive_then_barrier_race) {
+  auto *src = allocWithData<int>(kTileElements);
+  auto *dst = alloc<int>(kWave);
+  cell_handoff_then_barrier_kernel<true>
+      <<<1, 2 * kWave, kCellLdsBytes>>>(describe({.global = src, .barrier_cell = cell(0)}), src,
+                                        dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(byWave(kTensorLoadThenReadRaceExpectation, 1));
 }
 
 // Waves 0 and 1 each write a tile and arrive at one cell that needs both

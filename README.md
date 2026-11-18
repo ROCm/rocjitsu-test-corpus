@@ -176,7 +176,9 @@ arrival, and a consumer polls the cell's phase before it touches the data.
 Their race cases drop the consumer's poll, move a transfer to after its
 arrival, pair an arrive with a transfer it is not ordered after (a DS arrive
 with a pending tensor load, an async arrive with a pending async store), or
-arrive at a cell whose initialization no barrier ordered. Further cases use
+arrive at a cell whose initialization no barrier ordered, or have a wave rely
+on an `s_barrier` after the arrival for a transfer its producer never waited
+for. Further cases use
 the cell as a non-blocking workgroup barrier and run a double-buffered pipeline
 with no `s_barrier` in its loop. The cases poll bit 29 of the cell, the low
 phase bit at the pending-count width RocJITsu models.
