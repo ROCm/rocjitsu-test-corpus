@@ -13,12 +13,11 @@
 /// order, so overlapping transfers from one wave also need a TENSORcnt wait
 /// between them. Async copies do the same on ASYNCcnt, with a per-lane LDS
 /// address.
-/// Other waves see their LDS effects only after the issuing wave waits and the
-/// workgroup passes a barrier. The barrier is split: it orders what a wave
-/// completed before its own s_barrier_signal, for waves past their own
-/// s_barrier_wait. Each race case is its clean partner with one step removed
-/// or moved. Clean cases also check the data moved; raced values are
-/// unconstrained.
+/// To order these LDS accesses through a split barrier, the issuing wave
+/// completes the access before s_barrier_signal and the other wave accesses
+/// LDS after s_barrier_wait. Race cases omit or move a completion wait or a
+/// barrier operation. Clean cases also check the data moved; raced values
+/// are unconstrained.
 
 #include <gtest/gtest.h>
 #include <hip/hip_runtime.h>
@@ -3389,12 +3388,10 @@ TEST_F(Gfx1250RaceTest, flat_lds_partial_loadcnt_wait_race) {
 // barrier only if its wave completed it before its own signal, and after the
 // barrier only if the accessing wave issued it after its own wait. Each race
 // case moves one completing wait or one access to the wrong side of its wave's
-// signal or wait. Every race case reports on every schedule of the waves;
-// where the schedule decides which of the two accesses reports, the case
-// accepts either. Two cases fix the schedule with a flag in global memory, so
-// that the access lands between a wave's signal or wait and the round's
-// completion: the write of split_barrier_ds_write completes before the round
-// does, and the early read of split_barrier_reader_in_window follows it.
+// signal or wait. Where either conflicting access can issue first, the case
+// accepts either report direction. Two cases use global flags to delay a
+// reader until another wave has signalled, without guaranteeing completion
+// of the conflicting LDS write or of the barrier round.
 
 /// Where the issuing wave waits for its LDS access, relative to its signal.
 enum class Completion { BeforeSignal, AfterSignal };
@@ -3412,9 +3409,12 @@ static constexpr RaceExpectation kDsReadThenWriteRaceExpectation{
     .consumer = "ds_store_b32",
 };
 
-/// Tell the other waves, through global memory, that this wave has reached
-/// this point. A flag orders nothing in LDS; it only fixes the order in which
-/// the waves run, so that a case exercises one interleaving on every schedule.
+/// Publish that this wave has reached this point. Callers must account for
+/// any LDS completion ordered before this store: a wave that observes the
+/// flag also observes that completion, which makes its later LDS access safe.
+/// The race detector does not model ordering through global memory and would
+/// still report that access, so the race cases raise their flag before the
+/// completion they leave unordered.
 __device__ inline void raise(int *flag) { __atomic_store_n(flag, 1, __ATOMIC_RELAXED); }
 
 /// Spin until another wave raises `flag`.
@@ -3430,24 +3430,23 @@ constexpr RaceExpectation byWave(RaceExpectation expected, int wave) {
   return expected;
 }
 
-// Wave 0 writes its tile; wave 1 reads it after the barrier. Wave 1 signals
-// only once wave 0 has signalled and its write has completed, so the round
-// completes after the write does on every schedule: only the side of wave 0's
-// own signal the write completed on decides whether the barrier orders it.
+// Wave 0 writes its tile; wave 1 reads it after the barrier. The flag delays
+// wave 1's signal until wave 0 has signalled. In the race variant the flag
+// precedes the write's completion wait, so it does not make the read safe.
 template <Completion When>
 __global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
-split_barrier_ds_write_kernel(int *dst, int *write_complete) {
+split_barrier_ds_write_kernel(int *dst, int *writer_signaled) {
   if (waveIndex() == 0) {
     ldsWrite(tileSlot(), lane() + 1);
     if constexpr (When == Completion::BeforeSignal)
       waitDscnt();
     barrierSignal();
+    raise(writer_signaled);
     if constexpr (When == Completion::AfterSignal)
       waitDscnt();
-    raise(write_complete);
     barrierWait();
   } else {
-    awaitRaised(write_complete);
+    awaitRaised(writer_signaled);
     barrierSignal();
     barrierWait();
     dst[lane()] = ldsReadAndWait(tileSlot());
@@ -3456,22 +3455,22 @@ split_barrier_ds_write_kernel(int *dst, int *write_complete) {
 
 TEST_F(Gfx1250RaceTest, split_barrier_ds_write) {
   auto *dst = alloc<int>(kWave);
-  auto *write_complete = allocFilled<int>(1, 0);
+  auto *writer_signaled = allocFilled<int>(1, 0);
   split_barrier_ds_write_kernel<Completion::BeforeSignal>
-      <<<1, 2 * kWave, kTileBytes>>>(dst, write_complete);
+      <<<1, 2 * kWave, kTileBytes>>>(dst, writer_signaled);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectNoRace();
   ExpectValues(dst, range(1));
 }
 
-// The write completes after wave 0's signal, so the barrier does not order
-// it, although it completes before the round does.
+// The write's completion wait follows wave 0's signal and flag publication,
+// so neither the barrier nor the flag guarantees completion before the read.
 TEST_F(Gfx1250RaceTest, split_barrier_ds_write_wait_after_signal_race) {
   auto *dst = alloc<int>(kWave);
-  auto *write_complete = allocFilled<int>(1, 0);
+  auto *writer_signaled = allocFilled<int>(1, 0);
   split_barrier_ds_write_kernel<Completion::AfterSignal>
-      <<<1, 2 * kWave, kTileBytes>>>(dst, write_complete);
+      <<<1, 2 * kWave, kTileBytes>>>(dst, writer_signaled);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   ExpectRace(byWave(kDsWriteThenReadRaceExpectation, 1));
@@ -3507,7 +3506,8 @@ TEST_F(Gfx1250RaceTest, split_barrier_ds_read) {
   ExpectValues(dst, range(1));
 }
 
-// The read completes after wave 1's signal, so wave 0's overwrite races with it.
+// The read's completion wait follows wave 1's signal, so wave 0 can overwrite
+// the tile while the read is still pending.
 TEST_F(Gfx1250RaceTest, split_barrier_ds_read_wait_after_signal_race) {
   auto *dst = alloc<int>(kWave);
   split_barrier_ds_read_kernel<Completion::AfterSignal><<<1, 2 * kWave, kTileBytes>>>(dst);
@@ -3569,11 +3569,11 @@ TEST_F(Gfx1250RaceTest, split_barrier_read_before_wait_race) {
 }
 
 // Wave 0 writes and releases its tile. Wave 1 reads it after its wait; wave 2
-// reads it before its wait. A wave acquires the barrier only at its own wait:
-// wave 2 reads once wave 1 has passed its wait, so the round has completed
-// and the write is released on every schedule, and the read still races.
+// reads it before its wait. The flag announces only wave 1's signal, so wave
+// 2 can read before wave 0 has completed or even issued its write. Wave 1's
+// read is safe; wave 2's read can report RAW or cause wave 0 to report WAR.
 __global__ __attribute__((amdgpu_flat_work_group_size(3 * kWave, 3 * kWave))) void
-split_barrier_reader_in_window_kernel(int *dst, int *round_complete) {
+split_barrier_reader_in_window_kernel(int *dst, int *reader_signaled) {
   const int wave = waveIndex();
   if (wave == 0) {
     ldsWrite(tileSlot(), lane() + 1);
@@ -3582,12 +3582,12 @@ split_barrier_reader_in_window_kernel(int *dst, int *round_complete) {
     barrierWait();
   } else if (wave == 1) {
     barrierSignal();
+    raise(reader_signaled);
     barrierWait();
-    raise(round_complete);
     dst[lane()] = ldsReadAndWait(tileSlot());
   } else {
     barrierSignal();
-    awaitRaised(round_complete);
+    awaitRaised(reader_signaled);
     dst[kWave + lane()] = ldsReadAndWait(tileSlot());
     barrierWait();
   }
@@ -3595,18 +3595,18 @@ split_barrier_reader_in_window_kernel(int *dst, int *round_complete) {
 
 TEST_F(Gfx1250RaceTest, split_barrier_reader_in_window_race) {
   auto *dst = alloc<int>(2 * kWave);
-  auto *round_complete = allocFilled<int>(1, 0);
-  split_barrier_reader_in_window_kernel<<<1, 3 * kWave, kTileBytes>>>(dst, round_complete);
+  auto *reader_signaled = allocFilled<int>(1, 0);
+  split_barrier_reader_in_window_kernel<<<1, 3 * kWave, kTileBytes>>>(dst, reader_signaled);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  // Only wave 2's read reports: wave 1 read after its wait.
-  ExpectRace(byWave(kDsWriteThenReadRaceExpectation, 2));
+  ExpectAnyRace({byWave(kDsWriteThenReadRaceExpectation, 2),
+                 byWave(kDsReadThenWriteRaceExpectation, 0)});
   // Wave 1's read is ordered after the write.
   ExpectValues(dst, range(1));
 }
 
-// Wave 0's write completes after its first signal, so the first barrier does
-// not order it, but its second signal releases it.
+// Wave 0 waits for its write after its first signal and before its second.
+// The second barrier therefore orders the write before wave 1's read.
 __global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
 split_barrier_completed_in_window_kernel(int *dst) {
   if (waveIndex() == 0) {
@@ -3818,8 +3818,8 @@ TEST_F(Gfx1250RaceTest, split_barrier_async_store_source_wait_after_signal_race)
 enum class ReadPoint { AfterWait, BeforeWait };
 
 // Wave 1 writes its tile, waits for the write, and ends without signalling.
-// The barrier completes when wave 0 signals, since a wave may end instead of
-// signalling (CDNA5 ISA 5.6), but wave 0 acquires it only at its wait.
+// The barrier completes once wave 0 has signalled and wave 1 has ended, in
+// either order (CDNA5 ISA 5.6). Wave 0 acquires it only at its wait.
 template <ReadPoint Read>
 __global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
 split_barrier_exited_writer_kernel(int *dst) {
@@ -3854,11 +3854,11 @@ TEST_F(Gfx1250RaceTest, split_barrier_exited_writer_read_before_wait_race) {
                  byWave(kDsReadThenWriteRaceExpectation, 1)});
 }
 
-// Wave 0 writes, signals and ends without waiting for the write. Its signal
-// released nothing, and the barrier it signalled can complete without its
-// end, so the barrier does not order the write that its end completes. Waves
-// should not signal and then exit (CDNA5 ISA 5.6); this is the race that
-// follows if one does. Wave 1's read always follows wave 0's write.
+// Wave 0 signals before the implicit completion wait at S_ENDPGM. Wave 1 can
+// pass its barrier wait before that completion. Its read issues after the
+// write but can race with it. CDNA5 ISA 5.6 discourages signalling then exiting
+// because it can leave the barrier unusable; this checks the detector's report
+// for that sequence, without relying on guaranteed hardware termination.
 __global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
 split_barrier_signal_then_exit_kernel(int *dst) {
   if (waveIndex() == 0) {
@@ -3939,7 +3939,7 @@ TEST_F(Gfx1250RaceTest, split_barrier_pingpong) {
   ExpectValues(dst, pingPongSums());
 }
 
-// Wave 1's write in round 5 completes after its signal. Wave 0 is its only
+// Wave 1 waits for its round-5 write after signalling. Wave 0 is its only
 // reader, in buffer 1 (round 5 is odd).
 TEST_F(Gfx1250RaceTest, split_barrier_pingpong_wait_after_signal_race) {
   auto *src = allocWithData<int>(kPingPongRounds * kPingPongWaves * kWave);

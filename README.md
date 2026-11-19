@@ -167,6 +167,8 @@ signal and then end. Clean cases check that a wave may work on LDS no other
 wave touches between its signal and its wait, that an access completed after
 one signal is ordered by the wave's next, that a wave may end instead of
 signalling, and a double-buffered loop of eight barrier rounds.
+The signal-then-end case is a detector regression for a sequence the CDNA5 ISA
+explicitly discourages because it can leave the barrier unusable.
 The gfx1250 program does not build the shared VMEM cases, which use pre-GFX12
 waits.
 
