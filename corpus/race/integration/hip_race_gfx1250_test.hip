@@ -2695,6 +2695,9 @@ TEST_F(Gfx1250RaceTest, global_inv_loadcnt_below_capacity_race) {
 // result. GLOBAL_INV counts on LOADcnt (CDNA5 ISA 5.7.1.2), and LLVM orders it
 // with VMEM loads, so after it, waiting for one to remain completes the load.
 // Without it, the load is the one that remains.
+// The paired cases also check the core memory-wait diagnostics through the
+// integration config. The entire sequence stays in one asm block so compiler
+// waits cannot mask the missing-wait control.
 template <bool Invalidate>
 __global__ void global_inv_partial_wait_kernel(const int *src, int *dst) {
   int producer, result;

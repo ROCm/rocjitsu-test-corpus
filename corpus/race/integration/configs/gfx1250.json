@@ -1,6 +1,12 @@
 {
   "config_name": "gfx1250",
   "target": "gfx1250",
+  "memory_wait_expectations": {
+    "global_inv_partial_wait_completes_older_load": [],
+    "partial_wait_without_global_inv_race": [
+      "is known ready (loadcnt). A wait threshold <= 0 is required"
+    ]
+  },
   "cases": [
     "vgpr_loadcnt",
     "vgpr_loadcnt_race",
