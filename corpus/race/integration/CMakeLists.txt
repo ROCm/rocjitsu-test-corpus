@@ -142,6 +142,7 @@ elseif(CMAKE_HIP_ARCHITECTURES STREQUAL "gfx1250")
     add_rocjitsu_race_test(
         hip_race_tests_gfx1250
         "${CMAKE_CURRENT_LIST_DIR}/hip_race_gfx1250_test.hip"
+        "${CMAKE_CURRENT_LIST_DIR}/hip_race_gfx1250_named_barrier_test.hip"
         "${CMAKE_CURRENT_LIST_DIR}/hip_race_barrier_test.hip"
     )
 else()

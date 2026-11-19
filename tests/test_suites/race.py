@@ -70,7 +70,11 @@ TARGET_LAYOUT = {
         "binary": "hip_race_tests_gfx1250",
         "fixture": "Gfx1250RaceTest",
         # The shared VMEM cases use pre-GFX12 waits, so gfx1250 does not build them.
-        "sources": ("hip_race_gfx1250_test.hip", "hip_race_barrier_test.hip"),
+        "sources": (
+            "hip_race_gfx1250_test.hip",
+            "hip_race_gfx1250_named_barrier_test.hip",
+            "hip_race_barrier_test.hip",
+        ),
     },
 }
 
