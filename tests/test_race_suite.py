@@ -26,7 +26,7 @@ def _isolate_case_timeout(monkeypatch) -> None:
 
 def test_configs_preserve_every_moved_gtest() -> None:
     configs = race.load_target_configs(race.default_config_files())
-    expected_counts = {"gfx942": 14, "gfx950": 85, "gfx1151": 35, "gfx1250": 153}
+    expected_counts = {"gfx942": 14, "gfx950": 87, "gfx1151": 35, "gfx1250": 153}
 
     for target, expected_count in expected_counts.items():
         cases = race.discover(make_target_spec(target), configs)
@@ -89,7 +89,10 @@ def test_run_honors_run_exclusions(tmp_path: Path, monkeypatch, target: str) -> 
         race.run(control, build_result, context)
 
 
-def test_materialize_config_adds_required_race_plugin(tmp_path: Path) -> None:
+@pytest.mark.parametrize("lds_waw", [False, True])
+def test_materialize_config_adds_required_race_plugin(
+    tmp_path: Path, lds_waw: bool
+) -> None:
     base = tmp_path / "base.json"
     output = tmp_path / "case" / "config.json"
     sink = tmp_path / "case" / "plugins"
@@ -97,13 +100,19 @@ def test_materialize_config_adds_required_race_plugin(tmp_path: Path) -> None:
     sink.mkdir()
     _write_base_config(base, "gfx950", max_ticks=123)
 
-    race._materialize_config(base, output, sink, target="gfx950")
+    race._materialize_config(base, output, sink, target="gfx950", lds_waw=lds_waw)
 
     value = json.loads(output.read_text(encoding="utf-8"))
     assert value["max_ticks"] == 123
     assert value["require_all_plugins"] is True
-    assert value["plugins"] == {"race": {}}
+    assert value["plugins"] == {"race": {"lds_waw": True} if lds_waw else {}}
     assert value["sinks"] == {"types": ["file"], "dir": str(sink)}
+
+
+@pytest.mark.parametrize("waw_tests", ["vgpr_waitcnt", [1], ["misspelled_case"]])
+def test_config_rejects_invalid_lds_waw_tests(tmp_path: Path, waw_tests) -> None:
+    with pytest.raises(ValueError, match="lds_waw_tests"):
+        _configs_with_exclusions(tmp_path, "gfx950", lds_waw_tests=waw_tests)
 
 
 def test_materialize_config_rejects_preconfigured_plugins(tmp_path: Path) -> None:

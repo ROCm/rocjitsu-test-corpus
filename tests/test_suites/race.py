@@ -29,7 +29,11 @@ from support.define_contracts import (
     RunContext,
     TargetSpec,
 )
-from support.prepare_inputs import load_suite_target_configs, supports_target
+from support.prepare_inputs import (
+    load_suite_target_configs,
+    supports_target,
+    validate_string_list,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RACE_SOURCE_DIR = REPO_ROOT / "corpus" / "race" / "integration"
@@ -84,7 +88,7 @@ def load_target_configs(config_files: tuple[str, ...] | list[str]) -> list[dict]
         config_files,
         repo_root=REPO_ROOT,
         required_fields=("cases",),
-        allowed_fields=("cases",),
+        allowed_fields=("cases", "lds_waw_tests"),
     )
     for config in configs:
         cases = config["cases"]
@@ -98,6 +102,13 @@ def load_target_configs(config_files: tuple[str, ...] | list[str]) -> list[dict]
             )
         if len(cases) != len(set(cases)):
             raise ValueError(f"{config['_path']} field 'cases' contains duplicates")
+        waw_tests = config.get("lds_waw_tests", [])
+        validate_string_list(config["_path"], waw_tests, "lds_waw_tests")
+        if unknown := set(waw_tests) - set(cases):
+            raise ValueError(
+                f"{config['_path']} field 'lds_waw_tests' names unknown cases: "
+                + ", ".join(sorted(unknown))
+            )
     return configs
 
 
@@ -255,7 +266,13 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
 
     base_config = _base_config_path()
     config_path = case_dir / "config.json"
-    _materialize_config(base_config, config_path, sink_dir, target=case.target)
+    _materialize_config(
+        base_config,
+        config_path,
+        sink_dir,
+        target=case.target,
+        lds_waw=case.metadata["name"] in target_config.get("lds_waw_tests", []),
+    )
     gtest_report = case_dir / "gtest.xml"
     command = [
         *_run_wrapper_command(context.run_wrapper, config_path),
@@ -398,11 +415,18 @@ def _load_base_config(base_path: Path, *, target: str) -> dict:
 
 
 def _materialize_config(
-    base_path: Path, output_path: Path, sink_dir: Path, *, target: str
+    base_path: Path,
+    output_path: Path,
+    sink_dir: Path,
+    *,
+    target: str,
+    lds_waw: bool = False,
 ) -> None:
     value = _load_base_config(base_path, target=target)
     value["require_all_plugins"] = True
     value["plugins"] = {"race": {}}
+    if lds_waw:
+        value["plugins"]["race"]["lds_waw"] = True
     value["sinks"] = {"types": ["file"], "dir": str(sink_dir)}
     output_path.write_text(
         json.dumps(value, indent=2, sort_keys=True, allow_nan=False) + "\n",

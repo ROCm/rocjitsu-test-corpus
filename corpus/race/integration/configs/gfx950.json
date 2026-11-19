@@ -44,6 +44,8 @@
     "sgpr_waw_load_then_load_race",
     "lds_cross_wave",
     "lds_cross_wave_race",
+    "lds_cross_wave_waw_race",
+    "lds_cross_wave_waw_same_value_race",
     "lds_same_wave_order",
     "global_to_lds_buffer",
     "global_to_lds_buffer_race",
@@ -87,5 +89,9 @@
     "barrier_staggered_wave_exit",
     "barrier_staggered_wave_exit_implicit_wait",
     "barrier_staggered_wave_exit_race"
+  ],
+  "lds_waw_tests": [
+    "lds_cross_wave_waw_race",
+    "lds_cross_wave_waw_same_value_race"
   ]
 }
