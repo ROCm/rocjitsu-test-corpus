@@ -176,6 +176,9 @@
     "split_barrier_exited_writer_read_before_wait_race",
     "split_barrier_signal_then_exit_race",
     "split_barrier_pingpong",
-    "split_barrier_pingpong_wait_after_signal_race"
+    "split_barrier_pingpong_wait_after_signal_race",
+    "named_leave_orders_writer",
+    "named_signal_then_leave_orders_later_write",
+    "named_leave_orders_read_before_overwrite"
   ]
 }
