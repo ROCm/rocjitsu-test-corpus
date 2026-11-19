@@ -255,6 +255,15 @@ TEST_F(Gfx1250RaceTest, named_leave_completes_round) {
   ExpectValues(out, values(100));
 }
 
+TEST_F(Gfx1250RaceTest, named_leave_orders_writer) {
+  int *out = allocFilled<int>(kWave, -7);
+  named_leave_kernel<true><<<1, 96, kTileBytes>>>(out);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(out, values(100));
+}
+
 // JOIN clears an old completion bit, even when rejoining the same barrier.
 // A waits at the second setup rendezvous until B has changed its membership;
 // A's subsequent write must be covered by a fresh named completion.

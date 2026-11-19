@@ -201,6 +201,7 @@
     "named_chain_read_before_overwrite",
     "named_chain_read_late_drain_race",
     "named_join_null_preserves_threshold",
-    "named_exit_preserves_threshold"
+    "named_exit_preserves_threshold",
+    "named_leave_orders_writer"
   ]
 }
