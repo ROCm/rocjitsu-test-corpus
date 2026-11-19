@@ -1005,4 +1005,49 @@ TEST_F(Gfx1250RaceTest, named_arrival_poll_early_signal_race) {
   ExpectAnyRace({kReadConflict, kWriteConflict});
 }
 
+// S_GET_BARRIER_STATE returns its SGPR result asynchronously on KMcnt
+// (CDNA5 ISA 15.3). Consuming it before the wait is a register hazard even
+// when the named barrier's state itself is stable.
+template <bool Wait>
+__global__ __attribute__((amdgpu_flat_work_group_size(64, 64))) void
+named_state_result_kernel(int *out) {
+  __shared__ __amdgpu_named_workgroup_barrier_t ready;
+  if (wave() == 0)
+    __builtin_amdgcn_s_barrier_init(&ready, 2);
+  workgroup();
+  if (wave() == 0) {
+    int value;
+    if constexpr (Wait) {
+      asm volatile("s_get_barrier_state %0, 1\ns_wait_kmcnt 0\n"
+                   "s_and_b32 %0, %0, 0x7f0"
+                   : "=s"(value)::"scc", "memory");
+    } else {
+      asm volatile("s_get_barrier_state %0, 1\ns_and_b32 %0, %0, 0x7f0"
+                   : "=s"(value)::"scc", "memory");
+    }
+    if (lane() == 0)
+      *out = value;
+  }
+  workgroup();
+}
+
+TEST_F(Gfx1250RaceTest, named_state_result_waited) {
+  int *out = allocFilled<int>(1, -7);
+  named_state_result_kernel<true><<<1, 64>>>(out);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(out, std::vector<int>{2 << 4});
+}
+
+TEST_F(Gfx1250RaceTest, named_state_result_missing_kmcnt_race) {
+  named_state_result_kernel<false><<<1, 64>>>(alloc<int>(1));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace({.findings = FindingCount::One,
+              .type = "SGPR",
+              .producer = "s_get_barrier_state",
+              .consumer = "s_and_b32"});
+}
+
 } // namespace

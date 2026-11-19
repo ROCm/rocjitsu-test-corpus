@@ -214,6 +214,8 @@
     "named_leave_orders_read_before_overwrite",
     "named_leave_read_late_drain_race",
     "named_arrival_poll_orders_write",
-    "named_arrival_poll_early_signal_race"
+    "named_arrival_poll_early_signal_race",
+    "named_state_result_waited",
+    "named_state_result_missing_kmcnt_race"
   ]
 }
