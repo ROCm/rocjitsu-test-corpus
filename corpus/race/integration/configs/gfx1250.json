@@ -202,6 +202,12 @@
     "named_chain_read_late_drain_race",
     "named_join_null_preserves_threshold",
     "named_exit_preserves_threshold",
-    "named_leave_orders_writer"
+    "named_leave_orders_writer",
+    "named_diamond_merges_epochs",
+    "named_diamond_missing_relay_race",
+    "named_isfirst_releases_writes",
+    "named_isfirst_late_write_race",
+    "named_relay_through_exit",
+    "named_relay_through_already_signalled_exit_race"
   ]
 }

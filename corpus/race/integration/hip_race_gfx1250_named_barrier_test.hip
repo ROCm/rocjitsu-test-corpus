@@ -690,4 +690,177 @@ TEST_F(Gfx1250RaceTest, named_exit_preserves_threshold) {
   ExpectValues(counts, std::vector<int>{201});
 }
 
+// A publishes tile 0 to B, then tile 1 to C. Both relay to D. B's
+// acknowledgement gates A's second write, so B's relay cannot cover it.
+// D needs the later epoch from C as well. Four independent barrier IDs are
+// live at once, with each wave joined to just the channel it consumes.
+template <int FanIn>
+__global__ __attribute__((amdgpu_flat_work_group_size(128, 128))) void
+named_diamond_kernel(int *out) {
+  __shared__ __amdgpu_named_workgroup_barrier_t ab, ac, joined, ack;
+  if (wave() == 0) {
+    __builtin_amdgcn_s_barrier_init(&ab, 1);
+    __builtin_amdgcn_s_barrier_init(&ac, 1);
+    __builtin_amdgcn_s_barrier_init(&joined, FanIn);
+    __builtin_amdgcn_s_barrier_init(&ack, 1);
+    __builtin_amdgcn_s_barrier_join(&ack);
+  } else if (wave() == 1) {
+    __builtin_amdgcn_s_barrier_join(&ab);
+  } else if (wave() == 2) {
+    __builtin_amdgcn_s_barrier_join(&ac);
+  } else {
+    __builtin_amdgcn_s_barrier_join(&joined);
+  }
+  workgroup();
+  if (wave() == 0) {
+    writeLds(slot(), 100 + lane());
+    drain();
+    __builtin_amdgcn_s_barrier_signal_var(&ab, 0);
+    namedWait();
+    writeLds(slot(1), 200 + lane());
+    drain();
+    __builtin_amdgcn_s_barrier_signal_var(&ac, 0);
+  } else if (wave() == 1) {
+    namedWait();
+    __builtin_amdgcn_s_barrier_signal_var(&joined, 0);
+    __builtin_amdgcn_s_barrier_signal_var(&ack, 0);
+  } else if (wave() == 2) {
+    namedWait();
+    __builtin_amdgcn_s_barrier_signal_var(&joined, 0);
+  } else {
+    namedWait();
+    out[lane()] = readLds(slot());
+    out[kWave + lane()] = readLds(slot(1));
+  }
+  workgroup();
+}
+
+TEST_F(Gfx1250RaceTest, named_diamond_merges_epochs) {
+  int *out = allocFilled<int>(2 * kWave, -7);
+  named_diamond_kernel<2><<<1, 128, 2 * kTileBytes>>>(out);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(out, values(100));
+  ExpectValues(out + kWave, values(200));
+}
+
+TEST_F(Gfx1250RaceTest, named_diamond_missing_relay_race) {
+  int *out = allocFilled<int>(2 * kWave, -7);
+  named_diamond_kernel<1><<<1, 128, 2 * kTileBytes>>>(out);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectAnyRace({kReadConflict, kWriteConflict});
+  ExpectValues(out, values(100));
+}
+
+// SIGNAL_ISFIRST has the same release point as SIGNAL. Capture SCC only
+// after the round and KMcnt have completed, without compiler-generated SALU
+// instructions between the signal and capture.
+template <bool LateWrite>
+__global__ __attribute__((amdgpu_flat_work_group_size(96, 96))) void
+named_isfirst_kernel(int *out, int *first) {
+  __shared__ __amdgpu_named_workgroup_barrier_t ready;
+  if (wave() == 0)
+    __builtin_amdgcn_s_barrier_init(&ready, 2);
+  __builtin_amdgcn_s_barrier_join(&ready);
+  workgroup();
+  if (wave() < 2) {
+    int winner;
+    if (LateWrite && wave() == 1) {
+      asm volatile("s_barrier_signal_isfirst 1\n"
+                   "ds_store_b32 %1, %2\ns_wait_dscnt 0\n"
+                   "s_barrier_wait 1\ns_wait_kmcnt 0\n"
+                   "s_cselect_b32 %0, 1, 0"
+                   : "=s"(winner)
+                   : "v"(slot(1)), "v"(200 + lane())
+                   : "scc", "memory");
+    } else {
+      writeLds(slot(wave()), 100 * (wave() + 1) + lane());
+      drain();
+      asm volatile("s_barrier_signal_isfirst 1\n"
+                   "s_barrier_wait 1\ns_wait_kmcnt 0\n"
+                   "s_cselect_b32 %0, 1, 0"
+                   : "=s"(winner)::"scc", "memory");
+    }
+    if (lane() == 0)
+      first[wave()] = winner;
+  } else {
+    namedWait();
+    out[lane()] = readLds(slot());
+    out[kWave + lane()] = readLds(slot(1));
+  }
+  workgroup();
+}
+
+TEST_F(Gfx1250RaceTest, named_isfirst_releases_writes) {
+  int *out = allocFilled<int>(2 * kWave, -7);
+  int *first = allocFilled<int>(2, -7);
+  named_isfirst_kernel<false><<<1, 96, 2 * kTileBytes>>>(out, first);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(out, values(100));
+  ExpectValues(out + kWave, values(200));
+  int flags[2];
+  RACE_HIP_CHECK(hipMemcpy(flags, first, sizeof(flags), hipMemcpyDeviceToHost));
+  EXPECT_TRUE((flags[0] == 0 && flags[1] == 1) || (flags[0] == 1 && flags[1] == 0));
+}
+
+TEST_F(Gfx1250RaceTest, named_isfirst_late_write_race) {
+  int *out = allocFilled<int>(2 * kWave, -7);
+  named_isfirst_kernel<true><<<1, 96, 2 * kTileBytes>>>(out, alloc<int>(2));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectAnyRace({kReadConflict, kWriteConflict});
+  ExpectValues(out, values(100));
+}
+
+// A signals the workgroup before writing. B can carry A's later release
+// from a named wait into its termination, which substitutes for B's missing
+// workgroup signal. If B already signalled, its termination is not required
+// for that round and cannot supply the same ordering to C.
+template <bool EarlySignal>
+__global__ __attribute__((amdgpu_flat_work_group_size(96, 96))) void
+named_relay_through_exit_kernel(int *out) {
+  __shared__ __amdgpu_named_workgroup_barrier_t ab;
+  if (wave() == 0)
+    __builtin_amdgcn_s_barrier_init(&ab, 1);
+  if (wave() == 1)
+    __builtin_amdgcn_s_barrier_join(&ab);
+  workgroup();
+  if (wave() == 0) {
+    asm volatile("s_barrier_signal -1" ::: "memory");
+    writeLds(slot(), 100 + lane());
+    drain();
+    __builtin_amdgcn_s_barrier_signal_var(&ab, 0);
+    asm volatile("s_barrier_wait -1" ::: "memory");
+  } else if (wave() == 1) {
+    if constexpr (EarlySignal)
+      workgroup();
+    namedWait();
+    return;
+  } else {
+    workgroup();
+    out[lane()] = readLds(slot());
+  }
+  workgroup();
+}
+
+TEST_F(Gfx1250RaceTest, named_relay_through_exit) {
+  int *out = allocFilled<int>(kWave, -7);
+  named_relay_through_exit_kernel<false><<<1, 96, kTileBytes>>>(out);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(out, values(100));
+}
+
+TEST_F(Gfx1250RaceTest, named_relay_through_already_signalled_exit_race) {
+  named_relay_through_exit_kernel<true><<<1, 96, kTileBytes>>>(alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectAnyRace({kReadConflict, kWriteConflict});
+}
+
 } // namespace
