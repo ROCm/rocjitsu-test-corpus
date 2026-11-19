@@ -208,6 +208,10 @@
     "named_isfirst_releases_writes",
     "named_isfirst_late_write_race",
     "named_relay_through_exit",
-    "named_relay_through_already_signalled_exit_race"
+    "named_relay_through_already_signalled_exit_race",
+    "named_signal_then_leave_orders_later_write",
+    "named_write_after_leave_race",
+    "named_leave_orders_read_before_overwrite",
+    "named_leave_read_late_drain_race"
   ]
 }

@@ -863,4 +863,98 @@ TEST_F(Gfx1250RaceTest, named_relay_through_already_signalled_exit_race) {
   ExpectAnyRace({kReadConflict, kWriteConflict});
 }
 
+// B's first signal precedes its write. Threshold three still needs B's
+// later LEAVE as well as A's signal; the LEAVE can therefore release work
+// completed after B's signal. Moving the write after LEAVE removes that order.
+template <bool WriteAfterLeave>
+__global__ __attribute__((amdgpu_flat_work_group_size(96, 96))) void
+named_signal_then_leave_kernel(int *out) {
+  __shared__ __amdgpu_named_workgroup_barrier_t ready;
+  if (wave() == 0)
+    __builtin_amdgcn_s_barrier_init(&ready, 3);
+  __builtin_amdgcn_s_barrier_join(&ready);
+  workgroup();
+  if (wave() == 0) {
+    __builtin_amdgcn_s_barrier_signal_var(&ready, 0);
+  } else if (wave() == 1) {
+    __builtin_amdgcn_s_barrier_signal_var(&ready, 0);
+    if constexpr (WriteAfterLeave)
+      asm volatile("s_barrier_leave\ns_wait_kmcnt 0" ::: "scc", "memory");
+    writeLds(slot(), 100 + lane());
+    drain();
+    if constexpr (!WriteAfterLeave)
+      asm volatile("s_barrier_leave\ns_wait_kmcnt 0" ::: "scc", "memory");
+  } else {
+    namedWait();
+    out[lane()] = readLds(slot());
+  }
+  workgroup();
+}
+
+TEST_F(Gfx1250RaceTest, named_signal_then_leave_orders_later_write) {
+  int *out = allocFilled<int>(kWave, -7);
+  named_signal_then_leave_kernel<false><<<1, 96, kTileBytes>>>(out);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(out, values(100));
+}
+
+TEST_F(Gfx1250RaceTest, named_write_after_leave_race) {
+  named_signal_then_leave_kernel<true><<<1, 96, kTileBytes>>>(alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectAnyRace({kReadConflict, kWriteConflict});
+}
+
+// LEAVE must protect a completed LDS read as well as a completed write.
+// Initializing the tile before the setup barrier keeps the tested conflict
+// specifically between B's subsequent read and C's overwrite.
+template <bool LateDrain>
+__global__ __attribute__((amdgpu_flat_work_group_size(96, 96))) void
+named_leave_read_kernel(int *out) {
+  __shared__ __amdgpu_named_workgroup_barrier_t ready;
+  if (wave() == 0)
+    __builtin_amdgcn_s_barrier_init(&ready, 2);
+  if (wave() == 1) {
+    writeLds(slot(), 100 + lane());
+    drain();
+  }
+  __builtin_amdgcn_s_barrier_join(&ready);
+  workgroup();
+  if (wave() == 0) {
+    __builtin_amdgcn_s_barrier_signal_var(&ready, 0);
+  } else if (wave() == 1) {
+    int value;
+    asm volatile("ds_load_b32 %0, %1" : "=v"(value) : "v"(slot()) : "memory");
+    if constexpr (!LateDrain)
+      drain();
+    asm volatile("s_barrier_leave\ns_wait_kmcnt 0" ::: "scc", "memory");
+    if constexpr (LateDrain)
+      drain();
+    out[lane()] = value;
+  } else {
+    namedWait();
+    writeLds(slot(), -1);
+    drain();
+  }
+  workgroup();
+}
+
+TEST_F(Gfx1250RaceTest, named_leave_orders_read_before_overwrite) {
+  int *out = allocFilled<int>(kWave, -7);
+  named_leave_read_kernel<false><<<1, 96, kTileBytes>>>(out);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(out, values(100));
+}
+
+TEST_F(Gfx1250RaceTest, named_leave_read_late_drain_race) {
+  named_leave_read_kernel<true><<<1, 96, kTileBytes>>>(alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kWriteConflict);
+}
+
 } // namespace
