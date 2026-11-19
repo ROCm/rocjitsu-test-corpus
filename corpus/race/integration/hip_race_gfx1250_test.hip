@@ -13,12 +13,11 @@
 /// order, so overlapping transfers from one wave also need a TENSORcnt wait
 /// between them. Async copies do the same on ASYNCcnt, with a per-lane LDS
 /// address.
-/// Other waves see their LDS effects only after the issuing wave waits and the
-/// workgroup passes a barrier. The barrier is split: it orders what a wave
-/// completed before its own s_barrier_signal, for waves past their own
-/// s_barrier_wait. Each race case is its clean partner with one step removed
-/// or moved. Clean cases also check the data moved; raced values are
-/// unconstrained.
+/// To order these LDS accesses through a split barrier, the issuing wave
+/// completes the access before s_barrier_signal and the other wave accesses
+/// LDS after s_barrier_wait. Race cases omit or move a completion wait or a
+/// barrier operation. Clean cases also check the data moved; raced values
+/// are unconstrained.
 
 #include <gtest/gtest.h>
 #include <hip/hip_runtime.h>
@@ -3503,7 +3502,8 @@ TEST_F(Gfx1250RaceTest, split_barrier_ds_read) {
   ExpectValues(dst, range(1));
 }
 
-// The read completes after wave 1's signal, so wave 0's overwrite races with it.
+// The read's completion wait follows wave 1's signal, so wave 0 can overwrite
+// the tile while the read is still pending.
 TEST_F(Gfx1250RaceTest, split_barrier_ds_read_wait_after_signal_race) {
   auto *dst = alloc<int>(kWave);
   split_barrier_ds_read_kernel<Completion::AfterSignal><<<1, 2 * kWave, kTileBytes>>>(dst);
@@ -3601,8 +3601,8 @@ TEST_F(Gfx1250RaceTest, split_barrier_reader_in_window_race) {
   ExpectValues(dst, range(1));
 }
 
-// Wave 0's write completes after its first signal, so the first barrier does
-// not order it, but its second signal releases it.
+// Wave 0 waits for its write after its first signal and before its second.
+// The second barrier therefore orders the write before wave 1's read.
 __global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
 split_barrier_completed_in_window_kernel(int *dst) {
   if (waveIndex() == 0) {
@@ -3814,8 +3814,8 @@ TEST_F(Gfx1250RaceTest, split_barrier_async_store_source_wait_after_signal_race)
 enum class ReadPoint { AfterWait, BeforeWait };
 
 // Wave 1 writes its tile, waits for the write, and ends without signalling.
-// The barrier completes when wave 0 signals, since a wave may end instead of
-// signalling (CDNA5 ISA 5.6), but wave 0 acquires it only at its wait.
+// The barrier completes once wave 0 has signalled and wave 1 has ended, in
+// either order (CDNA5 ISA 5.6). Wave 0 acquires it only at its wait.
 template <ReadPoint Read>
 __global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
 split_barrier_exited_writer_kernel(int *dst) {
@@ -3850,11 +3850,11 @@ TEST_F(Gfx1250RaceTest, split_barrier_exited_writer_read_before_wait_race) {
                  byWave(kDsReadThenWriteRaceExpectation, 1)});
 }
 
-// Wave 0 writes, signals and ends without waiting for the write. Its signal
-// released nothing, and the barrier it signalled can complete without its
-// end, so the barrier does not order the write that its end completes. Waves
-// should not signal and then exit (CDNA5 ISA 5.6); this is the race that
-// follows if one does. Wave 1's read always follows wave 0's write.
+// Wave 0 signals before the implicit completion wait at S_ENDPGM. Wave 1 can
+// pass its barrier wait before that completion. Its read issues after the
+// write but can race with it. CDNA5 ISA 5.6 discourages signalling then exiting
+// because it can leave the barrier unusable; this checks the detector's report
+// for that sequence, without relying on guaranteed hardware termination.
 __global__ __attribute__((amdgpu_flat_work_group_size(2 * kWave, 2 * kWave))) void
 split_barrier_signal_then_exit_kernel(int *dst) {
   if (waveIndex() == 0) {
@@ -3935,7 +3935,7 @@ TEST_F(Gfx1250RaceTest, split_barrier_pingpong) {
   ExpectValues(dst, pingPongSums());
 }
 
-// Wave 1's write in round 5 completes after its signal. Wave 0 is its only
+// Wave 1 waits for its round-5 write after signalling. Wave 0 is its only
 // reader, in buffer 1 (round 5 is odd).
 TEST_F(Gfx1250RaceTest, split_barrier_pingpong_wait_after_signal_race) {
   auto *src = allocWithData<int>(kPingPongRounds * kPingPongWaves * kWave);
