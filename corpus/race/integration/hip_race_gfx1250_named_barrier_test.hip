@@ -957,4 +957,52 @@ TEST_F(Gfx1250RaceTest, named_leave_read_late_drain_race) {
   ExpectRace(kWriteConflict);
 }
 
+// The producer supplies the first of two arrivals, then parks. The reader
+// polls for that arrival and reads before supplying the second one. The
+// counter cannot reset during the poll, so observing one arrival identifies
+// this producer's signal without an ABA ambiguity.
+template <bool EarlySignal>
+__global__ __attribute__((amdgpu_flat_work_group_size(64, 64))) void
+named_arrival_poll_kernel(int *out) {
+  __shared__ __amdgpu_named_workgroup_barrier_t ready;
+  if (wave() == 0)
+    __builtin_amdgcn_s_barrier_init(&ready, 2);
+  __builtin_amdgcn_s_barrier_join(&ready);
+  workgroup();
+  if (wave() == 0) {
+    if constexpr (EarlySignal)
+      __builtin_amdgcn_s_barrier_signal_var(&ready, 0);
+    writeLds(slot(), 100 + lane());
+    drain();
+    if constexpr (!EarlySignal)
+      __builtin_amdgcn_s_barrier_signal_var(&ready, 0);
+    namedWait();
+  } else {
+    uint32_t state;
+    do {
+      asm volatile("s_get_barrier_state %0, 1\ns_wait_kmcnt 0" : "=s"(state)::"memory");
+    } while (((state >> 16) & 127) != 1);
+    out[lane()] = readLds(slot());
+    __builtin_amdgcn_s_barrier_signal_var(&ready, 0);
+    namedWait();
+  }
+  workgroup();
+}
+
+TEST_F(Gfx1250RaceTest, named_arrival_poll_orders_write) {
+  int *out = allocFilled<int>(kWave, -7);
+  named_arrival_poll_kernel<false><<<1, 64, kTileBytes>>>(out);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(out, values(100));
+}
+
+TEST_F(Gfx1250RaceTest, named_arrival_poll_early_signal_race) {
+  named_arrival_poll_kernel<true><<<1, 64, kTileBytes>>>(alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectAnyRace({kReadConflict, kWriteConflict});
+}
+
 } // namespace

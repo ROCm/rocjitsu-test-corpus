@@ -212,6 +212,8 @@
     "named_signal_then_leave_orders_later_write",
     "named_write_after_leave_race",
     "named_leave_orders_read_before_overwrite",
-    "named_leave_read_late_drain_race"
+    "named_leave_read_late_drain_race",
+    "named_arrival_poll_orders_write",
+    "named_arrival_poll_early_signal_race"
   ]
 }
