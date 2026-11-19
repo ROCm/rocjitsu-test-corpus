@@ -1,25 +1,23 @@
 # Copyright Advanced Micro Devices, Inc.
 # SPDX-License-Identifier: MIT
 
-name: Publish prebuilt artifacts
+name: Test prebuilt artifacts
 
 on:
   push:
-    branches: [develop]
+    branches: [users/IanWood1/vulkan-cts-release-test]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     defaults:
       run:
         shell: bash
-    permissions:
-      contents: write
     env:
       CC: gcc-13
       CXX: g++-13
@@ -56,13 +54,21 @@ jobs:
         working-directory: dist
         run: sha256sum -- * > SHA256SUMS
 
-      - name: Publish release
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Verify packaged CTS
         run: |
-          release_tag="prebuilt-${GITHUB_SHA}"
-          gh release create "${release_tag}" dist/* \
-            --target "${GITHUB_SHA}" \
-            --title "${release_tag}" \
-            --notes "Prebuilt corpus dependencies. Verify downloads with SHA256SUMS. The tagged workflow records the build settings." \
-            --prerelease --latest=false
+          cd dist
+          sha256sum --check SHA256SUMS
+          extract_dir="$(mktemp -d)"
+          tar -xzf vulkan-cts-linux-x64.tar.gz -C "${extract_dir}"
+          runtime_dir="${extract_dir}/.build/vulkan-cts/build/external/vulkancts/modules/vulkan"
+          test -x "${runtime_dir}/deqp-vk"
+          test -d "${runtime_dir}/vulkan"
+          "${runtime_dir}/deqp-vk" --help
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: prebuilt-test-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
