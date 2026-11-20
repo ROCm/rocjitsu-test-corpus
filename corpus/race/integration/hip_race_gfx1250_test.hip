@@ -2730,6 +2730,51 @@ TEST_F(Gfx1250RaceTest, partial_wait_without_global_inv_race) {
   ExpectRace(kLoadcntCapacityRaceExpectation);
 }
 
+// TYPE = 2 suppresses the buffer load's data, but keeps its ordered LOADcnt
+// position. A wait of 1 completes the older global load; a wait of 2 does not.
+template <int WaitCount> __global__ void buffer_type_partial_wait_kernel(const int *src, int *dst) {
+  const uintptr_t address = reinterpret_cast<uintptr_t>(src);
+  const v4i resource = {static_cast<int>(address), static_cast<int>(address >> 32), kTileBytes,
+                        static_cast<int>(2u << 30)};
+  int producer, ignored, preserved, result;
+  asm volatile("s_wait_loadcnt 0\n"
+               "v_mov_b32 %[ignored], %[sentinel]\n"
+               "global_load_b32 %[producer], %[address], off\n"
+               "buffer_load_b32 %[ignored], %[offset], %[resource], null offen\n"
+               "v_mov_b32 %[preserved], %[ignored]\n"
+               "s_wait_loadcnt %c[wait]\n"
+               "v_mov_b32 %[result], %[producer]\n"
+               : [producer] "=&v"(producer), [ignored] "=&v"(ignored), [preserved] "=&v"(preserved),
+                 [result] "=&v"(result)
+               : [address] "v"(&src[threadIdx.x]), [offset] "v"(threadIdx.x * kElementBytes),
+                 [resource] "s"(resource), [sentinel] "n"(kUnwrittenValue), [wait] "n"(WaitCount)
+               : "memory");
+  asm volatile("s_wait_loadcnt 0" ::: "memory");
+  dst[threadIdx.x] = result;
+  dst[kWave + threadIdx.x] = preserved;
+}
+
+TEST_F(Gfx1250RaceTest, buffer_type_partial_wait_completes_older_load) {
+  int *src = allocWithData<int>(kWave);
+  int *dst = alloc<int>(2 * kWave);
+  buffer_type_partial_wait_kernel<1><<<1, kWave>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(dst, range(0, kWave));
+  ExpectValues(dst + kWave, std::vector<int>(kWave, kUnwrittenValue));
+}
+
+TEST_F(Gfx1250RaceTest, buffer_type_insufficient_wait_race) {
+  int *src = allocWithData<int>(kWave);
+  int *dst = alloc<int>(2 * kWave);
+  buffer_type_partial_wait_kernel<2><<<1, kWave>>>(src, dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kLoadcntCapacityRaceExpectation);
+  ExpectValues(dst + kWave, std::vector<int>(kWave, kUnwrittenValue));
+}
+
 // Loads and stores use separate counters (CDNA5 ISA 5.7.1), so even a store
 // issued against a full STOREcnt says nothing about a pending load.
 __global__ void storecnt_pressure_kernel(const int *src, int *scratch, int *dst) {

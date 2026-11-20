@@ -26,7 +26,7 @@ def _isolate_case_timeout(monkeypatch) -> None:
 
 def test_configs_preserve_every_moved_gtest() -> None:
     configs = race.load_target_configs(race.default_config_files())
-    expected_counts = {"gfx942": 14, "gfx950": 85, "gfx1151": 35, "gfx1250": 153}
+    expected_counts = {"gfx942": 14, "gfx950": 85, "gfx1151": 35, "gfx1250": 155}
 
     for target, expected_count in expected_counts.items():
         cases = race.discover(make_target_spec(target), configs)
@@ -655,7 +655,9 @@ def _run_entrypoint(
 
 
 def _write_base_config(path: Path, target: str, **fields) -> None:
-    version = {"gfx942": 90402, "gfx950": 90500, "gfx1151": 110501, "gfx1250": 120500}[target]
+    version = {"gfx942": 90402, "gfx950": 90500, "gfx1151": 110501, "gfx1250": 120500}[
+        target
+    ]
     path.write_text(
         json.dumps(
             {"vm": {"gpu": {"device": {"gfx_target_version": version}}}, **fields}
