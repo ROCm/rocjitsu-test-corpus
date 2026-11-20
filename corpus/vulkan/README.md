@@ -72,6 +72,39 @@ The builder can be rerun without rebuilding unchanged files. The default
 directory is `.build/vulkan-cts`; pass another directory as its first argument.
 No GPU, display server, ROCm SDK or graphics session is needed to build CTS.
 
+## Publish a prebuilt CTS
+
+The **Publish prebuilt artifacts** workflow runs on each push to `develop`,
+building the pushed head commit. It can also be dispatched manually. It runs on
+Ubuntu 24.04 x86-64 with GCC 13 and CMake 3.31.10; it does not require a GPU or
+ROCm SDK.
+
+The workflow publishes a prerelease named
+`prebuilt-<full-corpus-commit>`. Component and platform names belong to the
+assets, allowing other prebuilt dependencies to share the release. For CTS, the
+assets are `vulkan-cts-linux-x64.tar.gz`, `vulkan-cts-LICENSE`,
+and the shared `SHA256SUMS`. Existing releases are not overwritten. Commit
+changes to the build settings or packaging to publish a new version. The
+workflow performs no GPU qualification; consumers must still run their selected
+CTS cases.
+
+Before updating a consumer's corpus pin, verify that the matching release and
+required assets exist. The release is derived from that pin; no separate release
+version or source-build fallback is needed.
+
+Download the release assets, then verify and extract CTS from the root of a
+compatible Ubuntu 24.04 x86-64 corpus checkout:
+
+```sh
+sha256sum --check SHA256SUMS
+tar -xzf vulkan-cts-linux-x64.tar.gz
+```
+
+Use the exact release for the selected corpus commit. The archive preserves
+the default binary and data paths, so the suite needs no path overrides. The
+source and intermediate build files are omitted; use the build script in a
+separate build directory if you also need to rebuild CTS locally.
+
 ## Run on hardware
 
 From this checkout, with its Python environment active, select Mesa RADV and run
