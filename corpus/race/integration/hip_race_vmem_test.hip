@@ -100,7 +100,7 @@ TEST_F(VmemRaceTest, no_wait_race) {
       check_atomic_values<false>([](unsigned *values, unsigned *output, unsigned lanes) {
         explicit_atomic_kernel<false, false><<<1, lanes>>>(values, output);
       }));
-  ExpectRace(kMissingVmWait);
+  ExpectReadModifyWriteAndLaterUse(kMissingVmWait, "v_lshl_add_u32");
 }
 
 TEST_F(VmemRaceTest, expcnt_only_race) {
@@ -108,7 +108,7 @@ TEST_F(VmemRaceTest, expcnt_only_race) {
       check_atomic_values<false>([](unsigned *values, unsigned *output, unsigned lanes) {
         explicit_atomic_kernel<false, true><<<1, lanes>>>(values, output);
       }));
-  ExpectRace(kMissingVmWait);
+  ExpectReadModifyWriteAndLaterUse(kMissingVmWait, "v_lshl_add_u32");
 }
 
 // Keep both writes to the same VGPR inside one asm block. The atomic result

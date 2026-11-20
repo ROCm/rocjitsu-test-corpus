@@ -401,6 +401,7 @@ def _materialize_config(
     base_path: Path, output_path: Path, sink_dir: Path, *, target: str
 ) -> None:
     value = _load_base_config(base_path, target=target)
+    value["wait_checking"] = "on"
     value["require_all_plugins"] = True
     value["plugins"] = {"race": {}}
     value["sinks"] = {"types": ["file"], "dir": str(sink_dir)}

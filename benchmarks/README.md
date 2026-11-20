@@ -392,6 +392,8 @@ Completed cells retain their results; cells that have not started have no artifa
 Use `--manifest benchmarks/suites/plugin-overhead.toml` (3 warmups and 21 samples) and
 `--plugin-profile none|logging|race|throughput`, running each profile into a
 separate output directory. Each enabled profile must produce its report.
+The race profile sets `wait_checking` to `on` in its generated configuration,
+enabling ordinary checks and disabling XCNT replay-source checks.
 Reports cover the entire process, including setup and warmups; timing samples
 retain the same boundary across profiles.
 
