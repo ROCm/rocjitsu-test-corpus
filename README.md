@@ -230,6 +230,11 @@ Both lists use bare case names such as `vgpr_waitcnt`. The HIP program is shared
 by all cases for an architecture, so discovery exclusions do not remove test
 bodies from that program's compilation.
 
+The optional `lds_waw_tests` list enables `plugins.race.lds_waw` only for the
+named cases. The gfx950 WAW tests cover unordered writes of different values
+and identical values, plus a barrier-ordered control. The identical-value
+report is a documented false positive pending value-aware filtering.
+
 CI orchestration remains in rocm-systems. Its
 `.github/workflows/rocjitsu-corpus-tests.yml` runs this suite in the Release
 lane and selects the corpus revision through both the `corpus_ref` dispatch

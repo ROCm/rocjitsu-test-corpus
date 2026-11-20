@@ -774,6 +774,59 @@ TEST_F(Gfx950RaceTest, lds_cross_wave_race) {
   ExpectRace(kLdsCrossWaveRaceExpectation);
 }
 
+// Only one lane per wave writes, so this isolates cross-wave WAW from
+// overlapping lanes within one instruction. The final barrier orders the
+// read after both writes; it cannot order the two writes against each other.
+template <bool OrderWrites>
+__attribute__((amdgpu_flat_work_group_size(128, 128))) __global__ void
+lds_cross_wave_waw_kernel(unsigned *out, unsigned second_value) {
+  __shared__ volatile unsigned value;
+  if (threadIdx.x == 0)
+    value = 7;
+  if constexpr (OrderWrites)
+    __syncthreads();
+  if (threadIdx.x == 64)
+    value = second_value;
+  __syncthreads();
+  if (threadIdx.x == 0)
+    *out = value;
+}
+
+static constexpr RaceExpectation kLdsCrossWaveWawExpectation{
+    .kernel = "lds_cross_wave_waw_kernel",
+    .type = "LDS",
+    .access = "write",
+    .lane = 0,
+    .producer = "flat_store_dword",
+    .consumer = "flat_store_dword",
+};
+
+TEST_F(Gfx950RaceTest, lds_cross_wave_waw_race) {
+  auto *out = allocFilled<unsigned>(1, 0);
+  lds_cross_wave_waw_kernel<true><<<1, 128>>>(out, 8);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectNoRace();
+  ExpectValues(out, std::vector<unsigned>{8});
+
+  lds_cross_wave_waw_kernel<false><<<1, 128>>>(out, 8);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(kLdsCrossWaveWawExpectation);
+}
+
+TEST_F(Gfx950RaceTest, lds_cross_wave_waw_same_value_race) {
+  auto *out = allocFilled<unsigned>(1, 0);
+  lds_cross_wave_waw_kernel<false><<<1, 128>>>(out, 7);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  // This is a false positive: both writes store 7, and the only read follows
+  // a barrier, so write order cannot change the result. TODO: suppress this
+  // report with value-aware WAW filtering and change this to ExpectNoRace().
+  ExpectRace(kLdsCrossWaveWawExpectation);
+  ExpectValues(out, std::vector<unsigned>{7});
+}
+
 // --- LDS same-wave instruction ordering ---
 
 __attribute__((amdgpu_flat_work_group_size(64, 64)))
