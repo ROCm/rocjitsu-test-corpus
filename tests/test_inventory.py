@@ -35,24 +35,116 @@ def test_load_gives_named_case_records(tmp_path: Path) -> None:
     assert only.targets == ("gfx1250",) and only.headers == ("x/y.hpp",)
 
 
-@pytest.mark.parametrize("record", [inventory.Case, inventory.Inventory])
-def test_records_are_frozen_dataclasses(
-    record: type[inventory.Case] | type[inventory.Inventory],
-) -> None:
-    # Both inventory records are represented the same way: immutable fields,
+@pytest.mark.parametrize(
+    "record",
+    [
+        inventory.Case,
+        inventory.Inventory,
+        inventory.MutationRules,
+        inventory.Exemption,
+        inventory.TagOverride,
+    ],
+)
+def test_records_are_frozen_dataclasses(record: type) -> None:
+    # Every inventory record is represented the same way: immutable fields,
     # and no tuple behaviour such as indexing or unpacking to depend on.
     assert dataclasses.is_dataclass(record)
     assert record.__dataclass_params__.frozen
     assert not issubclass(record, tuple)
 
 
-def test_case_fields_are_the_fields_of_case() -> None:
-    # A field added to Case is accepted in cases.toml without a second list to
-    # update, as recipe.FIELDS is derived from Recipe.
+def test_case_fields_are_the_fields_of_case_and_its_rules() -> None:
+    # A field added to Case or MutationRules is accepted in cases.toml without
+    # a second list to update, as recipe.FIELDS is derived from Recipe. Case's
+    # rules field holds the mutation fields, and is not itself a manifest field;
+    # MutationRules.tags is the [[case.tag]] array.
+    case_fields = {field.name for field in dataclasses.fields(inventory.Case)}
+    rule_fields = {field.name for field in dataclasses.fields(inventory.MutationRules)}
+    assert inventory.CASE_FIELDS == (case_fields - {"rules"}) | (
+        rule_fields - {"tags"}
+    ) | {"tag"}
     assert inventory.CASE_FIELDS == {
-        field.name for field in dataclasses.fields(inventory.Case)
+        "id",
+        "kernel",
+        "targets",
+        "headers",
+        "mutate",
+        "hazard",
+        "description",
+        "waits",
+        "exempt",
+        "tag",
     }
-    assert inventory.CASE_FIELDS == {"id", "kernel", "targets", "headers"}
+
+
+MUTATING = (
+    '[[case]]\nid = "m"\nkernel = "m"\ntargets = ["gfx1250"]\n'
+    'mutate = ["wait", "memory"]\nhazard = "RAW"\ndescription = "LDS RAW"\n'
+    'waits = { gfx1250 = ["dscnt", "kmcnt"] }\n'
+    '[[case.exempt]]\nkind = "wait"\nordinal = 3\nsite = "s_wait_kmcnt 0x0"\n'
+    'reason = "already satisfied"\n'
+    '[[case.exempt]]\nkind = "wait"\nordinal = 0\nsite = "s_wait_dscnt 0x0"\n'
+    'reason = "own slot"\ntarget = "gfx1250"\n'
+    '[[case.tag]]\nkind = "wait"\nordinal = 3\nsite = "s_wait_kmcnt 0x0"\n'
+    'resource = "sgpr"\nhazard = "RAW"\nreason = "retires nothing"\n'
+)
+
+
+def test_mutation_rules_are_read_into_a_record(tmp_path: Path) -> None:
+    (case,) = inventory.load(write_manifest(tmp_path / "cases.toml", MUTATING)).cases
+    assert case.rules == inventory.MutationRules(
+        mutate=("wait", "memory"),
+        hazard="RAW",
+        description="LDS RAW",
+        waits={"gfx1250": ("dscnt", "kmcnt")},
+        exempt=(
+            inventory.Exemption(
+                kind="wait",
+                ordinal=3,
+                site="s_wait_kmcnt 0x0",
+                reason="already satisfied",
+            ),
+            inventory.Exemption(
+                kind="wait",
+                ordinal=0,
+                site="s_wait_dscnt 0x0",
+                reason="own slot",
+                target="gfx1250",
+            ),
+        ),
+        tags=(
+            inventory.TagOverride(
+                kind="wait",
+                ordinal=3,
+                site="s_wait_kmcnt 0x0",
+                resource="sgpr",
+                hazard="RAW",
+                reason="retires nothing",
+            ),
+        ),
+    )
+    assert case.rules.declared()
+
+
+def test_pins_are_found_by_site_and_target(tmp_path: Path) -> None:
+    (case,) = inventory.load(write_manifest(tmp_path / "cases.toml", MUTATING)).cases
+    rules = case.rules
+    # An untargeted pin applies on every target; a targeted one on its own.
+    assert rules.exemption_for("wait", 3, "gfx950").reason == "already satisfied"
+    assert rules.exemption_for("wait", 0, "gfx1250").reason == "own slot"
+    assert rules.exemption_for("wait", 0, "gfx950") is None
+    assert rules.exemption_for("memory", 3, "gfx1250") is None
+    assert rules.tag_for("wait", 3, "gfx1250").resource == "sgpr"
+    assert rules.tag_for("wait", 0, "gfx1250") is None
+    assert rules.pins() == rules.exempt + rules.tags
+
+
+def test_case_without_mutation_fields_has_no_rules(tmp_path: Path) -> None:
+    (case,) = inventory.load(write_manifest(tmp_path / "cases.toml", PORTABLE)).cases
+    assert case.rules == inventory.MutationRules()
+    assert not case.rules.declared()
+    # An empty waits table is still a declared rule: the case names no target.
+    assert inventory.MutationRules(waits={}).declared()
 
 
 def test_case_fields_cannot_be_reassigned() -> None:
@@ -150,6 +242,86 @@ BAD_MANIFESTS = {
         "cases.toml: unknown [corpus] key 'name'",
     ),
     "no cases": ("", "cases.toml: no [[case]] tables"),
+    # Mutation rules are checked for type here; whether they agree with the
+    # assembly is check_cases.py's job.
+    "unknown mutation kind": (
+        '[[case]]\nid = "a"\nkernel = "a"\nmutate = ["weight"]\n',
+        "cases.toml [a]: mutate lists 'weight'; known kinds are memory, wait",
+    ),
+    "mutate not a list": (
+        '[[case]]\nid = "a"\nkernel = "a"\nmutate = "wait"\n',
+        "cases.toml [a]: mutate must be a list of strings",
+    ),
+    "hazard not a string": (
+        '[[case]]\nid = "a"\nkernel = "a"\nhazard = 1\n',
+        "cases.toml [a]: hazard must be a non-empty string",
+    ),
+    "waits not a table": (
+        '[[case]]\nid = "a"\nkernel = "a"\nwaits = ["vmcnt"]\n',
+        "cases.toml [a]: waits must be a table keyed by target",
+    ),
+    "waits entry not a list": (
+        '[[case]]\nid = "a"\nkernel = "a"\nwaits = { gfx950 = "vmcnt" }\n',
+        "cases.toml [a]: waits.gfx950 must be a list of strings",
+    ),
+    "exempt not a list of tables": (
+        '[[case]]\nid = "a"\nkernel = "a"\nexempt = "wait"\n',
+        "cases.toml [a]: exempt must be a list of [[case.exempt]] tables",
+    ),
+    "exempt missing its site": (
+        '[[case]]\nid = "a"\nkernel = "a"\n'
+        '[[case.exempt]]\nkind = "wait"\nordinal = 0\nreason = "r"\n',
+        "cases.toml [a]: exempt site must be a non-empty string",
+    ),
+    "exempt negative ordinal": (
+        '[[case]]\nid = "a"\nkernel = "a"\n'
+        '[[case.exempt]]\nkind = "wait"\nordinal = -1\nsite = "s"\nreason = "r"\n',
+        "cases.toml [a]: exempt ordinal must be a non-negative integer",
+    ),
+    "exempt boolean ordinal": (
+        '[[case]]\nid = "a"\nkernel = "a"\n'
+        '[[case.exempt]]\nkind = "wait"\nordinal = true\nsite = "s"\nreason = "r"\n',
+        "cases.toml [a]: exempt ordinal must be a non-negative integer",
+    ),
+    "exempt unknown key": (
+        '[[case]]\nid = "a"\nkernel = "a"\n'
+        '[[case.exempt]]\nkind = "wait"\nordinal = 0\nsite = "s"\nreason = "r"\n'
+        'note = "x"\n',
+        "cases.toml [a]: unknown [[case.exempt]] key 'note'",
+    ),
+    "exempt unknown kind": (
+        '[[case]]\nid = "a"\nkernel = "a"\n'
+        '[[case.exempt]]\nkind = "load"\nordinal = 0\nsite = "s"\nreason = "r"\n',
+        "cases.toml [a]: exempt kind 'load' is not one of memory, wait",
+    ),
+    "case-wide resource": (
+        '[[case]]\nid = "a"\nkernel = "a"\nresource = "vgpr"\n',
+        "cases.toml [a]: unknown field 'resource'",
+    ),
+    "tag not a list of tables": (
+        '[[case]]\nid = "a"\nkernel = "a"\ntag = "vgpr"\n',
+        "cases.toml [a]: tag must be a list of [[case.tag]] tables",
+    ),
+    "tag missing its hazard": (
+        '[[case]]\nid = "a"\nkernel = "a"\n'
+        '[[case.tag]]\nkind = "wait"\nordinal = 0\nsite = "s"\n'
+        'resource = "vgpr"\nreason = "r"\n',
+        "cases.toml [a]: tag hazard must be a non-empty string",
+    ),
+    "tag unknown resource": (
+        '[[case]]\nid = "a"\nkernel = "a"\n'
+        '[[case.tag]]\nkind = "wait"\nordinal = 0\nsite = "s"\n'
+        'resource = "register"\nhazard = "RAW"\nreason = "r"\n',
+        "cases.toml [a]: tag resource 'register' is not one of agpr, global, lds, "
+        "scratch, sgpr, vgpr",
+    ),
+    "tag unknown hazard": (
+        '[[case]]\nid = "a"\nkernel = "a"\n'
+        '[[case.tag]]\nkind = "wait"\nordinal = 0\nsite = "s"\n'
+        'resource = "vgpr"\nhazard = "race"\nreason = "r"\n',
+        "cases.toml [a]: tag hazard 'race' is not one of GlobalMemoryRace, "
+        "LocalMemoryRace, RAW, WAR, WAW",
+    ),
 }
 
 
