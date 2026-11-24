@@ -1,0 +1,19 @@
+name: Test the VFIO-user transport
+description: Run the socket transport, PCI lifecycle, and host launcher tests
+inputs:
+  build-dir:
+    description: Configured rocjitsu build with the corpus system CTS enabled
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        BUILD_DIR: ${{ inputs.build-dir }}
+      run: |
+        cases=(VfioTransport 'Launcher\.run_vfio_guest' 'Launcher\.run_rccl_scaleout'
+               'Launcher\.run_rccl_pod_emulated_node' VfioSocketAliases)
+        for case in "${cases[@]}"; do
+          ctest --test-dir "$BUILD_DIR/tests/system-cts" --output-on-failure \
+            --no-tests=error -R "^SystemCTS\.${case}$"
+        done

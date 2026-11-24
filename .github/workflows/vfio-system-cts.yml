@@ -1,0 +1,93 @@
+name: VFIO system CTS
+
+on:
+  pull_request:
+    paths:
+      - ".github/actions/test-vfio-*/**"
+      - ".github/workflows/vfio-system-cts.yml"
+      - "corpus/system-cts/**"
+      - "tests/test_corpus.py"
+      - "tests/test_suites/system_cts.py"
+      - "tests/support/**"
+      - "requirements.txt"
+      - "conftest.py"
+  push:
+    branches: [develop]
+    paths:
+      - ".github/actions/test-vfio-*/**"
+      - ".github/workflows/vfio-system-cts.yml"
+      - "corpus/system-cts/**"
+      - "tests/test_corpus.py"
+      - "tests/test_suites/system_cts.py"
+      - "tests/support/**"
+      - "requirements.txt"
+      - "conftest.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  system-cts:
+    runs-on: az-linux-scale-rocm-default-prod
+    timeout-minutes: 120
+    container:
+      image: ghcr.io/rocm/no_rocm_image_ubuntu24_04@sha256:4150afe4759d14822f0e3f8930e1124f26e11f68b5c7b91ec9a02b20b1ebbb98
+      env:
+        DEBIAN_FRONTEND: noninteractive
+    env:
+      # Published simulator revision with the external system CTS build hook.
+      SYSTEMS_REF: 52db746fa7451033459ba1af68d5283baab8fa8a
+      ROCM_SDK_VERSION: 10.1.0a20260812
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install host build dependencies
+        run: |
+          sudo -n apt-get -o Acquire::Retries=5 update
+          sudo -n apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+            build-essential ca-certificates curl git libdrm-dev ninja-build
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          path: corpus
+          persist-credentials: false
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          repository: ROCm/rocm-systems
+          ref: ${{ env.SYSTEMS_REF }}
+          path: rocm-systems
+          persist-credentials: false
+          sparse-checkout: |
+            emulation/rocjitsu
+            emulation/mirage
+            runtimes/api-headers
+            shared/machine-readable-isa/isa
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Install the ROCm SDK
+        run: |
+          python -m venv "$RUNNER_TEMP/vfio-python"
+          source "$RUNNER_TEMP/vfio-python/bin/activate"
+          python -m pip install uv==0.9.26 cmake==3.31.10
+          uv pip install --prerelease allow --index-url https://rocm.nightlies.amd.com/whl-multi-arch/ \
+            "rocm[devel,libraries]==$ROCM_SDK_VERSION"
+          rocm-sdk init
+          sdk=$(rocm-sdk path --root)
+          echo "$VIRTUAL_ENV/bin" >> "$GITHUB_PATH"
+          echo "ROCM_PATH=$sdk" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$sdk/lib:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+
+      - name: Build the simulator and VFIO client
+        run: |
+          cmake -S rocm-systems/emulation/rocjitsu -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER="$ROCM_PATH/lib/llvm/bin/amdclang" \
+            -DCMAKE_CXX_COMPILER="$ROCM_PATH/lib/llvm/bin/amdclang++" \
+            -DROCJITSU_ENABLE_VFIO=ON -DROCJITSU_SYSTEM_CTS_DIR="$GITHUB_WORKSPACE/corpus/corpus/system-cts"
+          cmake --build build --target rocjitsu_bin rocjitsu_shared vfio_system_cts --parallel "$(nproc)"
+
+      - uses: ./corpus/.github/actions/test-vfio-transport
+        with:
+          build-dir: ${{ github.workspace }}/build
