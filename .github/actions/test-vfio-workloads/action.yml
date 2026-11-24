@@ -1,0 +1,104 @@
+name: Test VFIO guests and the MI455X cluster
+description: Provision the gfx1250 guests and run the scale-up and scale-out corpus
+inputs:
+  rocjitsu:
+    description: Source directory of the selected simulator
+    required: true
+  build-dir:
+    description: Configured simulator build directory
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Identify guest base inputs
+      id: inputs
+      shell: bash
+      env:
+        ROCJITSU: ${{ inputs.rocjitsu }}
+      run: |
+        guest="$GITHUB_ACTION_PATH/../../../corpus/system-cts/guest"
+        key=$(cat "$guest"/{build_base.sh,stage_modules.py,export_dkms.py,ubuntu-kernel.sha256} \
+              "$ROCJITSU/scripts/apply-qemu-pcie-fixes.sh" "$ROCJITSU"/patches/qemu/10.1/*.patch | sha256sum)
+        echo "digest=${key%% *}" >> "$GITHUB_OUTPUT"
+
+    - name: Install guest image tools
+      shell: bash
+      run: |
+        sudo -n apt-get -o Acquire::Retries=5 update
+        sudo -n apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+          busybox-static cpio pigz libglib2.0-0t64 libdrm-common zstd
+
+    - name: Restore the pinned QEMU and AMDGPU guest base
+      id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/vfio-cts/base
+        key: vfio-base-noble-${{ runner.arch }}-${{ steps.inputs.outputs.digest }}
+
+    - name: Build the guest base on a cold runner
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        ROCJITSU: ${{ inputs.rocjitsu }}
+      run: |
+        sudo -n apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+          autoconf automake bc bison build-essential ca-certificates curl flex git kmod \
+          libelf-dev libfdt-dev libglib2.0-dev libssl-dev libtool ninja-build pkg-config \
+          python3-venv rsync
+        bash "$GITHUB_ACTION_PATH/../../../corpus/system-cts/guest/build_base.sh" \
+          "$ROCJITSU" "$RUNNER_TEMP/vfio-cts/base"
+
+    - name: Build images with the selected simulator and pinned guest userspace
+      shell: bash
+      env:
+        BUILD_DIR: ${{ inputs.build-dir }}
+      run: |
+        guest="$GITHUB_ACTION_PATH/../../../corpus/system-cts/guest"
+        python -m venv "$RUNNER_TEMP/vfio-guest-sdk"
+        guest_python="$RUNNER_TEMP/vfio-guest-sdk/bin/python"
+        guest_cli="$RUNNER_TEMP/vfio-guest-sdk/bin/rocm-sdk"
+        uv pip install --python "$guest_python" --prerelease allow \
+          --index-url https://rocm.nightlies.amd.com/whl-multi-arch/ \
+          -r "$guest/requirements.txt"
+        "$guest_cli" init
+        export ROCM_PATH
+        ROCM_PATH=$("$guest_cli" path --root)
+        # Keep setup-python loadable while resolving ROCm libraries from the guest SDK.
+        export LD_LIBRARY_PATH="$ROCM_PATH/lib${pythonLocation:+:$pythonLocation/lib}"
+        "$guest_python" "$guest/build_images.py" \
+          --base "$RUNNER_TEMP/vfio-cts/base" --rocm "$ROCM_PATH" \
+          --build "$BUILD_DIR" --output "$RUNNER_TEMP/vfio-cts/images"
+
+    - name: Run the Helios topology, RCCL and QEMU workloads
+      id: workloads
+      shell: bash
+      env:
+        BUILD_DIR: ${{ inputs.build-dir }}
+      run: |
+        cd "$GITHUB_ACTION_PATH/../../.."
+        # The daemon appends node, PID and socket names under this path.
+        export ROCJITSU_CTS_LOG_DIR
+        ROCJITSU_CTS_LOG_DIR=$(mktemp -d /tmp/rj-vfio-cts.XXXXXXXX)
+        echo "logs=$ROCJITSU_CTS_LOG_DIR" >> "$GITHUB_OUTPUT"
+        export XDG_RUNTIME_DIR="$ROCJITSU_CTS_LOG_DIR/runtime"
+        install -d -m 700 "$XDG_RUNTIME_DIR"
+        cases=(HeliosMI455X.node{0..3} Network EmulatedPod GuestPeer GuestPod)
+        tests=()
+        for case in "${cases[@]}"; do
+          tests+=("tests/test_corpus.py::test_corpus_case[system-cts.gfx1250.SystemCTS.$case]")
+        done
+        python -m pytest "${tests[@]}" --suite system-cts --target gfx1250 \
+          --binary-dir "$BUILD_DIR/tests/system-cts" --artifact-directory results-vfio-cts -v -ra
+
+    - name: Upload rank, guest, simulator and pytest diagnostics
+      if: always() && steps.workloads.outputs.logs != ''
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: vfio-system-cts-logs-${{ github.run_attempt }}
+        path: |
+          ${{ steps.workloads.outputs.logs }}/**/*.log
+          ${{ steps.workloads.outputs.logs }}/**/result.json
+          ${{ steps.workloads.outputs.logs }}/**/run-manifest.json
+          ${{ github.workspace }}/*/results-vfio-cts/**/*.log
+        if-no-files-found: warn
+        retention-days: 7

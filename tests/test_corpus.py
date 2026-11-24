@@ -26,6 +26,7 @@ from test_suites import (
     race,
     runtime_cts,
     semantics,
+    system_cts,
     vulkan,
 )
 
@@ -34,6 +35,7 @@ SUITE_MODULES = {
     "iree": iree,
     "kernels": kernels,
     "cts": cts,
+    "system-cts": system_cts,
     "dbt": dbt,
     "semantics": semantics,
     "llama": llama,
@@ -80,6 +82,9 @@ def pytest_generate_tests(metafunc):
         for suite in selected_suites:
             suite_module = SUITE_MODULES[suite]
             try:
+                if suite == "system-cts":
+                    target_cases.extend(system_cts.discover(target, config.getoption("binary_dir")))
+                    continue
                 if suite in ("aql", "pm4"):
                     target_cases.extend(
                         runtime_cts.discover(

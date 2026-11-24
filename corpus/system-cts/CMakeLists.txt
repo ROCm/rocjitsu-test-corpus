@@ -30,3 +30,31 @@ add_test(
             $<TARGET_FILE:rocjitsu_bin> "${CMAKE_SOURCE_DIR}/tests/fixtures/fabric_node_projection.json"
 )
 set_tests_properties(SystemCTS.VfioSocketAliases PROPERTIES LABELS "system-cts;vfio" TIMEOUT 15)
+
+set(ROCJITSU_CTS_GUEST_INPUTS "" CACHE FILEPATH "JSON manifest for guest system CTS artifacts")
+foreach(node RANGE 0 3)
+    add_test(NAME SystemCTS.HeliosMI455X.node${node}
+             COMMAND $<TARGET_FILE:rocjitsu_bin>
+                     --config "${CMAKE_SOURCE_DIR}/configs/gfx1250_mi455x_kmd_4node_2gpu_if.json"
+                     --node node${node} -- "${Python3_EXECUTABLE}"
+                     "${CMAKE_CURRENT_SOURCE_DIR}/check_helios_node.py" ${node})
+    set_tests_properties(SystemCTS.HeliosMI455X.node${node} PROPERTIES
+                         LABELS "system-cts;workload;helios" RUN_SERIAL TRUE TIMEOUT 60)
+endforeach()
+foreach(workload IN ITEMS Network EmulatedPod GuestPeer GuestPod)
+    set(guest_args "")
+    if(workload MATCHES "^Guest" AND ROCJITSU_CTS_GUEST_INPUTS)
+        set(guest_args --guest-inputs "${ROCJITSU_CTS_GUEST_INPUTS}")
+    endif()
+    add_test(
+        NAME SystemCTS.${workload}
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/run_workload.py" ${workload}
+                --source "${CMAKE_SOURCE_DIR}" --rocjitsu $<TARGET_FILE:rocjitsu_bin>
+                --rank "${CMAKE_BINARY_DIR}/tests/hip_rccl_gfx1250_test" ${guest_args}
+    )
+    set_tests_properties(SystemCTS.${workload} PROPERTIES LABELS "system-cts;workload"
+                         RUN_SERIAL TRUE TIMEOUT 6000)
+    if(workload MATCHES "Pod$")
+        set_property(TEST SystemCTS.${workload} APPEND PROPERTY LABELS helios)
+    endif()
+endforeach()

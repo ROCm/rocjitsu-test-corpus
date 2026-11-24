@@ -29,7 +29,7 @@ def pytest_addoption(parser):
         default=[],
         help=(
             "Suite selector (iree, kernels, cts, dbt, semantics, llama, race, "
-            "vulkan, aql, pm4). "
+            "vulkan, aql, pm4, system-cts). "
             "Repeat or pass "
             "comma-separated values."
         ),
@@ -135,7 +135,7 @@ def pytest_addoption(parser):
     parser.addoption(
         "--binary-dir",
         default=None,
-        help="Prebuilt AQL/PM4 binaries and CMake target inventories.",
+        help="Prebuilt AQL/PM4 binary directory or configured system CTS build directory.",
     )
     dbt.add_pytest_options(parser)
 
@@ -151,10 +151,12 @@ def pytest_configure(config):
             raise pytest.UsageError("aql/pm4 must run sequentially; use -n 0")
         # A failed KFD case can leave the GPU unusable. Stop before cascading failures.
         config.option.maxfail = 1
-    elif config.getoption("cases_config") or config.getoption("binary_dir"):
-        raise pytest.UsageError(
-            "--cases-config/--binary-dir require --suite aql or pm4"
-        )
+    elif config.getoption("cases_config"):
+        raise pytest.UsageError("--cases-config requires --suite aql or pm4")
+    elif config.getoption("binary_dir") and "system-cts" not in selected:
+        raise pytest.UsageError("--binary-dir requires --suite aql, pm4 or system-cts")
+    if "system-cts" in selected and getattr(config.option, "numprocesses", None) not in (None, 0, "0"):
+        raise pytest.UsageError("The system CTS shares its CTest build directory; use -n 0")
     _validate_comparison_options(config)
     _configure_xdist_loadgroup(config)
 
