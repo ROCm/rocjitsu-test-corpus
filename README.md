@@ -241,6 +241,12 @@ Both lists use bare case names such as `vgpr_waitcnt`. The HIP program is shared
 by all cases for an architecture, so discovery exclusions do not remove test
 bodies from that program's compilation.
 
+The gfx1250 `global_inv_partial_wait` HIP example also checks the core
+`memory-wait` diagnostics. Its safe case expects no warning; removing
+`global_inv` must report an insufficient LOADcnt wait. These assertions run
+alongside the existing race-plugin checks through the race adapter's
+`memory_wait_expectations` configuration.
+
 CI orchestration remains in rocm-systems. Its
 `.github/workflows/rocjitsu-corpus-tests.yml` runs this suite in the Release
 lane and selects the corpus revision through both the `corpus_ref` dispatch

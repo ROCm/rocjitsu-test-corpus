@@ -191,17 +191,31 @@ def test_run_can_bind_private_daemon_socket_under_long_artifact_directory(
         ("failed", "did not pass the requested case"),
         ("missing", "Could not read race GoogleTest report"),
         ("malformed", "Could not read race GoogleTest report"),
+        ("missing_warning", "Memory-wait diagnostics did not match"),
+        ("wrong_counter", "Memory-wait diagnostics did not match"),
+        ("extra_warning", "Memory-wait diagnostics did not match"),
+        ("clean", None),
+        ("clean_warning", "Memory-wait diagnostics did not match"),
     ],
 )
-def test_run_requires_the_requested_gtest_to_pass(
+def test_run_requires_gtest_completion_and_expected_diagnostics(
     tmp_path: Path, monkeypatch, outcome: str, error: str | None
 ) -> None:
-    case = race.discover(
-        make_target_spec("gfx950"),
-        race.load_target_configs(race.default_config_files()),
-    )[0]
+    name = (
+        "global_inv_partial_wait_completes_older_load"
+        if outcome.startswith("clean")
+        else "partial_wait_without_global_inv_race"
+    )
+    case = next(
+        case
+        for case in race.discover(
+            make_target_spec("gfx1250"),
+            race.load_target_configs(race.default_config_files()),
+        )
+        if case.metadata["name"] == name
+    )
     base = tmp_path / "base.json"
-    _write_base_config(base, "gfx950")
+    _write_base_config(base, "gfx1250", wait_checking="off")
     monkeypatch.setenv("ROCJITSU_RACE_CONFIG", str(base))
     context = RunContext(
         repo_root=race.REPO_ROOT,
@@ -225,6 +239,9 @@ def test_run_requires_the_requested_gtest_to_pass(
         assert not (case_dir / "gtest.xml").exists()
         assert cwd == case_dir
         assert command[2] == str(case_dir / "config.json")
+        assert (
+            json.loads((case_dir / "config.json").read_text())["wait_checking"] == "on"
+        )
         assert f"--gtest_filter={case.metadata['test_filter']}" in command
         assert cwd / env["ROCJITSU_RUNTIME_DIR"] == case_dir / "runtime"
         # A clean runtime copy and passing GoogleTest XML must not substitute
@@ -262,6 +279,18 @@ def test_run_requires_the_requested_gtest_to_pass(
             if outcome == "failed":
                 ET.SubElement(result, "failure")
         ET.ElementTree(root).write(report)
+        diagnostic = (
+            "[rj warn] memory-wait: soc.cu0 wg=0 wave=0 pc=0x104: read of v1 "
+            "before memory result from pc=0x100 is known ready (loadcnt). "
+            "A wait threshold <= 0 is required immediately before this access\n"
+        )
+        if outcome in ("missing_warning", "clean"):
+            return ""
+        if outcome == "wrong_counter":
+            return diagnostic.replace("loadcnt", "dscnt")
+        if outcome == "extra_warning":
+            return diagnostic * 2
+        return diagnostic
 
     monkeypatch.setattr(race, "_run_command", successful_process)
     build_result = BuildResult(build_dir=None, executable_path=tmp_path / "race-test")
@@ -286,6 +315,25 @@ def _configs_with_exclusions(tmp_path: Path, target: str, **exclusions) -> list[
         encoding="utf-8",
     )
     return race.load_target_configs([str(path)])
+
+
+@pytest.mark.parametrize(
+    "expectations, error",
+    [
+        ([], "must be an object"),
+        ({"unknown_case": []}, "unknown case"),
+        ({"vgpr_waitcnt": None}, "must be a list"),
+        ({"vgpr_waitcnt": [""]}, "must contain non-empty strings"),
+        ({"vgpr_waitcnt": [1]}, "must contain non-empty strings"),
+    ],
+)
+def test_configs_reject_invalid_memory_wait_expectations(
+    tmp_path: Path, expectations, error: str
+) -> None:
+    with pytest.raises(ValueError, match=error):
+        _configs_with_exclusions(
+            tmp_path, "gfx950", memory_wait_expectations=expectations
+        )
 
 
 def _source_gtests(target: str) -> set[str]:
@@ -655,7 +703,9 @@ def _run_entrypoint(
 
 
 def _write_base_config(path: Path, target: str, **fields) -> None:
-    version = {"gfx942": 90402, "gfx950": 90500, "gfx1151": 110501, "gfx1250": 120500}[target]
+    version = {"gfx942": 90402, "gfx950": 90500, "gfx1151": 110501, "gfx1250": 120500}[
+        target
+    ]
     path.write_text(
         json.dumps(
             {"vm": {"gpu": {"device": {"gfx_target_version": version}}}, **fields}

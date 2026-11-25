@@ -29,7 +29,11 @@ from support.define_contracts import (
     RunContext,
     TargetSpec,
 )
-from support.prepare_inputs import load_suite_target_configs, supports_target
+from support.prepare_inputs import (
+    load_suite_target_configs,
+    supports_target,
+    validate_string_list,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RACE_SOURCE_DIR = REPO_ROOT / "corpus" / "race" / "integration"
@@ -80,11 +84,17 @@ def default_config_files() -> tuple[Path, ...]:
 
 
 def load_target_configs(config_files: tuple[str, ...] | list[str]) -> list[dict]:
+    """Load cases and optional core diagnostic expectations.
+
+    ``memory_wait_expectations`` maps bare case names to ordered lists of
+    diagnostic substrings. Listed cases enable ordinary wait checking and must
+    produce exactly those warnings on stderr; an empty list requires silence.
+    """
     configs = load_suite_target_configs(
         config_files,
         repo_root=REPO_ROOT,
         required_fields=("cases",),
-        allowed_fields=("cases",),
+        allowed_fields=("cases", "memory_wait_expectations"),
     )
     for config in configs:
         cases = config["cases"]
@@ -98,6 +108,19 @@ def load_target_configs(config_files: tuple[str, ...] | list[str]) -> list[dict]
             )
         if len(cases) != len(set(cases)):
             raise ValueError(f"{config['_path']} field 'cases' contains duplicates")
+        expectations = config.get("memory_wait_expectations", {})
+        if not isinstance(expectations, dict):
+            raise ValueError(
+                f"{config['_path']} field 'memory_wait_expectations' must be an object"
+            )
+        for name, diagnostics in expectations.items():
+            if name not in cases:
+                raise ValueError(
+                    f"{config['_path']} memory-wait expectation names unknown case {name!r}"
+                )
+            validate_string_list(
+                Path(config["_path"]), diagnostics, f"memory_wait_expectations.{name}"
+            )
     return configs
 
 
@@ -255,7 +278,16 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
 
     base_config = _base_config_path()
     config_path = case_dir / "config.json"
-    _materialize_config(base_config, config_path, sink_dir, target=case.target)
+    expected_diagnostics = target_config.get("memory_wait_expectations", {}).get(
+        case.metadata["name"]
+    )
+    _materialize_config(
+        base_config,
+        config_path,
+        sink_dir,
+        target=case.target,
+        check_memory_wait=expected_diagnostics is not None,
+    )
     gtest_report = case_dir / "gtest.xml"
     command = [
         *_run_wrapper_command(context.run_wrapper, config_path),
@@ -268,7 +300,7 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     # Each case runs from its own directory. Keep the socket path relative so
     # runtime/<pid>/daemon.sock fits even under a long artifact directory.
     environment["ROCJITSU_RUNTIME_DIR"] = "runtime"
-    _run_command(
+    stderr = _run_command(
         command,
         cwd=case_dir,
         log_path=case_dir / "run.log",
@@ -281,6 +313,33 @@ def run(case: CorpusCase, build_result: BuildResult, context: RunContext) -> Non
     if not report.is_file():
         raise RuntimeError(f"Race test did not produce {report}")
     _validate_kernel_dispatch(report)
+    if expected_diagnostics is not None:
+        _validate_memory_wait_diagnostics(
+            stderr, expected_diagnostics, case_dir / "run.log"
+        )
+
+
+def _validate_memory_wait_diagnostics(
+    stderr: str, expected: list[str], log_path: Path
+) -> None:
+    """Match every core warning, in order, against the configured substrings.
+
+    An empty list requires no warnings; an omitted expectation leaves core
+    diagnostics unchecked. Plugin reports do not satisfy this expectation.
+    """
+    diagnostics = [
+        line.partition("memory-wait: ")[2]
+        for line in stderr.splitlines()
+        if "memory-wait: " in line
+    ]
+    if len(diagnostics) != len(expected) or any(
+        substring not in diagnostic
+        for substring, diagnostic in zip(expected, diagnostics)
+    ):
+        raise RuntimeError(
+            f"Memory-wait diagnostics did not match: expected {expected!r}, "
+            f"got {diagnostics!r}. Log: {log_path}"
+        )
 
 
 def validate_execution(run_wrapper: str | None, target: str) -> None:
@@ -398,12 +457,19 @@ def _load_base_config(base_path: Path, *, target: str) -> dict:
 
 
 def _materialize_config(
-    base_path: Path, output_path: Path, sink_dir: Path, *, target: str
+    base_path: Path,
+    output_path: Path,
+    sink_dir: Path,
+    *,
+    target: str,
+    check_memory_wait: bool = False,
 ) -> None:
     value = _load_base_config(base_path, target=target)
     value["require_all_plugins"] = True
     value["plugins"] = {"race": {}}
     value["sinks"] = {"types": ["file"], "dir": str(sink_dir)}
+    if check_memory_wait:
+        value["wait_checking"] = "on"
     output_path.write_text(
         json.dumps(value, indent=2, sort_keys=True, allow_nan=False) + "\n",
         encoding="utf-8",
@@ -448,7 +514,8 @@ def _run_command(
     phase: str,
     env: dict[str, str] | None = None,
     timeout: float | None = None,
-) -> None:
+) -> str:
+    """Run a command, save both output streams, and return its stderr."""
     executable = command[0]
     if os.sep not in executable:
         resolved = shutil.which(executable)
@@ -521,6 +588,7 @@ def _run_command(
                 ]
             )
         )
+    return errors
 
 
 def _kill_process_tree(pid: int) -> None:
