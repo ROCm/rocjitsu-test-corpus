@@ -55,6 +55,30 @@ public:
     return value;
   }
 
+  /// Issue a 32-bit load, cross the workgroup barrier, and wait for the load
+  /// after it, so the load is in flight when this wave arrives at the barrier.
+  /// One assembly block keeps the compiler from touching the result in
+  /// between. The barrier orders nothing about this load for the other waves.
+  __device__ static __forceinline__ unsigned readAcrossBarrier(unsigned address) {
+    unsigned value;
+    if constexpr (Isa == LdsIsa::Gfx12)
+      asm volatile("ds_load_b32 %0, %1\n"
+                   "s_barrier_signal -1\n"
+                   "s_barrier_wait -1\n"
+                   "s_wait_dscnt 0"
+                   : "=v"(value)
+                   : "v"(address)
+                   : "memory");
+    else
+      asm volatile("ds_read_b32 %0, %1\n"
+                   "s_barrier\n"
+                   "s_waitcnt lgkmcnt(0)"
+                   : "=v"(value)
+                   : "v"(address)
+                   : "memory");
+    return value;
+  }
+
   /// ISA workgroup rendezvous with no additional memory-counter waits.
   /// Each whole wave must arrive or terminate. A departing wave's s_endpgm
   /// implicitly waits for its memory operations; a continuing wave must wait

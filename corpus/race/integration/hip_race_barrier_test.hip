@@ -184,4 +184,208 @@ TEST_F(BarrierRaceTest, staggered_wave_exit_race) {
                   .consumer = "ds_"}});
 }
 
+// --- LDS accesses in flight at a barrier ---
+//
+// A workgroup barrier makes each wave wait for the others to arrive. The
+// CDNA5 ISA specifies no wait for a memory counter at a barrier signal (5.6
+// and 15.3, S_BARRIER_SIGNAL), and rocjitsu models the single s_barrier of the
+// other targets as a signal and a wait that coincide. So an LDS access a wave
+// has not waited for is still in flight when the wave arrives, and the barrier
+// orders nothing about it for the other waves. Another wave that passes the
+// barrier and touches those
+// bytes races with it, and the report of that race names the wave that
+// arrived with the access in flight, the barrier, and the counter to wait for
+// before it. A wave that leaves an access in flight and whose bytes no other
+// wave touches has no race, and nothing is reported.
+
+// The expectations are host code, so they cannot ask the device compiler which
+// target this is; the build defines RACE_TARGET_SPLIT_BARRIER for the targets
+// with s_barrier_signal and the split wait counters.
+#ifdef RACE_TARGET_SPLIT_BARRIER
+/// The instruction at which a wave arrives at the workgroup barrier.
+constexpr const char *kBarrier = "s_barrier_signal -1";
+/// The counter an LDS access completes on.
+constexpr const char *kLdsCounter = "dscnt";
+#else
+constexpr const char *kBarrier = "s_barrier";
+constexpr const char *kLdsCounter = "lgkmcnt";
+#endif
+
+/// Whether a wave waits for its LDS access before it arrives at the barrier.
+enum class BarrierWait { Before, Missing };
+/// Which slice a wave reads back after the barrier.
+enum class ReadSlice { Own, Neighbour };
+
+/// Each of two waves writes its own LDS slice, crosses the barrier and reads a
+/// slice back. Reading its own slice, a wave conflicts with no other on any
+/// schedule; reading its neighbour's, it depends on the barrier having ordered
+/// the neighbour's write.
+template <BarrierWait Wait, ReadSlice Read>
+__attribute__((amdgpu_flat_work_group_size(64, 128))) __global__ void
+write_barrier_read_kernel(unsigned *out) {
+  __shared__ unsigned tile[128];
+  const unsigned tid = threadIdx.x;
+  const unsigned threads = 2 * warpSize;
+  const unsigned address = static_cast<unsigned>(reinterpret_cast<uintptr_t>(&tile[tid]));
+  const unsigned source =
+      Read == ReadSlice::Own
+          ? address
+          : static_cast<unsigned>(reinterpret_cast<uintptr_t>(&tile[(tid + warpSize) % threads]));
+  Lds::write(address, tid + 11);
+  if constexpr (Wait == BarrierWait::Before)
+    Lds::wait();
+  Lds::barrier();
+  out[tid] = Lds::read(source);
+}
+
+/// The values write_barrier_read_kernel() reads back.
+std::vector<unsigned> writeBarrierReadValues(ReadSlice read) {
+  const unsigned waveSize = hostWaveSize();
+  const unsigned threads = 2 * waveSize;
+  std::vector<unsigned> expected(threads);
+  for (unsigned tid = 0; tid < threads; ++tid)
+    expected[tid] = (read == ReadSlice::Own ? tid : (tid + waveSize) % threads) + 11;
+  return expected;
+}
+
+TEST_F(BarrierRaceTest, neighbour_slot_write_waited) {
+  const unsigned threads = 2 * hostWaveSize();
+  unsigned *out = alloc<unsigned>(threads);
+  write_barrier_read_kernel<BarrierWait::Before, ReadSlice::Neighbour><<<1, threads>>>(out);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectValues(out, writeBarrierReadValues(ReadSlice::Neighbour));
+  ExpectNoRace();
+}
+
+// Without the wait each write is in flight when its wave arrives at the
+// barrier, so the barrier does not order it for the neighbour's read. Both
+// waves run the same instructions, so the two races are one report.
+TEST_F(BarrierRaceTest, neighbour_slot_write_in_flight_race) {
+  const unsigned threads = 2 * hostWaveSize();
+  write_barrier_read_kernel<BarrierWait::Missing, ReadSlice::Neighbour>
+      <<<1, threads>>>(alloc<unsigned>(threads));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace({.kernel = "write_barrier_read_kernel",
+              .type = "LDS",
+              .access = "read",
+              .lane = 0,
+              .producer = "ds_",
+              .between = "s_barrier",
+              .consumer = "ds_",
+              .barrier = kBarrier,
+              .barrier_wait = kLdsCounter});
+}
+
+// The same missing wait with each wave reading back only its own slice. No
+// access conflicts on any schedule, so it is not a race and nothing is
+// reported.
+TEST_F(BarrierRaceTest, own_slot_write_in_flight_is_not_reported) {
+  const unsigned threads = 2 * hostWaveSize();
+  unsigned *out = alloc<unsigned>(threads);
+  write_barrier_read_kernel<BarrierWait::Missing, ReadSlice::Own><<<1, threads>>>(out);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectValues(out, writeBarrierReadValues(ReadSlice::Own));
+  ExpectNoRace();
+}
+
+/// Every wave loads wave 0's slice, which a first barrier has ordered, and
+/// crosses a second barrier; wave 0 then overwrites its slice. A load in
+/// flight at the second barrier is not ordered before that overwrite.
+template <BarrierWait Wait>
+__attribute__((amdgpu_flat_work_group_size(64, 128))) __global__ void
+read_barrier_overwrite_kernel(unsigned *out) {
+  __shared__ unsigned tile[128];
+  const unsigned tid = threadIdx.x;
+  const unsigned address = static_cast<unsigned>(reinterpret_cast<uintptr_t>(&tile[tid]));
+  Lds::write(address, tid + 7);
+  Lds::wait();
+  Lds::barrier();
+  const unsigned source = static_cast<unsigned>(reinterpret_cast<uintptr_t>(&tile[tid % warpSize]));
+  unsigned value;
+  if constexpr (Wait == BarrierWait::Before) {
+    value = Lds::read(source);
+    Lds::barrier();
+  } else {
+    value = Lds::readAcrossBarrier(source);
+  }
+  if (__builtin_amdgcn_readfirstlane(tid) < warpSize) {
+    Lds::write(address, tid + 100);
+    Lds::wait();
+  }
+  out[tid] = value;
+}
+
+TEST_F(BarrierRaceTest, read_waited_then_overwritten) {
+  const unsigned waveSize = hostWaveSize();
+  const unsigned threads = 2 * waveSize;
+  unsigned *out = alloc<unsigned>(threads);
+  read_barrier_overwrite_kernel<BarrierWait::Before><<<1, threads>>>(out);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  std::vector<unsigned> expected(threads);
+  for (unsigned tid = 0; tid < threads; ++tid)
+    expected[tid] = tid % waveSize + 7;
+  ExpectValues(out, expected);
+  ExpectNoRace();
+}
+
+// Wave 1's load is in flight when wave 1 arrives at the second barrier, so the
+// barrier does not order it before wave 0's overwrite. The report names wave
+// 1, whose load it is.
+TEST_F(BarrierRaceTest, read_in_flight_overwritten_race) {
+  const unsigned threads = 2 * hostWaveSize();
+  read_barrier_overwrite_kernel<BarrierWait::Missing><<<1, threads>>>(alloc<unsigned>(threads));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace({.kernel = "read_barrier_overwrite_kernel",
+              .type = "LDS",
+              .access = "write",
+              .wave = 0,
+              .lane = 0,
+              .producer = "ds_",
+              .consumer = "ds_",
+              .barrier = kBarrier,
+              .barrier_wave = 1,
+              .barrier_wait = kLdsCounter});
+}
+
+/// Each wave writes its slice, waits for the write, and reads its neighbour's,
+/// with no barrier at all.
+__attribute__((amdgpu_flat_work_group_size(64, 128))) __global__ void
+write_read_without_barrier_kernel(unsigned *out) {
+  __shared__ unsigned tile[128];
+  const unsigned tid = threadIdx.x;
+  const unsigned threads = 2 * warpSize;
+  Lds::write(static_cast<unsigned>(reinterpret_cast<uintptr_t>(&tile[tid])), tid + 11);
+  Lds::wait();
+  out[tid] = Lds::read(
+      static_cast<unsigned>(reinterpret_cast<uintptr_t>(&tile[(tid + warpSize) % threads])));
+}
+
+// A race with no barrier between its accesses names none. Either wave can run
+// first, so the race is reported at the read or at the write.
+TEST_F(BarrierRaceTest, missing_barrier_race_names_no_barrier) {
+  const unsigned threads = 2 * hostWaveSize();
+  write_read_without_barrier_kernel<<<1, threads>>>(alloc<unsigned>(threads));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectAnyRace({{.kernel = "write_read_without_barrier_kernel",
+                  .type = "LDS",
+                  .access = "read",
+                  .lane = 0,
+                  .producer = "ds_",
+                  .consumer = "ds_",
+                  .no_barrier = true},
+                 {.kernel = "write_read_without_barrier_kernel",
+                  .type = "LDS",
+                  .access = "write",
+                  .lane = 0,
+                  .producer = "ds_",
+                  .consumer = "ds_",
+                  .no_barrier = true}});
+}
+
 } // namespace

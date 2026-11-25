@@ -15,6 +15,12 @@
     "barrier_exited_lds_writer_race",
     "barrier_staggered_wave_exit",
     "barrier_staggered_wave_exit_implicit_wait",
-    "barrier_staggered_wave_exit_race"
+    "barrier_staggered_wave_exit_race",
+    "barrier_neighbour_slot_write_waited",
+    "barrier_neighbour_slot_write_in_flight_race",
+    "barrier_own_slot_write_in_flight_is_not_reported",
+    "barrier_read_waited_then_overwritten",
+    "barrier_read_in_flight_overwritten_race",
+    "barrier_missing_barrier_race_names_no_barrier"
   ]
 }

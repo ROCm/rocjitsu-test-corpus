@@ -216,6 +216,28 @@ __device__ inline void ldsFillAndWait(uint32_t byte_offset, int value) {
   waitDscnt();
 }
 
+/// `expected`, for a race whose conflicting access was in flight when its wave
+/// executed the barrier signal `signal`, a barrier the accessing wave has
+/// passed: the report also names the signal, `counters` as what to wait for
+/// before it and, when `barrier_wave` is not negative, that wave. A signal
+/// waits for no memory counter (CDNA5 ISA 5.6 and 15.3), so the barrier does
+/// not order the access.
+constexpr RaceExpectation crossedBarrier(RaceExpectation expected, const char *counters,
+                                         int barrier_wave = -1,
+                                         const char *signal = "s_barrier_signal -1") {
+  expected.barrier = signal;
+  expected.barrier_wave = barrier_wave;
+  expected.barrier_wait = counters;
+  return expected;
+}
+
+/// `expected`, for a race no barrier the accessing wave passed could have
+/// ordered: the report names none.
+constexpr RaceExpectation crossedNoBarrier(RaceExpectation expected) {
+  expected.no_barrier = true;
+  return expected;
+}
+
 static constexpr RaceExpectation kVgprLoadcntRaceExpectation{
     .findings = FindingCount::OneOrMore,
     .type = "VGPR",
@@ -476,7 +498,8 @@ TEST_F(Gfx1250RaceTest, tensor_load_cross_wave_no_barrier_race) {
   sync();
   // Without a barrier the waves run in either order, so the race may be
   // reported in either direction.
-  ExpectAnyRace({kTensorLoadThenReadRaceExpectation, kReadThenTensorLoadRaceExpectation});
+  ExpectAnyRace({crossedNoBarrier(kTensorLoadThenReadRaceExpectation),
+                 crossedNoBarrier(kReadThenTensorLoadRaceExpectation)});
 }
 
 // A barrier retires only transfers their wave has already waited for.
@@ -487,7 +510,8 @@ TEST_F(Gfx1250RaceTest, tensor_load_cross_wave_no_tensorcnt_race) {
       <<<1, 2 * kWave, kTileBytes>>>(describe({.global = src}), dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kTensorLoadThenReadRaceExpectation);
+  // The load was in flight at wave 0's signal, and the report says so.
+  ExpectRace(crossedBarrier(kTensorLoadThenReadRaceExpectation, "tensorcnt"));
 }
 
 // --- Double-buffered pipeline ---
@@ -3062,7 +3086,7 @@ TEST_F(Gfx1250RaceTest, dscnt_capacity_cross_wave_barrier_race) {
       <<<1, 2 * kWave, 2 * kTileBytes>>>(alloc<int>(kWave));
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(kDsWriteThenReadRaceExpectation);
+  ExpectRace(crossedBarrier(kDsWriteThenReadRaceExpectation, "dscnt"));
 }
 
 // --- FLAT counts on DScnt and on LOADcnt ---
@@ -3487,7 +3511,8 @@ TEST_F(Gfx1250RaceTest, split_barrier_ds_write_wait_after_signal_race) {
       <<<1, 2 * kWave, kTileBytes>>>(dst, writer_signaled);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(byWave(kDsWriteThenReadRaceExpectation, 1));
+  ExpectRace(
+      crossedBarrier(byWave(kDsWriteThenReadRaceExpectation, 1), "dscnt", /*barrier_wave=*/0));
 }
 
 // Wave 1 reads its own tile; wave 0 overwrites it after the barrier.
@@ -3527,7 +3552,8 @@ TEST_F(Gfx1250RaceTest, split_barrier_ds_read_wait_after_signal_race) {
   split_barrier_ds_read_kernel<Completion::AfterSignal><<<1, 2 * kWave, kTileBytes>>>(dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(byWave(kDsReadThenWriteRaceExpectation, 0));
+  ExpectRace(
+      crossedBarrier(byWave(kDsReadThenWriteRaceExpectation, 0), "dscnt", /*barrier_wave=*/1));
 }
 
 // Wave 0 issues its write after its signal, so the barrier does not order the
@@ -3552,8 +3578,10 @@ TEST_F(Gfx1250RaceTest, split_barrier_write_after_signal_race) {
   split_barrier_write_after_signal_kernel<<<1, 2 * kWave, kTileBytes>>>(dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectAnyRace({byWave(kDsWriteThenReadRaceExpectation, 1),
-                 byWave(kDsReadThenWriteRaceExpectation, 0)});
+  // The write was issued after wave 0's signal, so it crossed no barrier in
+  // flight: neither direction of the report names one.
+  ExpectAnyRace({crossedNoBarrier(byWave(kDsWriteThenReadRaceExpectation, 1)),
+                 crossedNoBarrier(byWave(kDsReadThenWriteRaceExpectation, 0))});
 }
 
 // Wave 0 writes and releases its tile; wave 1 reads it before its own wait,
@@ -3578,8 +3606,10 @@ TEST_F(Gfx1250RaceTest, split_barrier_read_before_wait_race) {
   split_barrier_read_before_wait_kernel<<<1, 2 * kWave, kTileBytes>>>(dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectAnyRace({byWave(kDsWriteThenReadRaceExpectation, 1),
-                 byWave(kDsReadThenWriteRaceExpectation, 0)});
+  // The write was complete at wave 0's signal. The mistake is the reader's, and
+  // the report names no barrier.
+  ExpectAnyRace({crossedNoBarrier(byWave(kDsWriteThenReadRaceExpectation, 1)),
+                 crossedNoBarrier(byWave(kDsReadThenWriteRaceExpectation, 0))});
 }
 
 // Wave 0 writes and releases its tile. Wave 1 reads it after its wait; wave 2
@@ -3745,7 +3775,8 @@ TEST_F(Gfx1250RaceTest, split_barrier_tensor_load_wait_after_signal_race) {
       <<<1, 2 * kWave, kTileBytes>>>(describe({.global = src}), nullptr, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(byWave(kTensorLoadThenReadRaceExpectation, 1));
+  ExpectRace(crossedBarrier(byWave(kTensorLoadThenReadRaceExpectation, 1), "tensorcnt",
+                            /*barrier_wave=*/0));
 }
 
 TEST_F(Gfx1250RaceTest, split_barrier_async_load) {
@@ -3766,7 +3797,8 @@ TEST_F(Gfx1250RaceTest, split_barrier_async_load_wait_after_signal_race) {
       <<<1, 2 * kWave, kTileBytes>>>(TensorDesc{}, src, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(byWave(kAsyncLoadThenReadRaceExpectation, 1));
+  ExpectRace(
+      crossedBarrier(byWave(kAsyncLoadThenReadRaceExpectation, 1), "asynccnt", /*barrier_wave=*/0));
 }
 
 // Wave 0 fills its tile and stores it; wave 1 overwrites the tile after the
@@ -3806,7 +3838,8 @@ TEST_F(Gfx1250RaceTest, split_barrier_tensor_store_source_wait_after_signal_race
       <<<1, 2 * kWave, kTileBytes>>>(describe({.global = dst}), nullptr);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(byWave(kTensorStoreThenWriteRaceExpectation, 1));
+  ExpectRace(crossedBarrier(byWave(kTensorStoreThenWriteRaceExpectation, 1), "tensorcnt",
+                            /*barrier_wave=*/0));
 }
 
 TEST_F(Gfx1250RaceTest, split_barrier_async_store_source) {
@@ -3825,7 +3858,8 @@ TEST_F(Gfx1250RaceTest, split_barrier_async_store_source_wait_after_signal_race)
       <<<1, 2 * kWave, kTileBytes>>>(TensorDesc{}, dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(byWave(kAsyncStoreThenWriteRaceExpectation, 1));
+  ExpectRace(crossedBarrier(byWave(kAsyncStoreThenWriteRaceExpectation, 1), "asynccnt",
+                            /*barrier_wave=*/0));
 }
 
 /// Where wave 0 reads the exited wave's tile, relative to its own wait.
@@ -3890,7 +3924,8 @@ TEST_F(Gfx1250RaceTest, split_barrier_signal_then_exit_race) {
   split_barrier_signal_then_exit_kernel<<<1, 2 * kWave, kTileBytes>>>(dst);
   RACE_HIP_CHECK(hipGetLastError());
   sync();
-  ExpectRace(byWave(kDsWriteThenReadRaceExpectation, 1));
+  ExpectRace(
+      crossedBarrier(byWave(kDsWriteThenReadRaceExpectation, 1), "dscnt", /*barrier_wave=*/0));
 }
 
 // A double-buffered loop. In each round every wave writes its slot of one
@@ -3963,7 +3998,8 @@ TEST_F(Gfx1250RaceTest, split_barrier_pingpong_wait_after_signal_race) {
   RACE_HIP_CHECK(hipGetLastError());
   sync();
   // Exactly one report, by wave 0, and it is in wave 1's slot of buffer 1.
-  ExpectRace(byWave(kDsWriteThenReadRaceExpectation, 0));
+  ExpectRace(
+      crossedBarrier(byWave(kDsWriteThenReadRaceExpectation, 0), "dscnt", /*barrier_wave=*/1));
   constexpr int kRacingSlot = (1 * kPingPongWaves + 1) * kTileBytes;
   const auto parsed = rocjitsu::test::parseRaceLogFromEnvironment();
   ASSERT_TRUE(parsed.ok()) << parsed.error;
@@ -4627,6 +4663,234 @@ TEST_F(Gfx1250RaceTest, cell_pingpong_late_load_race) {
   ExpectAnyRace({byWave(kAsyncLoadThenReadRaceExpectation, 1),
                  byWave(kReadThenAsyncLoadRaceExpectation, 0)});
   ExpectRecordsInTile(1);
+}
+
+// --- LDS accesses in flight at a barrier signal ---
+//
+// s_barrier_signal waits for no memory counter (CDNA5 ISA 5.6 and 15.3), so an
+// LDS access its wave has not waited for is in flight when the wave signals,
+// and the barrier orders nothing about it for the other waves. A wave that
+// then touches the bytes races with it, and the report names the wave that
+// signalled with the access in flight, the signal, and the counter to wait for
+// before it. The split-barrier, tensor and async race cases above check the
+// same line through crossedBarrier(). These cases add a named barrier, a FLAT
+// store, a cluster barrier, and a writer that runs a barrier ahead of its
+// reader.
+
+/// The LDS byte offset of `tile[index]`.
+template <int Size> __device__ inline uint32_t ldsOffset(const int (&tile)[Size], unsigned index) {
+  return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&tile[index]));
+}
+
+// Both waves join a named barrier, write their own tile, signal it, wait, and
+// read the other wave's tile. Wave 0 sets the barrier's member count, and a
+// workgroup barrier orders that before either wave joins.
+template <bool Wait>
+__attribute__((amdgpu_flat_work_group_size(64, 64))) __global__ void
+named_barrier_exchange_kernel(int *dst) {
+  __shared__ int tile[2 * kWave];
+  __shared__ __amdgpu_named_workgroup_barrier_t named;
+  // Use the barrier type and builtins so the compiler reserves a named barrier
+  // in the kernel descriptor and selects its ID.
+  if (waveIndex() == 0)
+    __builtin_amdgcn_s_barrier_init(&named, 2);
+  barrier();
+  __builtin_amdgcn_s_barrier_join(&named);
+  ldsWrite(ldsOffset(tile, threadIdx.x), threadIdx.x + 1);
+  if constexpr (Wait)
+    waitDscnt();
+  __builtin_amdgcn_s_barrier_signal_var(&named, 0);
+  asm volatile("s_barrier_wait 0" ::: "memory");
+  dst[threadIdx.x] = ldsReadAndWait(ldsOffset(tile, (threadIdx.x + kWave) % (2 * kWave)));
+}
+
+/// What each work-item reads from the other wave's tile in the exchange
+/// kernels: the other wave's work-item ID in the same lane, plus one.
+std::vector<int> exchangedValues() {
+  std::vector<int> values(2 * kWave);
+  for (int tid = 0; tid < 2 * kWave; ++tid)
+    values[tid] = (tid + kWave) % (2 * kWave) + 1;
+  return values;
+}
+
+TEST_F(Gfx1250RaceTest, named_barrier_write_waited) {
+  auto *dst = alloc<int>(2 * kWave);
+  named_barrier_exchange_kernel<true><<<1, 2 * kWave>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectValues(dst, exchangedValues());
+  ExpectNoRace();
+}
+
+// The kernel's one named barrier is barrier 1, and the report shows the signal
+// as it was issued: the compiler emits the barrier's ID as an inline constant. Both waves are
+// members and run the same instructions, so the two races are one report.
+TEST_F(Gfx1250RaceTest, named_barrier_write_in_flight_race) {
+  named_barrier_exchange_kernel<false><<<1, 2 * kWave>>>(alloc<int>(2 * kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(crossedBarrier({.kernel = "named_barrier_exchange_kernel",
+                             .type = "LDS",
+                             .access = "read",
+                             .producer = "ds_store_b32",
+                             .consumer = "ds_load_b32"},
+                            "dscnt", /*barrier_wave=*/-1, "s_barrier_signal 1"));
+}
+
+// A FLAT store whose address resolves to LDS stays in order with DS
+// instructions as it moves through LDS, and completes there on DScnt (CDNA5
+// ISA 5.7.1.3). It needs that wait before a barrier; its STOREcnt does not
+// matter to the barrier, and the report names DScnt alone.
+template <bool Wait>
+__attribute__((amdgpu_flat_work_group_size(64, 64))) __global__ void
+flat_store_to_lds_exchange_kernel(int *dst) {
+  __shared__ int tile[2 * kWave];
+  asm volatile("flat_store_b32 %[address], %[value]"
+               :
+               : [address] "v"(&tile[threadIdx.x]), [value] "v"(threadIdx.x + 1)
+               : "memory");
+  if constexpr (Wait)
+    waitDscnt();
+  barrier();
+  dst[threadIdx.x] = ldsReadAndWait(ldsOffset(tile, (threadIdx.x + kWave) % (2 * kWave)));
+  asm volatile("s_wait_storecnt 0" ::: "memory");
+}
+
+TEST_F(Gfx1250RaceTest, flat_store_to_lds_waited) {
+  auto *dst = alloc<int>(2 * kWave);
+  flat_store_to_lds_exchange_kernel<true><<<1, 2 * kWave>>>(dst);
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectValues(dst, exchangedValues());
+  ExpectNoRace();
+}
+
+TEST_F(Gfx1250RaceTest, flat_store_to_lds_in_flight_race) {
+  flat_store_to_lds_exchange_kernel<false><<<1, 2 * kWave>>>(alloc<int>(2 * kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(crossedBarrier({.kernel = "flat_store_to_lds_exchange_kernel",
+                             .type = "LDS",
+                             .access = "read",
+                             .producer = "flat_store_b32",
+                             .consumer = "ds_load_b32"},
+                            "dscnt"));
+}
+
+// Two workgroups in a cluster. In workgroup 0, wave 0 writes its tile and
+// signals the cluster barrier with the write in flight; wave 1 reads the tile.
+// Workgroup 1 supplies the other cluster signal, so the barrier completes. A
+// cluster signal waits for no memory counter either. With `ReaderWaits`, wave
+// 1 waits on the cluster barrier before it reads; without, it only waits,
+// through a flag, until wave 0 has signalled. Wave 1 of workgroup 1 does
+// nothing: the cases need one signal from each workgroup, not every wave's
+// wait.
+template <bool ReaderWaits>
+__attribute__((cluster_dims(2, 1, 1), amdgpu_flat_work_group_size(64, 64))) __global__ void
+cluster_signal_in_flight_kernel(int *writer_signaled, int *out) {
+  __shared__ int tile[2 * kWave];
+  if (blockIdx.x == 0 && waveIndex() == 0) {
+    ldsWrite(ldsOffset(tile, threadIdx.x), threadIdx.x + 1);
+    asm volatile("s_barrier_signal -3" ::: "memory");
+    raise(writer_signaled);
+    waitDscnt();
+    asm volatile("s_barrier_wait -3" ::: "memory");
+  } else if (blockIdx.x == 0) {
+    if constexpr (ReaderWaits)
+      asm volatile("s_barrier_wait -3" ::: "memory");
+    else
+      awaitRaised(writer_signaled);
+    out[lane()] = ldsReadAndWait(ldsOffset(tile, lane()));
+  } else if (waveIndex() == 0) {
+    asm volatile("s_barrier_signal -3\n"
+                 "s_barrier_wait -3" ::
+                     : "memory");
+  }
+}
+
+/// Launch cluster_signal_in_flight_kernel as a cluster of two workgroups.
+template <bool ReaderWaits> void launchClusterSignalInFlight(int *writer_signaled, int *out) {
+  hipLaunchAttribute cluster{};
+  cluster.id = hipLaunchAttributeClusterDimension;
+  cluster.value.clusterDim = {2, 1, 1};
+  hipLaunchConfig_t config{};
+  config.gridDim = dim3(2);
+  config.blockDim = dim3(2 * kWave);
+  config.attrs = &cluster;
+  config.numAttrs = 1;
+  RACE_HIP_CHECK(hipLaunchKernelEx(&config, cluster_signal_in_flight_kernel<ReaderWaits>,
+                                   writer_signaled, out));
+}
+
+// Wave 1 passes the cluster barrier wave 0 signalled with the write in flight,
+// and the report names that signal.
+TEST_F(Gfx1250RaceTest, cluster_signal_write_in_flight_race) {
+  launchClusterSignalInFlight<true>(allocFilled<int>(1, 0), alloc<int>(kWave));
+  sync();
+  ExpectRace(crossedBarrier({.kernel = "cluster_signal_in_flight_kernel",
+                             .type = "LDS",
+                             .access = "read",
+                             .wave = 1,
+                             .producer = "ds_store_b32",
+                             .consumer = "ds_load_b32"},
+                            "dscnt", /*barrier_wave=*/0, "s_barrier_signal -3"));
+}
+
+// Wave 1 reads without waiting on the cluster barrier. It has not passed the
+// barrier, so the barrier is not what failed to order the write, and the
+// report names none.
+TEST_F(Gfx1250RaceTest, cluster_signal_write_in_flight_unwaited_reader_race) {
+  launchClusterSignalInFlight<false>(allocFilled<int>(1, 0), alloc<int>(kWave));
+  sync();
+  ExpectRace(crossedNoBarrier({.kernel = "cluster_signal_in_flight_kernel",
+                               .type = "LDS",
+                               .access = "read",
+                               .wave = 1,
+                               .producer = "ds_store_b32",
+                               .consumer = "ds_load_b32"}));
+}
+
+// Wave 0 runs a barrier ahead of wave 1. Its write is in flight at its first
+// signal and still in flight at its second, which is a different instruction.
+// Wave 1 has passed only the first barrier when it reads, so that is the
+// barrier it relied on, and the one the report names. The flag holds wave 1's
+// read until wave 0 has signalled twice, and is raised before wave 0 waits for
+// the write.
+__attribute__((amdgpu_flat_work_group_size(64, 64))) __global__ void
+writer_ahead_of_reader_kernel(int *writer_signaled, int *out) {
+  __shared__ int tile[2 * kWave];
+  if (waveIndex() == 0) {
+    ldsWrite(ldsOffset(tile, threadIdx.x), threadIdx.x + 1);
+    asm volatile("s_barrier_signal -1\n"
+                 "s_barrier_wait -1" ::
+                     : "memory");
+    asm volatile("s_barrier_signal_isfirst -1" ::: "cc", "memory");
+    raise(writer_signaled);
+    waitDscnt();
+    asm volatile("s_barrier_wait -1" ::: "memory");
+  } else {
+    asm volatile("s_barrier_signal -1\n"
+                 "s_barrier_wait -1" ::
+                     : "memory");
+    awaitRaised(writer_signaled);
+    out[lane()] = ldsReadAndWait(ldsOffset(tile, lane()));
+    asm volatile("s_barrier_signal -1\n"
+                 "s_barrier_wait -1" ::
+                     : "memory");
+  }
+}
+
+TEST_F(Gfx1250RaceTest, writer_ahead_names_the_barrier_the_reader_passed) {
+  writer_ahead_of_reader_kernel<<<1, 2 * kWave>>>(allocFilled<int>(1, 0), alloc<int>(kWave));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace(crossedBarrier({.kernel = "writer_ahead_of_reader_kernel",
+                             .type = "LDS",
+                             .access = "read",
+                             .wave = 1,
+                             .producer = "ds_store_b32",
+                             .consumer = "ds_load_b32"},
+                            "dscnt", /*barrier_wave=*/0, "s_barrier_signal -1"));
 }
 
 } // namespace

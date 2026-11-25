@@ -1821,6 +1821,69 @@ TEST_F(Gfx950RaceTest, f64_vgpr_waw) {
   ExpectRace(kF64VgprWawExpectation);
 }
 
+// --- A direct-to-LDS load in flight at a barrier ---
+// rocjitsu models s_barrier as a barrier signal and wait that coincide, and a
+// signal waits for no memory counter, so a load into LDS a wave has not
+// waited for is in flight when the wave arrives, and the barrier does not
+// order it for the other wave. Each wave loads its own half of the tile with
+// buffer_load ... lds, crosses s_barrier with the load in flight, and reads
+// the other wave's half. The report names the wave that arrived with the load
+// in flight, the barrier, and VMCNT, which the load completes on.
+
+__attribute__((amdgpu_flat_work_group_size(128, 128)))
+__global__ void buffer_load_lds_across_barrier_kernel(const int *src, int *out) {
+  int tid = threadIdx.x;
+  int lane = tid % 64;
+  int wave = tid / 64;
+
+  uintptr_t base = reinterpret_cast<uintptr_t>(src);
+  unsigned w0 = static_cast<unsigned>(base);
+  unsigned w1 = static_cast<unsigned>(base >> 32) & 0xFFFFu;
+  unsigned w2 = 128 * sizeof(int);
+  unsigned w3 = (4u) | (7u << 12) | (4u << 15);
+
+  unsigned wave_byte_offset =
+      __builtin_amdgcn_readfirstlane(wave * 64 * sizeof(int));
+  int val;
+  asm volatile(
+      "s_mov_b32 s12, %1\n"
+      "s_mov_b32 s13, %2\n"
+      "s_mov_b32 s14, %3\n"
+      "s_mov_b32 s15, %4\n"
+      "s_mov_b32 m0, %6\n"
+      "buffer_load_dword %5, s[12:15], %7 offen lds\n"
+      // BUG: missing s_waitcnt vmcnt(0) before the barrier.
+      "s_barrier\n"
+      "ds_read_b32 %0, %8\n"
+      "s_waitcnt lgkmcnt(0)\n"
+      "s_waitcnt vmcnt(0)\n"
+      : "=&v"(val)
+      : "s"(w0), "s"(w1), "s"(w2), "s"(w3),
+        "v"(lane * 4), "s"(wave_byte_offset), "s"(wave_byte_offset),
+        "v"(((tid + 64) % 128) * 4)
+      : "s12", "s13", "s14", "s15", "memory"
+  );
+  out[tid] = val;
+}
+
+TEST_F(Gfx950RaceTest, global_to_lds_in_flight_at_barrier_race) {
+  // The assembly addresses 128 dwords (512 bytes) from LDS offset zero.
+  // It has no C++ LDS accesses, so the launch must reserve the backing storage.
+  buffer_load_lds_across_barrier_kernel<<<1, 128, 128 * sizeof(int)>>>(allocWithData<int>(128),
+                                                                        alloc<int>(128));
+  RACE_HIP_CHECK(hipGetLastError());
+  sync();
+  ExpectRace({.findings = FindingCount::One,
+              .type = "LDS",
+              .access = "read",
+              .lane = 0,
+              .producer = "buffer_load_dword",
+              .between = "s_barrier",
+              .consumer = "ds_read_b32",
+              .barrier = "s_barrier",
+              .barrier_wait = "vmcnt"});
+}
+
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

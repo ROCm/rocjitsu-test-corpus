@@ -144,6 +144,9 @@ elseif(CMAKE_HIP_ARCHITECTURES STREQUAL "gfx1250")
         "${CMAKE_CURRENT_LIST_DIR}/hip_race_gfx1250_test.hip"
         "${CMAKE_CURRENT_LIST_DIR}/hip_race_barrier_test.hip"
     )
+    # The shared barrier cases expect s_barrier_signal and DScnt here, and
+    # s_barrier and LGKMcnt on the other targets.
+    target_compile_definitions(hip_race_tests_gfx1250 PRIVATE RACE_TARGET_SPLIT_BARRIER)
 else()
     message(FATAL_ERROR
         "RocJITsu race tests support gfx942, gfx950, gfx1151 and gfx1250, got "

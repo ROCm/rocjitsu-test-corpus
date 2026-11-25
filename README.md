@@ -181,6 +181,20 @@ on an `s_barrier` after the arrival for a transfer its producer never waited
 for. Further cases use the cell as a non-blocking workgroup barrier and run a
 double-buffered pipeline with no `s_barrier` in its loop. The cases poll bit 29 of the cell, the low
 phase bit at the pending-count width RocJITsu models.
+When the conflicting access of an LDS race was in flight as its wave signalled
+a barrier, and the accessing wave is ordered after that signal (it passed the
+barrier, or synchronized with a wave that did), the report names that wave,
+the barrier and the counter to wait for before it. `RaceExpectation` can require
+that line (`barrier`, the barrier instruction, matched whole; `barrier_wave`;
+`barrier_wait`) or that no report has it (`no_barrier`). The barrier program,
+built for every target, covers a write and a load left in flight at a barrier
+and then touched by the other wave, with their waited partners; a write left
+in flight that only its own wave reads back, which is not a race and is not
+reported; and a race with no barrier at all, which names none. The gfx1250
+program adds a named barrier, a FLAT store to LDS, a cluster barrier whose
+reader does and does not wait on it, and a writer that runs a barrier ahead of
+its reader, and its split-barrier, tensor and async race cases check the line
+too; the gfx950 program adds a direct-to-LDS load in flight at `s_barrier`.
 The gfx1250 program does not build the shared VMEM cases, which use pre-GFX12
 waits.
 

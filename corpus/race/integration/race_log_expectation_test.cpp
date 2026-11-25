@@ -410,5 +410,149 @@ TEST(RaceLogExpectationTest, MissingExpectedTraceMarkerFails) {
   EXPECT_NE(matched.message().find("consumer trace"), std::string::npos);
 }
 
+// --- The barrier a conflicting access crossed in flight ---
+
+constexpr std::string_view kBarrierRaceLog =
+    "[rocjitsu] Kernel dispatch: \"racy_kernel\" symbol=\"racy_kernel\"\n"
+    "RACE kernel=racy_kernel symbol=_Z11racy_kernelPi dispatch=3 "
+    "type=LDS access=read reg=64 wave=1 lane=0 wg=0,0,0 conflict=unknown\n"
+    "Race on LDS byte 64 [workgroup (0, 0, 0), wave 1, lane 0]: read-after-write (RAW).\n"
+    "  Current access: read at PC 0x1c8.\n"
+    "  Conflict: transfer from VGPRs into LDS at PC 0x1a4, wave 0.\n"
+    "  Completion for wave 0 is not guaranteed; pending counters: dscnt.\n"
+    "  The detector observed no synchronization between waves 0 and 1 for this access.\n"
+    "  Wave 0 arrived at the barrier at PC 0x1b0 (s_barrier_signal -1) with this access in "
+    "flight, so that barrier does not order it. Wait for dscnt before the barrier.\n"
+    "       PC     Instruction\n"
+    "  ==>  0x1a4  ds_store_b32 v0, v1  ; <-- wave 0\n"
+    "       Execution trace below is for wave 1.\n"
+    "       0x1b0  s_barrier_signal -1\n"
+    "       0x1b4  s_barrier_wait -1\n"
+    "  ==>  0x1c8  ds_load_b32 v2, v0  ; <-- wave 1 lane 0\n"
+    "END_RACE\n";
+
+std::vector<RaceRecord> barrierRaceRecords() {
+  RaceLogParseResult parsed = parse(kBarrierRaceLog);
+  EXPECT_TRUE(parsed.ok()) << parsed.error;
+  return std::move(parsed.records);
+}
+
+TEST(RaceLogBarrierTest, FindsTheBarrierLine) {
+  const std::vector<RaceRecord> records = barrierRaceRecords();
+  ASSERT_EQ(records.size(), 1u);
+  EXPECT_EQ(barrierLine(records.front()),
+            "  Wave 0 arrived at the barrier at PC 0x1b0 (s_barrier_signal -1) with this access in "
+            "flight, so that barrier does not order it. Wait for dscnt before the barrier.");
+  EXPECT_EQ(barrierLine(validRaceRecords().front()), "");
+}
+
+TEST(RaceLogBarrierTest, MatchesTheBarrierItsWaveAndTheCountersToWaitFor) {
+  const RaceExpectation expected{.type = "LDS",
+                                 .access = "read",
+                                 .wave = 1,
+                                 .producer = "ds_store_b32",
+                                 .between = "s_barrier_wait",
+                                 .consumer = "ds_load_b32",
+                                 .barrier = "s_barrier_signal -1",
+                                 .barrier_wave = 0,
+                                 .barrier_wait = "dscnt"};
+  const RaceExpectationMatchResult matched = matchRaceExpectation(barrierRaceRecords(), expected);
+  EXPECT_TRUE(matched.ok()) << matched.message();
+}
+
+// The barrier line does not disturb the marked rows of the trace.
+TEST(RaceLogBarrierTest, TheTraceSectionsAreUnaffected) {
+  const TraceSections trace = parseTrace(barrierRaceRecords().front());
+  EXPECT_EQ(trace.marker_count, 2u);
+  EXPECT_EQ(trace.producer, "ds_store_b32 v0, v1  ; <-- wave 0");
+  EXPECT_EQ(trace.consumer, "ds_load_b32 v2, v0  ; <-- wave 1 lane 0");
+}
+
+TEST(RaceLogBarrierTest, ReportsAWrongBarrierWaveOrCounter) {
+  const std::vector<RaceRecord> records = barrierRaceRecords();
+  expectMatchError(matchRaceExpectation(records, {.barrier = "s_barrier_wait -1"}),
+                   "does not show the barrier 's_barrier_wait -1'");
+  // The instruction is matched whole: a mnemonic alone, or another operand,
+  // is not the barrier the line shows.
+  expectMatchError(matchRaceExpectation(records, {.barrier = "s_barrier_signal"}),
+                   "does not show the barrier 's_barrier_signal'");
+  expectMatchError(matchRaceExpectation(records, {.barrier = "s_barrier_signal -3"}),
+                   "does not show the barrier 's_barrier_signal -3'");
+  expectMatchError(matchRaceExpectation(records, {.barrier_wave = 1}), "does not name wave 1");
+  expectMatchError(matchRaceExpectation(records, {.barrier_wait = "lgkmcnt"}),
+                   "does not say to wait for 'lgkmcnt'");
+  // The counters are matched whole: "cnt" is not a counter the line names.
+  expectMatchError(matchRaceExpectation(records, {.barrier_wait = "cnt"}),
+                   "does not say to wait for 'cnt'");
+}
+
+TEST(RaceLogBarrierTest, RequiresTheLineWhenABarrierIsExpected) {
+  const std::vector<RaceRecord> records = validRaceRecords();
+  expectMatchError(matchRaceExpectation(records, {.barrier = "s_barrier"}),
+                   "report names no barrier the conflicting access crossed in flight");
+  expectMatchError(matchRaceExpectation(records, {.barrier_wave = 0}),
+                   "report names no barrier the conflicting access crossed in flight");
+  expectMatchError(matchRaceExpectation(records, {.barrier_wait = "dscnt"}),
+                   "report names no barrier the conflicting access crossed in flight");
+}
+
+TEST(RaceLogBarrierTest, NoBarrierRejectsAReportThatNamesOne) {
+  EXPECT_TRUE(matchRaceExpectation(validRaceRecords(), {.no_barrier = true}).ok());
+  expectMatchError(matchRaceExpectation(barrierRaceRecords(), {.no_barrier = true}),
+                   "report names a barrier, expected none");
+}
+
+// An expectation cannot ask for a barrier and for none.
+TEST(RaceLogBarrierTest, NoBarrierCannotBeCombinedWithABarrierToExpect) {
+  for (const RaceExpectation &expected :
+       {RaceExpectation{.barrier = "s_barrier_signal -1", .no_barrier = true},
+        RaceExpectation{.barrier_wave = 0, .no_barrier = true},
+        RaceExpectation{.barrier_wait = "dscnt", .no_barrier = true}}) {
+    for (const std::vector<RaceRecord> &records : {barrierRaceRecords(), validRaceRecords()}) {
+      for (const FindingCount findings : {FindingCount::One, FindingCount::OneOrMore}) {
+        RaceExpectation counted = expected;
+        counted.findings = findings;
+        const RaceExpectationMatchResult matched = matchRaceExpectation(records, counted);
+        ASSERT_EQ(matched.errors.size(), 1u);
+        EXPECT_EQ(matched.errors.front(),
+                  "expectation sets no_barrier together with a barrier to expect");
+      }
+    }
+  }
+}
+
+// A negative wave other than -1, which means any, is a mistake in the
+// expectation, not a wave to leave unchecked.
+TEST(RaceLogBarrierTest, RejectsAnInvalidBarrierWave) {
+  for (const FindingCount findings : {FindingCount::One, FindingCount::OneOrMore}) {
+    const RaceExpectationMatchResult matched =
+        matchRaceExpectation(barrierRaceRecords(), {.findings = findings, .barrier_wave = -2});
+    ASSERT_EQ(matched.errors.size(), 1u);
+    EXPECT_EQ(matched.errors.front(), "barrier_wave must be a wave, or -1 for any");
+  }
+  EXPECT_TRUE(matchRaceExpectation(barrierRaceRecords(), {.barrier_wave = -1}).ok());
+}
+
+// When several reports are allowed, no_barrier covers every one of them, not
+// only the one that matches the rest of the expectation.
+TEST(RaceLogBarrierTest, NoBarrierCoversEveryReportOfTheRun) {
+  const RaceExpectation expected{.findings = FindingCount::OneOrMore, .no_barrier = true};
+  std::vector<RaceRecord> records = validRaceRecords();
+  records.push_back(records.front());
+  EXPECT_TRUE(matchRaceExpectation(records, expected).ok());
+  for (const bool barrier_first : {false, true}) {
+    std::vector<RaceRecord> mixed = validRaceRecords();
+    mixed.insert(barrier_first ? mixed.begin() : mixed.end(), barrierRaceRecords().front());
+    expectMatchError(matchRaceExpectation(mixed, expected),
+                     "a report names a barrier, expected none in any");
+  }
+}
+
+// Unset, the fields check nothing, so existing expectations match either kind.
+TEST(RaceLogBarrierTest, UnsetFieldsAreNotChecked) {
+  EXPECT_TRUE(matchRaceExpectation(barrierRaceRecords(), {.type = "LDS"}).ok());
+  EXPECT_TRUE(matchRaceExpectation(validRaceRecords(), {.type = "VGPR"}).ok());
+}
+
 } // namespace
 } // namespace rocjitsu::test

@@ -53,6 +53,20 @@ struct RaceExpectation {
   const char *producer = nullptr;
   const char *between = nullptr;
   const char *consumer = nullptr;
+
+  // When the conflicting access was in flight as its wave signalled a barrier,
+  // and the accessing wave is ordered after that signal, the report ends its
+  // description with a line naming that wave, the barrier and the counters to
+  // wait for before it. `barrier` is the barrier instruction the line must
+  // show, exactly, such as "s_barrier_signal -1"; `barrier_wave` is the wave
+  // it must name, or -1 for any; and `barrier_wait` is the counters it must
+  // say to wait for, exactly. These three constrain the report that matches
+  // the rest of the expectation. `no_barrier` requires that no report of the
+  // run has such a line, and cannot be combined with the other three.
+  const char *barrier = nullptr;
+  int barrier_wave = -1;
+  const char *barrier_wait = nullptr;
+  bool no_barrier = false;
 };
 
 struct RaceRecord {
@@ -326,10 +340,36 @@ inline TraceSections parseTrace(const RaceRecord &record) {
   return trace;
 }
 
+/// The line of a race report that names the barrier its conflicting access
+/// crossed in flight, or an empty string if the report has none.
+inline std::string barrierLine(const RaceRecord &record) {
+  std::istringstream stream(record.message);
+  std::string line;
+  while (std::getline(stream, line))
+    if (detail::contains(line, " arrived at the barrier at PC "))
+      return line;
+  return {};
+}
+
 inline bool anyContains(const std::vector<std::string> &lines, const std::string &substring) {
   return std::ranges::any_of(
       lines, [&](const std::string &line) { return detail::contains(line, substring); });
 }
+
+namespace detail {
+
+/// What is wrong with the barrier fields of `expected`, if anything.
+inline std::optional<std::string> invalidBarrierExpectation(const RaceExpectation &expected) {
+  if (expected.barrier_wave < -1)
+    return "barrier_wave must be a wave, or -1 for any";
+  const bool expects_barrier =
+      expected.barrier != nullptr || expected.barrier_wave >= 0 || expected.barrier_wait != nullptr;
+  if (expected.no_barrier && expects_barrier)
+    return "expectation sets no_barrier together with a barrier to expect";
+  return std::nullopt;
+}
+
+} // namespace detail
 
 inline RaceExpectationMatchResult matchRaceRecord(const RaceRecord &record,
                                                   const RaceExpectation &expected) {
@@ -392,11 +432,45 @@ inline RaceExpectationMatchResult matchRaceRecord(const RaceRecord &record,
     result.errors.push_back("consumer trace '" + trace.consumer + "' does not contain '" +
                             expected.consumer + "'");
   }
+
+  if (std::optional<std::string> invalid = detail::invalidBarrierExpectation(expected)) {
+    result.errors.push_back(std::move(*invalid));
+    return result;
+  }
+  const std::string barrier = barrierLine(record);
+  const bool expects_barrier =
+      expected.barrier != nullptr || expected.barrier_wave >= 0 || expected.barrier_wait != nullptr;
+  if (expected.no_barrier && !barrier.empty())
+    result.errors.push_back("report names a barrier, expected none: '" + barrier + "'");
+  if (expects_barrier && barrier.empty())
+    result.errors.push_back("report names no barrier the conflicting access crossed in flight");
+  if (barrier.empty())
+    return result;
+  if (expected.barrier != nullptr &&
+      !detail::contains(barrier,
+                        std::string(" (") + expected.barrier + ") with this access in flight")) {
+    result.errors.push_back("barrier line '" + barrier + "' does not show the barrier '" +
+                            expected.barrier + "'");
+  }
+  if (expected.barrier_wave >= 0 &&
+      !barrier.starts_with("  Wave " + std::to_string(expected.barrier_wave) + " arrived ")) {
+    result.errors.push_back("barrier line '" + barrier + "' does not name wave " +
+                            std::to_string(expected.barrier_wave));
+  }
+  if (expected.barrier_wait != nullptr &&
+      !detail::contains(barrier, std::string("Wait for ") + expected.barrier_wait +
+                                     " before the barrier.")) {
+    result.errors.push_back("barrier line '" + barrier + "' does not say to wait for '" +
+                            expected.barrier_wait + "'");
+  }
   return result;
 }
 
 inline RaceExpectationMatchResult matchRaceExpectation(const std::vector<RaceRecord> &records,
                                                        const RaceExpectation &expected) {
+  if (std::optional<std::string> invalid = detail::invalidBarrierExpectation(expected))
+    return RaceExpectationMatchResult{.errors = {std::move(*invalid)}};
+
   if (expected.findings == FindingCount::One) {
     if (records.size() != 1) {
       return RaceExpectationMatchResult{
@@ -407,6 +481,17 @@ inline RaceExpectationMatchResult matchRaceExpectation(const std::vector<RaceRec
 
   if (records.empty())
     return RaceExpectationMatchResult{.errors = {"expected at least one race, got none"}};
+
+  // With several reports allowed, one that matches does not show that the
+  // others name no barrier.
+  if (expected.no_barrier) {
+    for (const RaceRecord &record : records) {
+      if (const std::string barrier = barrierLine(record); !barrier.empty()) {
+        return RaceExpectationMatchResult{
+            .errors = {"a report names a barrier, expected none in any: '" + barrier + "'"}};
+      }
+    }
+  }
 
   RaceExpectationMatchResult closest = matchRaceRecord(records.front(), expected);
   if (closest.ok())
