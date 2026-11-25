@@ -1,4 +1,4 @@
-name: VFIO system CTS
+name: VFIO and Helios MI455X system CTS
 
 on:
   pull_request:
@@ -33,6 +33,9 @@ jobs:
     timeout-minutes: 120
     container:
       image: ghcr.io/rocm/no_rocm_image_ubuntu24_04@sha256:4150afe4759d14822f0e3f8930e1124f26e11f68b5c7b91ec9a02b20b1ebbb98
+      # RCCL maps a proxy pool per rank. ARC mounts this named volume from job storage.
+      volumes:
+        - rocjitsu-rccl-${{ github.run_id }}-${{ github.run_attempt }}:/dev/shm
       env:
         DEBIAN_FRONTEND: noninteractive
     env:
@@ -45,6 +48,9 @@ jobs:
     steps:
       - name: Install host build dependencies
         run: |
+          # Initialize the job volume before any simulator process opens a scratch file.
+          sudo -n chmod 1777 /dev/shm
+          df -h /dev/shm
           sudo -n apt-get -o Acquire::Retries=5 update
           sudo -n apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
             build-essential ca-certificates curl git libdrm-dev ninja-build
@@ -67,27 +73,51 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
-      - name: Install the ROCm SDK
+      - name: Install the ROCm SDK and corpus dependencies
         run: |
           python -m venv "$RUNNER_TEMP/vfio-python"
           source "$RUNNER_TEMP/vfio-python/bin/activate"
           python -m pip install uv==0.9.26 cmake==3.31.10
+          uv pip install -r corpus/requirements.txt cmake==3.31.10
           uv pip install --prerelease allow --index-url https://rocm.nightlies.amd.com/whl-multi-arch/ \
-            "rocm[devel,libraries]==$ROCM_SDK_VERSION"
+            "rocm[devel,libraries]==$ROCM_SDK_VERSION" "rocm-sdk-device-gfx1250==$ROCM_SDK_VERSION"
           rocm-sdk init
           sdk=$(rocm-sdk path --root)
           echo "$VIRTUAL_ENV/bin" >> "$GITHUB_PATH"
           echo "ROCM_PATH=$sdk" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$sdk/lib:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
 
-      - name: Build the simulator and VFIO client
+      - name: Build the simulator, VFIO client and rank workload
         run: |
           cmake -S rocm-systems/emulation/rocjitsu -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER="$ROCM_PATH/lib/llvm/bin/amdclang" \
             -DCMAKE_CXX_COMPILER="$ROCM_PATH/lib/llvm/bin/amdclang++" \
-            -DROCJITSU_ENABLE_VFIO=ON -DROCJITSU_SYSTEM_CTS_DIR="$GITHUB_WORKSPACE/corpus/corpus/system-cts"
-          cmake --build build --target rocjitsu_bin rocjitsu_shared vfio_system_cts --parallel "$(nproc)"
+            -DROCJITSU_ENABLE_VFIO=ON -DROCJITSU_SYSTEM_CTS_DIR="$GITHUB_WORKSPACE/corpus/corpus/system-cts" \
+            -DROCJITSU_CTS_GUEST_INPUTS="$RUNNER_TEMP/vfio-cts/images/inputs.json"
+          cmake --build build --target rocjitsu_bin rocjitsu_shared rocjitsu_hooks rj_ip_discovery \
+            hip_rccl_gfx1250_test_target vfio_system_cts --parallel "$(nproc)"
 
       - uses: ./corpus/.github/actions/test-vfio-transport
         with:
           build-dir: ${{ github.workspace }}/build
+      - uses: ./corpus/.github/actions/test-vfio-workloads
+        with:
+          rocjitsu: ${{ github.workspace }}/rocm-systems/emulation/rocjitsu
+          build-dir: ${{ github.workspace }}/build
+
+      - name: Package the qualified guest bundle
+        if: github.event_name != 'pull_request'
+        run: |
+          cd "$RUNNER_TEMP/vfio-cts"
+          tar -czf guest-bundle.tar.gz base images
+          sha256sum guest-bundle.tar.gz > guest-bundle.sha256
+      - name: Upload the qualified guest bundle
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vfio-gfx1250-guest-bundle-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/vfio-cts/guest-bundle.tar.gz
+            ${{ runner.temp }}/vfio-cts/guest-bundle.sha256
+          compression-level: 0
+          retention-days: 14

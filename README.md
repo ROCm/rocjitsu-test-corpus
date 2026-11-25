@@ -14,6 +14,7 @@ corpus/
   semantics/  Standalone target-specific HIP semantic programs.
   llama/      llama.cpp test-backend-ops cases and vendored GGML sources.
   vulkan/     Pinned Vulkan compute and texel-buffer CTS selections.
+  system-cts/  VFIO, peer fabric and multi-node RCCL qualification.
   runtime-cts/ Direct-KFD aql/ and capability-gated pm4/ suites.
   runtime/    HIP runtime integration, including the file-limit matrix.
   race/       Race-detector integration programs and standalone mutation kernels.
@@ -62,6 +63,9 @@ selections. Accepted inputs do not by themselves establish case qualification.
   that the runtime test executes.
 - `corpus/vulkan/`: pinned Vulkan CTS compute and buffer cases for RDNA3/RDNA4
   through Mesa RADV. See the [build and local smoke-test guide](corpus/vulkan/README.md).
+- The [system CTS](corpus/system-cts/README.md) qualifies the gfx1250 VFIO transport,
+  QEMU guest peer coherence, and RCCL scale-up and scale-out. Select `--case helios`
+  for the four-node, two-MI455X-per-node topology in daemon and guest modes.
 - `corpus/runtime-cts/`: standalone direct-KFD queue, packet, dependency,
   SDMA and shader stress tests with gfx9, gfx11 and gfx12 support. Run binaries directly or
   through the manifest-based pytest adapter (`--suite aql` or `--suite pm4`); see the [build instructions](corpus/runtime-cts/README.md).
