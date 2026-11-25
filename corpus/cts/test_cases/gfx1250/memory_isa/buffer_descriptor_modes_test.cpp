@@ -15,11 +15,6 @@ using namespace memory_isa_test;
 constexpr std::array<std::uint32_t, 4> kStrideMultipliers = {1, 4, 8, 32};
 constexpr std::size_t kDescriptorModeBytes = 4096;
 
-struct OobLoads {
-  u32x4 resource_bounds;
-  u32x4 record_bounds;
-};
-
 __global__ void buffer_stride_scale_kernel(u32x4 input_resource, u32x4 output_resource,
                                            std::uint32_t tag, std::uint32_t *load_results) {
   const std::uint32_t index = threadIdx.x;
@@ -53,27 +48,6 @@ __global__ void buffer_swizzle_kernel(u32x4 input_resource, u32x4 output_resourc
                  "s"(output_resource)
                : "memory");
   load_results[lane] = load_value;
-}
-
-__global__ void buffer_oob_select_kernel(u32x4 input_resource_bounds, u32x4 input_record_bounds,
-                                         u32x4 output_resource_bounds, u32x4 output_record_bounds,
-                                         OobLoads *result) {
-  if (threadIdx.x != 0)
-    return;
-  const u32x2 address{1, 0};
-  const u32x4 store_value{lane_word(0, 22), lane_word(0, 23), lane_word(0, 24), lane_word(0, 25)};
-  OobLoads values{};
-  asm volatile("buffer_load_b128 %0, %3, %4, null idxen offen offset:12\n\t"
-               "buffer_load_b128 %1, %3, %5, null idxen offen offset:12\n\t"
-               "buffer_store_b128 %2, %3, %6, null idxen offen offset:12\n\t"
-               "buffer_store_b128 %2, %3, %7, null idxen offen offset:12\n\t"
-               "s_wait_loadcnt 0\n\t"
-               "s_wait_storecnt 0"
-               : "=&v"(values.resource_bounds), "=&v"(values.record_bounds)
-               : "v"(store_value), "v"(address), "s"(input_resource_bounds),
-                 "s"(input_record_bounds), "s"(output_resource_bounds), "s"(output_record_bounds)
-               : "memory");
-  *result = values;
 }
 
 std::uint32_t word_at(const std::vector<std::uint8_t> &bytes, std::size_t offset) {
@@ -188,62 +162,4 @@ TEST(Gfx1250MemoryIsaBufferModes, SwizzleMapsIndexAndOffsetCoordinatesPerManual)
     write_word(expected_output, offset, lane_word(lane, 21));
   }
   expect_bytes_equal(actual_output, expected_output, "swizzled buffer stores");
-}
-
-TEST(Gfx1250MemoryIsaBufferModes, OobSelectDistinguishesResourceAndRecordBoundsPerDword) {
-  REQUIRE_GFX1250_DEVICE();
-  std::vector<std::uint8_t> input(64);
-  for (std::size_t i = 0; i < input.size(); ++i)
-    input[i] = coordinate_byte(i, 33);
-  std::vector<std::uint8_t> output_resource_bounds_bytes(64, kByteCanary);
-  std::vector<std::uint8_t> output_record_bounds_bytes(64, kByteCanary);
-  auto device_input = DeviceBuffer<std::uint8_t>::from_host(input);
-  auto device_output_resource_bounds =
-      DeviceBuffer<std::uint8_t>::from_host(output_resource_bounds_bytes);
-  auto device_output_record_bounds =
-      DeviceBuffer<std::uint8_t>::from_host(output_record_bounds_bytes);
-  auto device_result = DeviceBuffer<OobLoads>::allocate(1);
-  ASSERT_TRUE(device_input);
-  ASSERT_TRUE(device_output_resource_bounds);
-  ASSERT_TRUE(device_output_record_bounds);
-  ASSERT_TRUE(device_result);
-
-  constexpr std::uint32_t stride = 16;
-  const u32x4 input_resource_bounds =
-      make_buffer_resource(reinterpret_cast<std::uint64_t>(device_input.get()), input.size(),
-                           stride, 0, false, false)
-          .vector();
-  const u32x4 input_record_bounds =
-      make_buffer_resource(reinterpret_cast<std::uint64_t>(device_input.get()), input.size(),
-                           stride, 0, false, true)
-          .vector();
-  const u32x4 output_resource_bounds =
-      make_buffer_resource(reinterpret_cast<std::uint64_t>(device_output_resource_bounds.get()),
-                           output_resource_bounds_bytes.size(), stride, 0, false, false)
-          .vector();
-  const u32x4 output_record_bounds =
-      make_buffer_resource(reinterpret_cast<std::uint64_t>(device_output_record_bounds.get()),
-                           output_record_bounds_bytes.size(), stride, 0, false, true)
-          .vector();
-
-  buffer_oob_select_kernel<<<1, kWaveLanes>>>(input_resource_bounds, input_record_bounds,
-                                              output_resource_bounds, output_record_bounds,
-                                              device_result.get());
-  HIP_CHECK(hipGetLastError());
-  HIP_CHECK(hipDeviceSynchronize());
-  const OobLoads loads = device_result.to_host()[0];
-  for (unsigned i = 0; i < 4; ++i) {
-    EXPECT_EQ(loads.resource_bounds[i], word_at(input, 28 + 4 * i));
-    EXPECT_EQ(loads.record_bounds[i], i == 0 ? word_at(input, 28) : 0u);
-  }
-
-  std::vector<std::uint8_t> expected_resource_bounds(64, kByteCanary);
-  std::vector<std::uint8_t> expected_record_bounds(64, kByteCanary);
-  for (unsigned i = 0; i < 4; ++i)
-    write_word(expected_resource_bounds, 28 + 4 * i, lane_word(0, 22 + i));
-  write_word(expected_record_bounds, 28, lane_word(0, 22));
-  expect_bytes_equal(device_output_resource_bounds.to_host(), expected_resource_bounds,
-                     "resource-bounded buffer stores");
-  expect_bytes_equal(device_output_record_bounds.to_host(), expected_record_bounds,
-                     "record-bounded buffer stores");
 }

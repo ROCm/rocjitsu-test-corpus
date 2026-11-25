@@ -43,8 +43,8 @@
     {
       "name": "memory_isa_gfx1250_buffer_modes_test",
       "source": "gfx1250/memory_isa/buffer_descriptor_modes_test.cpp",
-      "expected_opcodes": ["buffer_load_b32", "buffer_store_b32", "buffer_load_b128", "buffer_store_b128", "s_wait_loadcnt", "s_wait_storecnt"],
-      "expected_disassembly_patterns": ["buffer_load_b32.*idxen.*offset:4", "buffer_store_b32.*idxen.*offset:8", "buffer_load_b32.*idxen.*offen.*offset:4", "buffer_store_b32.*idxen.*offen.*offset:4", "buffer_load_b128.*idxen.*offen.*offset:12", "buffer_store_b128.*idxen.*offen.*offset:12"]
+      "expected_opcodes": ["buffer_load_b32", "buffer_store_b32", "s_wait_loadcnt", "s_wait_storecnt"],
+      "expected_disassembly_patterns": ["buffer_load_b32.*idxen.*offset:4", "buffer_store_b32.*idxen.*offset:8", "buffer_load_b32.*idxen.*offen.*offset:4", "buffer_store_b32.*idxen.*offen.*offset:4"]
     },
     {
       "name": "memory_isa_gfx1250_scratch_test",

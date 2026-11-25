@@ -2,7 +2,6 @@
   "collection": "int_isa",
   "cases": [
     {"name": "int_isa_rdna4_bitfield_test", "supported_targets": ["gfx1201"]},
-    {"name": "int_isa_rdna4_lerp_test", "supported_targets": ["gfx1201"]},
     {"name": "int_isa_rdna4_packed_sad_test", "supported_targets": ["gfx1201"]},
     {"name": "int_isa_rdna4_bit_permute_test", "supported_targets": ["gfx1201"]},
     {"name": "int_isa_rdna4_integer_dot_test", "supported_targets": ["gfx1201"]},

@@ -1636,6 +1636,18 @@ s_endpgm
 .Lcontinue\@:
 .endm
 
+; The eight RDNA4 interpolation vectors migrated from the integer CTS.
+; Hash the instruction result and a dependent consumer for runner comparison.
+.macro gh_cts_lerp a, b, rounding
+clear_results
+v_mov_b32 v8, \a
+v_mov_b32 v9, \b
+v_mov_b32 v10, \rounding
+v_lerp_u8 v16, v8, v9, v10
+v_xor_b32 v17, v16, v1
+fold_results
+.endm
+
 .macro sweep_inputs kind
 .ifc \kind,half
 v_cvt_f16_f32 v8, v4
@@ -1723,6 +1735,15 @@ v_max3_u32 v29, v1, v2, v0
 v_med3_i32 v30, v1, v2, v0
 v_add3_u32 v31, v1, v2, v0
 masked_end 0
+; Preserve the CTS operand/rounding vectors in both wave modes.
+gh_cts_lerp 0x00112233, 0xffeeddcc, 0x01000100
+gh_cts_lerp 0x7f80fe01, 0x801001ff, 0x00010100
+gh_cts_lerp 0x10203040, 0x11213141, 0xffffffff
+gh_cts_lerp 0xffffffff, 0x00000000, 0x01010101
+gh_cts_lerp 0x01030507, 0x02040608, 0x00000000
+gh_cts_lerp 0x000102fe, 0xfffefd01, 0x01000001
+gh_cts_lerp 0x89abcdef, 0x76543210, 0x10101010
+gh_cts_lerp 0x80808080, 0x7f7f7f7f, 0x01000100
 checkpoint 0
 
 

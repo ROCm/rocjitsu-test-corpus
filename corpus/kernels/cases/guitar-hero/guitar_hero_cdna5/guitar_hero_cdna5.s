@@ -1047,6 +1047,34 @@ gh_corner_exec \arch, \wave_size, -1
 fold_results
 .endm
 
+; OOB_SELECT case from the gfx1250 descriptor-mode CTS. Each wave owns
+; 64 bytes: index 1 / stride 16 / offset 12 crosses its record at byte 32.
+.macro gh_cts_buffer_oob_select record_bounds
+gh_corner_memory_initialize cdna5, 32
+gh_corner_buffer_descriptor cdna5, 64, 16
+s_or_b32 s19, s19, (\record_bounds << 29)
+s_wait_alu 0xfffe
+v_mov_b32 v54, 1
+v_mov_b32 v55, 0
+buffer_load_b128 v[16:19], v[54:55], s[16:19], null idxen offen offset:12
+gh_corner_memory_wait cdna5
+gh_corner_exec cdna5, 32, -1
+fold_results
+gh_corner_exec cdna5, 32, 1
+; Observe the bounded store through an unbounded read so suppression is visible.
+v_mov_b32 v24, 0x11223344
+v_mov_b32 v25, 0x55667788
+v_mov_b32 v26, 0x99aabbcc
+v_mov_b32 v27, 0xddeeff00
+buffer_store_b128 v[24:27], v[54:55], s[16:19], null idxen offen offset:12
+gh_corner_memory_wait cdna5
+v_mov_b32 v56, 28
+gh_corner_global_load128 cdna5, v[28:31], v56
+gh_corner_memory_wait cdna5
+gh_corner_exec cdna5, 32, -1
+fold_results
+.endm
+
 .macro gh_corner_buffer_bounds arch, wave_size
 gh_corner_validate \arch
 gh_corner_memory_base \arch, \wave_size
@@ -1067,6 +1095,8 @@ gh_corner_buffer_case \arch, \wave_size, \width, \remaining, 3
 .endif
 .endr
 .endr
+gh_cts_buffer_oob_select 0
+gh_cts_buffer_oob_select 1
 .endm
 
 .macro gh_corner_gfx12_atomic_case arch, wave_size, form, width, th, scope=2

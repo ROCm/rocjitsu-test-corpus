@@ -29,6 +29,38 @@ assembled separately in each strict wave mode to retain operand validation.
 Other targets maintain independent assembly. Building requires no source
 generator. [ISA-NOTES.md](ISA-NOTES.md) describes target differences and limits.
 
+## CTS migration examples
+
+These examples separate broad assembly execution from focused simulator checks:
+
+| Former CTS case | Destination | Coverage |
+| --- | --- | --- |
+| `int_isa_rdna4_lerp_test` | RDNA4 integer checkpoint, both wave modes | All eight operand/rounding vectors, each followed by a dependent consumer. The shared CTS source remains for gfx1250. |
+| `Gfx1250MemoryIsaAtomic.LdsReturnNaNQuietingAndSignedZeroOrdering` | rocjitsu's `AtomicSemanticsAndDecode.Gfx1250LdsCtsReturnsAndExceptionalFloatResults` | Exact returned bits and updated LDS values for integer addition, NaN quieting/selection, and signed zeros. Other atomic CTS subtests remain. |
+| `Gfx1250MemoryIsaBufferModes.OobSelectDistinguishesResourceAndRecordBoundsPerDword` | CDNA5 buffer-bounds sweep and rocjitsu's `Gfx1250ExecutionTest.VbufferCtsOobSelectDistinguishesResourceAndRecordBounds` | Assembly load/store/readback chains for both descriptor modes; unit assertions retain the CTS inputs, per-DWORD zero filling, suppressed writes, and surrounding canaries. Stride/swizzle CTS subtests remain. |
+
+Guitar Hero hashes provide execution coverage and outputs for comparison across
+runners. They do not retain the removed RDNA4 interpolation executable's CPU
+oracle assertions. Existing rocjitsu integer arithmetic and SIMD correctness
+tests check interpolation semantics separately. No expected-results workgroup,
+saved baseline, or automatic cross-runner comparison is added here.
+
+To compare runners, use the same executable, code object, target, wave mode, seed
+selection, and launch arguments. For example, with a matching hardware device
+visible and a rocjitsu configuration for that same target:
+
+```sh
+"$gh_exe" --groups 1 --dump-digests > hardware.digests
+rocjitsu --config "$gh_config" -- "$gh_exe" --groups 1 --dump-digests > simulator.digests
+diff -u hardware.digests simulator.digests
+```
+
+A difference identifies a checkpoint to investigate, not which runner is wrong.
+The hashes retain earlier history, so start at the first mismatch and use the
+checkpoint dump controls below. Identical hashes do not prove exhaustive ISA
+correctness. Hardware comparison requires matching hardware and is separate from
+the normal CI workgroup-consistency check.
+
 ## Build and run
 
 From the repository root, use a TheRock SDK environment and select a case and

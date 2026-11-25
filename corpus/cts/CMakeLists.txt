@@ -645,8 +645,6 @@ if(CTS_HAS_RDNA4)
 
     cts_add_hip_test(int_isa_rdna4_bitfield_test
         "${CTS_TEST_CASES_DIR}/general/int_isa/bitfield_test.cpp")
-    cts_add_hip_test(int_isa_rdna4_lerp_test
-        "${CTS_TEST_CASES_DIR}/general/int_isa/lerp_test.cpp")
     cts_add_hip_test(int_isa_rdna4_packed_sad_test
         "${CTS_TEST_CASES_DIR}/general/int_isa/packed_sad_test.cpp")
     cts_add_hip_test(int_isa_rdna4_bit_permute_test
